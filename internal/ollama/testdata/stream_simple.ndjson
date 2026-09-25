@@ -1,0 +1,4 @@
+{"model":"qwen2.5:3b","response":"Hola","done":false}
+{"model":"qwen2.5:3b","response":" mundo","done":false}
+{"model":"qwen2.5:3b","response":"!","done":false}
+{"model":"qwen2.5:3b","response":"","done":true,"prompt_eval_count":11,"eval_count":3,"total_duration":123456789}
