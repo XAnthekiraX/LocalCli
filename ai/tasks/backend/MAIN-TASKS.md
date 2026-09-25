@@ -4,8 +4,8 @@ Fuente de verdad del progreso del backend. Derivada exclusivamente de `ai/docs/`
 
 | ID | Acción | Tarea | Dep | Estado | Detalle |
 |----|--------|-------|-----|--------|---------|
-| T-B000 | crear | Configuración del stack Go: go.mod, dependencias fijas y binario localcli | — | pendiente | `000-task-stack.md` |
-| T-B001 | crear | Estructura de carpetas base: los 13 módulos de internal/ con límites por paquete | T-B000 | pendiente | `001-task-estructura.md` |
+| T-B000 | crear | Configuración del stack Go: go.mod, dependencias fijas y binario localcli | — | completada | `000-task-stack.md` |
+| T-B001 | crear | Estructura de carpetas base: los 13 módulos de internal/ con límites por paquete | T-B000 | completada | `001-task-estructura.md` |
 | T-B002 | crear | store: SQLite único acceso (esquema 6 tablas, WAL, foreign_keys, user_version, transacciones) | T-B000 | pendiente | `002-task-store.md` |
 | T-B003 | crear | docs: carga de documentación, frontmatter y grafo en memoria | T-B001 | pendiente | `003-task-docs.md` |
 | T-B004 | crear | task: lectura/escritura del TODO (MAIN-TASKS.md y NNN-task-*.md) con su frontmatter | T-B001 | pendiente | `004-task-task.md` |
