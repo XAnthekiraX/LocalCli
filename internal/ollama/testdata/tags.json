@@ -1,0 +1,1 @@
+{"models":[{"name":"qwen2.5:3b","model":"qwen2.5:3b","size":1900000000,"details":{"family":"qwen2","num_parameters":"3.1B"}},{"name":"llama3:70b","model":"llama3:70b","size":40000000000,"details":{"family":"llama","num_parameters":"70B"}},{"name":"sin-tamano","model":"sin-tamano","details":{"family":"unknown"}}]}
