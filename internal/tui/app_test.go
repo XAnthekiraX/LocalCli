@@ -70,8 +70,8 @@ func TestLaAyudaListaLosAtajosYSeCierraSinEfectos(t *testing.T) {
 	}
 	v := a.View()
 	for _, atajo := range a.Atajos {
-		if !strings.Contains(v, atajo.Tecla) || !strings.Contains(v, atajo.Descripcion) {
-			t.Errorf("la ayuda debe listar %q con su acción: %s", atajo.Tecla, atajo.Descripcion)
+		if !strings.Contains(v, atajo.Tecla()) || !strings.Contains(v, atajo.Descripcion) {
+			t.Errorf("la ayuda debe listar %q con su acción: %s", atajo.Tecla(), atajo.Descripcion)
 		}
 	}
 	// Cualquier tecla la cierra y no deja rastro: no escribe en la entrada.

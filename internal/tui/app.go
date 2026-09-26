@@ -50,7 +50,13 @@ const (
 
 // App es el modelo raíz de la TUI.
 type App struct {
-	Puerto   Puerto
+	Puerto Puerto
+	// Mapa es el keymap central (T-F012-05) y TeclaRes el resolver con la
+	// máquina de estados del líder (T-F012-02/-03). Los componentes reciben
+	// acciones ya resueltas: aquí abajo ya no se compara ninguna string de
+	// tecla suelta (SPEC-KEYBINDS §Regla de oro).
+	Mapa     *Keymap
+	TeclaRes *KeyResolver
 	Atajos   []Atajo
 	Vista    Vista
 	Ancho    int
@@ -88,21 +94,19 @@ type App struct {
 // Nuevo construye la vista. No lee la base, no habla con Ollama y no abre
 // canales: solo deja la pantalla lista para pintarse.
 func Nuevo(p Puerto) *App {
-	// Los atajos: los del usuario si su keys.json carga bien; los de fábrica
-	// si el archivo no existe o es inválido (nunca un arranque roto por una
-	// preferencia, T-F010-04).
-	atajos, err := CargarKeys()
-	if err != nil {
-		atajos = AtajosPorDefecto()
-	}
-	if err := ValidarAtajos(atajos); err != nil {
-		// Los atajos de fábrica son válidos por construcción; si dejan de
-		// serlo, es un error de programación y conviene verlo pronto.
-		panic(err)
+	// El mapa de teclas: el del usuario si su keys.json carga bien; el de
+	// fábrica si el archivo no existe o es inválido (nunca un arranque roto
+	// por una preferencia, T-F010-04). T-F012-05: se carga como Keymap
+	// completo —líder, timeout y bindings múltiples— ya validado.
+	mapa, err := CargarKeymap()
+	if err != nil || ValidarAtajos(mapa.Entradas()) != nil {
+		mapa = KeymapPorDefecto()
 	}
 	return &App{
-		Puerto: p,
-		Atajos: atajos,
+		Puerto:   p,
+		Mapa:     mapa,
+		TeclaRes: NuevoKeyResolver(mapa),
+		Atajos:   mapa.Entradas(),
 		Vista:  VistaBienvenida,
 		Panel:  NuevoPanel(),
 		// El razonamiento se muestra por defecto (SPEC-INTERFAZ: "se puede
@@ -121,7 +125,11 @@ func Nuevo(p Puerto) *App {
 // de una vez la lista del selector de modelos: llega asíncrona, porque la
 // bienvenida se pinta sin esperar a Ollama (SPEC-INTERFAZ §Reglas).
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.escucharCmd(), a.cargarModelos())
+	// El orden importa: escucharCmd abre la suscripción y deja el canal listo;
+	// si cargarModelos se enlazara primero, su cmd() leería el canal todavía
+	// nil y devolvería nil — la escucha quedaría agotada tras el primer evento
+	// (T-F010-06). Batch encadena de izquierda a derecha.
+	return tea.Batch(a.cargarModelos(), a.escucharCmd())
 }
 
 // Update maneja las teclas, el tamaño y los mensajes que llegan por eventos.
@@ -130,6 +138,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.Ancho, a.Alto = m.Width, m.Height
 		a.Entrada.FijarAncho(a.anchoChat())
+		// El teclado propio del campo queda subordinado al KeyResolver
+		// (T-F012-06): flechas, home/end, tab o ctrl+u/k son acciones del mapa,
+		// no edición interna de bubbles. Se reaplica en cada cambio de tamaño
+		// para que un textinput reconstruido nunca recupere sus atajos viejos.
+		a.Entrada.DesactivarTeclasPropias()
 		return a, nil
 	case tea.KeyMsg:
 		// Cada vista tiene su teclado: en la bienvenida solo se escribe, envía
@@ -139,6 +152,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.teclaBienvenida(m)
 		}
 		return a.tecla(m)
+	case LiderExpiradoMsg:
+		// T-F012-03: el temporizador de la líder venció. Se vuelve a NORMAL y
+		// se quita el indicador; si para entonces la espera ya terminó (la
+		// secuencia se resolvió o se canceló), el mensaje sobrante se ignora.
+		if a.TeclaRes != nil && a.TeclaRes.EsperandoLeader() {
+			a.TeclaRes.Cancelar()
+		}
+		return a, nil
 	case eventoMsg:
 		a.AplicarEvento(m.Evento)
 		// La escucha se re-arma: sin esto, tras el primer evento la vista
@@ -174,111 +195,229 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-// tecla resuelve una pulsación: primero el selector (que se lleva las flechas y
-// el enter mientras está abierto), después el mapa de atajos, y solo si la tecla
-// no es un atajo se escribe.
+// tecla resuelve una pulsación de la interfaz principal. T-F012-06: la tecla
+// llega al KeyResolver (que conoce el mapa, la líder y el contexto) y desde
+// aquí se despachan SOLO acciones — ningún switch compara ya strings de tecla
+// suelta (SPEC-KEYBINDS §Regla de oro: "los componentes no comparan strings").
 func (a *App) tecla(m tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if a.Selector.Abierto {
-		switch m.String() {
-		case "up":
-			a.Selector.Mover(-1)
-			return a, nil
-		case "down":
-			a.Selector.Mover(1)
-			return a, nil
-		case "enter":
-			return a, a.elegirSesion()
-		case "esc", "ctrl+s":
-			a.Selector.Cerrar()
-			return a, nil
-		}
-	}
-
-	// La ayuda se cierra con cualquier tecla y no deja rastro (T-F010-07).
+	// La ayuda se cierra con cualquier tecla y no deja rastro (T-F010-07):
+	// es una superposición modal sin navegación propia.
 	if a.AyudaAbierta {
 		a.AyudaAbierta = false
+		a.TeclaRes.Cancelar()
 		return a, nil
 	}
 
 	// Cancelar pide confirmación: el texto escrito no se pierde mientras
-	// decide (T-F010-08).
+	// decide (T-F010-08). Es un mini-modal propio: captura el teclado hasta
+	// que el usuario responde s/n/esc. La líder y sus secuencias siguen
+	// vivas incluso aquí (escape hatch de SPEC-KEYBINDS).
 	if a.PidiendoCancelar {
-		switch m.String() {
-		case "s", "S":
-			a.PidiendoCancelar = false
-			a.Puerto.Cancelar(a.Panel.SesionID)
+		if nombre := strings.ToLower(strings.TrimSpace(m.String())); nombre == a.Mapa.Lider() ||
+			a.TeclaRes.EsperandoLeader() {
+			accion, cmdLider := a.TeclaRes.Resolver(m, ContextoModal)
+			if a.TeclaRes.EsperandoLeader() {
+				return a, cmdLider
+			}
+			if accion != AccionNinguna {
+				return a.despachar(accion, m)
+			}
 			return a, nil
-		case "n", "N", "esc":
+		}
+		switch m.Type {
+		case tea.KeyRunes:
+			switch string(m.Runes) {
+			case "s", "S":
+				a.PidiendoCancelar = false
+				a.Puerto.Cancelar(a.Panel.SesionID)
+			case "n", "N":
+				a.PidiendoCancelar = false
+			}
+		case tea.KeyEsc:
 			a.PidiendoCancelar = false
-			return a, nil
 		}
 		return a, nil
 	}
 
-	// Con el panel de aprobaciones abierto, a/d resuelven la línea
-	// seleccionada y esc lo cierra (INTERFACES §4, T-F008-05).
-	if a.Aprobs.Abierto {
-		switch m.String() {
-		case "up":
-			a.Aprobs.Mover(-1)
-			return a, nil
-		case "down":
-			a.Aprobs.Mover(1)
-			return a, nil
-		case "a":
-			return a, a.resolverAprobacion(true)
-		case "d":
-			return a, a.resolverAprobacion(false)
-		case "esc", "ctrl+a":
-			a.Aprobs.Abierto = false
-			return a, nil
-		}
+	// El contexto de resolución (T-F012-04): modal > aprobaciones > input >
+	// vista. Con el selector o las aprobaciones abiertos las teclas simples
+	// las consume el componente; la líder sigue funcionando desde cualquier
+	// contexto (SPEC-KEYBINDS §Tecla líder: escape hatch).
+	ctx := ContextoVista
+	switch {
+	case a.Selector.Abierto:
+		ctx = ContextoModal
+	case a.Aprobs.Abierto:
+		ctx = ContextoAprobaciones
 	}
 
-	if accion, ok := AccionDe(a.Atajos, m.String()); ok {
-		switch accion {
-		case AccionSalir:
-			return a, tea.Quit
-		case AccionPanel:
-			a.Panel.Abierto = !a.Panel.Abierto
-			// Plegar o desplegar cambia el reparto del ancho: la línea se
-			// adapta al layout resultante, sin interrumpir nada (T-F006-02).
-			a.Entrada.FijarAncho(a.anchoChat())
-			return a, nil
-		case AccionSelector:
-			return a, a.abrirSelector()
-		case AccionRazonamiento:
-			// Ocultar no detiene la generación: solo deja de pintarse.
-			a.Razon.Alternar()
-			return a, nil
-		case AccionAprobaciones:
-			a.Aprobs.Abierto = !a.Aprobs.Abierto
-			return a, nil
-		case AccionAprobar:
-			return a, a.resolverAprobacion(true)
-		case AccionDeclinar:
-			return a, a.resolverAprobacion(false)
-		case AccionPausar:
-			return a, a.pausar()
-		case AccionCancelar:
-			// Cancelar pide confirmación antes de cortar el trabajo (T-F010-08).
-			a.PidiendoCancelar = true
-			return a, nil
-		case AccionAyuda:
-			a.AyudaAbierta = !a.AyudaAbierta
-			return a, nil
-		case AccionCerrarSelector:
+	// Regla de oro de SPEC-KEYBINDS §Resolución por contexto: "con el input
+	// enfocado, las letras sueltas son texto, nunca atajo". En la interfaz
+	// principal el input está enfocado salvo cuando un modal o el panel de
+	// aprobaciones reclama el teclado, así que el texto puro se entrega al
+	// editor antes de resolver acciones — con una excepción: durante una
+	// espera de líder, todas las pulsaciones van al resolver (el literal
+	// «ctrl+x» no deja texto huérfano y la segunda tecla cierra la secuencia).
+	if ctx == ContextoVista && !a.TeclaRes.EsperandoLeader() && EsEntradaDeTexto(m) {
+		_, cmd := a.Entrada.Update(m)
+		return a, cmd
+	}
+
+	accion, cmdLider := a.TeclaRes.Resolver(m, ctx)
+	if accion == AccionNinguna && a.TeclaRes.EsperandoLeader() {
+		// El resolver entró en LEADER: la pulsación no hace nada más; el
+		// comando arma el temporizador que produce LiderExpiradoMsg
+		// (T-F012-03).
+		return a, cmdLider
+	}
+
+	// Con un modal o el panel de aprobaciones abierto, las teclas simples que
+	// el mapa no reclama pertenecen al componente con el foco: se resuelven
+	// aquí mismo contra su acción propia (esc cierra, ↑/↓ navegan, a/d
+	// resuelven una línea) sin tocar el resolver (T-F012-04). En vista normal
+	// manda el mapa tal cual, para que un mapa reasignado siga disparando la
+	// misma acción (T-F010-04).
+	if accion == AccionNinguna && (ctx == ContextoModal || ctx == ContextoAprobaciones) {
+		accion = a.accionDelComponente(strings.ToLower(strings.TrimSpace(m.String())), ctx)
+	}
+
+	return a.despachar(accion, m)
+}
+
+// accionDelComponente traduce una tecla simple dentro del modal o del panel de
+// aprobaciones a la acción de ese componente, usando el propio Keymap como
+// tabla (las entradas «cerrar selector», «subir», «bajar», «aprobar»,
+// «declinar»). No avanza la máquina de líder: es la parte del contexto que le
+// toca al componente abierto.
+func (a *App) accionDelComponente(nombre string, ctx Contexto) Accion {
+	for _, e := range a.Mapa.Entradas() {
+		for _, sec := range e.Secuencias {
+			if sec.Paso2 != "" || sec.Paso1 != nombre {
+				continue
+			}
+			switch e.Accion {
+			case AccionCerrarSelector, AccionSubir, AccionBajar:
+				return e.Accion
+			case AccionAprobar, AccionDeclinar:
+				if ctx == ContextoAprobaciones {
+					return e.Accion
+				}
+			}
+		}
+	}
+	return AccionNinguna
+}
+
+// despachar ejecuta el efecto de una acción resuelta por el KeyResolver. Es el
+// único sitio de la app que traduce acciones a comportamiento: los componentes
+// ya no comparan strings de tecla (T-F012-06).
+func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch accion {
+	case AccionSalir:
+		return a, tea.Quit
+	case AccionPanel:
+		a.Panel.Abierto = !a.Panel.Abierto
+		// Plegar o desplegar cambia el reparto del ancho: la línea se
+		// adapta al layout resultante, sin interrumpir nada (T-F006-02).
+		a.Entrada.FijarAncho(a.anchoChat())
+		return a, nil
+	case AccionSelector, AccionModalSesiones:
+		if a.Selector.Abierto {
 			a.Selector.Cerrar()
 			return a, nil
-		case AccionEnviar:
-			return a, a.enviar()
 		}
+		return a, a.abrirSelector()
+	case AccionRazonamiento:
+		// Ocultar no detiene la generación: solo deja de pintarse.
+		a.Razon.Alternar()
+		return a, nil
+	case AccionAprobaciones:
+		a.Aprobs.Abierto = !a.Aprobs.Abierto
+		return a, nil
+	case AccionAprobar:
+		return a, a.resolverAprobacion(true)
+	case AccionDeclinar:
+		return a, a.resolverAprobacion(false)
+	case AccionPausar:
+		return a, a.pausar()
+	case AccionCancelar:
+		// Cancelar pide confirmación antes de cortar el trabajo (T-F010-08).
+		a.PidiendoCancelar = true
+		return a, nil
+	case AccionAyuda:
+		a.AyudaAbierta = !a.AyudaAbierta
+		return a, nil
+	case AccionCerrarSelector:
+		a.Selector.Cerrar()
+		a.Aprobs.Abierto = false
+		return a, nil
+	case AccionEnviar:
+		return a, a.enviar()
+	case AccionSubir:
+		// La navegación pertenece al componente con el foco (T-F012-04).
+		switch {
+		case a.Selector.Abierto:
+			a.Selector.Mover(-1)
+		case a.Aprobs.Abierto:
+			a.Aprobs.Mover(-1)
+		default:
+			a.Bienvenida.MoverModelo(-1)
+			a.fijarModeloEnPuerto()
+		}
+		return a, nil
+	case AccionBajar:
+		switch {
+		case a.Selector.Abierto:
+			a.Selector.Mover(1)
+		case a.Aprobs.Abierto:
+			a.Aprobs.Mover(1)
+		default:
+			a.Bienvenida.MoverModelo(1)
+			a.fijarModeloEnPuerto()
+		}
+		return a, nil
+	case AccionCiclarAgente:
+		// plan ↔ build (SPEC-KEYBINDS §Acción agent_cycle). El puerto aún no
+		// expone el cambio de agente: se registra como sistema para que el
+		// usuario vea que la acción existe y está casada.
+		a.Chat.AñadirSistema("cambio de agente: todavía no disponible")
+		return a, nil
+	case AccionModalModelos:
+		// El modal de modelos vive hoy en la bienvenida; desde la interfaz
+		// principal refresca la lista mientras exista el modal propio (T-F013).
+		return a, a.cargarModelos()
 	}
 
-	// Lo que no es atajo se escribe: la línea de entrada lo compone, también
-	// mientras la sesión está generando (INTERFACES §5).
+	// Lo que no es acción se entrega al componente con el foco: mientras el
+	// selector está abierto, sus teclas propias (las que el mapa no reclama)
+	// lo mueven a él; con las aprobaciones abiertas pasa igual; si no, lo
+	// escrito lo compone la línea de entrada (INTERFACES §5).
+	if a.Selector.Abierto {
+		switch m.Type {
+		case tea.KeyEnter:
+			return a, a.elegirSesion()
+		}
+		return a, nil
+	}
+	if a.Aprobs.Abierto {
+		return a, nil
+	}
 	_, cmd := a.Entrada.Update(m)
 	return a, cmd
+}
+
+// accionGlobal marca las acciones que siguen vivas con un modal o el panel de
+// aprobaciones abierto: salir, los toggles, cerrar y la navegación del
+// componente con el foco. Las demás (aprobar/declinar/enviar…) pertenecen al
+// contexto del input y quedan bloqueadas mientras otro zona manda.
+func accionGlobal(a Accion) bool {
+	switch a {
+	case AccionSalir, AccionPanel, AccionSelector, AccionRazonamiento,
+		AccionAprobaciones, AccionCancelar, AccionCerrarSelector, AccionAyuda,
+		AccionModalModelos, AccionModalSesiones, AccionSubir, AccionBajar:
+		return true
+	}
+	return false
 }
 
 // enviar manda lo escrito a la sesión activa. En la bienvenida, además, cambia
@@ -369,6 +508,24 @@ func (a *App) elegirSesion() tea.Cmd {
 	return a.cmdHistorial(copia.ID)
 }
 
+// FijarMapa sustituye el mapa de teclas en caliente (reasignar un atajo no
+// exige reiniciar, INTERFACES §4) y re-sincroniza el resolver y la lista que
+// consumen ayuda y pruebas. El mapa nuevo viene ya validado por quien lo
+// construyó; si llegara inválido, se rechaza entero y el anterior sigue vivo.
+func (a *App) FijarMapa(mapa *Keymap) error {
+	if err := ValidarAtajos(mapa.Entradas()); err != nil {
+		return err
+	}
+	a.Mapa = mapa
+	a.Atajos = mapa.Entradas()
+	resolver := NuevoKeyResolver(mapa)
+	if a.TeclaRes != nil {
+		resolver.Estado = a.TeclaRes.Estado // si había una espera a medias, se hereda
+	}
+	a.TeclaRes = resolver
+	return nil
+}
+
 // resolverAprobacion manda la decisión de la línea seleccionada a la sesión
 // dueña. Solo afecta a esa sesión (SPEC-INTERFAZ-ATAJOS).
 func (a *App) resolverAprobacion(aprobar bool) tea.Cmd {
@@ -455,6 +612,12 @@ func (a *App) viewPrincipal() string {
 
 	cuerpo := strings.Join(partes, "\n\n")
 	cuerpo += "\n\n" + estiloUsuario.Render("› ") + a.Entrada.View()
+	// El indicador de líder pendiente (T-F012-06): mientras el resolver está
+	// en LEADER se muestra «lider » junto a la entrada; al resolverse o
+	// expirar la espera desaparece solo.
+	if a.TeclaRes != nil && a.TeclaRes.EsperandoLeader() {
+		cuerpo += " " + estiloAviso.Render("lider ")
+	}
 	// La confirmación de cancelar se pregunta en línea; mientras tanto, lo
 	// escrito queda a salvo (T-F010-08).
 	if a.PidiendoCancelar {

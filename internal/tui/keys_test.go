@@ -14,12 +14,8 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	atajos := AtajosPorDefecto()
 	// El usuario mueve el panel a ctrl+p y asigna pausar a ctrl+o.
-	for i := range atajos {
-		if atajos[i].Accion == AccionPanel {
-			atajos[i].Tecla = "ctrl+p"
-		}
-	}
-	atajos = append(atajos, Atajo{Tecla: "ctrl+o", Accion: AccionPausar, Descripcion: "pausar la cola en curso"})
+	atajos = fijarLiteral(atajos, AccionPanel, "ctrl+p")
+	atajos = fijarLiteral(atajos, AccionPausar, "ctrl+o")
 
 	if err := GuardarKeysEn(dir, atajos); err != nil {
 		t.Fatalf("guardar: %v", err)
@@ -55,8 +51,8 @@ func TestCargarSinArchivoDevuelveLosDeFabrica(t *testing.T) {
 func TestGuardarRechazaElDuplicadoYNoEscribe(t *testing.T) {
 	dir := t.TempDir()
 	malo := []Atajo{
-		{Tecla: "ctrl+d", Accion: AccionPanel},
-		{Tecla: "ctrl+d", Accion: AccionSalir},
+		{Secuencias: []Secuencia{{Paso1: "ctrl+d"}}, Accion: AccionPanel},
+		{Secuencias: []Secuencia{{Paso1: "ctrl+d"}}, Accion: AccionSalir},
 	}
 	if err := GuardarKeysEn(dir, malo); err == nil {
 		t.Fatal("dos acciones con la misma tecla se rechazan al guardar")
@@ -75,3 +71,4 @@ func TestCargarRechazaAccionesDesconocidas(t *testing.T) {
 		t.Error("una acción desconocida invalida el mapa entero, no se adivina")
 	}
 }
+

@@ -99,28 +99,42 @@ func (b *Bienvenida) fijarModelos(modelos []ModeloLocal, err error) {
 	}
 }
 
-// teclaBienvenida resuelve una pulsación de la bienvenida. Solo hay cuatro cosas
-// que hacer aquí: escribir, elegir modelo, enviar y salir (SPEC-INTERFAZ:
-// «Desde la bienvenida no se lanza ningún flujo… con ↑/↓ se cambia el modelo y
-// la salida es Ctrl+C»). Cualquier otra tecla no hace nada: no hay panel ni
-// aprobaciones a los que abrir.
+// teclaBienvenida resuelve una pulsación de la bienvenida. T-F012-06: también
+// pasa por el KeyResolver, con el mapa recortado a lo que existe aquí (salir,
+// enviar, subir/bajar del selector de modelos). Las acciones propias de la
+// interfaz principal —panel, aprobaciones, ayuda— no están en este mapa: "los
+// atajos de la interfaz principal no existen en la bienvenida" (SPEC-INTERFAZ),
+// y eso se cumple filtrando el mapa, no con un `if` suelto. Cualquier otra
+// tecla se escribe.
 func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch m.String() {
-	case "ctrl+c", "ctrl+q":
-		// DOMAIN §3: la única salida desde la bienvenida. Ctrl+Q se acepta
-		// además de Ctrl+C para que el atajo de salida del mapa funcione aquí
-		// también.
+	// Ctrl+C es la salida de emergencia de Bubble Tea y sigue valiendo aquí
+	// aunque el mapa la reasigne (DOMAIN §3: "la salida es Ctrl+C").
+	if m.Type == tea.KeyCtrlC {
 		return a, tea.Quit
-	case "up":
+	}
+
+	accion, cmd := a.TeclaRes.Resolver(m, ContextoInput)
+	if accion != AccionNinguna && !accionesDeBienvenida()[accion] {
+		// Atajo de la interfaz principal (panel, aprobaciones, ayuda…): en la
+		// bienvenida no existe, así que se ignora y el carácter puede escribirse.
+		accion = AccionNinguna
+	}
+	if accion == AccionNinguna && a.TeclaRes.EsperandoLeader() {
+		return a, cmd // espera de líder activa: el indicador se pinta igual
+	}
+	switch accion {
+	case AccionSalir:
+		return a, tea.Quit
+	case AccionEnviar:
+		return a, a.enviarDesdeBienvenida()
+	case AccionSubir:
 		a.Bienvenida.MoverModelo(-1)
 		a.fijarModeloEnPuerto()
 		return a, nil
-	case "down":
+	case AccionBajar:
 		a.Bienvenida.MoverModelo(1)
 		a.fijarModeloEnPuerto()
 		return a, nil
-	case "enter":
-		return a, a.enviarDesdeBienvenida()
 	}
 	switch m.Type {
 	case tea.KeyRunes:
