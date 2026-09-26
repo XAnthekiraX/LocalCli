@@ -1,3 +1,12 @@
+---
+title: SPEC — Skills
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-AGENTE-BASE]]"
+  - "[[specs/SPEC-SESIONES]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+---
 # SPEC — Skills
 
 Prioridad: P3 (personalización, diferible)

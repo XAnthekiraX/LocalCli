@@ -1,3 +1,17 @@
+---
+title: LocalCli — servicios externos
+tags: [backend, infraestructura]
+depende_de:
+  - "[[backend/DECISIONS]]"
+  - "[[backend/03-security/SECURITY]]"
+  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+  - "[[specs/SPEC-TOOLS]]"
+relacionado:
+  - "[[backend/01-domain/DOMAIN]]"
+  - "[[backend/04-infrastructure/CONFIGURATION]]"
+  - "[[backend/04-infrastructure/EVENTS]]"
+  - "[[specs/SPEC-INTERFAZ]]"
+---
 # INTEGRATIONS — Servicios externos
 
 Dos integraciones: Ollama, en local, y la búsqueda por internet. Ninguna otra sale de la máquina. Ver [[backend/03-security/SECURITY]] para las fronteras de seguridad.

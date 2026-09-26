@@ -1,3 +1,18 @@
+---
+title: LocalCli — estructura de la base de datos
+tags: [database, esquema]
+depende_de:
+  - "[[database/DATABASE]]"
+relacionado:
+  - "[[database/01-schema/TABLES]]"
+  - "[[database/01-schema/RELATIONSHIPS]]"
+  - "[[database/01-schema/ENUMS]]"
+  - "[[database/01-schema/CONSTRAINTS]]"
+  - "[[database/01-schema/INDEXES]]"
+  - "[[database/02-rules/DATA_FLOW]]"
+  - "[[database/03-operations/MIGRATIONS]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+---
 # SCHEMA — Estructura de la base de datos
 
 ## 1. Estructura global

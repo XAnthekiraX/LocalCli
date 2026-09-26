@@ -1,3 +1,22 @@
+---
+title: LocalCli — superficies del backend
+tags: [backend, interfaces]
+depende_de:
+  - "[[backend/BACKEND]]"
+  - "[[specs/SPEC-INTERFAZ]]"
+  - "[[specs/SPEC-TOOLS]]"
+  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+relacionado:
+  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+  - "[[backend/02-interfaces/TOOLS]]"
+  - "[[backend/02-interfaces/dto/TOOLS-DTO]]"
+  - "[[backend/01-domain/DOMAIN]]"
+  - "[[backend/03-security/SECURITY]]"
+  - "[[backend/04-infrastructure/EVENTS]]"
+  - "[[backend/05-quality/ERRORS]]"
+  - "[[database/01-schema/TABLES]]"
+  - "[[database/03-operations/MIGRATIONS]]"
+---
 # INTERFACES-GENERAL — Superficies del backend
 
 `LocalCli` no tiene API HTTP. No expone puertos, no recibe peticiones de red y no tiene clientes externos. Sus "interfaces" son otra cosa: la superficie que consume la TUI, la superficie que consume el modelo (las herramientas) y los contratos entre módulos.

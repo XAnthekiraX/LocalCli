@@ -89,13 +89,18 @@ Mapeo con los comandos y skills del proyecto:
 ## Convención de referencias
 
 - Formato: wiki link de Obsidian `[[carpeta/ARCHIVO]]`, relativo a `ai/docs/`.
-- Toda dependencia entre documentos se referencia con este formato.
-- Las referencias apuntan solo al contexto necesario, no a archivos enteros.
+- Las dependencias entre documentos se **declaran en el frontmatter** de cada
+  archivo, no se deducen de los enlaces del cuerpo. Un enlace en el cuerpo es
+  una mención, no una dependencia. La convención completa está en
+  [[PROJECT]]: qué claves existen, cuándo va en `depende_de` y cuándo en
+  `relacionado`.
 - Si una modificación cambia el nombre o ubicación de un archivo referenciado, actualizarla.
+- Las referencias apuntan solo al contexto necesario, no a archivos enteros: enlaza
+  la sección que se cita, no el documento completo.
 
 ### Ejemplos
 
-- `[[database/TABLES]]` → tablas de la base de datos
+- `[[database/01-schema/TABLES]]` → tablas de la base de datos
 - `[[backend/DECISIONS]]` → decisiones técnicas centralizadas del backend
 - `[[frontend/FRONTEND]]` → arquitectura de la capa frontend
 - `[[specs/SPEC-TOOLS]]` → catálogo de herramientas

@@ -1,3 +1,17 @@
+---
+title: SPEC — Ciclo de planificación
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-AGENTE-BASE]]"
+  - "[[specs/SPEC-TOOLS]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+  - "[[specs/SPEC-MOTOR-FLUJOS]]"
+  - "[[specs/SPEC-COLA-TAREAS]]"
+relacionado:
+  - "[[specs/SPEC-CICLO-TRABAJO]]"
+---
 # SPEC — Ciclo de planificación
 
 Prioridad: P0 (núcleo)

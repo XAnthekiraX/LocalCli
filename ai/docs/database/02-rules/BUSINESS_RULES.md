@@ -1,3 +1,20 @@
+---
+title: LocalCli — reglas de negocio de la base de datos
+tags: [database, reglas]
+depende_de:
+  - "[[database/01-schema/SCHEMA]]"
+  - "[[database/01-schema/TABLES]]"
+  - "[[database/01-schema/CONSTRAINTS]]"
+relacionado:
+  - "[[database/DATABASE]]"
+  - "[[database/01-schema/ENUMS]]"
+  - "[[database/01-schema/RELATIONSHIPS]]"
+  - "[[database/02-rules/DATA_FLOW]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+  - "[[specs/SPEC-AGENTE-BASE]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+  - "[[specs/SPEC-PANEL-CONTEXTO]]"
+---
 # BUSINESS_RULES — Reglas de negocio de la base de datos
 
 ## 1. Reglas de negocio

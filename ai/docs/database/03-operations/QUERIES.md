@@ -1,3 +1,19 @@
+---
+title: LocalCli — consultas a la base de datos
+tags: [database, operaciones]
+depende_de:
+  - "[[database/01-schema/SCHEMA]]"
+  - "[[database/01-schema/TABLES]]"
+  - "[[database/01-schema/INDEXES]]"
+relacionado:
+  - "[[database/01-schema/ENUMS]]"
+  - "[[database/01-schema/RELATIONSHIPS]]"
+  - "[[database/02-rules/BUSINESS_RULES]]"
+  - "[[database/02-rules/DATA_FLOW]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+  - "[[specs/SPEC-PANEL-CONTEXTO]]"
+  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+---
 # QUERIES — Consultas a la base de datos
 
 ## 1. Consultas complejas

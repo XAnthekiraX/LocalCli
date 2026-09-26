@@ -1,3 +1,17 @@
+---
+title: LocalCli — módulos y entidades del motor
+tags: [backend, dominio]
+depende_de:
+  - "[[backend/BACKEND]]"
+  - "[[backend/DECISIONS]]"
+relacionado:
+  - "[[database/01-schema/TABLES]]"
+  - "[[database/01-schema/RELATIONSHIPS]]"
+  - "[[database/01-schema/SCHEMA]]"
+  - "[[database/02-rules/DATA_FLOW]]"
+  - "[[backend/01-domain/BUSINESS_RULES]]"
+  - "[[backend/03-security/SECURITY]]"
+---
 # DOMAIN — Módulos y entidades
 
 Los trece módulos del motor y las entidades sobre las que trabajan. Los datos no se repiten aquí: la definición de cada tabla está en [[database/01-schema/TABLES]].
@@ -34,7 +48,7 @@ Dos planos. Ver [[database/02-rules/DATA_FLOW]].
 
 | Entidad | Dónde vive | Qué la define |
 |---|---|---|
-| Documento del proyecto | `ai/docs/**/*.md` | Frontmatter con etiquetas y enlaces que declaran dependencias |
+| Documento del proyecto | `ai/docs/**/*.md` | Frontmatter con `depende_de` (lo que hay que leer) y `relacionado` (lo que toca). Convención en [[PROJECT]] |
 | TODO de la ejecución | `ai/tasks/**/MAIN-TASKS.md` | Elementos en orden: fases, tareas o pasos. Es la cola |
 | Agente base y derivados | `ai/agents/*.json` | Estructura fija, aún por confirmar |
 | Skill | `ai/skills/**/*.md` | Instrucciones en markdown con frontmatter |

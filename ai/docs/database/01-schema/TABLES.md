@@ -1,3 +1,17 @@
+---
+title: LocalCli — tablas de la base de datos
+tags: [database, esquema]
+depende_de:
+  - "[[database/01-schema/SCHEMA]]"
+relacionado:
+  - "[[database/01-schema/RELATIONSHIPS]]"
+  - "[[database/01-schema/ENUMS]]"
+  - "[[database/02-rules/BUSINESS_RULES]]"
+  - "[[specs/SPEC-AGENTE-BASE]]"
+  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+  - "[[specs/SPEC-PANEL-CONTEXTO]]"
+---
 # TABLES — Tablas de la base de datos
 
 ## 1. Tablas

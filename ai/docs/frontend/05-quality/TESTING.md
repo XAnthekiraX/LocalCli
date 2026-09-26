@@ -1,3 +1,15 @@
+---
+title: LocalCli — pruebas de la TUI
+tags: [frontend, calidad]
+depende_de:
+  - "[[backend/05-quality/TESTING]]"
+  - "[[frontend/FRONTEND]]"
+relacionado:
+  - "[[frontend/02-interfaces/INTERFACES]]"
+  - "[[database/01-schema/ENUMS]]"
+  - "[[specs/SPEC-INTERFAZ]]"
+  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+---
 # TESTING — Pruebas de la TUI
 
 Qué se prueba en la capa de presentación y cómo. La estrategia global está en [[backend/05-quality/TESTING]]; esto la complementa para la interfaz.

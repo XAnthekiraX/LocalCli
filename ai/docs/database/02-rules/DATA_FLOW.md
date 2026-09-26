@@ -1,3 +1,16 @@
+---
+title: LocalCli — circulación de datos
+tags: [database, reglas]
+depende_de:
+  - "[[database/DATABASE]]"
+  - "[[database/01-schema/SCHEMA]]"
+  - "[[database/02-rules/BUSINESS_RULES]]"
+relacionado:
+  - "[[database/01-schema/ENUMS]]"
+  - "[[database/01-schema/RELATIONSHIPS]]"
+  - "[[specs/SPEC-COLA-TAREAS]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+---
 # DATA_FLOW — Circulación de datos
 
 ## 1. Circulación de datos

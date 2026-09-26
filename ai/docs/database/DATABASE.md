@@ -1,3 +1,13 @@
+---
+title: LocalCli — capa de datos
+tags: [database, indice]
+depende_de:
+  - "[[PROJECT]]"
+relacionado:
+  - "[[backend/BACKEND]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+---
+
 # DATABASE — LocalCli
 
 ## Propósito

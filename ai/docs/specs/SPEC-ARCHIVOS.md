@@ -1,3 +1,14 @@
+---
+title: SPEC — Operaciones de archivos
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-AGENTE-BASE]]"
+  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+  - "[[specs/SPEC-SESIONES]]"
+relacionado:
+  - "[[specs/SPEC-TOOLS]]"
+---
 # SPEC — Operaciones de archivos
 
 Prioridad: P0 (núcleo)

@@ -1,3 +1,14 @@
+---
+title: SPEC — Resolver problemas
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-AGENTE-BASE]]"
+  - "[[specs/SPEC-TOOLS]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+  - "[[specs/SPEC-CICLO-TRABAJO]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+---
 # SPEC — Resolver problemas
 
 Prioridad: P1 (importante)

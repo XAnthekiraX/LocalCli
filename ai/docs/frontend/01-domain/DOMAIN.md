@@ -1,3 +1,15 @@
+---
+title: LocalCli — componentes de la TUI
+tags: [frontend, dominio]
+depende_de:
+  - "[[frontend/FRONTEND]]"
+  - "[[backend/01-domain/DOMAIN]]"
+relacionado:
+  - "[[backend/04-infrastructure/EVENTS]]"
+  - "[[database/01-schema/ENUMS]]"
+  - "[[specs/SPEC-INTERFAZ]]"
+  - "[[specs/SPEC-PANEL-CONTEXTO]]"
+---
 # DOMAIN — Componentes de la TUI
 
 Cada componente tiene una responsabilidad y un límite. Ninguno contiene reglas de negocio: si algo hay que decidir, la decisión pertenece al motor y el componente solo la pinta o la pregunta al usuario.

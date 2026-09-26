@@ -1,3 +1,11 @@
+---
+title: SPEC — Agente personalizado
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-AGENTE-BASE]]"
+  - "[[specs/SPEC-SESIONES]]"
+---
 # SPEC — Agente personalizado
 
 Prioridad: P3 (personalización, diferible)

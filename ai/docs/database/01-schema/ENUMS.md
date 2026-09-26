@@ -1,3 +1,16 @@
+---
+title: LocalCli — valores cerrados de la base de datos
+tags: [database, esquema]
+depende_de:
+  - "[[database/01-schema/SCHEMA]]"
+  - "[[database/01-schema/TABLES]]"
+relacionado:
+  - "[[database/01-schema/RELATIONSHIPS]]"
+  - "[[database/01-schema/CONSTRAINTS]]"
+  - "[[specs/SPEC-SESIONES]]"
+  - "[[specs/SPEC-TOOLS]]"
+  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+---
 # ENUMS — Valores cerrados de la base de datos
 
 ## 1. Enums

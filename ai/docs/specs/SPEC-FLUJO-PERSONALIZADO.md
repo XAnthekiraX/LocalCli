@@ -1,3 +1,11 @@
+---
+title: SPEC — Flujo personalizado
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-MOTOR-FLUJOS]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+---
 # SPEC — Flujo personalizado
 
 Prioridad: P3 (personalización, diferible)

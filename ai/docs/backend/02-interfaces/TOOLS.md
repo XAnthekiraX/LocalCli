@@ -1,3 +1,18 @@
+---
+title: LocalCli — catálogo de herramientas
+tags: [backend, interfaces]
+depende_de:
+  - "[[specs/SPEC-TOOLS]]"
+  - "[[backend/DECISIONS]]"
+relacionado:
+  - "[[backend/02-interfaces/dto/TOOLS-DTO]]"
+  - "[[backend/01-domain/DOMAIN]]"
+  - "[[backend/02-interfaces/INTERFACES-GENERAL]]"
+  - "[[backend/03-security/SECURITY]]"
+  - "[[backend/05-quality/ERRORS]]"
+  - "[[backend/05-quality/VALIDATION]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+---
 # TOOLS — Catálogo de herramientas
 
 Las trece herramientas del agente, su reparto y sus controles. La especificación funcional está en [[specs/SPEC-TOOLS]]; aquí está el contrato para quien implemente. Los payloads están en [[backend/02-interfaces/dto/TOOLS-DTO]].

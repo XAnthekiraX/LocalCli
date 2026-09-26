@@ -1,3 +1,14 @@
+---
+title: LocalCli — decisiones técnicas
+tags: [backend, decisiones]
+depende_de:
+  - "[[backend/BACKEND]]"
+  - "[[PROJECT]]"
+relacionado:
+  - "[[specs/SPEC-AGENTE-BASE]]"
+  - "[[specs/SPEC-CICLO-TRABAJO]]"
+  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+---
 # DECISIONS — LocalCli (backend)
 
 Decisiones técnicas de la capa de motor. Lo aprobado en [[PROJECT]] y en las specs no se repite como decisión pendiente: aquí solo está lo que afecta al backend y aún necesita contexto o sigue abierto.

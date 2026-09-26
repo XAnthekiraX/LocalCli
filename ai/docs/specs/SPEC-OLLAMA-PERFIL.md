@@ -1,3 +1,15 @@
+---
+title: SPEC — Integración con Ollama y perfil de hardware
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-SESIONES]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+  - "[[specs/SPEC-PANEL-CONTEXTO]]"
+  - "[[PROJECT]]"
+relacionado:
+  - "[[specs/SPEC-TOOLS]]"
+---
 # SPEC — Integración con Ollama y perfil de hardware
 
 Prioridad: P0 (núcleo)

@@ -36,7 +36,9 @@ type Doc struct {
 func CargarDocs(raiz string) (map[string]*Doc, []error, error) {
 	info, err := os.Stat(raiz)
 	if err != nil || !info.IsDir() {
-		return nil, nil, fmt.Errorf("E_DOC_NOT_FOUND: %s no es una carpeta de documentación", raiz)
+		// No es "documento no encontrado": la raíz entera no es documentación,
+		// así que la etapa no puede seguir. E_STAGE_FAILED, con el motivo.
+		return nil, nil, NuevoErrStage(fmt.Sprintf("%s no es una carpeta de documentación", raiz))
 	}
 	var (
 		docs     = map[string]*Doc{}

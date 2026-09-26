@@ -1,3 +1,17 @@
+---
+title: LocalCli — eventos del motor
+tags: [backend, infraestructura]
+depende_de:
+  - "[[backend/01-domain/DOMAIN]]"
+  - "[[specs/SPEC-INTERFAZ]]"
+  - "[[specs/SPEC-SESIONES]]"
+relacionado:
+  - "[[backend/01-domain/BUSINESS_RULES]]"
+  - "[[backend/04-infrastructure/INTEGRATIONS]]"
+  - "[[database/01-schema/ENUMS]]"
+  - "[[database/01-schema/TABLES]]"
+  - "[[database/03-operations/QUERIES]]"
+---
 # EVENTS — Eventos del motor
 
 No hay webhooks ni cola de mensajes externa. Los "eventos" aquí son notificaciones internas, por canales de Go, que un módulo emite y otro recibe. La TUI no pregunta nada: se le notifica.

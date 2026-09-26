@@ -1,3 +1,16 @@
+---
+title: SPEC — Interfaz
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+  - "[[specs/SPEC-PANEL-CONTEXTO]]"
+  - "[[specs/SPEC-SESIONES]]"
+  - "[[specs/SPEC-COLA-TAREAS]]"
+  - "[[specs/SPEC-TOOLS]]"
+relacionado:
+  - "[[specs/SPEC-ARCHIVOS]]"
+---
 # SPEC — Interfaz
 
 Prioridad: P0 (núcleo)

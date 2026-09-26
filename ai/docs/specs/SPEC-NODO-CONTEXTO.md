@@ -1,3 +1,12 @@
+---
+title: SPEC — Nodo de contexto
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+  - "[[specs/SPEC-MOTOR-FLUJOS]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+---
 # SPEC — Nodo de contexto
 
 Prioridad: P0 (núcleo)
@@ -72,7 +81,7 @@ Un documento de APIs declara que usa los DTOs de respuesta. El documento de esos
 
 ## Supuestos
 
-- El formato exacto de la declaración de dependencias en el frontmatter se fija en FASE 2 y FASE 3.
+- El formato de la declaración de dependencias en el frontmatter está fijado. Ver [[PROJECT]].
 - El motivo del descarte lo genera el modelo durante la selección.
 
 ## Referencias

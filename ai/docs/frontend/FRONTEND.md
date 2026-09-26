@@ -1,3 +1,21 @@
+---
+title: LocalCli — capa de interfaz
+tags: [frontend, indice]
+depende_de:
+  - "[[PROJECT]]"
+  - "[[backend/BACKEND]]"
+  - "[[specs/SPEC-INTERFAZ]]"
+  - "[[specs/SPEC-INTERFAZ]]"
+relacionado:
+  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+  - "[[database/DATABASE]]"
+  - "[[backend/01-domain/DOMAIN]]"
+  - "[[backend/04-infrastructure/EVENTS]]"
+  - "[[database/03-operations/QUERIES]]"
+  - "[[frontend/01-domain/DOMAIN]]"
+  - "[[frontend/02-interfaces/INTERFACES]]"
+  - "[[frontend/05-quality/TESTING]]"
+---
 # FRONTEND — LocalCli
 
 La capa de interfaz: una TUI en terminal construida con Bubble Tea y Lip Gloss. Es el único consumidor del motor y su único trabajo es pintar lo que llega y enviar lo que pulsas. No ejecuta nada por su cuenta: no habla con Ollama, no escribe en SQLite y no toca archivos.

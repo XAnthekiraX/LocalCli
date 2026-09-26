@@ -15,7 +15,7 @@
 
 | ID | Acción | Tarea | Estado | Archivos | Verificación |
 |----|--------|-------|--------|----------|--------------|
-| T-B007-01 | crear | Definir el catálogo cerrado de las 13 herramientas con su nombre y categoría | pendiente | `internal/tools/catalog.go` | Test: el registro contiene exactamente 13 entradas |
+| T-B007-01 | crear | Definir el catálogo cerrado de las 13 herramientas con su nombre y categoría | completada | `internal/tools/catalog.go` | Test: el registro contiene exactamente 13 entradas |
 | T-B007-02 | crear | Crear los structs DTO de request por categoría (lectura, escritura, terminal, internet) | pendiente | `internal/tools/dto_request.go` | Test: fixture JSON de cada herramienta del DTO decodea |
 | T-B007-03 | crear | Crear los structs DTO de response por categoría (incluye campo `truncado`) | pendiente | `internal/tools/dto_response.go` | Test: encode coincide con Response Schemas |
 | T-B007-04 | crear | Implementar el registro que asocia cada herramienta a su handler (fileops/exec/internet) | pendiente | `internal/tools/registry.go` | Test: lookup devuelve handler por nombre; desconocida error |

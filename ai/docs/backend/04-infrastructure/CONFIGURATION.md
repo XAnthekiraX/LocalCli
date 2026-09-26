@@ -1,3 +1,15 @@
+---
+title: LocalCli — configuración del backend
+tags: [backend, infraestructura]
+depende_de:
+  - "[[PROJECT]]"
+  - "[[backend/DECISIONS]]"
+  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+  - "[[specs/SPEC-SESIONES]]"
+relacionado:
+  - "[[backend/03-security/SECURITY]]"
+  - "[[backend/04-infrastructure/INTEGRATIONS]]"
+---
 # CONFIGURATION — Configuración del backend
 
 `LocalCli` no tiene configuración obligatoria. Arranca y funciona. Casi todo se deriva solo: dónde está el proyecto, qué modelos hay disponibles y qué modelos caben en tu máquina.

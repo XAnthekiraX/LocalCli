@@ -1,3 +1,17 @@
+---
+title: LocalCli — relaciones entre tablas
+tags: [database, esquema]
+depende_de:
+  - "[[database/01-schema/SCHEMA]]"
+  - "[[database/01-schema/TABLES]]"
+relacionado:
+  - "[[database/01-schema/ENUMS]]"
+  - "[[database/01-schema/CONSTRAINTS]]"
+  - "[[database/01-schema/INDEXES]]"
+  - "[[database/02-rules/DATA_FLOW]]"
+  - "[[database/DATABASE]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+---
 # RELATIONSHIPS — Relaciones entre tablas
 
 ## 1. Relaciones

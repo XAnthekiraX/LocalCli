@@ -1,3 +1,14 @@
+---
+title: LocalCli — reglas de negocio del motor
+tags: [backend, reglas]
+depende_de:
+  - "[[backend/01-domain/DOMAIN]]"
+  - "[[database/02-rules/BUSINESS_RULES]]"
+relacionado:
+  - "[[backend/02-interfaces/TOOLS]]"
+  - "[[backend/04-infrastructure/EVENTS]]"
+  - "[[database/01-schema/ENUMS]]"
+---
 # BUSINESS_RULES — Motor
 
 Las reglas que rigen el motor. Las que dependen de cómo se guardan los datos están en [[database/02-rules/BUSINESS_RULES]] y no se repiten aquí; estas son las del comportamiento.

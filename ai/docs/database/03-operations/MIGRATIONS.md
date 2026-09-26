@@ -1,3 +1,15 @@
+---
+title: LocalCli — gestión del esquema
+tags: [database, operaciones]
+depende_de:
+  - "[[database/01-schema/SCHEMA]]"
+  - "[[database/DATABASE]]"
+relacionado:
+  - "[[database/01-schema/INDEXES]]"
+  - "[[database/02-rules/BUSINESS_RULES]]"
+  - "[[database/03-operations/SEEDING]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+---
 # MIGRATIONS — Gestión del esquema
 
 ## 1. Estrategia de migraciones
@@ -6,7 +18,10 @@ La versión del esquema se guarda en el `PRAGMA user_version` de SQLite, un ente
 
 La razón de no usar una tabla propia es que este proyecto no necesita el historial de qué migraciones se aplicaron: solo necesita saber en qué versión está el esquema y poder pasar al siguiente. `user_version` cubre exactamente eso sin añadir una séptima tabla a un esquema de seis.
 
-Las migraciones se ejecutan automáticamente al abrir un proyecto, antes de usar la base. Si el esquema está desactualizado, se actualiza solo. El usuario no ejecuta migraciones a mano.
+Las migraciones se ejecutan automáticamente al abrir un proyecto, antes de usar la base. El usuario no ejecuta migraciones a mano.
+
+Subir una migración aplicada no es lo mismo que tener un esquema válido: `user_version` registra qué se aplicó, no qué hay en las tablas. Por eso, además de aplicar lo que falte, al abrir un proyecto se verifica el esquema real contra la versión actual, y si no cuadra la apertura falla en lugar de declarar un esquema que no es. Ver
+[[database/03-operations/MIGRATIONS#3-datos-existentes]] y la nota sobre el esquema actual, más abajo.
 
 ## 2. Modificación del esquema
 
@@ -44,6 +59,39 @@ Reglas:
 ## Nota sobre el esquema actual
 
 La base se crea ya en su versión 1, con las seis tablas de [[database/01-schema/SCHEMA]]. No hay migración de creación pendiente: la creación del archivo y su esquema inicial ocurren en el mismo paso, y `user_version` arranca en 1. Las migraciones de [[database/01-schema/INDEXES]] existen, pero se aplican junto con la creación inicial, no después.
+
+### Un `user_version` a 1 no basta para saber que el esquema es el de la v1
+
+`user_version` dice qué migración se aplicó por última vez, no qué hay en las
+tablas. Un archivo creado por una build anterior a la corrección del DDL de la
+v1 tiene `user_version = 1` y, sin embargo:
+
+- sus seis tablas declaran `id TEXT PRIMARY KEY` **sin `NOT NULL`**, así que
+  admiten filas con `id` nulo, y
+- no tienen el índice `idx_context_audit_unico`, así que admiten una segunda
+  auditoría de la misma terna.
+
+Aplicar una migración `002` no arregla eso: subir el `user_version` a 2 sobre un
+esquema que nunca tuvo la corrección declararía un esquema que no es el de la v2,
+y la próxima apertura volvería a mirar el `user_version` y a creérselo. Es peor
+que no detectar nada.
+
+Por eso, además de la versión, al abrir un proyecto se **verifica el esquema
+real**: se comprueba que estén las seis tablas y que su `id` sea `NOT NULL`. Si
+algo no cuadra, la apertura falla con `E_DB_SCHEMA_OUTDATED` diciendo qué
+archivo borrar. No se corrige solo y no se borra solo: el archivo es del
+usuario, y la política de no tocar datos es de [[database/DATABASE]].
+
+Como la v1 es la versión inicial y todavía no hay una v2, el camino previsto es
+borrar `.localcli/state.db` y dejar que se vuelva a crear. La base es caché y
+traza local: el contenido que no se puede recuperar de ella está en git. Si
+alguna vez esto ya no fuera cierto, la corrección pasaría a ser la migración
+`002` con su transformación de datos, y esta verificación seguiría siendo
+necesaria para detectar bases ajenas.
+
+La comparación contra el esquema real es también un test: fija el número de
+versión esperado contra el literal que dice esta sección, para que subir la
+constante sin actualizar el documento salga en rojo.
 
 ## Referencias
 

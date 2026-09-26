@@ -1,3 +1,20 @@
+---
+title: LocalCli — validación de entradas
+tags: [backend, calidad]
+depende_de:
+  - "[[specs/SPEC-TOOLS]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+  - "[[backend/DECISIONS]]"
+relacionado:
+  - "[[backend/01-domain/DOMAIN]]"
+  - "[[backend/02-interfaces/TOOLS]]"
+  - "[[backend/02-interfaces/dto/TOOLS-DTO]]"
+  - "[[backend/03-security/SECURITY]]"
+  - "[[backend/04-infrastructure/EVENTS]]"
+  - "[[backend/05-quality/ERRORS]]"
+  - "[[database/01-schema/TABLES]]"
+  - "[[database/02-rules/DATA_FLOW]]"
+---
 # VALIDATION — Validación de entradas
 
 Qué se valida antes de que algo ocurra: rutas, argumentos de herramientas, peticiones del modelo y contenido de archivos. Las reglas funcionales están en [[specs/SPEC-TOOLS]] y [[specs/SPEC-ARCHIVOS]].

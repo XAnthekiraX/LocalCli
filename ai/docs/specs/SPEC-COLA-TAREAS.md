@@ -1,3 +1,16 @@
+---
+title: SPEC — Cola de tareas
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-CICLO-TRABAJO]]"
+  - "[[specs/SPEC-MOTOR-FLUJOS]]"
+  - "[[specs/SPEC-SESIONES]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+relacionado:
+  - "[[backend/DECISIONS]]"
+---
 # SPEC — Cola de tareas
 
 Prioridad: P0 (núcleo)

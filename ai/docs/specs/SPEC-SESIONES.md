@@ -1,3 +1,12 @@
+---
+title: SPEC — Sesiones por proyecto
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+  - "[[specs/SPEC-MOTOR-FLUJOS]]"
+  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+---
 # SPEC — Sesiones por proyecto
 
 Prioridad: P0 (núcleo)

@@ -7,8 +7,11 @@ package docs
 // .md (ej.: [[backend/DECISIONS]], [[database/02-rules/DATA_FLOW]]). Cada
 // aparición es una arista de dependencia hacia ese documento.
 //
-// Se ignoran los enlaces dentro de bloques de código ``` para no contar
-// ejemplos, y el destino puede resolverse contra el mapa de documentos con
+// Se ignoran los enlaces dentro de bloques de código ``` y dentro de código
+// en línea con `, porque ninguno de los dos se resuelve como enlace ni al
+// pintarse ni en Obsidian. Sin lo del código en línea, documentar un ejemplo
+// de wiki link basta para que el grafo lo tome por una dependencia real y la
+// declare rota. El destino puede resolverse contra el mapa de documentos con
 // ResolverEnlace: un destino que no corresponde a ningún documento cargado
 // queda como enlace roto (los tests los listan por separado).
 
@@ -33,6 +36,7 @@ func ExtraerEnlaces(cuerpo string) []string {
 		if fuera {
 			continue
 		}
+		linea = sinCodigoEnLinea(linea)
 		for len(linea) > 0 {
 			i := strings.Index(linea, "[[")
 			if i < 0 {
@@ -87,4 +91,23 @@ func EnlacesRotos(docs map[string]*Doc) []string {
 	}
 	sort.Strings(rotos)
 	return rotos
+}
+
+// sinCodigoEnLinea devuelve la línea sin los tramos entre acentos graves,
+// para que un wiki link de ejemplo no cuente como dependencia. Un tramo sin
+// cerrar deja el resto de la línea como estaba: se prefiere perder un enlace
+// antes que inventar uno.
+func sinCodigoEnLinea(linea string) string {
+	var out strings.Builder
+	var dentro bool
+	for i := 0; i < len(linea); i++ {
+		if linea[i] == '`' {
+			dentro = !dentro
+			continue
+		}
+		if !dentro {
+			out.WriteByte(linea[i])
+		}
+	}
+	return out.String()
 }

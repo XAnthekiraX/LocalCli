@@ -1,3 +1,11 @@
+---
+title: LocalCli
+tags: [proyecto, indice]
+depende_de:
+  - "[[IDEA]]"
+  - "[[backend/DECISIONS]]"
+---
+
 # PROJECT — LocalCli
 
 ## Nombre del proyecto
@@ -156,11 +164,57 @@ La cola se deriva de los archivos de tarea y se reconstruye al arrancar en memor
 - **Un 7B no cabe en 4 GB de VRAM.** Si eliges uno, el harness avisa y no lo carga en silencio; irá a RAM, que es más lento y aprieta los 16 GB.
 - **La inferencia no se puede paralelizar** entre sesiones, por lo mismo.
 
+## Convención del frontmatter
+
+El formato de los enlaces entre documentos —wiki link
+`[[carpeta/ARCHIVO]]` relativo a `ai/docs/`— está definido en `AGENTS.md` y no
+se repite aquí. Lo que sigue es lo propio del frontmatter.
+
+Cada documento de `ai/docs/` empieza con un bloque YAML que declara de qué
+depende. Sin él, el grafo no sabe qué hay que leer para entender el documento.
+
+```yaml
+---
+title: LocalCli — capa de datos
+tags: [database, indice]
+depende_de:
+  - "[[PROJECT]]"
+relacionado:
+  - "[[backend/BACKEND]]"
+---
+```
+
+- `title`: el nombre del documento. Una línea.
+- `tags`: la capa (`proyecto`, `backend`, `database`, `frontend`, `specs`) y el
+  tipo (`indice`, `arquitectura`, `esquema`, `reglas`, `dominio`, `interfaces`,
+  `infraestructura`, `calidad`, `seguridad`, `decisiones`, `operaciones`,
+  `requisito`, `origen`).
+- `depende_de`: lo que hay que leer para entender o cambiar el documento.
+- `relacionado`: a qué otros documentos toca, sin que este necesite de ellos.
+
+**`depende_de` y `relacionado` no son sinónimos.** Un índice publica sus hijos
+y no depende de ellos: `PROJECT.md` lista diecisiete specs, y declararlas haría
+que cargar la raíz arrastrara el proyecto entero. La dirección real va al revés,
+de la hoja a la raíz.
+
+La distinción no es cosmética: el cierre transitivo de `depende_de` promedia
+3,2 documentos de los 49 del proyecto, y el peor caso son 8. Tomando todas las
+menciones del cuerpo como dependencia, el peor caso sube a 20. Esos números
+están fijados en un test (`TestElCierreDeDependenciasNoArrastraElProyecto`)
+porque un declarar-de-más no rompe el grafo: lo degrada en silencio.
+
+En las specs, la sección `## Dependencias funcionales` del cuerpo es la que
+manda: lo que ahí aparezca va en `depende_de`, y el frontmatter no puede
+contradecirla. Un test lo comprueba.
+
+Los enlaces que quedan en el cuerpo siguen valiendo, y el grafo los tiene en
+cuenta, pero son menciones, no dependencias declaradas. Ver
+[[backend/01-domain/DOMAIN]].
+
 ## Decisiones pendientes
 
 Las decisiones de backend están centralizadas en [[backend/DECISIONS]]. Las globales que siguen abiertas:
 
-- Formato exacto del frontmatter con el que se declaran las dependencias entre documentos.
 - Formato definitivo del archivo de tarea (`NNN-task-<nombre>.md`) y su bloque de contexto.
 - Comandos concretos de la lista blanca de la terminal, con su límite de tiempo y de salida.
 - Modelo y parámetros de inferencia por defecto para el perfil recomendado.

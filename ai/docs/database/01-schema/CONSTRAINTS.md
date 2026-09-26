@@ -1,3 +1,17 @@
+---
+title: LocalCli — restricciones de la base de datos
+tags: [database, esquema]
+depende_de:
+  - "[[database/01-schema/SCHEMA]]"
+  - "[[database/01-schema/TABLES]]"
+relacionado:
+  - "[[database/01-schema/ENUMS]]"
+  - "[[database/01-schema/RELATIONSHIPS]]"
+  - "[[database/01-schema/INDEXES]]"
+  - "[[database/02-rules/BUSINESS_RULES]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+---
 # CONSTRAINTS — Restricciones de la base de datos
 
 ## 1. Constraints

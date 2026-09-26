@@ -1,3 +1,20 @@
+---
+title: SPEC — Agentes incluidos
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-TOOLS]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+  - "[[specs/SPEC-SESIONES]]"
+  - "[[specs/SPEC-COLA-TAREAS]]"
+relacionado:
+  - "[[backend/DECISIONS]]"
+  - "[[specs/SPEC-CICLO-TRABAJO]]"
+  - "[[specs/SPEC-RESOLVER]]"
+  - "[[specs/SPEC-SKILLS]]"
+---
 # SPEC — Agentes incluidos
 
 Prioridad: P0 (núcleo)

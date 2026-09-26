@@ -1,3 +1,15 @@
+---
+title: LocalCli — entradas y salidas de la TUI
+tags: [frontend, interfaces]
+depende_de:
+  - "[[frontend/FRONTEND]]"
+  - "[[backend/04-infrastructure/EVENTS]]"
+  - "[[specs/SPEC-INTERFAZ]]"
+relacionado:
+  - "[[specs/SPEC-SESIONES]]"
+  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+  - "[[database/03-operations/QUERIES]]"
+---
 # INTERFACES — Entradas y salidas de la TUI
 
 La TUI no tiene red ni API: su frontera son dos entradas (teclado y eventos) y dos salidas (peticiones a `session` y lecturas a `store`).

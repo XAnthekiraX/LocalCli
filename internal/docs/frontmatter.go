@@ -90,7 +90,14 @@ func parseBloque(bloque string, m *Meta) error {
 			return fmt.Errorf("%w: línea sin clave: valor: %q", ErrFrenteInvalido, linea)
 		}
 		k = strings.TrimSpace(k)
-		v = strings.TrimSpace(v)
+		if k == "" {
+			return fmt.Errorf("%w: clave vacía en %q", ErrFrenteInvalido, linea)
+		}
+		// Aquí solo se quita el comentario y se CONSERVAN las comillas. Quitar
+		// las comillas aquí rompía las listas inline: ["[[b]]"] perdía las
+		// comillas de sus elementos y se leía como [[[b]]], que tras el Trim
+		// se quedaba en "b", sin ningún enlace.
+		v = sinComentario(strings.TrimSpace(v))
 		switch {
 		case v == "":
 			// ¿lista en bloque en las siguientes líneas?
@@ -101,7 +108,11 @@ func parseBloque(bloque string, m *Meta) error {
 				if !strings.HasPrefix(item, "- ") && item != "-" {
 					return fmt.Errorf("%w: se esperaba '- ' en %q", ErrFrenteInvalido, lineas[j])
 				}
-				items = append(items, strings.TrimSpace(strings.TrimPrefix(item, "-")))
+				limpio, err := desencomentar(strings.TrimSpace(strings.TrimPrefix(item, "-")))
+				if err != nil {
+					return fmt.Errorf("%w: %v en %q", ErrFrenteInvalido, err, lineas[j])
+				}
+				items = append(items, limpio)
 				j++
 			}
 			if items != nil {
@@ -111,16 +122,98 @@ func parseBloque(bloque string, m *Meta) error {
 			}
 			i = j
 			continue
-		case strings.HasPrefix(v, "[") && strings.HasSuffix(v, "]"):
+		case strings.HasPrefix(v, "["):
+			// Una lista inline que no cierra no es un valor: es basura que no
+			// debe guardarse como una sola clave.
+			if !strings.HasSuffix(v, "]") {
+				return fmt.Errorf("%w: lista sin cerrar en %q", ErrFrenteInvalido, linea)
+			}
 			for _, it := range strings.Split(strings.Trim(v, "[]"), ",") {
-				if it = strings.TrimSpace(it); it != "" {
-					m.Listas[k] = append(m.Listas[k], it)
+				limpio, err := desencomentar(strings.TrimSpace(it))
+				if err != nil {
+					return fmt.Errorf("%w: %v en %q", ErrFrenteInvalido, err, linea)
+				}
+				if limpio != "" {
+					m.Listas[k] = append(m.Listas[k], limpio)
 				}
 			}
 		default:
-			m.Claves[k] = v
+			escalar, err := desencomentar(v)
+			if err != nil {
+				return fmt.Errorf("%w: %v en %q", ErrFrenteInvalido, err, linea)
+			}
+			m.Claves[k] = escalar
 		}
 		i++
 	}
 	return nil
+}
+
+// sinComentario quita el comentario YAML del final de un valor y conserva las
+// comillas. Es el paso previo a decidir si el valor es escalar o lista: quitar
+// las comillas aquí rompería los elementos de una lista inline.
+func sinComentario(v string) string {
+	var (
+		cita  byte
+		com   bool
+		saida strings.Builder
+	)
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		switch {
+		case com:
+			continue
+		case cita == 0 && c == '#' && (i == 0 || v[i-1] == ' ' || v[i-1] == '\t'):
+			com = true
+			continue
+		case cita == 0 && (c == '"' || c == '\''):
+			cita = c
+		case cita != 0 && c == cita:
+			cita = 0
+		}
+		saida.WriteByte(c)
+	}
+	return strings.TrimSpace(saida.String())
+}
+
+// desencomentar quita el comentario YAML de una línea de valor y quita las
+// comillas que envuelven el valor.
+//
+// Sin esto, `title: Mi título # nota` se guardaba con el "# nota" dentro y
+// `title: "Mi título"` se guardaba con las comillas. Las comillas también se
+// validan: una comilla sin cerrar es un frontmatter roto y no un valor
+// aceptable a medias.
+func desencomentar(v string) (string, error) {
+	// El comentario solo cuenta fuera de comillas.
+	var (
+		cita  byte
+		com   bool // dentro de un comentario
+		saida strings.Builder
+	)
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		switch {
+		case com:
+			continue // el resto de la línea es comentario
+		case cita == 0 && c == '#' && (i == 0 || v[i-1] == ' ' || v[i-1] == '\t'):
+			com = true
+			continue
+		case cita == 0 && (c == '"' || c == '\''):
+			// Abre comilla:se marca el estado pero NO se copia el carácter.
+			// Copiarlo guardaba el valor con las comillas dentro.
+			cita = c
+			continue
+		case cita != 0 && c == cita:
+			cita = 0 // cierra: tampoco se copia
+			continue
+		}
+		saida.WriteByte(c)
+	}
+	if cita != 0 {
+		// Una comilla abierta y nunca cerrada no es un valor: es un
+		// frontmatter roto. Aceptarla a medias guardaba el resto de la línea
+		// como contenido del documento, y el archivo pasaba por válido.
+		return "", fmt.Errorf("comilla %q sin cerrar", string(cita))
+	}
+	return strings.TrimSpace(saida.String()), nil
 }

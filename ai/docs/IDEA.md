@@ -1,3 +1,10 @@
+---
+title: LocalCli — idea y problema
+tags: [proyecto, origen]
+relacionado:
+  - "[[PROJECT]]"
+  - "[[frontend/FRONTEND]]"
+---
 # IDEA — LocalCli
 
 ## Resumen

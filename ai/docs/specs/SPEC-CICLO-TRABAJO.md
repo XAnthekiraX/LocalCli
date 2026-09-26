@@ -1,3 +1,16 @@
+---
+title: SPEC — Ciclo de trabajo
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-MOTOR-FLUJOS]]"
+  - "[[specs/SPEC-COLA-TAREAS]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+  - "[[specs/SPEC-AGENTE-BASE]]"
+  - "[[specs/SPEC-CICLO-PLANIFICACION]]"
+  - "[[specs/SPEC-RESOLVER]]"
+---
 # SPEC — Ciclo de trabajo
 
 Prioridad: P0 (núcleo)
@@ -31,6 +44,13 @@ impacto  →  plan  →  documentación  →  tarea  →  cola
 | Crear | La funcionalidad no existía en el proyecto | `crear` |
 | Actualizar | La funcionalidad ya existe y se modifica | `actualizar` |
 | Eliminar | La funcionalidad se retira del proyecto | `eliminar` |
+| Verificar | Se comprueba que algo ya hecho cumple lo esperado; no cambia el producto | `verificar` |
+
+Las tres primeras son **acciones de cambio**: describen qué le pasa al producto y son las tres entradas del
+ciclo. `verificar` no es un cambio: comprueba algo que ya está hecho y no deja nada distinto detrás, así que no
+entra por ninguna de las tres entradas, no genera un diff que revisar y no pide aprobación de escritura. Es una
+tarea más de la cola, con su propia acción, no un cuarto tipo de cambio. Etiquetar una verificación como
+`actualizar` sería mentir sobre lo que hace: no actualiza nada.
 
 La entrada la determina lo que pidió el usuario, no el flujo. La acción la describe lo que hará la implementación, no lo que se borra del archivo de planificación.
 

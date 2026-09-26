@@ -1,3 +1,12 @@
+---
+title: SPEC — Interfaz, atajos y panel de aprobaciones
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+  - "[[specs/SPEC-INTERFAZ]]"
+  - "[[specs/SPEC-SESIONES]]"
+---
 # SPEC — Interfaz, atajos y panel de aprobaciones
 
 Prioridad: P2

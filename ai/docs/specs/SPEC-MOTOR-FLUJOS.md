@@ -1,3 +1,15 @@
+---
+title: SPEC — Motor de flujos
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+  - "[[specs/SPEC-SESIONES]]"
+  - "[[specs/SPEC-AGENTE-BASE]]"
+  - "[[specs/SPEC-COLA-TAREAS]]"
+relacionado:
+  - "[[specs/SPEC-FLUJO-PERSONALIZADO]]"
+---
 # SPEC — Motor de flujos
 
 Prioridad: P0 (núcleo)

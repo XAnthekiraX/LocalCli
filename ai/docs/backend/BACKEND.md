@@ -1,3 +1,14 @@
+---
+title: LocalCli — capa backend
+tags: [backend, arquitectura]
+depende_de:
+  - "[[PROJECT]]"
+  - "[[backend/DECISIONS]]"
+relacionado:
+  - "[[frontend/FRONTEND]]"
+  - "[[database/DATABASE]]"
+---
+
 # BACKEND — LocalCli
 
 Capa de motor de `LocalCli`: un proceso único de terminal, en Go, que ejecuta trabajos de varias etapas por ti. No es un servidor web: no expone HTTP, no tiene usuarios, no tiene login. La TUI (`tui`) es su único consumidor.

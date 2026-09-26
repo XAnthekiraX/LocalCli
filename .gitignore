@@ -1,2 +1,16 @@
-(empty)
 .vscode
+
+# Configuración local del IDE (serena): no es fuente del proyecto.
+/.serena/
+
+# Binario único (T-B000-04): se recompila con `go build -o localcli .`
+/localcli
+
+# Estado de ejecución del proyecto: NUNCA se versiona (DECISIONS.md [23]).
+# Contiene state.db, WAL y ficheros de bloqueo de SQLite.
+/.localcli/
+
+# Artefactos de test y coverage (T-B015-07)
+*.test
+*.out
+/coverage.*

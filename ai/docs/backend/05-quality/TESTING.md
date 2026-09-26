@@ -1,3 +1,15 @@
+---
+title: LocalCli — pruebas del backend
+tags: [backend, calidad]
+depende_de:
+  - "[[PROJECT]]"
+  - "[[specs/SPEC-TOOLS]]"
+relacionado:
+  - "[[backend/01-domain/BUSINESS_RULES]]"
+  - "[[backend/03-security/SECURITY]]"
+  - "[[backend/05-quality/VALIDATION]]"
+  - "[[database/03-operations/SEEDING]]"
+---
 # TESTING — Pruebas del backend
 
 Qué se prueba, cómo, y qué debe sostenerse con una prueba. Ver [[PROJECT]] para la estrategia global y [[specs/SPEC-TOOLS]] para los criterios de aceptación que estas pruebas cubren.
@@ -19,15 +31,15 @@ Cobertura esperada por módulo:
 
 | Módulo | Qué hay que probar |
 |---|---|
-| `docs` | El frontmatter se lee bien; el grafo de dependencias se construye; un documento sin dependencias declaradas se avisa |
+| `docs` | El frontmatter se lee bien; el grafo toma las aristas del frontmatter y no solo de los enlaces del cuerpo; una etiqueta no cuenta como dependencia; un frontmatter roto se reporta sin tumbar la carga; un fallo de carga se reconoce como `E_STAGE_FAILED` sin leer el mensaje |
 | `context` | El modelo recibe solo lo que declaró necesario; el recorte cabe en el límite; lo descartado queda registrado con motivo; un documento inexistente detiene la etapa |
-| `queue` | El orden respeta las dependencias; una tarea bloqueada no detiene la cola si nada depende de ella; una tarea nueva entra en su posición; reanudar no repite subtareas completadas |
+| `queue` | El orden respeta las dependencias; un rango se cumple entero y en el orden; un rango no se da por cumplido con un ID de otra capa; una tarea bloqueada no detiene la cola si nada depende de ella; una tarea nueva entra en su posición; reanudar no repite subtareas completadas |
 | `agent` | `plan` no tiene ninguna herramienta de escritura; `build` tiene el catálogo completo; el relevo es explícito; una aprobación no habilita lo no propuesto |
 | `tools` | Una herramienta fuera del catálogo se rechaza; una herramienta que el agente no tiene se rechaza; el enrutado va al módulo correcto |
 | `fileops` | Dentro de la carpeta se escribe con aprobación; fuera sin explicación no; borrar pide confirmación; cada cambio queda registrado con el antes y el después |
 | `exec` | La lista blanca corre sin preguntar; un comando fuera de la lista pide permiso; la salida sin fin se corta; la terminal no puede escribir en el proyecto |
 | `ollama` | El streaming entrega token a token; el razonamiento se distingue de la respuesta; el perfil de hardware avisa si el modelo no cabe |
-| `store` | Las escrituras son transaccionales; el borrado de sesión deja `change_history` intacto; WAL permite leer mientras se escribe |
+| `store` | Las escrituras son transaccionales; el borrado de sesión deja `change_history` intacto; WAL permite leer mientras se escribe; un flujo compuesto que falla en un paso no deja escrituras a medias; las escrituras concurrentes no se pierden; `id` no admite nulo en ninguna tabla; un esquema con `user_version` correcto pero DDL viejo se rechaza |
 | `session` | El estado de una sesión cambia correctamente; una sesión en segundo plano sigue al cambiar de vista; el contenido no se filtra entre sesiones |
 | `flow` | Las etapas van en orden; una etapa que falla detiene el flujo; un flujo pausado se retoma donde estaba; cancelar no deja etapas corriendo |
 

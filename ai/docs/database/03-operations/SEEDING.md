@@ -1,3 +1,17 @@
+---
+title: LocalCli — datos iniciales
+tags: [database, operaciones]
+depende_de:
+  - "[[database/01-schema/SCHEMA]]"
+  - "[[database/03-operations/MIGRATIONS]]"
+relacionado:
+  - "[[database/01-schema/TABLES]]"
+  - "[[database/02-rules/BUSINESS_RULES]]"
+  - "[[database/02-rules/DATA_FLOW]]"
+  - "[[database/DATABASE]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+---
 # SEEDING — Datos iniciales
 
 ## 1. Datos iniciales

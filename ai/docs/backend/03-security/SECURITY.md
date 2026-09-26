@@ -1,3 +1,17 @@
+---
+title: LocalCli — seguridad y permisos
+tags: [backend, seguridad]
+depende_de:
+  - "[[backend/DECISIONS]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+  - "[[specs/SPEC-TOOLS]]"
+relacionado:
+  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+  - "[[backend/01-domain/DOMAIN]]"
+  - "[[backend/02-interfaces/TOOLS]]"
+  - "[[backend/04-infrastructure/CONFIGURATION]]"
+  - "[[backend/04-infrastructure/INTEGRATIONS]]"
+---
 # SECURITY — Seguridad y permisos
 
 `LocalCli` es local y personal: no hay login, ni usuarios, ni sesiones de autenticación, ni endpoints que proteger de outsiders. La seguridad aquí es de otro tipo: se trata de que **nada de lo que hace el modelo toque tu proyecto ni tu máquina sin que tú lo hayas aprobado**, y de que un proceso hijo no pueda saltarse esa regla.

@@ -1,3 +1,15 @@
+---
+title: LocalCli — payloads de las herramientas
+tags: [backend, interfaces]
+depende_de:
+  - "[[backend/02-interfaces/TOOLS]]"
+  - "[[specs/SPEC-TOOLS]]"
+relacionado:
+  - "[[backend/05-quality/VALIDATION]]"
+  - "[[backend/01-domain/DOMAIN]]"
+  - "[[backend/05-quality/ERRORS]]"
+  - "[[database/01-schema/TABLES]]"
+---
 # TOOLS-DTO — Payloads de las herramientas
 
 Los cuerpos de petición y respuesta de cada herramienta. `LocalCli` no tiene HTTP, así que esto no son cuerpos JSON: son los argumentos que el modelo pasa a la herramienta y lo que esta devuelve. Los tipos son los de Go en la frontera. Ver [[backend/02-interfaces/TOOLS]] para el comportamiento y [[backend/05-quality/VALIDATION]] para las reglas de validación.

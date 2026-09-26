@@ -1,3 +1,13 @@
+---
+title: SPEC — Catálogo de herramientas
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-AGENTE-BASE]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+  - "[[specs/SPEC-RESOLVER]]"
+---
 # SPEC — Catálogo de herramientas
 
 Prioridad: P0 (núcleo)

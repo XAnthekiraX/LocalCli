@@ -1,3 +1,14 @@
+---
+title: SPEC — Panel de contexto y tokens
+tags: [specs, requisito]
+depende_de:
+  - "[[IDEA]]"
+  - "[[specs/SPEC-INTERFAZ]]"
+  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+  - "[[specs/SPEC-NODO-CONTEXTO]]"
+relacionado:
+  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+---
 # SPEC — Panel de contexto y tokens
 
 Prioridad: P1 (importante)
