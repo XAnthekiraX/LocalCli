@@ -93,20 +93,119 @@ func celdaEn(cabecera, celdas []string, alias ...string) string {
 	return celdas[i]
 }
 
-// EscribirArchivo aplica un cambio de contenido respetando la frontera de
-// rutas básicas: solo escrituras atómicas simples (read-modify-write).
-// La aprobación de cambios vive en fileops (T-B008); aquí el módulo task
-// escribe exclusivamente dentro de ai/tasks/ tras que el flujo lo autorice.
-func EscribirArchivo(ruta string, contenido []byte, perm os.FileMode) error {
-	if err := os.WriteFile(ruta, contenido, perm); err != nil {
-		return fmt.Errorf("task: escribir %s: %w", ruta, err)
+// EscribirArchivo escribe `contenido` en `ruta` de forma atómica y sin salirse
+// de `ai/tasks/`.
+//
+// Dos garantías que un os.WriteFile no da:
+//
+//	A atomicidad. Si el proceso muere entre el truncate y el último write, un
+//	  WriteFile deja un MAIN-TASKS.md a medio escribir: se pierde la tabla
+//	  entera y con ella el estado de todas las tareas. Con temp+rename el
+//	  archivo viejo o el nuevo están siempre completos; nunca un híbrido.
+//	B la frontera. `ruta` se resuelve contra symlinks antes de comprobar, así
+//	  que un enlace dentro de ai/tasks/ que apunte fuera no sirve de puerta
+//	  atrás. Este módulo escribe el TODO del proyecto, nada más; el resto del
+//	  árbol lo escriben fileops (T-B008) con su propia aprobación.
+//
+// La aprobación previa vive en el flujo; aquí solo se garantiza que lo que se
+// escribe cae dentro del directorio del TODO.
+func EscribirArchivo(raiz, ruta string, contenido []byte, perm os.FileMode) error {
+	abs, err := filepath.Abs(ruta)
+	if err != nil {
+		return fmt.Errorf("task: ruta %s: %w", ruta, err)
+	}
+	if err := comprobarFronteraTasks(raiz, abs); err != nil {
+		return err
+	}
+
+	dir := filepath.Dir(abs)
+	// El temp tiene que vivir en el mismo directorio que el destino: rename
+	// entre sistemas de archivos distintos no es atómico.
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(abs)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("task: crear temporal en %s: %w", dir, err)
+	}
+	tmpName := tmp.Name()
+	// Cualquier fallo posterior tiene que dejar el directorio como estaba: sin
+	// esto un error a mitad de escritura acumula archivos .tmp.
+	defer os.Remove(tmpName)
+
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		return fmt.Errorf("task: permisos de %s: %w", tmpName, err)
+	}
+	if _, err := tmp.Write(contenido); err != nil {
+		tmp.Close()
+		return fmt.Errorf("task: escribir %s: %w", tmpName, err)
+	}
+	// Sin fsync, el rename puede quedar en la caché y un corte de luz devuelve
+	// el archivo viejo, o peor, el nuevo a medias.
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("task: sincronizar %s: %w", tmpName, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("task: cerrar %s: %w", tmpName, err)
+	}
+	if err := os.Rename(tmpName, abs); err != nil {
+		return fmt.Errorf("task: renombrar a %s: %w", abs, err)
+	}
+	// Sincronizar la entrada de directorio hace durable el rename.
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
 	}
 	return nil
 }
 
+// comprobarFronteraTasks devuelve error si `abs` no está dentro de
+// <raiz>/ai/tasks/. Se comparan rutas ya resueltas para que un symlink no
+// sirva de atajo, y en minúsculas porque el nombre del directorio es fijo pero
+// el sistema de archivos puede no distinguir mayúsculas.
+func comprobarFronteraTasks(raiz, abs string) error {
+	base, err := filepath.Abs(raiz)
+	if err != nil {
+		return fmt.Errorf("task: raíz %s: %w", raiz, err)
+	}
+	permitido := filepath.Join(base, "ai", "tasks")
+	resueltaPermitido, err := filepath.EvalSymlinks(permitido)
+	if err != nil {
+		return fmt.Errorf("task: no existe %s: %w", permitido, err)
+	}
+	// El archivo puede no existir todavía (se crea): se resuelve el directorio.
+	resuelta := abs
+	if r, err := filepath.EvalSymlinks(abs); err == nil {
+		resuelta = r
+	} else if r, err := filepath.EvalSymlinks(filepath.Dir(abs)); err == nil {
+		resuelta = filepath.Join(r, filepath.Base(abs))
+	}
+	if !dentroDe(resuelta, resueltaPermitido) {
+		return fmt.Errorf("task: %s está fuera de ai/tasks/; este módulo solo escribe el TODO", abs)
+	}
+	return nil
+}
+
+// dentroDe dice si `ruta` es `dir` o está bajo ella, con separadores correctos:
+// un prefijo de texto plano daría por bueno `ai/tasks-secreto/x.md`.
+func dentroDe(ruta, dir string) bool {
+	if strings.EqualFold(ruta, dir) {
+		return true
+	}
+	// filepath.Rel distingue mayúsculas, así que AI/TASKS/x.md daría ../TASKS
+	// y sería rechazado aunque sea el mismo directorio. Se normaliza antes.
+	rel, err := filepath.Rel(strings.ToLower(dir), strings.ToLower(ruta))
+	if err != nil {
+		return false
+	}
+	if rel == "." {
+		return true
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 // CambiarEstado lee el archivo del TODO dado, cambia el estado del elemento
 // `id` y lo reescribe. Devuelve el contenido nuevo.
-func CambiarEstado(ruta, id string, estado Estado) ([]byte, error) {
+func CambiarEstado(raiz, ruta, id string, estado Estado) ([]byte, error) {
 	b, err := os.ReadFile(ruta)
 	if err != nil {
 		return nil, fmt.Errorf("task: leer %s: %w", ruta, err)
@@ -115,7 +214,7 @@ func CambiarEstado(ruta, id string, estado Estado) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := EscribirArchivo(ruta, nuevo, 0o644); err != nil {
+	if err := EscribirArchivo(raiz, ruta, nuevo, 0o644); err != nil {
 		return nil, err
 	}
 	return nuevo, nil
@@ -129,8 +228,8 @@ func CambiarEstadoElemento(raiz string, capa Capa, id string, estado Estado) (st
 	mainPath := filepath.Join(raiz, "ai", "tasks", string(capa), NombreMainTasks)
 	if _, err := os.Stat(mainPath); err == nil {
 		b, err := os.ReadFile(mainPath)
-		if err == nil && contieneFila(b, id) {
-			if _, err := CambiarEstado(mainPath, id, estado); err != nil {
+		if err == nil && contieneFila(b, id, capa) {
+			if _, err := CambiarEstado(raiz, mainPath, id, estado); err != nil {
 				return "", err
 			}
 			return mainPath, nil
@@ -140,16 +239,26 @@ func CambiarEstadoElemento(raiz string, capa Capa, id string, estado Estado) (st
 	if err != nil {
 		return "", err
 	}
-	if _, err := CambiarEstado(ruta, id, estado); err != nil {
+	if _, err := CambiarEstado(raiz, ruta, id, estado); err != nil {
 		return "", err
 	}
 	return ruta, nil
 }
 
-// contieneFila informa si alguna fila de datos de las tablas del contenido
-// tiene ese ID exacto en su columna ID.
-func contieneFila(contenido []byte, id string) bool {
-	elems, err := ParseTabla(contenido, CapaBackend) // la capa no afecta a la búsqueda por ID
+// contieneFila informa si el contenido tiene ese ID en una fila de datos de
+// una tabla de elementos.
+//
+// La capa se compara de verdad. ParseTabla recibe la capa del ARCHIVO, no la
+// del elemento, así que la fija sin comprobarla: pedir T-F001 en un archivo de
+// backend daba un no-encontrado aunque la fila existiera, y dar "existe" para
+// un ID de otra capa habría hecho que CambiarEstadoElemento escribiera en el
+// archivo equivocado en vez de avisar de que la tarea no está.
+func contieneFila(contenido []byte, id string, capa Capa) bool {
+	deID, ok := CapaDeID(id)
+	if !ok || deID != capa {
+		return false
+	}
+	elems, err := ParseTabla(contenido, capa)
 	if err != nil {
 		return false
 	}

@@ -20,17 +20,39 @@ import (
 
 // Accion es la acción declarada por el ciclo de trabajo
 // ([[specs/SPEC-CICLO-TRABAJO]]): qué hará la implementación, no qué se borra.
+//
+// Hay cuatro valores y no tres. Los tres primeros —crear, actualizar y
+// eliminar— son ACCIONES DE CAMBIO: describen qué le pasa al producto, y son las
+// tres entradas del ciclo que fija la spec. `verificar` no es un cambio: es una
+// tarea que comprueba algo y no deja nada distinto detrás, así que no entra por
+// ninguna de las tres entradas ni genera un diff que revisar. Existía en los
+// TODO reales de la capa frontend y el parser lo rechazaba, dejando esa capa
+// entera sin cargar; etiquetar esas tareas como `actualizar` habría mentido
+// sobre lo que hacen.
 type Accion string
 
 const (
 	AccionCrear      Accion = "crear"
 	AccionActualizar Accion = "actualizar"
 	AccionEliminar   Accion = "eliminar"
+	AccionVerificar  Accion = "verificar"
 )
 
 // EsAccion valida que el texto pertenezca al catálogo cerrado de acciones.
 func EsAccion(s string) bool {
 	switch Accion(s) {
+	case AccionCrear, AccionActualizar, AccionEliminar, AccionVerificar:
+		return true
+	}
+	return false
+}
+
+// EsCambio dice si la acción modifica el producto. Las tres acciones de cambio
+// son las que pueden generar un diff que aprobar y un registro en
+// change_history; `verificar` no. El flujo y fileops usan esta distincion
+// para no pedir aprobacion por una tarea que no escribe nada.
+func (a Accion) EsCambio() bool {
+	switch a {
 	case AccionCrear, AccionActualizar, AccionEliminar:
 		return true
 	}

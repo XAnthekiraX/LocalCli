@@ -49,8 +49,15 @@ func CapaDesdeRuta(ruta string) (Capa, error) {
 }
 
 // prefijoIDRE captura el NNN del ID: son los tres dígitos que siguen a la
-// letra de capa ("T-B004" o "T-B004-02"); el sufijo -NN tiene solo dos.
-var prefijoIDRE = regexp.MustCompile(`[A-Za-z][0-9]?([0-9]{3})`)
+// letra de capa. Va ANCLADO a propósito. Sin ancla, "abc1234-x" devolvía
+// "234" y cualquier basura con tres dígitos simulaba un prefijo válido; con
+// `^`+`$` solo pasan los IDs con la forma real T-B000 o T-B000-01.
+var prefijoIDRE = regexp.MustCompile(`^T-[A-Z]([0-9]{3})(?:-[0-9]{2})?$`)
+
+// idFormaRE es la forma completa de un ID de elemento: T-B000 para una tarea
+// grande, T-B000-01 para una subtarea. Se usa para rechazar filas malformadas
+// en vez de normalizarlas en silencio.
+var idFormaRE = regexp.MustCompile(`^T-[A-Z][0-9]{3}(?:-[0-9]{2})?$`)
 
 // PrefijoDeID extrae el número NNN del ID de un elemento: "T-B004-02" ⇒ "004",
 // "T-B004" ⇒ "004". Acepta IDs de cualquier capa (la letra de la capa no
@@ -60,7 +67,53 @@ func PrefijoDeID(id string) (string, bool) {
 	if m == nil {
 		return "", false
 	}
+	// El grupo captura solo los tres dígitos: la letra va fuera para que
+	// PrefijoDeID devuelva "004" y no "B004".
 	return m[1], true
+}
+
+// IDValido informa si `id` tiene la forma exacta de un ID de elemento.
+func IDValido(id string) bool { return idFormaRE.MatchString(id) }
+
+// esTareaGrande distingue una tarea grande (T-B000) de una subtarea
+// (T-B000-01) por el sufijo -NN. Un rango "T-B000..T-B002" se refiere a las
+// tareas grandes: si contara también las subtareas, el estado de T-B001-03
+// contaría para desbloquear lo que depende del rango, que es justo el
+// desarrollo contrario de lo que dice la fila.
+func esTareaGrande(id string) bool {
+	// No basta con buscar un guion: TODOS los IDs llevan el de "T-B", así que
+	// un Contains(id, "-") los descartaba a todos y los rangos se quedaban sin
+	// aristas. Lo que distingue la subtarea es el sufijo -NN al final.
+	return !subtaskSufijoRE.MatchString(id)
+}
+
+// subtaskSufijoRE es el sufijo -NN que convierte T-B004 en T-B004-01.
+var subtaskSufijoRE = regexp.MustCompile(`-[0-9]{2}$`)
+
+// capaDeIDRE saca la letra de capa de un ID: T-B → B, T-F → F, T-D → D.
+// Ojo al formato: la letra va seguida DIRECTAMENTE de los tres dígitos
+// (T-F001), no de otro guion; un `^T-([A-Z])-` no encuentra nada.
+var capaDeIDRE = regexp.MustCompile(`^T-([A-Z])[0-9]`)
+
+// CapaDeID deduce la capa a la que pertenece un ID de elemento. Es la
+// correspondencia que fija el layout: T-B0xx es backend, T-F0xx es frontend y
+// T-D0xx es database. Sin ella, buscar un ID de una capa dentro del archivo de
+// otra daba un positivo falso: el archivo de frontend contiene IDs T-B0xx
+// escritos en prosa, así que una comparación por prefijo de texto no basta.
+func CapaDeID(id string) (Capa, bool) {
+	m := capaDeIDRE.FindStringSubmatch(id)
+	if m == nil {
+		return "", false
+	}
+	switch m[1] {
+	case "B":
+		return CapaBackend, true
+	case "F":
+		return CapaFrontend, true
+	case "D":
+		return CapaDatabase, true
+	}
+	return "", false
 }
 
 // ArchivosTODO lista los archivos del TODO de una capa dentro de raiz

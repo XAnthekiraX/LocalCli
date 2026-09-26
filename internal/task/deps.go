@@ -51,6 +51,20 @@ func OrdenarTopologico(elems []Elemento) ([]Elemento, error) {
 	for _, n := range nodos {
 		for _, d := range n.elem.DependeDe {
 			if esRangoDep(d) {
+				// Un rango es una abreviatura por aristas reales. Sin
+				// expandirlas, el nodo con un rango tiene grado 0 y puede salir
+				// en el orden ANTES que las tareas que lo bloquean, que es justo
+				// lo que el orden topológico debe impedir.
+				for _, otro := range nodos {
+					if !esTareaGrande(otro.elem.ID) || !dentroDeRango(d, otro.elem.ID) {
+						continue
+					}
+					if otro.elem.ID == n.elem.ID {
+						continue
+					}
+					otro.salientes = append(otro.salientes, n.elem.ID)
+					n.grados++
+				}
 				continue
 			}
 			dn, ok := idx[d]
@@ -146,8 +160,12 @@ func Elegibles(elems []Elemento) ([]Elemento, error) {
 	return out, nil
 }
 
-// dentroDeRango informa si `id` cae dentro del rango "T-Bxxx..T-BYYY"
-// comparando prefijos numéricos (misma capa).
+// dentroDeRango informa si `id` cae dentro del rango "T-Bxxx..T-BYYY".
+//
+// Se comparan NNN y letra de capa. Comparar solo los dígitos hacía que un
+// rango de backend cumpliera el requisito con una tarea de frontend: T-F003
+// contaba como "dentro de T-B002..T-B007" y una dependencia nunca se daba por
+// rota. El rango pertenece a una capa, no solo a un intervalo de números.
 func dentroDeRango(rango, id string) bool {
 	partes := splitOnce(rango, "..")
 	if partes == nil {
@@ -159,7 +177,17 @@ func dentroDeRango(rango, id string) bool {
 	if !okA || !okB || !okX {
 		return false
 	}
-	return a <= x && x <= b
+	ca, okCA := CapaDeID(partes[0])
+	cb, okCB := CapaDeID(partes[1])
+	cx, okCX := CapaDeID(id)
+	if !okCA || !okCB || !okCX {
+		return false
+	}
+	// Un rango no puede cruzar de capa: T-B002..T-F007 no significa nada.
+	if ca != cb {
+		return false
+	}
+	return ca == cx && a <= x && x <= b
 }
 
 // splitOnce divide s por la primera aparición de sep.
