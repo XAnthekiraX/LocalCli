@@ -7,9 +7,6 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-
-	"localcli/internal/store"
 )
 
 func main() {
@@ -24,49 +21,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	// store es el ÚNICO punto de apertura y escritura de SQLite
-	// (DECISIONS.md: "store es el único que escribe en SQLite"). Aquí no se
-	// importa database/sql ni se abre el driver: store.Open aplica los PRAGMA
-	// de conexión, crea .localcli/ y ejecuta las migraciones por user_version.
-	db, err := store.Open(cwd)
+	// El cableado completo vive en arranque.go: ahí se abre la base (por
+	// `store`, el único escritor SQLite), se monta el motor contra Ollama
+	// local, se crea o retoma la sesión activa del proyecto y se ata todo al
+	// `tui.Puerto` de producción. main solo levanta y baja el telón.
+	a, err := nuevoArranque(cwd)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error al preparar la base del proyecto:", err)
 		os.Exit(1)
 	}
-	defer db.Close()
+	defer a.Cerrar()
 
-	// El módulo tui completo llega en T-B014; aquí solo se confirma que
-	// Bubble Tea + Lip Gloss compilan y corren en este stack.
-	title := lipgloss.NewStyle().Bold(true).Render("LocalCli")
-	p := tea.NewProgram(newRootModel(title))
+	p := tea.NewProgram(nuevaApp(a), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error en la interfaz:", err)
 		os.Exit(1)
 	}
-}
-
-// newRootModel devuelve el modelo raíz provisional de la TUI.
-func newRootModel(title string) tea.Model {
-	return rootModel{title: title}
-}
-
-type rootModel struct {
-	title string
-}
-
-func (m rootModel) Init() tea.Cmd { return nil }
-
-func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
-		}
-	}
-	return m, nil
-}
-
-func (m rootModel) View() string {
-	return m.title + "\n\nPulsa q para salir.\n"
 }
