@@ -30,21 +30,25 @@ func separarRazonamiento(thinking string) string {
 
 // SeparadorEnTexto es un extractor con estado para razonamiento incrustado en
 // el texto final. Se usa cuando el modelo no trae campo thinking pero sí
-// emite  ...  inline.
+// emite <think>...</think> inline.
 //
 // Uso: alimentar cada token con Push(token); consume los fragmentos que
 // pueden emitirse YA (fuera de bloque → EventoToken; dentro de bloque →
-// EventoRazonamiento). El diseño retiene hasta 19 bytes (longitud de
-// "") porque un token puede partir el marcador por la mitad.
+// EventoRazonamiento). El diseño retiene hasta 8 bytes (longitud de
+// "</think>" - 1) porque un token puede partir el marcador por la mitad.
 type SeparadorEnTexto struct {
 	buf     strings.Builder
-	dentro  bool // estamos dentro de  ?
-	cerrado bool // vimos  ; nada más razonamiento
+	dentro  bool // estamos dentro de <think>?
+	cerrado bool // vimos </think>; nada más razonamiento
 }
 
+// Marcadores de razonamiento incrustado. Son cadenas NO vacías a propósito:
+// prefijoParcialFinal y Push asumen que un marcador tiene longitud ≥ 1
+// (ver guardaMarcador); un marcador vacío haría que strings.Index devolviese
+// siempre 0 y el bucle de Push no consumiría nada.
 const (
-	apertura = ""
-	cierre   = ""
+	apertura = "<think>"
+	cierre   = "</think>"
 )
 
 // Fragmento es una pieza ya clasificada producida por el separador.
@@ -54,8 +58,15 @@ type Fragmento struct {
 }
 
 // Push añade un token y devuelve los fragmentos listos para emitir. Puede
-// devolver varios (p. ej. texto antes de un apertura + arranque de bloque).
+// devolver varios (p. ej. texto antes de un <think> + arranque de bloque).
 func (s *SeparadorEnTexto) Push(token string) []Fragmento {
+	if apertura == "" || cierre == "" {
+		// Guarda de invariante: con un marcador vacío el bucle de abajo no
+		// avanza (Index devuelve 0, el residuo nunca se consume) y Push
+		// entraría en ciclo infinito. Se degrada a texto plano en vez de
+		// colgarse, aunque el error real es de programación.
+		return []Fragmento{{false, s.buf.String() + token}}
+	}
 	s.buf.WriteString(token)
 	var salidas []Fragmento
 	for {
@@ -122,9 +133,12 @@ func (s *SeparadorEnTexto) Cerrar() []Fragmento {
 }
 
 // prefijoParcialFinal devuelve cuántos bytes finales de texto coinciden con
-// un prefijo PROPIO de marcador (para retener "<thin" entre tokens).
+// un prefijo PROPIO de marcador (para retener "<think" entre tokens).
 func prefijoParcialFinal(texto, marcador string) int {
 	max := len(marcador) - 1
+	if max <= 0 {
+		return 0
+	}
 	if max > len(texto) {
 		max = len(texto)
 	}

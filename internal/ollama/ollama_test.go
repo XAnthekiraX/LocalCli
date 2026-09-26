@@ -153,6 +153,29 @@ func TestStreamReasoningSeparaTextoYRazonamiento(t *testing.T) {
 	}
 }
 
+// --- T-B005-03: separador de razonamiento -------------------------------
+
+// Un marcador vacío hace que strings.Index devuelva siempre 0 y que Push
+// entre en ciclo infinito: este test fija la constante para que el fallo
+// reaparezca como fallo de test y no como cuelgue de `go test ./...`.
+func TestMarcadoresRazonamientoNoVacias(t *testing.T) {
+	for nombre, m := range map[string]string{"apertura": apertura, "cierre": cierre} {
+		if m == "" {
+			t.Fatalf("%s está vacía: SeparadorEnTexto.Push no terminaría", nombre)
+		}
+	}
+	if !strings.HasPrefix(apertura, "<") || !strings.HasPrefix(cierre, "<") {
+		t.Errorf("marcadores inesperados: %q / %q", apertura, cierre)
+	}
+	if len(cierre) <= len(apertura) {
+		t.Errorf("el cierre (%q) debe ser más largo que la apertura (%q)", cierre, apertura)
+	}
+	// Sin bloques anidados, el cierre no puede empezar antes que la apertura.
+	if strings.Contains(cierre, apertura) {
+		t.Errorf("el cierre %q contiene la apertura %q: anidaría bloques", cierre, apertura)
+	}
+}
+
 func TestSeparadorEnTextoMarcadoresInline(t *testing.T) {
 	var s SeparadorEnTexto
 	var texto, razon strings.Builder
