@@ -46,7 +46,16 @@ func contenidoValido(operation string, before, after bool) bool {
 // RegistrarCambio inserta un cambio aplicado a un archivo del proyecto. Solo el
 // módulo de herramientas de archivo llama aquí, y solo tras una aprobación
 // (QUERIES.md §5); store no decide esa política, solo la sostiene.
+// DATA_FLOW.md: la escritura del archivo y la fila de change_history son un
+// solo paso logico. El archivo no cabe en una transaccion SQL (lo escribe
+// fileops), asi que el store expone dos vias: esta, para el caso simple, y
+// RegistrarCambioEnTX, que mete la fila en la transaccion que el llamador
+// abre para todo lo demas del paso.
 func RegistrarCambio(db *sql.DB, h *ChangeHistory) error {
+	return registrarCambio(db, h)
+}
+
+func registrarCambio(e ejecutor, h *ChangeHistory) error {
 	if !contenidoValido(h.Operation, h.BeforeContent != "", h.AfterContent != "") {
 		return ErrRestriccion
 	}
@@ -58,7 +67,7 @@ func RegistrarCambio(db *sql.DB, h *ChangeHistory) error {
 	if id == "" {
 		id = newID()
 	}
-	_, err := db.Exec(
+	_, err := e.Exec(
 		`INSERT INTO change_history (id, session_id, operation, file_path, before_content, after_content, created_at)
  VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		id, nullStr(h.SessionID), h.Operation, h.FilePath, nullStr(h.BeforeContent), nullStr(h.AfterContent), now,

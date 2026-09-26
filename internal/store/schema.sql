@@ -4,7 +4,7 @@
 -- TEXT ISO 8601 UTC, booleanos enteros 0/1, ausencia = NULL.
 
 CREATE TABLE sessions (
-    id         TEXT PRIMARY KEY,                -- UUID v4
+    id         TEXT PRIMARY KEY NOT NULL,                -- UUID v4
     name       TEXT NOT NULL,                   -- nombre visible de la sesión
     layer      TEXT CHECK (layer IN ('backend', 'frontend')), -- NULL = sesión general
     status     TEXT NOT NULL DEFAULT 'inactiva'
@@ -15,7 +15,7 @@ CREATE TABLE sessions (
 );
 
 CREATE TABLE messages (
-    id           TEXT PRIMARY KEY,              -- UUID v4
+    id           TEXT PRIMARY KEY NOT NULL,              -- UUID v4
     session_id   TEXT NOT NULL
                  REFERENCES sessions(id) ON DELETE CASCADE ON UPDATE CASCADE,
     role         TEXT NOT NULL CHECK (role IN ('user', 'agent')),
@@ -28,7 +28,7 @@ CREATE TABLE messages (
 -- El razonamiento va en tabla propia (DECISIONS.md): llega en streaming y el
 -- mensaje es inmutable una vez completo.
 CREATE TABLE reasoning (
-    id         TEXT PRIMARY KEY,                -- UUID v4
+    id         TEXT PRIMARY KEY NOT NULL,                -- UUID v4
     message_id TEXT NOT NULL                    -- 1:1 con messages (UNIQUE abajo)
                REFERENCES messages(id) ON DELETE CASCADE ON UPDATE CASCADE,
     content    TEXT NOT NULL,
@@ -36,7 +36,7 @@ CREATE TABLE reasoning (
 );
 
 CREATE TABLE approvals (
-    id          TEXT PRIMARY KEY,               -- UUID v4
+    id          TEXT PRIMARY KEY NOT NULL,               -- UUID v4
     session_id  TEXT NOT NULL
                 REFERENCES sessions(id) ON DELETE CASCADE ON UPDATE CASCADE,
     description TEXT NOT NULL,
@@ -49,7 +49,7 @@ CREATE TABLE approvals (
 );
 
 CREATE TABLE context_audit (
-    id         TEXT PRIMARY KEY,                -- UUID v4
+    id         TEXT PRIMARY KEY NOT NULL,                -- UUID v4
     session_id TEXT NOT NULL
                REFERENCES sessions(id) ON DELETE CASCADE ON UPDATE CASCADE,
     stage      TEXT NOT NULL,                   -- etapa del flujo
@@ -65,7 +65,7 @@ CREATE TABLE context_audit (
 -- change_history nunca se borra: su session_id usa SET NULL para sobrevivir
 -- a la sesión (RELATIONSHIPS.md §3).
 CREATE TABLE change_history (
-    id             TEXT PRIMARY KEY,            -- UUID v4
+    id             TEXT PRIMARY KEY NOT NULL,            -- UUID v4
     session_id     TEXT
                    REFERENCES sessions(id) ON DELETE SET NULL ON UPDATE CASCADE,
     operation      TEXT NOT NULL
@@ -95,6 +95,11 @@ CREATE INDEX idx_approvals_session_status ON approvals (session_id, status);
 -- (INDEXES.md §3). Es la consulta del contador en cada redibujado.
 CREATE INDEX idx_approvals_pending ON approvals (created_at) WHERE status = 'pendiente';
 CREATE INDEX idx_context_audit_session_stage ON context_audit (session_id, stage);
+-- UNIQUE: TABLES.md §4 declara un registro por documento y por etapa. Sin
+-- esto una segunda auditoría de la misma etapa sobre el mismo documento
+-- insertaría una fila duplicada en vez de revelar el error.
+CREATE UNIQUE INDEX idx_context_audit_unico
+    ON context_audit (session_id, stage, document);
 CREATE INDEX idx_change_history_file ON change_history (file_path);
 CREATE INDEX idx_sessions_status ON sessions (status);
 CREATE INDEX idx_sessions_updated ON sessions (updated_at);

@@ -2,7 +2,7 @@ package store
 
 import (
 	"database/sql"
-	"fmt"
+	"errors"
 	"time"
 )
 
@@ -159,7 +159,7 @@ func RazonamientoDe(db *sql.DB, messageID string) (string, error) {
 }
 
 func errorsIsNoRows(err error) bool {
-	return err == sql.ErrNoRows || err == ErrNoEncontrado
+	return errors.Is(err, sql.ErrNoRows) || errors.Is(err, ErrNoEncontrado)
 }
 
 // CerrarTurnoAgente es la escritura multi-tabla que fija DATA_FLOW.md al
@@ -187,19 +187,7 @@ func CerrarTurnoAgente(db *sql.DB, sessionID, contenido string, inputTokens, out
 			}
 		}
 		if estadoSesion != "" {
-			s, err := obtenerSesionTX(tx, sessionID)
-			if err != nil {
-				return err
-			}
-			if !ValidarTransicionSesion(s.Status, estadoSesion) {
-				return fmt.Errorf("%w: sesión %s no puede pasar de %q a %q", ErrEstadoIlegal, sessionID, s.Status, estadoSesion)
-			}
-			res, err := tx.Exec(`UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?`,
-				estadoSesion, nowISO(), sessionID)
-			if err != nil {
-				return traducirError(err)
-			}
-			if err := filasAfectadas(res, 1, fmt.Sprintf("sesión %s", sessionID)); err != nil {
+			if err := actualizarEstadoSesion(tx, sessionID, estadoSesion); err != nil {
 				return err
 			}
 		}
@@ -209,18 +197,4 @@ func CerrarTurnoAgente(db *sql.DB, sessionID, contenido string, inputTokens, out
 		return nil, err
 	}
 	return m, nil
-}
-
-// ejecutor abstracta lo común entre *sql.DB y *sql.Tx para que los helpers de
-// inserción funcionen dentro y fuera de transacciones.
-type ejecutor interface {
-	Exec(query string, args ...any) (sql.Result, error)
-	QueryRow(query string, args ...any) *sql.Row
-}
-
-func obtenerSesionTX(e ejecutor, id string) (*Session, error) {
-	row := e.QueryRow(
-		`SELECT id, name, COALESCE(layer, ''), status, created_at, updated_at
-		 FROM sessions WHERE id = ?`, id)
-	return escanearSesion(row)
 }

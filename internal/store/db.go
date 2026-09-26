@@ -77,7 +77,7 @@ func Open(projectDir string) (*sql.DB, error) {
 		return nil, err
 	}
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		return nil, fmt.Errorf("no se pudo crear la carpeta de estado: %w", err)
+		return nil, fmt.Errorf("%w: no se pudo crear la carpeta de estado: %v", ErrNoDisponible, err)
 	}
 	db, err := openPath(dbPath)
 	if err != nil {
@@ -87,8 +87,23 @@ func Open(projectDir string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := verifyEsquema(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
 }
+
+// maxOpenConns es cuántas conexiones simultáneas puede abrir el pool.
+//
+// El esquema está en modo WAL precisamente para que la interfaz lea mientras
+// las sesiones de segundo plano escriben (DATABASE.md, DATA_FLOW.md §2,
+// BUSINESS_RULES.md §3 "dos sesiones en segundo plano escriben a la vez"). Con
+// una única conexión, una transacción abierta retiene el único connection del
+// pool y cualquier lectura concurrente se queda esperando: WAL no aportaría
+// nada. El pool deja pasar varias conexiones; WAL coordina a un escritor con
+// varios lectores, y busy_timeout (db.go) serializa a los escritores entre sí.
+const maxOpenConns = 4
 
 // openPath abre una ruta concreta de base de datos con los PRAGMA de conexión y
 // verifica que quedaron activos. Es el punto único donde se comprueban los
@@ -96,11 +111,14 @@ func Open(projectDir string) (*sql.DB, error) {
 func openPath(dbPath string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", dsn(dbPath))
 	if err != nil {
-		return nil, fmt.Errorf("no se pudo abrir la base: %w", err)
+		return nil, fmt.Errorf("%w: no se pudo abrir el archivo: %v", ErrNoDisponible, err)
 	}
-	// El esquema soporta concurrencia de lectores (la TUI lee mientras el
-	// segundo plano escribe), pero un solo escritor a la vez por conexión.
-	db.SetMaxOpenConns(1)
+	// Los PRAGMA viajan en el DSN, así que el driver los aplica en cada
+	// conexión que el pool abra (no solo en la primera): por eso el pool
+	// puede tener varias sin perder foreign_keys ni WAL.
+	db.SetMaxOpenConns(maxOpenConns)
+	db.SetMaxIdleConns(maxOpenConns)
+	db.SetConnMaxLifetime(0)
 	if err := verifyPragmas(db); err != nil {
 		db.Close()
 		return nil, err
@@ -114,17 +132,17 @@ func openPath(dbPath string) (*sql.DB, error) {
 func verifyPragmas(db *sql.DB) error {
 	var mode string
 	if err := db.QueryRow("PRAGMA journal_mode").Scan(&mode); err != nil {
-		return fmt.Errorf("no se pudo leer journal_mode: %w", err)
+		return fmt.Errorf("%w: no se pudo leer journal_mode: %v", ErrNoDisponible, err)
 	}
 	if mode != "wal" {
-		return fmt.Errorf("el modo WAL no está activo (journal_mode=%q)", mode)
+		return fmt.Errorf("%w: el modo WAL no está activo (journal_mode=%q)", ErrNoDisponible, mode)
 	}
 	var fk int
 	if err := db.QueryRow("PRAGMA foreign_keys").Scan(&fk); err != nil {
-		return fmt.Errorf("no se pudo leer foreign_keys: %w", err)
+		return fmt.Errorf("%w: no se pudo leer foreign_keys: %v", ErrNoDisponible, err)
 	}
 	if fk != 1 {
-		return errors.New("foreign_keys no está activo; las cascadas no se sostendrían")
+		return fmt.Errorf("%w: foreign_keys no está activo; las cascadas no se sostendrían", ErrNoDisponible)
 	}
 	return nil
 }

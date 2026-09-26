@@ -74,7 +74,14 @@ func CrearSesion(db *sql.DB, nombre, capa string) (*Session, error) {
 var ErrNoEncontrado = sql.ErrNoRows
 
 func ObtenerSesion(db *sql.DB, id string) (*Session, error) {
-	row := db.QueryRow(
+	return obtenerSesion(db, id)
+}
+
+// obtenerSesion acepta cualquier ejecutor (DB o Tx) para que la validacion de
+// una transicion lea el estado actual dentro de la misma transaccion que
+// escribe el nuevo.
+func obtenerSesion(e ejecutor, id string) (*Session, error) {
+	row := e.QueryRow(
 		`SELECT id, name, COALESCE(layer, ''), status, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id)
 	return escanearSesion(row)
@@ -126,15 +133,25 @@ func ListarSesiones(db *sql.DB, estado string) ([]Session, error) {
 // ActualizarEstadoSesion cambia el estado de una sesión y toca updated_at
 // (patrón "Escribir estado" de QUERIES.md §2: el motor de flujos en cada
 // transición). Rechaza en código la transición ilegal (CONSTRAINTS.md §2).
+// El read-validate-write va DENTRO de una transaccion: leer el estado actual y
+// escribir el nuevo separados permitian que dos transiciones concurrentes
+// passed las dos la validacion y la ultima escribiera sobre la primera
+// (DATA_FLOW.md "una transicion de sesion es una transaccion").
 func ActualizarEstadoSesion(db *sql.DB, id, estadoNuevo string) error {
-	actual, err := ObtenerSesion(db, id)
+	return EjecutarTX(db, func(tx *sql.Tx) error {
+		return actualizarEstadoSesion(tx, id, estadoNuevo)
+	})
+}
+
+func actualizarEstadoSesion(e ejecutor, id, estadoNuevo string) error {
+	actual, err := obtenerSesion(e, id)
 	if err != nil {
 		return err
 	}
 	if !ValidarTransicionSesion(actual.Status, estadoNuevo) {
 		return fmt.Errorf("%w: sesión %s no puede pasar de %q a %q", ErrEstadoIlegal, id, actual.Status, estadoNuevo)
 	}
-	res, err := db.Exec(`UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?`,
+	res, err := e.Exec(`UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?`,
 		estadoNuevo, nowISO(), id)
 	if err != nil {
 		return traducirError(err)

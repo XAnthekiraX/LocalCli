@@ -26,10 +26,18 @@ type Approval struct {
 
 // PedirAprobación registra lo que una sesión necesita que decidas antes de
 // seguir. Nace pendiente, con resolved_at NULL (el CHECK de la base lo exige).
+// DATA_FLOW.md exige que esta insercion vaya en la misma transaccion que el
+// cambio de estado de la sesion a esperando_permiso; para eso esta PedirPermiso,
+// que compone las dos. Esta funcion es el caso de una fila sin transicion
+// asociada.
 func PedirAprobacion(db *sql.DB, sessionID, descripcion string) (*Approval, error) {
+	return pedirAprobacion(db, sessionID, descripcion)
+}
+
+func pedirAprobacion(e ejecutor, sessionID, descripcion string) (*Approval, error) {
 	now := nowISO()
 	id := newID()
-	_, err := db.Exec(
+	_, err := e.Exec(
 		`INSERT INTO approvals (id, session_id, description, status, created_at, resolved_at)
  VALUES (?, ?, ?, ?, ?, NULL)`,
 		id, sessionID, descripcion, ApprovalPendiente, now,
@@ -46,12 +54,16 @@ func PedirAprobacion(db *sql.DB, sessionID, descripcion string) (*Approval, erro
 // (CONSTRAINTS.md §2), así que la legalidad la aplica quien escribe
 // (BUSINESS_RULES.md).
 func ResolverAprobacion(db *sql.DB, id, estado string) error {
+	return resolverAprobacion(db, id, estado)
+}
+
+func resolverAprobacion(e ejecutor, id, estado string) error {
 	switch estado {
 	case ApprovalAprobada, ApprovalDeclinada, ApprovalObsoleta:
 	default:
 		return fmt.Errorf("%w: %q no es un estado final de aprobación", ErrEstadoIlegal, estado)
 	}
-	res, err := db.Exec(
+	res, err := e.Exec(
 		`UPDATE approvals SET status = ?, resolved_at = ?
  WHERE id = ? AND status = 'pendiente'`,
 		estado, nowISO(), id,
@@ -64,7 +76,14 @@ func ResolverAprobacion(db *sql.DB, id, estado string) error {
 
 // ObtenerAprobacion lee una aprobación por id.
 func ObtenerAprobacion(db *sql.DB, id string) (*Approval, error) {
-	row := db.QueryRow(
+	return obtenerAprobacion(db, id)
+}
+
+// obtenerAprobacion acepta cualquier ejecutor (DB o Tx): ResolverPermiso lo usa
+// para leer la sesion duena de la aprobacion dentro de la misma transaccion que
+// la resuelve.
+func obtenerAprobacion(e ejecutor, id string) (*Approval, error) {
+	row := e.QueryRow(
 		`SELECT id, session_id, description, status, created_at, COALESCE(resolved_at, '')
  FROM approvals WHERE id = ?`, id)
 	return escanearAprobacion(row)

@@ -1,10 +1,22 @@
 package store
 
 import (
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// ejecutor es lo mínimo que necesita una sentencia de escritura o lectura
+// simple. Lo satisfacen tanto *sql.DB como *sql.Tx, y esa es la razón de que
+// exista: una escritura que DATA_FLOW.md exige atómica con otra solo puede
+// componerse si ambas aceptan la transacción que las envuelve. Las funciones
+// de repositorio son envoltorios sobre una versión que recibe `ejecutor`, de
+// modo que el llamador puede elegir si escribe suelto o dentro de una TX.
+type ejecutor interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	QueryRow(query string, args ...any) *sql.Row
+}
 
 // newID genera el identificador de fila: UUID v4 en texto (SCHEMA.md §1,
 // "Todas las tablas usan id de tipo TEXT con un UUID v4").

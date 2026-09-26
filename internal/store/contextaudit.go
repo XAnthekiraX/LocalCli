@@ -26,6 +26,10 @@ const (
 // CHECK (decision = 'descartado') = (reason IS NOT NULL) de CONSTRAINTS.md §2
 // rechaza en la base un descarte sin motivo o un incluido con él.
 func RegistrarAuditoria(db *sql.DB, a *ContextAudit) error {
+	return registrarAuditoria(db, a)
+}
+
+func registrarAuditoria(e ejecutor, a *ContextAudit) error {
 	now := a.CreatedAt
 	if now == "" {
 		now = nowISO()
@@ -34,7 +38,7 @@ func RegistrarAuditoria(db *sql.DB, a *ContextAudit) error {
 	if id == "" {
 		id = newID()
 	}
-	_, err := db.Exec(
+	_, err := e.Exec(
 		`INSERT INTO context_audit (id, session_id, stage, document, decision, reason, tokens, created_at)
  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, a.SessionID, a.Stage, a.Document, a.Decision, nullStr(a.Reason), nullInt(a.Tokens), now,

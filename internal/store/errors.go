@@ -11,28 +11,36 @@ import (
 // "Los errores de la base se traducen antes de salir de store, para que el
 // resto del motor no sepa si fue un bloqueo, una restricción o una conexión"
 // (ERRORES.md §4).
+//
+// Ninguno reutiliza E_BAD_ARGS: ese código describe el contrato de una
+// herramienta, no una restricción de la base. Mezclarlos hacía que tres fallos
+// distintos —un CHECK, una clave foránea y una fila duplicada— fueran
+// indistinguibles para quien los recibiera (ERRORES.md §3 y §5).
 var (
-	// ErrRestriccion: un CHECK, UNIQUE o NOT NULL rompió la escritura. El
-	// catálogo cerrado de valores lo impone la base (CONSTRAINTS.md §3); el
-	// código lo reporta como argumento inválido: E_BAD_ARGS.
-	ErrRestriccion = errors.New("E_BAD_ARGS: valor que no encaja con las restricciones de la base")
+	// ErrRestriccion: un CHECK o un NOT NULL rompió la escritura. El
+	// catálogo cerrado de valores lo impone la base (CONSTRAINTS.md §3).
+	ErrRestriccion = errors.New("E_DB_CONSTRAINT: valor que no encaja con las restricciones de la base")
 
 	// ErrClaveForanea: se escribió un hijo sin sesión o sin mensaje padre
-	// (CONSTRAINTS.md §3). También es un argumento que no encaja.
-	ErrClaveForanea = errors.New("E_BAD_ARGS: la clave foránea no encuentra su fila padre")
+	// (CONSTRAINTS.md §3).
+	ErrClaveForanea = errors.New("E_DB_FOREIGN_KEY: la clave foránea no encuentra su fila padre")
 
-	// ErrConflictivo: intento de duplicar una fila con la misma PK o un
-	// segundo razonamiento para el mismo mensaje (UNIQUE, CONSTRAINTS.md §1).
-	ErrConflictivo = errors.New("E_BAD_ARGS: la fila ya existe (violación de unicidad)")
+	// ErrConflictivo: intento de duplicar una fila con la misma PK, un
+	// segundo razonamiento para el mismo mensaje o una segunda fila de
+	// auditoría para la misma etapa y documento (UNIQUE, CONSTRAINTS.md §1).
+	ErrConflictivo = errors.New("E_DB_CONFLICT: la fila ya existe (violación de unicidad)")
 
 	// ErrBloqueado: busy_timeout agotado; otra conexión sostiene la escritura.
-	// No hay código E_ dedicado en ERRORES.md: es un fallo transitorio que el
-	// llamador puede reintentar.
-	ErrBloqueado = errors.New("la base está bloqueada por otra escritura; reintente")
+	// Es transitorio: el llamador puede reintentar (ERRORES.md §3).
+	ErrBloqueado = errors.New("E_DB_LOCKED: la base está bloqueada por otra escritura; reintente")
+
+	// ErrNoDisponible: no se pudo abrir o leer la base. No distingue el motivo
+	// porque el usuario solo puede actuar sobre "no hay base utilizable".
+	ErrNoDisponible = errors.New("E_DB_UNAVAILABLE: no se pudo usar la base de datos del proyecto")
 
 	// ErrEstadoIlegal: una transición de estado no permitida por ENUMS.md §3.
 	// La legalidad la aplica el código, no un CHECK (CONSTRAINTS.md §2).
-	ErrEstadoIlegal = errors.New("transición de estado no permitida")
+	ErrEstadoIlegal = errors.New("E_STAGE_FAILED: transición de estado no permitida")
 
 	// ErrNoProyecto es el alias empaquetado de E_NOT_A_PROJECT (ERRORES.md §3),
 	// para quien trapée errores del store sin importar db.go.
@@ -69,7 +77,7 @@ func traducirError(err error) error {
 	default:
 		// Cualquier otro error de infraestructura sube tal cual, envuelto, sin
 		// fingir un código que no le corresponde.
-		return fmt.Errorf("error de la base: %w", err)
+		return fmt.Errorf("%w: %v", ErrNoDisponible, err)
 	}
 }
 
