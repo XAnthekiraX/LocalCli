@@ -3,6 +3,7 @@ title: SPEC — Interfaz, atajos y panel de aprobaciones
 tags: [specs, requisito]
 depende_de:
   - "[[IDEA]]"
+  - "[[specs/SPEC-KEYBINDS]]"
   - "[[specs/SPEC-ARCHIVOS]]"
   - "[[specs/SPEC-INTERFAZ]]"
   - "[[specs/SPEC-SESIONES]]"
@@ -18,7 +19,7 @@ Poder trabajar la interfaz sin soltar el teclado, y ver de un vistazo todo lo qu
 ## Alcance
 
 Incluye los atajos de teclado, su configuración y el panel global de aprobaciones.
-No incluye las reglas de cuándo se pide permiso, que están en [[specs/SPEC-ARCHIVOS]], ni la disposición general de la pantalla, que está en [[specs/SPEC-INTERFAZ]].
+No incluye las reglas de cuándo se pide permiso, que están en [[specs/SPEC-ARCHIVOS]], ni la disposición general de la pantalla, que está en [[specs/SPEC-INTERFAZ]], ni el mecanismo de resolución de teclas (líder, timeout, contextos), que está en [[specs/SPEC-KEYBINDS]].
 
 El panel de aprobaciones **no es** el panel de datos. El de datos es de lectura y solo información; este son decisiones que esperan tu respuesta.
 
@@ -53,6 +54,9 @@ El panel de aprobaciones **no es** el panel de datos. El de datos es de lectura 
 ## Reglas de negocio
 
 - Trae atajos por defecto que se pueden cambiar sin reinstalar.
+- El teclado funciona con un keymap central: una acción puede tener varios atajos, y existe una tecla líder (`Ctrl+X`, por defecto) que combina con la siguiente tecla (`Ctrl+X m` abre el modal de modelos, `Ctrl+X l` el de sesiones). Mecanismo completo en [[specs/SPEC-KEYBINDS]].
+- Los tres modales de la interfaz son **modelos** (`Ctrl+X m`), **sesiones** (`Ctrl+X l`) y **atajos** (`Ctrl+P`). `Esc` cierra cualquiera de ellos sin cambiar nada.
+- `Tab` alterna el agente entre `plan` y `build`; el agente activo se ve a la izquierda del input.
 - Un atajo no puede quedar asignado a dos acciones.
 - El panel muestra las aprobaciones pendientes de cualquier sesión.
 - Resolver una aprobación solo afecta a la sesión de esa línea.
@@ -61,7 +65,10 @@ El panel de aprobaciones **no es** el panel de datos. El de datos es de lectura 
 
 ## Criterios de aceptación
 
-- [ ] Se listan los atajos disponibles y la acción de cada uno.
+- [ ] Se listan los atajos disponibles y la acción de cada uno, incluidas las secuencias con líder (el propio modal de atajos se abre con `Ctrl+P`).
+- [ ] `Ctrl+X m` abre el modal de modelos y `Ctrl+X l` el modal de sesiones desde cualquier vista; `Enter` en el modal de sesiones abre la sesión elegida.
+- [ ] `Esc` cierra cualquier modal abierto sin cambiar nada.
+- [ ] `Tab` cambia entre los agentes disponibles (`plan` ↔ `build`) y el indicador junto al input se actualiza.
 - [ ] Se puede cambiar un atajo y el cambio queda guardado.
 - [ ] El panel muestra las aprobaciones pendientes de todas las sesiones.
 - [ ] Cada aprobación se resuelve de forma independiente.

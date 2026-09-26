@@ -27,12 +27,14 @@ Qué se prueba en la capa de presentación y cómo. La estrategia global está e
 - El panel muestra los nueve datos definidos en [[specs/SPEC-INTERFAZ]] y refleja la sesión activa, no otra.
 - El razonamiento se distingue de la respuesta, se muestra en vivo y se oculta sin detener la generación.
 - Con el panel cerrado, el contador de aprobaciones pendientes sigue visible y se actualiza con cada evento.
-- El selector lista todas las sesiones con su estado, incluidas las de segundo plano; elegir una cambia el chat sin detener nada.
+- `Ctrl+X l` abre el modal de sesiones con todas las del proyecto y su estado, incluidas las de segundo plano; elegir una con `Enter` abre esa sesión (el chat cambia a su historial) sin detener nada.
+- `Ctrl+P` abre el modal de atajos: cada línea muestra la acción y su tecla; es de solo lectura. `Esc` cierra los tres modales sin cambiar nada.
+- `Tab` alterna el agente `plan`/`build`; el indicador `[plan]`/`[build]` aparece a la izquierda del input en bienvenida y vista principal, y no cicla con un modal abierto.
 - El panel de aprobaciones lista pendientes de cualquier sesión y resuelve cada línea por separado.
 - Los estados pintados coinciden con [[database/01-schema/ENUMS]]; ningún estado inventado.
 - Un atajo duplicado se rechaza al guardar el mapa de teclas, y el cambio queda persistido.
 - Si la sesión activa está generando, la entrada sigue operativa y no cancela nada.
-- Al ejecutar la aplicación se ve la bienvenida centrada: logotipo ASCII, nombre con versión, selector de modelos y una línea de entrada; sin panel de contexto ni aprobaciones. `↑`/`↓` cambian el modelo resaltado y lo elegido viaja con la primera petición; sin Ollama el selector aparece vacío con aviso «sin modelos» y se puede escribir igual.
+- Al ejecutar la aplicación se ve la bienvenida centrada: logotipo ASCII, nombre con versión, la línea con el modelo en uso y una línea de entrada; sin panel de contexto, sin aprobaciones y sin lista de modelos visible. `Ctrl+X m` abre el modal con los modelos de Ollama (aviso «sin modelos» si no responde); `↑`/`↓` navegan, `Enter` aplica y viaja con la primera petición, `Esc` cierra sin cambios.
 - La primera petición escrita en la bienvenida llega a `session` y aparece como primer mensaje del chat al cambiar de vista, sin repetirse ni pedir confirmación.
 - La bienvenida se pinta sin Ollama ni base: se comprueba con ambos no disponibles.
 - El logotipo se compara byte a byte contra la salida dorada `internal/tui/testdata/logo.txt`: 6 filas × 53 columnas, arte fijo, sin variaciones. La definición canónica está en [[specs/SPEC-INTERFAZ]].

@@ -5,7 +5,7 @@
 
 - [[frontend/FRONTEND]] — §1 arquitectura Elm (un modelo, un update, un view; sin goroutines fuera de las suscripciones) y §2 `app.go`.
 - [[frontend/01-domain/DOMAIN]] — §1 `app` (solo enruta, mantiene vista activa) y §3 (transición bienvenida→principal sin repetir ni confirmar).
-- [[frontend/02-interfaces/INTERFACES]] — §1 tabla completa de eventos y su reacción; §4 teclado global (`?`, `Ctrl+Q`, `Ctrl+F` con confirmación); §5 pregunta al cerrar sesión con flujo en marcha.
+- [[frontend/02-interfaces/INTERFACES]] — §1 tabla completa de eventos y su reacción; §4 teclado global (atajos vigentes según [[specs/SPEC-KEYBINDS]]; `Ctrl+F` con confirmación); §5 pregunta al cerrar sesión con flujo en marcha.
 - [[backend/04-infrastructure/EVENTS]] — payloads reales de cada evento a traducir a mensajes internos.
 
 ## Tareas pequeñas
