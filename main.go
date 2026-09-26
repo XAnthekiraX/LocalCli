@@ -3,15 +3,13 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	_ "modernc.org/sqlite" // driver puro Go, sin cgo (DECISIONS.md)
+	"localcli/internal/store"
 )
 
 func main() {
@@ -26,25 +24,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Verificación mínima del stack: el driver puro Go abre SQLite sin cgo.
-	// El esquema completo llega con store (T-B002); aquí solo se confirma
-	// que la ruta derivada .localcli/state.db funciona.
-	dbPath := filepath.Join(cwd, ".localcli", "state.db")
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		fmt.Fprintln(os.Stderr, "error al preparar .localcli/:", err)
-		os.Exit(1)
-	}
-	db, err := sql.Open("sqlite", dbPath)
+	// store es el ÚNICO punto de apertura y escritura de SQLite
+	// (DECISIONS.md: "store es el único que escribe en SQLite"). Aquí no se
+	// importa database/sql ni se abre el driver: store.Open aplica los PRAGMA
+	// de conexión, crea .localcli/ y ejecuta las migraciones por user_version.
+	db, err := store.Open(cwd)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error al abrir la base:", err)
+		fmt.Fprintln(os.Stderr, "error al preparar la base del proyecto:", err)
 		os.Exit(1)
 	}
-	if err := db.Ping(); err != nil {
-		fmt.Fprintln(os.Stderr, "error al verificar la base:", err)
-		db.Close()
-		os.Exit(1)
-	}
-	db.Close()
+	defer db.Close()
 
 	// El módulo tui completo llega en T-B014; aquí solo se confirma que
 	// Bubble Tea + Lip Gloss compilan y corren en este stack.
