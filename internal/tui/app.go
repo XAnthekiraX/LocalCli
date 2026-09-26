@@ -117,8 +117,12 @@ func Nuevo(p Puerto) *App {
 
 // Init arma la escucha del canal del motor (T-F010-06): el comando espera el
 // siguiente evento y el bucle lo relanza tras cada uno. Así la vista recibe los
-// eventos sin goroutines propias, como manda la arquitectura Elm.
-func (a *App) Init() tea.Cmd { return a.escucharCmd() }
+// eventos sin goroutines propias, como manda la arquitectura Elm. Además pide
+// de una vez la lista del selector de modelos: llega asíncrona, porque la
+// bienvenida se pinta sin esperar a Ollama (SPEC-INTERFAZ §Reglas).
+func (a *App) Init() tea.Cmd {
+	return tea.Batch(a.escucharCmd(), a.cargarModelos())
+}
 
 // Update maneja las teclas, el tamaño y los mensajes que llegan por eventos.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -142,6 +146,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.escucharCmd()
 	case sesionesMsg:
 		a.Selector.Abrir(m.Sesiones, a.Panel.SesionID)
+		return a, nil
+	case modelosMsg:
+		// La lista del selector arriba cuando llega; si el puerto falló, queda
+		// el aviso «sin modelos» y se puede escribir igual (SPEC-INTERFAZ).
+		a.Bienvenida.fijarModelos(m.Modelos, m.Err)
 		return a, nil
 	case aprobacionesMsg:
 		a.Aprobs.Fijar(m.Items)

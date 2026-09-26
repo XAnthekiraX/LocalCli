@@ -41,12 +41,30 @@ const (
 	EventoFlujoCancelado     = "flujo_cancelado"
 )
 
+// ModeloLocal es una entrada del selector de modelos de la bienvenida
+// (SPEC-INTERFAZ §Reglas, "Selector de modelos"). La vista no importa el
+// paquete `ollama`: lo que reporta Ollama llega traducido a este dato mínimo,
+// igual que las sesiones llegan como `session.Sesion` y nada más.
+type ModeloLocal struct {
+	Nombre string
+}
+
 // Puerto es lo que la vista necesita de `session`. Todo lo que no esté aquí, la
 // vista no lo puede hacer.
 type Puerto interface {
 	// ResolverActiva devuelve la sesión activa del proyecto: la retoma si
 	// existe o crea una nueva (SPEC-INTERFAZ §Pantalla de bienvenida).
 	ResolverActiva() (*session.Sesion, error)
+	// Modelos lista los modelos locales que reporta Ollama para el selector de
+	// la bienvenida (SPEC-INTERFAZ §Reglas). Es una lectura que llega como
+	// dato: sin Ollama devuelve lista vacía y la bienvenida se pinta igual,
+	// con el aviso «sin modelos» — nunca bloquea ni espera (DOMAIN §3).
+	Modelos() ([]ModeloLocal, error)
+	// FijarModelo elige el modelo con el que trabajará el motor a partir de
+	// ahora; lo elegido por el usuario prevalece sobre la autodetección del
+	// arranque (SPEC-OLLAMA-PERFIL: el modelo lo elige el usuario). Se llama
+	// al mover el selector con ↑/↓ y otra vez al enviar desde la bienvenida.
+	FijarModelo(nombre string)
 	// Listar lista las sesiones del proyecto para el selector.
 	Listar() ([]session.Sesion, error)
 	// Historial devuelve la conversación de una sesión, ya con su razonamiento
@@ -74,6 +92,13 @@ type (
 	initMsg         struct{}
 	eventoMsg       struct{ Evento Evento }
 	sesionesMsg     struct{ Sesiones []session.Sesion }
+	// modelosMsg trae la lista del selector de la bienvenida. Si hay error,
+	// la vista no se bloquea ni espera: `Err` se pinta como aviso y la lista
+	// queda vacía (SPEC-INTERFAZ §Reglas, "Selector de modelos").
+	modelosMsg struct {
+		Modelos []ModeloLocal
+		Err     error
+	}
 	aprobacionesMsg struct{ Items []Aprobacion }
 	historialMsg    struct {
 		Sesion   string

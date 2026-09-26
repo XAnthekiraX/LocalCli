@@ -19,7 +19,7 @@ Cada componente tiene una responsabilidad y un límite. Ninguno contiene reglas 
 | Componente | Responsabilidad | Lo que no hace |
 |---|---|---|
 | `app` | Modelo raíz: reparte los eventos entre componentes, mantiene qué vista está activa (bienvenida o principal) y decide la transición | No conoce el detalle de cada componente; solo enruta |
-| `welcome` | Pantalla de bienvenida: logotipo ASCII con nombre y versión, y una línea de entrada para la primera petición | No crea sesiones ni valida nada: envía lo escrito como petición y la vista cambia a la principal |
+| `welcome` | Pantalla de bienvenida centrada: logotipo ASCII con nombre y versión, selector de modelos y una línea de entrada para la primera petición | No crea sesiones ni valida nada: envía lo escrito como petición junto con el modelo elegido y la vista cambia a la principal |
 | `chat` | Muestra el historial de la sesión activa: razonamiento y respuesta de cada intercambio | No gestiona sesiones; pinta lo que le llega de la activa |
 | `input` | Una línea de texto; compone y envía la petición hacia la sesión activa | No valida reglas de negocio |
 | `panel` | Los nueve datos del panel, plegable a la derecha | Es de lectura: nada se escribe desde él |
@@ -39,7 +39,8 @@ Cada componente tiene una responsabilidad y un límite. Ninguno contiene reglas 
 
 ## 3. Reglas de la bienvenida
 
-- Es la primera vista al ejecutar `localcli`. Solo hay logotipo, nombre con versión y una línea de entrada; sin paneles, selector ni aprobaciones.
+- Es la primera vista al ejecutar `localcli`. Hay logotipo, nombre con versión, un selector de modelos y una línea de entrada; el bloque completo va centrado en la terminal. Sin paneles ni aprobaciones.
+- El selector lista los modelos locales que reporta Ollama; `↑`/`↓` cambian el resaltado y lo elegido se usa para la primera petición. Sin Ollama, la lista aparece vacía con aviso «sin modelos» y se puede escribir igual: la bienvenida no espera a nada externo.
 - Lo escrito es la primera petición: se envía a la sesión activa (se retoma si existe, se crea si no) y la vista cambia a la principal, donde aparece como primer mensaje del chat. La transición no repite la petición ni pide confirmación.
 - Se pinta sin esperar a Ollama ni a la base: no depende de nada externo. La única salida desde ella es `Ctrl+C`.
 - El logotipo es un arte ASCII fijo de la aplicación, no contenido de sesión: vive en el código de la TUI y no entra al contexto del modelo.

@@ -32,7 +32,7 @@ Qué se prueba en la capa de presentación y cómo. La estrategia global está e
 - Los estados pintados coinciden con [[database/01-schema/ENUMS]]; ningún estado inventado.
 - Un atajo duplicado se rechaza al guardar el mapa de teclas, y el cambio queda persistido.
 - Si la sesión activa está generando, la entrada sigue operativa y no cancela nada.
-- Al ejecutar la aplicación se ve la bienvenida: logotipo ASCII, nombre con versión y una línea de entrada; sin panel, selector ni aprobaciones.
+- Al ejecutar la aplicación se ve la bienvenida centrada: logotipo ASCII, nombre con versión, selector de modelos y una línea de entrada; sin panel de contexto ni aprobaciones. `↑`/`↓` cambian el modelo resaltado y lo elegido viaja con la primera petición; sin Ollama el selector aparece vacío con aviso «sin modelos» y se puede escribir igual.
 - La primera petición escrita en la bienvenida llega a `session` y aparece como primer mensaje del chat al cambiar de vista, sin repetirse ni pedir confirmación.
 - La bienvenida se pinta sin Ollama ni base: se comprueba con ambos no disponibles.
 - El logotipo se compara byte a byte contra la salida dorada `internal/tui/testdata/logo.txt`: 6 filas × 53 columnas, arte fijo, sin variaciones. La definición canónica está en [[specs/SPEC-INTERFAZ]].
