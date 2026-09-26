@@ -9,14 +9,14 @@ import (
 	"testing"
 )
 
-// TestNewRootModel — humo del stack: el modelo raíz se construye y cumple tea.Model.
-func TestNewRootModel(t *testing.T) {
-	m := newRootModel("LocalCli")
-	if m.Init() != nil {
-		t.Fatal("Init debe devolver nil en el modelo provisional")
-	}
-	if got := m.(rootModel).View(); got == "" {
-		t.Fatal("View no debe devolver vacío")
+// TestNuevaApp — humo del cableado real: la app de producción se construye
+// sobre su puerto y es un modelo completo de la TUI (tui/app.go), no el
+// modelo provisional que había antes de T-B014.
+func TestNuevaApp(t *testing.T) {
+	a := &Arranque{puerto: &Adaptador{}}
+	app := nuevaApp(a)
+	if app.View() == "" {
+		t.Fatal("View no debe devolver vacío al arrancar")
 	}
 }
 

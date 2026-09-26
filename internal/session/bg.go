@@ -100,6 +100,13 @@ func (g *Gestor) Listar() ([]Sesion, error) {
 // (SPEC-SESIONES: "El estado de cada sesión es visible en todo momento").
 func (g *Gestor) Estado(sesionID string) (*Sesion, error) { return g.sesion(sesionID) }
 
+// Suscribir da el canal de eventos del motor y la función para darse de baja.
+// Es el punto único por donde `tui` mira al motor (EVENTS.md §4: "la TUI no
+// pregunta nada: se le notifica"): el gestor solo delega en su bus y no añade
+// estado propio. El consumidor es responsable de llamar a la baja al terminar,
+// para que el canal cierre y nadie quede esperando para siempre.
+func (g *Gestor) Suscribir() (<-chan Evento, func()) { return g.Bus.Suscribir() }
+
 // Historial devuelve la conversación de una sesión, para retomarla o revisarla.
 func (g *Gestor) Historial(sesionID string) ([]store.MensajeConRazonamiento, error) {
 	if _, err := g.sesion(sesionID); err != nil {
