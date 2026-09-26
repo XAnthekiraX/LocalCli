@@ -1,0 +1,46 @@
+{
+  "leer_archivo": {
+    "ruta": "ai/docs/PROJECT.md"
+  },
+  "listar_carpeta": {
+    "ruta": "ai/docs/backend"
+  },
+  "buscar_archivos": {
+    "patron": "*.md"
+  },
+  "buscar_en_archivos": {
+    "patron": "hereda_de",
+    "ruta": "ai/docs/specs"
+  },
+  "crear_archivo": {
+    "ruta": "internal/tools/nuevo.go",
+    "contenido": "package tools\n"
+  },
+  "escribir_archivo": {
+    "ruta": "internal/tools/catalog.go",
+    "contenido": "package tools\n"
+  },
+  "editar_archivo": {
+    "ruta": "internal/tools/catalog.go",
+    "cambio": "sustituir la lista de herramientas de escritura"
+  },
+  "eliminar_archivo": {
+    "ruta": "internal/tools/nuevo.go"
+  },
+  "crear_carpeta": {
+    "ruta": "internal/tools/subpaquete"
+  },
+  "eliminar_carpeta": {
+    "ruta": "internal/tools/subpaquete"
+  },
+  "ejecutar_comando": {
+    "comando": "go test ./...",
+    "carpeta": "."
+  },
+  "buscar_en_internet": {
+    "consulta": "documentación de bubbletea"
+  },
+  "abrir_pagina": {
+    "direccion": "https://example.com/docs"
+  }
+}
