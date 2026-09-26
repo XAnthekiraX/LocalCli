@@ -1,2 +1,5 @@
 # Go coverage
 coverage.out
+.localcli
+.vscode
+.serena
