@@ -49,23 +49,33 @@ Solo lectura, con las consultas de [[database/03-operations/QUERIES]]: historial
 
 ## 4. Teclado
 
-Atajos por defecto, reasignables desde la ayuda y guardados en `~/.config/localcli/keys.json`. Propuesta inicial (los atajos de panel y de aprobaciones no existen en la bienvenida; allí `↑`/`↓` mueven el selector de modelos y las flechas no están asignadas a otra cosa):
+Atajos por defecto, reasignables desde la ayuda y guardados en `~/.config/localcli/keys.json`. El teclado pasa por un resolver central (`KeyResolver`, ver [[specs/SPEC-KEYBINDS]]): acciones con ID estable, múltiples bindings por acción, tecla líder `Ctrl+X` con timeout 2000 ms y resolución por contexto (modal → input → vista → global). Los componentes reciben acciones, nunca teclas:
 
-| Atajo | Acción |
-|---|---|
-| `Ctrl+D` | Abrir o cerrar el panel de datos |
-| `Ctrl+S` | Abrir el selector de sesiones |
-| `Ctrl+R` | Mostrar u ocultar el razonamiento |
-| `Ctrl+A` | Abrir el panel de aprobaciones |
-| `Ctrl+F` | Cancelar el flujo en curso (pide confirmación) |
-| `?` | Ayuda de atajos |
-| `Ctrl+Q` | Salir |
+| Atajo | Acción | Contexto |
+|---|---|---|
+| `Ctrl+C` | Salir (`app_exit`) | global, también con modales abiertos |
+| `Ctrl+X m` | Abrir el modal de modelos (`model_picker`) | global |
+| `Ctrl+X l` | Abrir el modal de sesiones; al elegir una con `Enter` se abre esa sesión (`session_picker`) | global |
+| `Ctrl+P` | Abrir el modal con la lista de atajos existentes (`command_palette`) | global |
+| `Tab` | Cambiar de agente: `plan` ↔ `build` (`agent_cycle`); el agente activo se pinta a la izquierda del input | vista y bienvenida (no con modal abierto) |
+| `Esc` | Cerrar cualquier modal (`dismiss`) | modal |
+| `↑` / `↓` | Navegar la lista del modal abierto | modal |
+| `Enter` | Aplicar lo resaltado en el modal y cerrarlo | modal |
+| `Enter` | Enviar la petición | input |
+| `Ctrl+D` | Abrir o cerrar el panel de datos | vista |
+| `Ctrl+R` | Mostrar u ocultar el razonamiento | vista |
+| `Ctrl+A` | Abrir el panel de aprobaciones | vista |
+| `Ctrl+F` | Cancelar el flujo en curso (pide confirmación) | vista |
+| `a` / `d` | Aprobar / declinar la línea seleccionada | panel de aprobaciones |
 
-En el panel de aprobaciones: `a` aprueba y `d` declina la línea seleccionada.
+No hay acción «sesión nueva»: las sesiones se crean enviando la primera petición desde la bienvenida. No hay ayuda por `?`: el listado de atajos es el modal de `Ctrl+P`.
 
-Reglas, según [[specs/SPEC-INTERFAZ-ATAJOS]]:
+Reglas, según [[specs/SPEC-INTERFAZ-ATAJOS]] y [[specs/SPEC-KEYBINDS]]:
 
 - Un atajo no puede quedar asignado a dos acciones; el duplicado se rechaza al guardar.
+- Una acción admite varios atajos y puede deshabilitarse con lista vacía en keys.json.
+- Con un modal abierto, sus teclas (flechas/enter/esc) no llegan a la vista de abajo; con el input enfocado, las letras sueltas escriben y no activan acciones.
+- Tras pulsar la líder sin segunda tecla, el estado vuelve a NORMAL al expirar el timeout.
 - Reasignar no cambia reglas de permiso, solo la forma de invocar.
 - El cambio se guarda sin reiniciar la aplicación.
 

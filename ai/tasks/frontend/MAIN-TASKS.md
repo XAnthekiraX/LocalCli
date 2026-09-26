@@ -16,6 +16,10 @@ Fuente de verdad del progreso del frontend. Derivada exclusivamente de `ai/docs/
 | T-F009 | crear | notify: línea de aviso de aprobaciones pendientes visible con el panel cerrado | T-F008 | completada | `009-task-notify.md` |
 | T-F010 | crear | app: modelo raíz Bubble Tea, enrutado de eventos del motor, transición bienvenida↔principal y suscripciones | T-F001..T-F009 | completada | `010-task-app.md` |
 | T-F011 | crear | Pruebas y validaciones: unitarias de render, de componente con arnés Bubble Tea y verificación de criterios de aceptación | T-F010 | completada | `011-task-tests.md` |
+| T-F012 | crear | keymap central: KeyResolver con tecla líder (Ctrl+X), timeout 2000 ms, múltiples bindings por acción y resolución por contexto; migración de keys.json | T-F001, T-F010 | pendiente | `012-task-keyresolver.md` |
+| T-F013 | actualizar | modal de modelos: la bienvenida muestra solo el modelo en uso; Ctrl+X m abre un modal con la lista de Ollama cargada bajo demanda | T-F012 | pendiente | `013-task-modal-modelos.md` |
+| T-F014 | actualizar | modales de sesiones y atajos: Ctrl+X l abre el modal de sesiones (Enter abre la elegida), Ctrl+P el listado de atajos, Esc cierra cualquiera | T-F012, T-F013 | pendiente | `014-task-modales-sesiones-atajos.md` |
+| T-F015 | actualizar | indicador de agente a la izquierda del input ([plan]/[build]) en bienvenida y vista principal; Tab alterna el agente | T-F012 | pendiente | `015-task-indicador-agente.md` |
 
 ## Referencias
 
@@ -25,5 +29,6 @@ Fuente de verdad del progreso del frontend. Derivada exclusivamente de `ai/docs/
 - [[frontend/05-quality/TESTING]] — estrategia de pruebas y salidas doradas.
 - [[specs/SPEC-INTERFAZ]] — disposición, zonas, bienvenida y arte canónico del logotipo.
 - [[specs/SPEC-INTERFAZ-ATAJOS]] — reglas de atajos y panel de aprobaciones.
+- [[specs/SPEC-KEYBINDS]] — keymap central, leader key, timeout y resolución por contexto.
 - [[backend/04-infrastructure/EVENTS]] — eventos que produce el motor (productor de la TUI).
 - [[PROJECT]] — stack aprobado: Bubble Tea + Lip Gloss, un único binario Go.

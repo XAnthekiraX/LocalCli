@@ -33,12 +33,15 @@ Este documento es el mapa de navegación del frontend. El motor está en [[backe
 ```
 internal/tui/
   app.go        modelo raíz, enrutado de eventos y suscripciones
-  welcome.go    pantalla de bienvenida: logotipo ASCII y primera petición
+  welcome.go    pantalla de bienvenida: logotipo ASCII, línea de modelo y primera petición
+  modelsmodal.go modal de modelos (Ctrl+X m): lista de Ollama cargada bajo demanda
+  keyresolver.go KeyResolver: líder ctrl+x, timeout, contexto y acciones
   testdata/     salidas doradas: logo.txt (logotipo canónico de la bienvenida)
   chat.go       historial de la sesión activa: razonamiento y respuesta
-  input.go      entrada de texto
+  input.go      entrada de texto con el indicador de agente a la izquierda ([plan]/[build])
   panel.go      panel de datos plegable con sus nueve datos
-  sessions.go   selector momentáneo de sesiones
+  sessionsmodal.go modal de sesiones (Ctrl+X l): al aplicar abre esa sesión
+  keysmodal.go  modal de atajos (Ctrl+P): listado de acción + tecla
   approvals.go  panel de aprobaciones pendientes de todas las sesiones
   notify.go     línea de aviso de aprobaciones pendientes con el panel cerrado
   keys.go       mapa de teclas reasignable
