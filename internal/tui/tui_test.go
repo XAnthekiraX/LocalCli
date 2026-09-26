@@ -563,12 +563,12 @@ func TestLosAtajosPorDefectoNoSeSolapan(t *testing.T) {
 	// La ayuda lista cada atajo con su acción.
 	ayuda := AyudaAtajos(atajos)
 	for _, a := range atajos {
-		if !strings.Contains(ayuda, a.Tecla) || !strings.Contains(ayuda, a.Descripcion) {
-			t.Errorf("la ayuda no lista %s", a.Tecla)
+		if !strings.Contains(ayuda, a.Tecla()) || !strings.Contains(ayuda, a.Descripcion) {
+			t.Errorf("la ayuda no lista %s", a.Tecla())
 		}
 	}
 	// Dos atajos con la misma tecla no valen.
-	mala := []Atajo{{Tecla: "ctrl+o", Accion: AccionPanel}, {Tecla: "ctrl+o", Accion: AccionSalir}}
+	mala := []Atajo{{Secuencias: []Secuencia{{Paso1: "ctrl+o"}}, Accion: AccionPanel}, {Secuencias: []Secuencia{{Paso1: "ctrl+o"}}, Accion: AccionSalir}}
 	if err := ValidarAtajos(mala); err == nil {
 		t.Error("dos acciones con la misma tecla deben rechazarse")
 	}
@@ -608,13 +608,13 @@ func TestUnAtajoReasignadoDisparaLaMismaAcción(t *testing.T) {
 	a := Nuevo(p)
 	a.Vista = VistaPrincipal
 	a.Panel.SesionID = "s1"
-	a.Atajos = []Atajo{{Tecla: "ctrl+k", Accion: AccionPanel, Descripcion: "panel"}}
+	a.Atajos = []Atajo{{Secuencias: []Secuencia{{Paso1: "ctrl+k"}}, Accion: AccionPanel, Descripcion: "panel"}}
 
-	tecla(t, a, tea.KeyCtrlO)
+	pulsa(t, a, tea.KeyCtrlO)
 	if a.Panel.Abierto {
 		t.Error("ctrl+o ya no es panel en este mapa")
 	}
-	tecla(t, a, tea.KeyCtrlK)
+	pulsa(t, a, tea.KeyCtrlK)
 	if !a.Panel.Abierto {
 		t.Error("ctrl+k dispara la acción reasignada")
 	}

@@ -137,12 +137,18 @@ func (r *KeyResolver) Cancelar() {
 //   - Con el input enfocado, las letras sueltas no activan acciones: el texto
 //     manda (por eso los atajos de fábrica usan modificadores o la líder).
 func (r *KeyResolver) Resolver(m tea.KeyMsg, ctx Contexto) (Accion, tea.Cmd) {
-	nombre := m.String()
+	nombre := strings.ToLower(strings.TrimSpace(m.String()))
 
 	// 1. Dentro de un modal o del panel de aprobaciones: manda el componente.
-	//    Solo la líder sigue funcionando desde ahí.
+	//    Sus teclas propias (esc, flechas, a/d, enter) no se convierten en acción
+	//    aquí; la app las reparte según el foco. La líder y una secuencia a medias
+	//    sí siguen vivas desde cualquier contexto (SPEC-KEYBINDS §Tecla líder:
+	//    escape hatch).
 	if ctx == ContextoModal || ctx == ContextoAprobaciones {
-		if nombre == r.Kmap.Lider {
+		if r.Estado == EstadoLider {
+			return r.combinar(nombre)
+		}
+		if nombre == r.Kmap.Lider() {
 			return r.entrarEnLider()
 		}
 		return AccionNinguna, nil
@@ -154,7 +160,7 @@ func (r *KeyResolver) Resolver(m tea.KeyMsg, ctx Contexto) (Accion, tea.Cmd) {
 	}
 
 	// 3. Estado NORMAL: la líder abre la secuencia.
-	if nombre == r.Kmap.Lider {
+	if nombre == r.Kmap.Lider() {
 		return r.entrarEnLider()
 	}
 
@@ -163,7 +169,7 @@ func (r *KeyResolver) Resolver(m tea.KeyMsg, ctx Contexto) (Accion, tea.Cmd) {
 	if ctx == ContextoInput && len([]rune(nombre)) == 1 {
 		return AccionNinguna, nil
 	}
-	for _, e := range r.Kmap.Entradas {
+	for _, e := range r.Kmap.Entradas() {
 		for _, sec := range e.Secuencias {
 			if sec.Paso2 != "" {
 				continue // las secuencias requieren la líder: paso 2
@@ -179,9 +185,9 @@ func (r *KeyResolver) Resolver(m tea.KeyMsg, ctx Contexto) (Accion, tea.Cmd) {
 // entrarEnLider guarda las secuencias candidatas y arranca el temporizador.
 func (r *KeyResolver) entrarEnLider() (Accion, tea.Cmd) {
 	var candidatas []Secuencia
-	for _, e := range r.Kmap.Entradas {
+	for _, e := range r.Kmap.Entradas() {
 		for _, sec := range e.Secuencias {
-			if sec.Paso2 != "" && sec.Paso1 == r.Kmap.Lider {
+			if sec.Paso2 != "" && sec.Paso1 == r.Kmap.Lider() {
 				candidatas = append(candidatas, sec)
 			}
 		}
@@ -199,7 +205,7 @@ func (r *KeyResolver) combinar(nombre string) (Accion, tea.Cmd) {
 		return AccionNinguna, nil
 	}
 	// La líder otra vez reinicia la espera desde cero.
-	if nombre == r.Kmap.Lider {
+	if nombre == r.Kmap.Lider() {
 		return r.entrarEnLider()
 	}
 	for _, sec := range r.Pendiente {
@@ -217,7 +223,7 @@ func (r *KeyResolver) combinar(nombre string) (Accion, tea.Cmd) {
 
 // accionDe busca la acción dueña de una secuencia completa.
 func (r *KeyResolver) accionDe(querida Secuencia) Accion {
-	for _, e := range r.Kmap.Entradas {
+	for _, e := range r.Kmap.Entradas() {
 		for _, sec := range e.Secuencias {
 			if sec == querida {
 				return e.Accion
@@ -225,4 +231,21 @@ func (r *KeyResolver) accionDe(querida Secuencia) Accion {
 		}
 	}
 	return AccionNinguna
+}
+
+// ResolverSimple es la búsqueda plana del mapa —literal exacto a acción— sin
+// máquina de estados de líder. La usan las pruebas de reasignación heredadas
+// (T-F001/T-F010: "un mapa reasignado dispara la misma acción con otra tecla")
+// y cualquier consumidor que ya tenga el nombre de tecla resuelto. Las
+// secuencias con líder nunca casan aquí: requieren el paso 2 de Resolver.
+func ResolverSimple(entradas []Atajo, nombre string) (Accion, bool) {
+	nombre = strings.ToLower(strings.TrimSpace(nombre))
+	for _, e := range entradas {
+		for _, sec := range e.Secuencias {
+			if sec.Paso2 == "" && sec.Paso1 == nombre {
+				return e.Accion, true
+			}
+		}
+	}
+	return AccionNinguna, false
 }

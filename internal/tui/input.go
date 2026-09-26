@@ -12,6 +12,7 @@
 package tui
 
 import (
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -72,4 +73,37 @@ func (e *Entrada) Update(msg tea.Msg) (Entrada, tea.Cmd) {
 
 // View pinta la línea: el placeholder cuando está vacía, el texto y su cursor
 // cuando no.
+
+// DesactivarTeclasPropias deja al campo textinput solo con la edición esencial:
+// desde T-F012-06 las teclas de acción (flechas, home/end, tab, ctrl+u/k…) las
+// decide el KeyResolver en la app, no el componente. Si el mapa se reasigna —o
+// una letra suelta pasa a ser atajo— el campo seguiría moviendo el cursor,
+// pegando o aceptando sugerencias con teclas que ya no son suyas; aquí se
+// apagan todas menos imprimir, retroceso y suprimir. La líder ctrl+x tampoco
+// debe dejar un literal huérfano en el texto.
+//
+// Los bindings desactivados se fijan a una secuencia inexistente ("ctrl+@"):
+// bubbles nunca la produce, así que key.Matches jamás coincide. Se conservan
+// DeleteCharacterBackward (backspace/ctrl+h) y DeleteCharacterForward
+// (supr/ctrl+d) porque forman parte de la escritura básica.
+func (e *Entrada) DesactivarTeclasPropias() {
+	km := e.campo.KeyMap
+	uno := key.NewBinding(key.WithKeys("ctrl+@"), key.WithHelp("ctrl+@", ""))
+	km.CharacterForward = uno
+	km.CharacterBackward = uno
+	km.WordForward = uno
+	km.WordBackward = uno
+	km.DeleteWordBackward = uno
+	km.DeleteWordForward = uno
+	km.DeleteAfterCursor = uno
+	km.DeleteBeforeCursor = uno
+	km.LineStart = uno
+	km.LineEnd = uno
+	km.Paste = uno
+	km.AcceptSuggestion = uno
+	km.NextSuggestion = uno
+	km.PrevSuggestion = uno
+	e.campo.KeyMap = km
+}
+
 func (e *Entrada) View() string { return e.campo.View() }
