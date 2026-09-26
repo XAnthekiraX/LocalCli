@@ -83,9 +83,25 @@ type Adaptador struct {
 	bus     *session.Bus
 	dir     string
 
+	// cliente es Ollama: solo se usa para la lista del selector de modelos de
+	// la bienvenida (SPEC-INTERFAZ §Reglas); el arranque no le escribe nada.
+	cliente *ollama.Client
+	// modeloMu protege el modelo elegido: lo fija la autodetección al arrancar
+	// y lo cambia el usuario desde el selector (FijarModelo). El motor lo lee
+	// en cada turno — la elección del usuario prevalece (SPEC-OLLAMA-PERFIL).
+	modeloMu sync.Mutex
+	modelo   string
+
 	mu         sync.Mutex
 	sesionID   string
 	pendientas map[string]chan string // approvalID -> canal de resolución
+}
+
+// modeloElegido es la lectura con mutex del modelo activo.
+func (ad *Adaptador) modeloElegido() string {
+	ad.modeloMu.Lock()
+	defer ad.modeloMu.Unlock()
+	return ad.modelo
 }
 
 var _ tui.Puerto = (*Adaptador)(nil)
@@ -120,7 +136,8 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	// montarse), así que el registro puede construirse antes de que el gestor
 	// exista.
 	cambios := store.NuevosCambios(conexion)
-	ad := &Adaptador{aprobar: aprobar, cerrar: turnos, auditar: store.NuevasAuditorias(conexion), bus: bus, dir: carpeta, pendientas: map[string]chan string{}}
+	ad := &Adaptador{aprobar: aprobar, cerrar: turnos, auditar: store.NuevasAuditorias(conexion), bus: bus, dir: carpeta, pendientas: map[string]chan string{}, cliente: cliente}
+	ad.modelo = modelo
 	aprobadorTerminal := func(ctx context.Context, descripcion string) (bool, error) {
 		return ad.aprobarComando(ctx, descripcion)
 	}
@@ -234,6 +251,34 @@ func (ad *Adaptador) ResolverActiva() (*session.Sesion, error) {
 }
 
 func (ad *Adaptador) Listar() ([]session.Sesion, error) { return ad.gest.Listar() }
+
+// Modelos da al selector de la bienvenida la lista que reporta Ollama, ya
+// traducida a `tui.ModeloLocal`: la vista no importa el paquete ollama ni toca
+// HTTP (wire.go). Si Ollama no responde, el error sube tal cual y la TUI lo
+// pinta como aviso «sin modelos» sin bloquear la escritura (SPEC-INTERFAZ
+// §Reglas); el tiempo de espera es el del arranque, acotado por timeoutDeteccion.
+func (ad *Adaptador) Modelos() ([]tui.ModeloLocal, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
+	defer cancel()
+	modelos, err := ad.cliente.ListarModelos(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tui.ModeloLocal, 0, len(modelos))
+	for _, m := range modelos {
+		out = append(out, tui.ModeloLocal{Nombre: m.Nombre})
+	}
+	return out, nil
+}
+
+// FijarModelo guarda la elección del usuario: a partir de ahora cada turno del
+// motor usa este modelo, aunque la autodetección del arranque hubiera tomado
+// otro (SPEC-OLLAMA-PERFIL: el modelo lo elige el usuario).
+func (ad *Adaptador) FijarModelo(nombre string) {
+	ad.modeloMu.Lock()
+	defer ad.modeloMu.Unlock()
+	ad.modelo = nombre
+}
 
 // Historial traduce la conversación guardada a lo que la vista pinta. La vista
 // nunca lee la base: llega como dato (INTERFACES §3).
@@ -738,12 +783,13 @@ type nodoPorTurno struct {
 }
 
 func (n *nodoPorTurno) ContextoPara(ctx context.Context, objetivo string) (string, error) {
-	if n.grafo == nil || n.modelo == "" {
+	modelo := n.ad.modeloElegido()
+	if n.grafo == nil || modelo == "" {
 		return "", fmt.Errorf("arranque: sin grafo o modelo no hay contexto que entregar")
 	}
 	nodo := &tcontext.Nodo{
 		Grafo:     n.grafo,
-		Modelo:    &tcontext.ModeloOllama{Cliente: n.cliente, Modelo: n.modelo},
+		Modelo:    &tcontext.ModeloOllama{Cliente: n.cliente, Modelo: modelo},
 		Auditor:   n.ad.auditar,
 		SessionID: n.ad.sesionActual(),
 	}
@@ -765,7 +811,10 @@ type ejecutorPorTurno struct {
 }
 
 func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, nombreAgente, contexto string) (flow.Resultado, error) {
-	if e.modelo == "" {
+	// El modelo se lee en cada turno: si el usuario lo cambió desde el selector
+	// de la bienvenida, esa elección es la que corre (SPEC-OLLAMA-PERFIL).
+	modelo := e.ad.modeloElegido()
+	if modelo == "" {
 		return flow.Resultado{}, errors.New("arranque: no hay modelo de Ollama disponible")
 	}
 	agente, ok := e.agente[nombreAgente]

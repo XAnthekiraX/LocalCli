@@ -49,7 +49,7 @@ Solo lectura, con las consultas de [[database/03-operations/QUERIES]]: historial
 
 ## 4. Teclado
 
-Atajos por defecto, reasignables desde la ayuda y guardados en `~/.config/localcli/keys.json`. Propuesta inicial (los atajos de panel y selector no existen en la bienvenida; allí solo escriben, envían y salen):
+Atajos por defecto, reasignables desde la ayuda y guardados en `~/.config/localcli/keys.json`. Propuesta inicial (los atajos de panel y de aprobaciones no existen en la bienvenida; allí `↑`/`↓` mueven el selector de modelos y las flechas no están asignadas a otra cosa):
 
 | Atajo | Acción |
 |---|---|

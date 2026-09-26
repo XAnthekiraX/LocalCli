@@ -69,6 +69,8 @@ Es la primera vista al ejecutar `localcli`, antes de que exista conversación: u
 
                    LocalCli · v0.1
 
+        Modelos: llama3.2 ▸ qwen2.5-coder    (↑/↓ elegir)
+
                En qué te ayudo hoy: █╚
 ```
 
@@ -79,14 +81,15 @@ El logotipo es fijo y esta es su definición, que sirve de salida dorada para la
 - Texto `LocalCli` en bloques de 6 filas × 53 columnas, con los caracteres de bloque `█ ╗ ╝ ║ ╔ ═ ╚` en UTF-8.
 - La copia canónica byte a byte vive en `internal/tui/testdata/logo.txt`: seis líneas de exactamente 53 columnas, sin espacios finales. El bloque de arriba es su render fiel; la comparación de la prueba va contra el archivo.
 - Debajo del arte van el nombre con versión y la línea de entrada, compuestos alrededor pero fuera del arte: no forman parte de la salida dorada.
-- El logotipo no se reescala ni se centra dinámicamente: se pinta tal cual.
+- El arte no se reescala: las 6 filas × 53 columnas se pintan íntegras, sin recorte. Lo que sí hace la vista es centrar el bloque completo (logotipo + nombre con versión + selector + línea de entrada) dentro de la terminal, en horizontal y en vertical, según el tamaño reportado por la ventana. Si la terminal es más pequeña que el bloque, se alinea arriba a la izquierda sin recortar el arte.
 - No entra al contexto del modelo ni a ningún historial: es arte de la aplicación.
 
-- Solo hay logotipo, nombre con su versión y una línea de entrada. Sin paneles, sin selector, sin datos.
+- Solo hay logotipo, nombre con su versión, un selector momentáneo de modelo y una línea de entrada. Sin paneles ni datos.
+- **Selector de modelos**: bajo el nombre con versión se listan los modelos locales disponibles (los que reporta Ollama), con uno resaltado como elegido. `↑`/`↓` mueven la selección; lo elegido pasa al motor como modelo de la sesión. Es el único control adicional de la bienvenida: no abre panel ni lanza nada por sí mismo. Si Ollama no responde, la lista queda vacía y se muestra el aviso «sin modelos» sin bloquear la escritura. La elección del usuario prevalece sobre la autodetección del arranque ([[specs/SPEC-OLLAMA-PERFIL]]: el modelo lo elige el usuario).
 - Lo que se escribe es la **primera petición de la sesión**: se envía tal cual, igual que se enviaría desde el chat.
 - Al enviarla, la vista cambia a la interfaz principal y la petición aparece como primer mensaje del chat. La transición no repite la petición ni pide confirmación.
 - La sesión que la recibe es la sesión activa del proyecto: se retoma si existe o se crea una nueva, con la misma regla que el resto de la aplicación. Ver [[specs/SPEC-SESIONES]].
-- Desde la bienvenida no se lanza nada: no hay panel, selector ni aprobaciones; la única salida es `Ctrl+C`.
+- Desde la bienvenida no se lanza ningún flujo ni se abre el panel de contexto: hay logotipo, selector de modelos y línea de entrada; con `↑`/`↓` se cambia el modelo y la salida es `Ctrl+C`.
 
 ## Zonas
 
@@ -155,9 +158,9 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - El panel refleja los datos de la sesión activa, no de otra.
 - Con el panel cerrado, el número de aprobaciones pendientes siempre se ve.
 - El nombre y la versión de LocalCli se ven siempre que el panel esté abierto.
-- La pantalla de bienvenida es la primera vista al ejecutar `localcli` y solo muestra logotipo, nombre con versión y una línea de entrada.
+- La pantalla de bienvenida es la primera vista al ejecutar `localcli` y muestra logotipo, nombre con versión, un selector de modelos y una línea de entrada, todo centrado en la terminal.
 - Lo escrito en la bienvenida es la primera petición: se envía a la sesión activa y la vista cambia a la principal sin repetir ni confirmar.
-- Desde la bienvenida no hay panel, selector ni aprobaciones: solo escribir, enviar y salir.
+- Desde la bienvenida no hay panel de contexto ni aprobaciones: solo elegir modelo con `↑`/`↓`, escribir, enviar y salir.
 - La bienvenida se pinta sin esperar a Ollama ni a la base: no depende de nada externo para mostrarse.
 
 ## Criterios de aceptación
@@ -173,10 +176,13 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] Con el panel cerrado se ve cuántas aprobaciones hay pendientes.
 - [ ] El nombre y la versión de LocalCli aparecen en el panel.
 - [ ] Cambiar de sesión no detiene ninguna ejecución.
-- [ ] Al ejecutar `localcli` se ve la pantalla de bienvenida con logotipo, nombre y una línea de entrada.
+- [ ] Al ejecutar `localcli` se ve la pantalla de bienvenida con logotipo, nombre, un selector de modelos y una línea de entrada.
+- [ ] El bloque de la bienvenida (logotipo, nombre, selector y entrada) aparece centrado en horizontal y en vertical dentro de la terminal, sin recortar el arte.
+- [ ] En la bienvenida, `↑`/`↓` cambian el modelo resaltado del selector y lo elegido se usa para la primera petición.
+- [ ] Sin Ollama disponible, la bienvenida muestra el selector vacío con aviso «sin modelos» y sigue permitiendo escribir y enviar.
 - [ ] La primera petición escrita en la bienvenida aparece como primer mensaje del chat al cambiar de vista.
 - [ ] La transición de bienvenida a interfaz principal no repite la petición ni pide confirmación.
-- [ ] Desde la bienvenida no hay panel, selector ni aprobaciones; solo escribir, enviar y salir.
+- [ ] Desde la bienvenida no hay panel de contexto ni aprobaciones; solo elegir modelo, escribir, enviar y salir.
 - [ ] La bienvenida se muestra aunque Ollama no esté disponible.
 - [ ] El logotipo coincide byte a byte con la salida dorada de `internal/tui/testdata/logo.txt`.
 
