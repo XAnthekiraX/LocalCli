@@ -43,6 +43,9 @@ type puertoStub struct {
 	suscripciones    int
 	canal            chan Evento
 	err              error
+	modelos          []ModeloLocal
+	modelosErr       error
+	fijados          []string
 }
 
 func (p *puertoStub) ResolverActiva() (*session.Sesion, error) {
@@ -99,6 +102,17 @@ func (p *puertoStub) Pausar(sesionID string) error {
 }
 
 func (p *puertoStub) Cancelar(sesionID string) { p.cancelado = append(p.cancelado, sesionID) }
+
+func (p *puertoStub) Modelos() ([]ModeloLocal, error) {
+	if p.modelosErr != nil {
+		return nil, p.modelosErr
+	}
+	return p.modelos, nil
+}
+
+func (p *puertoStub) FijarModelo(nombre string) {
+	p.fijados = append(p.fijados, nombre)
+}
 
 func (p *puertoStub) Suscribir() (<-chan Evento, func()) {
 	p.suscripciones++
