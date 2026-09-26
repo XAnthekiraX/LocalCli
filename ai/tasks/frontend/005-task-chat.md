@@ -12,12 +12,12 @@
 
 | ID | Acción | Tarea | Estado | Archivos | Verificación |
 |----|--------|-------|--------|----------|--------------|
-| T-F005-01 | crear | Tipos del historial: intercambio (mensaje usuario, razonamiento, respuesta) y cola de mensajes pintables | pendiente | `internal/tui/chat.go` | `go build ./internal/tui/` sin errores |
-| T-F005-02 | crear | Acumulación en vivo de `token` en el bloque de razonamiento o de respuesta según su marca | pendiente | `internal/tui/chat.go` | Test: secuencia de tokens produce bloques correctos |
-| T-F005-03 | crear | Render del intercambio con razonamiento arriba de la respuesta y separación visual garantizada | pendiente | `internal/tui/chat.go` | Test golden: razonamiento nunca mezclado con la respuesta |
-| T-F005-04 | crear | Ocultar/mostrar razonamiento (`Ctrl+R`) sin detener la acumulación ni alterar la generación | pendiente | `internal/tui/chat.go` | Test: oculto tras N tokens, al mostrar aparecen los N+seguidos |
-| T-F005-05 | crear | Carga del historial de la sesión activa y reset al cambiar de sesión (sin tocar ejecuciones en segundo plano) | pendiente | `internal/tui/chat.go` | Test: msg de cambio de sesión reemplaza el historial mostrado |
-| T-F005-06 | crear | Línea de propuesta pendiente dentro del chat al recibir `peticion_aprobacion` de la sesión activa | pendiente | `internal/tui/chat.go` | Test: evento añade la línea; resolución la retira |
-| T-F005-07 | crear | Scroll/recorte del chat al alto disponible conservando el final visible | pendiente | `internal/tui/chat.go` | Test: contenido mayor que la ventana recorta por arriba |
+| T-F005-01 | crear | Tipos del historial: intercambio (mensaje usuario, razonamiento, respuesta) y cola de mensajes pintables | completada | `internal/tui/chat.go` | `go build ./internal/tui/` sin errores |
+| T-F005-02 | crear | Acumulación en vivo de `token` en el bloque de razonamiento o de respuesta según su marca | completada | `internal/tui/chat.go` | Test: secuencia de tokens → bloques correctos (chat_test.go) |
+| T-F005-03 | crear | Render del intercambio con razonamiento arriba de la respuesta y separación visual garantizada | completada | `internal/tui/chat.go` + `styles.go` | Test golden: razonamiento nunca mezclado con la respuesta |
+| T-F005-04 | crear | Ocultar/mostrar razonamiento (`Ctrl+R`) sin detener la acumulación ni alterar la generación | completada | `internal/tui/chat.go` + `app.go` | Test: oculto sigue acumulando, al mostrar aparece todo |
+| T-F005-05 | crear | Carga del historial de la sesión activa y reset al cambio (lectura vía `Puerto.Historial`, sin tocar segundo plano) | completada | `chat.go`, `wire.go`, `app.go` | Test: cambiar de sesión carga ese historial; tarde se descarta |
+| T-F005-06 | crear | Línea de propuesta pendiente en el chat de la sesión activa; `aprobacion_resuelta` la retira | completada | `chat.go`, `wire.go` | Test: propuesta se ve en chat; resuelta sale; otra sesión no se ve |
+| T-F005-07 | crear | Scroll/recorte del chat al alto disponible conservando el final visible | completada | `chat.go` (`recortarAlto`), `app.go` | Test: contenido mayor que la ventana recorta por arriba |
 
 Dependencias: T-F005-02..07 dependen de T-F005-01; T-F005-03..04 dependen de T-F005-02; T-F005-05 depende de T-F005-03.

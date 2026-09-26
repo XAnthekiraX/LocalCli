@@ -12,11 +12,11 @@
 
 | ID | Acción | Tarea | Estado | Archivos | Verificación |
 |----|--------|-------|--------|----------|--------------|
-| T-F006-01 | crear | Modelo `panel` con los nueve campos de datos y estado plegado/expandido | pendiente | `internal/tui/panel.go` | `go build ./internal/tui/` sin errores |
-| T-F006-02 | crear | Plegado y expandido (`Ctrl+D`) devolviendo el ancho liberado al chat, sin interrumpir sesiones | pendiente | `internal/tui/panel.go` | Test golden: panel cerrado → chat a todo el ancho |
-| T-F006-03 | crear | Render de las filas sesión, ruta, git, agente y proyecto (nombre y versión siempre visibles con el panel abierto) | pendiente | `internal/tui/panel.go` | Test: las cinco etiquetas aparecen en la salida |
-| T-F006-04 | crear | Render de contexto: tokens usados y % de ocupación, marcados como estimación cuando lo sean y con aviso al acercarse al límite | pendiente | `internal/tui/panel.go` | Test: dato estimado sale etiquetado; exacto sin etiqueta |
-| T-F006-05 | crear | Render de TODO (elemento en curso y restantes) y de capa y cola (capa activa y tareas grandes restantes) | pendiente | `internal/tui/panel.go` | Test golden de ambas filas con datos sintéticos |
-| T-F006-06 | crear | Render de aprobaciones esperando decisión y actualización del panel por eventos (`estado_sesion`, `cola_actualizada`, `cambio_aplicado`) reflejando solo la sesión activa | pendiente | `internal/tui/panel.go` | Test: evento de otra sesión no altera los datos mostrados |
+| T-F006-01 | crear | Modelo `panel` con los nueve campos de datos y estado plegado/expandido | completada | `internal/tui/panel.go` | `go build ./internal/tui/` sin errores |
+| T-F006-02 | crear | Plegado y expandido (`Ctrl+O`) devolviendo el ancho liberado al chat, sin interrumpir sesiones | completada | `app.go` (`AccionPanel` re-reparte el ancho) | Test: panel cerrado → entrada recupera todo el ancho |
+| T-F006-03 | crear | Render de las filas sesión, ruta, git, agente y proyecto (nombre y versión siempre visibles con el panel abierto) | completada | `internal/tui/panel.go` | Test T-B014: las nueve etiquetas aparecen en la salida |
+| T-F006-04 | crear | Render de contexto: tokens usados y % de ocupación, marcados como estimación cuando lo sean y con aviso al acercarse al límite | completada | `internal/tui/panel.go` | Test T-B014: dato estimado etiquetado; aviso al 85% |
+| T-F006-05 | crear | Render de TODO (elemento en curso y restantes) y de capa y cola (capa activa y tareas grandes restantes) | completada | `internal/tui/panel.go` | Test T-B014 de ambas filas con datos sintéticos |
+| T-F006-06 | crear | Panel actualizado por eventos: contador de aprobaciones, git con `cambio_aplicado`, cola global (`cola_actualizada`) y solo datos de la sesión activa | completada | `wire.go`, `app.go` | Tests: contador sube/baja; git cambia; cola global; otra sesión no altera el panel |
 
 Dependencias: T-F006-02..06 dependen de T-F006-01.

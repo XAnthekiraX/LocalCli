@@ -46,17 +46,8 @@ func (r *Razonamiento) CerrarTurno() {
 }
 
 // Render pinta el bloque. Devuelve "" si está oculto o si no hay nada que decir:
-// una cabecera vacía solo estorba.
+// una cabecera vacía solo estorba. El dibujo vive en styles.go (T-F002); aquí
+// solo se le pasa lo acumulado y si se ve.
 func (r *Razonamiento) Render(ancho int) string {
-	if !r.Visible {
-		return ""
-	}
-	texto := r.buffer.String()
-	if strings.TrimSpace(texto) == "" {
-		if r.NoDisponible {
-			return estiloRazonamiento.Render("(el modelo no entregó razonamiento)")
-		}
-		return ""
-	}
-	return estiloRazonamiento.Render(recortar(texto, ancho))
+	return renderReasoning(r.buffer.String(), r.Visible, r.NoDisponible, ancho)
 }

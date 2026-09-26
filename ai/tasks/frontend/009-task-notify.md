@@ -12,8 +12,8 @@
 
 | ID | Acción | Tarea | Estado | Archivos | Verificación |
 |----|--------|-------|--------|----------|--------------|
-| T-F009-01 | crear | Función pura de formato del contador («N aprobaciones pendientes», singular/plural, nada si es 0) | pendiente | `internal/tui/notify.go` | Test: formatos 0/1/N correctos |
-| T-F009-02 | crear | Contador derivado de `peticion_aprobacion` (+1) y `aprobacion_resuelta` (−1) por sesión, incluidas sesiones en segundo plano | pendiente | `internal/tui/notify.go` | Test: secuencia de eventos deja el recuento exacto |
-| T-F009-03 | crear | Render de la línea discreta solo cuando el panel de datos está cerrado y el contador es > 0 | pendiente | `internal/tui/notify.go` | Test golden: visible cerrado, ausente abierto |
+| T-F009-01 | crear | Función pura de formato del contador («N aprobaciones esperando tu decisión», singular/plural, nada si es 0) | completada | `internal/tui/notify.go` (`formatoAvisoPendientes`) | Test: formatos 0/1/N correctos |
+| T-F009-02 | crear | Contador derivado de `peticion_aprobacion` (+1) y `aprobacion_resuelta` (−1) por sesión, incluidas sesiones en segundo plano | completada | `wire.go` (contador ya alimentado en T-F006-06) | Test: secuencia de eventos deja el recuento exacto |
+| T-F009-03 | crear | Render de la línea discreta solo cuando el panel de datos está cerrado y el contador es > 0 | completada | `app.go` (`viewPrincipal`), `panel.go` | Test: visible con panel cerrado; abierto, el dato vive solo en su fila |
 
 Dependencias: T-F009-02 y T-F009-03 dependen de T-F009-01.

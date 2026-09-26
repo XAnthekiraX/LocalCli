@@ -12,9 +12,9 @@
 
 | ID | Acción | Tarea | Estado | Archivos | Verificación |
 |----|--------|-------|--------|----------|--------------|
-| T-F004-01 | crear | Modelo `input` sobre `bubbles/textinput` de una sola línea con placeholder | pendiente | `internal/tui/input.go` | `go build ./internal/tui/` sin errores |
-| T-F004-02 | crear | Update que reenvía teclas imprimibles al campo y limpia/conserva el texto según el estado de espera | pendiente | `internal/tui/input.go` | Test de componente: escribir mientras genera no bloquea ni cancela |
-| T-F004-03 | crear | Composición del comando «Enviar mensaje» al confirmar (Enter) solo con texto no vacío | pendiente | `internal/tui/input.go` | Test: Enter con texto emite un cmd; Enter vacío no emite |
-| T-F004-04 | crear | Adaptación del ancho de la línea al layout recibido (recorte/relleno) | pendiente | `internal/tui/input.go` | Test: `SetWidth` propaga el ancho al campo |
+| T-F004-01 | crear | Modelo `input` sobre `bubbles/textinput` de una sola línea con placeholder | completada | `internal/tui/input.go` | `go build ./internal/tui/` sin errores |
+| T-F004-02 | crear | Update que reenvía teclas imprimibles al campo y limpia/conserva el texto según el estado de espera | completada | `internal/tui/input.go` | Test de componente: escribir mientras genera no bloquea ni cancela |
+| T-F004-03 | crear | Composición del comando «Enviar mensaje» al confirmar (Enter) solo con texto no vacío | completada | `internal/tui/input.go` | Test: Enter con texto emite un cmd; Enter vacío no emite |
+| T-F004-04 | crear | Adaptación del ancho de la línea al layout recibido (recorte/relleno) | completada | `internal/tui/input.go` | Test: `SetWidth` propaga el ancho al campo |
 
 Dependencias: T-F004-02..04 dependen de T-F004-01.

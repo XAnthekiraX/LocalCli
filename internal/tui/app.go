@@ -61,51 +61,100 @@ type App struct {
 	Selector Selector
 	Aprobs   Aprobaciones
 
-	entrada string
-	ctx     context.Context
+	// Bienvenida es el estado de la primera pantalla; solo vive mientras esa
+	// vista está activa (welcome.go, T-F003).
+	Bienvenida Bienvenida
+
+	// Entrada es la línea de texto de la interfaz principal (input.go, T-F004).
+	Entrada Entrada
+
+	// AyudaAbierta muestra la superposición con los atajos (T-F010-07). Sin
+	// estado dentro: se abre, se lee y se cierra, sin efectos colaterales.
+	AyudaAbierta bool
+
+	// PidiendoCancelar espera la confirmación de ctrl+f (T-F010-08). El texto
+	// escrito se conserva mientras tanto.
+	PidiendoCancelar bool
+
+	// eventos es el canal del motor, suscrito UNA vez en Init: cada evento
+	// re-arma el comando sobre el MISMO canal, sin abrir suscripciones nuevas
+	// (T-F010-06).
+	eventos <-chan Evento
+	baja    func()
+
+	ctx context.Context
 }
 
 // Nuevo construye la vista. No lee la base, no habla con Ollama y no abre
 // canales: solo deja la pantalla lista para pintarse.
 func Nuevo(p Puerto) *App {
-	if err := ValidarAtajos(AtajosPorDefecto()); err != nil {
+	// Los atajos: los del usuario si su keys.json carga bien; los de fábrica
+	// si el archivo no existe o es inválido (nunca un arranque roto por una
+	// preferencia, T-F010-04).
+	atajos, err := CargarKeys()
+	if err != nil {
+		atajos = AtajosPorDefecto()
+	}
+	if err := ValidarAtajos(atajos); err != nil {
 		// Los atajos de fábrica son válidos por construcción; si dejan de
 		// serlo, es un error de programación y conviene verlo pronto.
 		panic(err)
 	}
 	return &App{
 		Puerto: p,
-		Atajos: AtajosPorDefecto(),
+		Atajos: atajos,
 		Vista:  VistaBienvenida,
 		Panel:  NuevoPanel(),
 		// El razonamiento se muestra por defecto (SPEC-INTERFAZ: "se puede
 		// ocultar", luego visible es el estado normal).
-		Razon:  NuevoRazonamiento(),
-		Aprobs: Aprobaciones{},
-		ctx:    context.Background(),
+		Razon:      NuevoRazonamiento(),
+		Aprobs:     Aprobaciones{},
+		Bienvenida: NuevaBienvenida(),
+		Entrada:    NuevaEntrada(),
+		ctx:        context.Background(),
 	}
 }
 
-// Init no lanza nada: la suscripción a los eventos la monta el arranque, que es
-// quien tiene el canal.
-func (a *App) Init() tea.Cmd { return nil }
+// Init arma la escucha del canal del motor (T-F010-06): el comando espera el
+// siguiente evento y el bucle lo relanza tras cada uno. Así la vista recibe los
+// eventos sin goroutines propias, como manda la arquitectura Elm.
+func (a *App) Init() tea.Cmd { return a.escucharCmd() }
 
 // Update maneja las teclas, el tamaño y los mensajes que llegan por eventos.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.Ancho, a.Alto = m.Width, m.Height
+		a.Entrada.FijarAncho(a.anchoChat())
 		return a, nil
 	case tea.KeyMsg:
+		// Cada vista tiene su teclado: en la bienvenida solo se escribe, envía
+		// y sale (welcome.go, T-F003); los atajos del panel, el selector y las
+		// aprobaciones no existen allí.
+		if a.Vista == VistaBienvenida {
+			return a.teclaBienvenida(m)
+		}
 		return a.tecla(m)
 	case eventoMsg:
 		a.AplicarEvento(m.Evento)
-		return a, nil
+		// La escucha se re-arma: sin esto, tras el primer evento la vista
+		// quedaría sorda (T-F010-06).
+		return a, a.escucharCmd()
 	case sesionesMsg:
 		a.Selector.Abrir(m.Sesiones, a.Panel.SesionID)
 		return a, nil
 	case aprobacionesMsg:
 		a.Aprobs.Fijar(m.Items)
+		// La instantánea de pendientes alimenta también el contador del panel.
+		a.Panel.Aprobaciones = a.Aprobs.Pendientes()
+		return a, nil
+	case historialMsg:
+		// La carga llega cuando la sesión pedida sigue siendo la activa; si el
+		// usuario cambió de sesión mientras volaba, se descarta: el chat nunca
+		// muestra el historial de otra sesión (T-F005-05).
+		if m.Sesion == a.Panel.SesionID {
+			a.Chat.Cargar(m.Mensajes)
+		}
 		return a, nil
 	case enviadoMsg:
 		return a, nil
@@ -136,18 +185,65 @@ func (a *App) tecla(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// La ayuda se cierra con cualquier tecla y no deja rastro (T-F010-07).
+	if a.AyudaAbierta {
+		a.AyudaAbierta = false
+		return a, nil
+	}
+
+	// Cancelar pide confirmación: el texto escrito no se pierde mientras
+	// decide (T-F010-08).
+	if a.PidiendoCancelar {
+		switch m.String() {
+		case "s", "S":
+			a.PidiendoCancelar = false
+			a.Puerto.Cancelar(a.Panel.SesionID)
+			return a, nil
+		case "n", "N", "esc":
+			a.PidiendoCancelar = false
+			return a, nil
+		}
+		return a, nil
+	}
+
+	// Con el panel de aprobaciones abierto, a/d resuelven la línea
+	// seleccionada y esc lo cierra (INTERFACES §4, T-F008-05).
+	if a.Aprobs.Abierto {
+		switch m.String() {
+		case "up":
+			a.Aprobs.Mover(-1)
+			return a, nil
+		case "down":
+			a.Aprobs.Mover(1)
+			return a, nil
+		case "a":
+			return a, a.resolverAprobacion(true)
+		case "d":
+			return a, a.resolverAprobacion(false)
+		case "esc", "ctrl+a":
+			a.Aprobs.Abierto = false
+			return a, nil
+		}
+	}
+
 	if accion, ok := AccionDe(a.Atajos, m.String()); ok {
 		switch accion {
 		case AccionSalir:
 			return a, tea.Quit
 		case AccionPanel:
 			a.Panel.Abierto = !a.Panel.Abierto
+			// Plegar o desplegar cambia el reparto del ancho: la línea se
+			// adapta al layout resultante, sin interrumpir nada (T-F006-02).
+			a.Entrada.FijarAncho(a.anchoChat())
 			return a, nil
 		case AccionSelector:
 			return a, a.abrirSelector()
 		case AccionRazonamiento:
 			// Ocultar no detiene la generación: solo deja de pintarse.
 			a.Razon.Alternar()
+			return a, nil
+		case AccionAprobaciones:
+			a.Aprobs.Abierto = !a.Aprobs.Abierto
 			return a, nil
 		case AccionAprobar:
 			return a, a.resolverAprobacion(true)
@@ -156,7 +252,11 @@ func (a *App) tecla(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case AccionPausar:
 			return a, a.pausar()
 		case AccionCancelar:
-			a.Puerto.Cancelar(a.Panel.SesionID)
+			// Cancelar pide confirmación antes de cortar el trabajo (T-F010-08).
+			a.PidiendoCancelar = true
+			return a, nil
+		case AccionAyuda:
+			a.AyudaAbierta = !a.AyudaAbierta
 			return a, nil
 		case AccionCerrarSelector:
 			a.Selector.Cerrar()
@@ -166,24 +266,17 @@ func (a *App) tecla(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	switch m.Type {
-	case tea.KeyRunes:
-		a.entrada += string(m.Runes)
-	case tea.KeySpace:
-		a.entrada += " "
-	case tea.KeyBackspace:
-		if r := []rune(a.entrada); len(r) > 0 {
-			a.entrada = string(r[:len(r)-1])
-		}
-	}
-	return a, nil
+	// Lo que no es atajo se escribe: la línea de entrada lo compone, también
+	// mientras la sesión está generando (INTERFACES §5).
+	_, cmd := a.Entrada.Update(m)
+	return a, cmd
 }
 
 // enviar manda lo escrito a la sesión activa. En la bienvenida, además, cambia
 // de vista: la primera petición es la que abre la interfaz principal
 // (SPEC-INTERFAZ §Pantalla de bienvenida).
 func (a *App) enviar() tea.Cmd {
-	texto := strings.TrimSpace(a.entrada)
+	texto := strings.TrimSpace(a.Entrada.Texto())
 	if texto == "" {
 		return nil
 	}
@@ -197,7 +290,7 @@ func (a *App) enviar() tea.Cmd {
 		a.activar(ses)
 		id = ses.ID
 	}
-	a.entrada = ""
+	a.Entrada.Limpiar()
 	a.Chat.AñadirUsuario(texto)
 	a.Vista = VistaPrincipal
 	return a.enviarCmd(id, texto)
@@ -213,7 +306,8 @@ func (a *App) enviarCmd(sesionID, texto string) tea.Cmd {
 }
 
 // activar fija la sesión activa y limpia lo que era de la anterior: el chat de
-// una sesión no se mezcla con el de otra (SPEC-SESIONES).
+// una sesión no se mezcla con el de otra (SPEC-SESIONES). El historial no está
+// en memoria: se pide a la sesión y llega por su comando (T-F005-05).
 func (a *App) activar(ses *session.Sesion) {
 	if ses == nil {
 		return
@@ -227,6 +321,18 @@ func (a *App) activar(ses *session.Sesion) {
 	}
 	a.Chat.Vaciar()
 	a.Razon = NuevoRazonamiento()
+}
+
+// cmdHistorial pide la conversación de la sesión activa. La lectura llega como
+// mensaje: la vista no consulta la base (INTERFACES §3).
+func (a *App) cmdHistorial(sesionID string) tea.Cmd {
+	return func() tea.Msg {
+		ms, err := a.Puerto.Historial(sesionID)
+		if err != nil {
+			return errorMsg{err: err}
+		}
+		return historialMsg{Sesion: sesionID, Mensajes: ms}
+	}
 }
 
 func (a *App) abrirSelector() tea.Cmd {
@@ -249,7 +355,9 @@ func (a *App) elegirSesion() tea.Cmd {
 	copia := ses
 	a.activar(&copia)
 	a.Selector.Cerrar()
-	return nil
+	// El chat cambia a esa sesión: su historial llega como dato y se pinta al
+	// llegar, sin detener lo que siga corriendo en segundo plano (T-F005-05).
+	return a.cmdHistorial(copia.ID)
 }
 
 // resolverAprobacion manda la decisión de la línea seleccionada a la sesión
@@ -287,24 +395,25 @@ func (a *App) pausar() tea.Cmd {
 	return nil
 }
 
-// View pinta la pantalla: la bienvenida o la interfaz principal.
+// View pinta la pantalla: la bienvenida, la interfaz principal o la ayuda.
 func (a *App) View() string {
+	if a.AyudaAbierta {
+		return a.viewAyuda()
+	}
 	if a.Vista == VistaBienvenida {
 		return a.viewBienvenida()
 	}
 	return a.viewPrincipal()
 }
 
-// viewBienvenida pinta el logotipo, el nombre con versión y la línea de entrada.
-// Sin panel, sin selector y sin aprobaciones: esta pantalla no tiene más.
-func (a *App) viewBienvenida() string {
+// viewAyuda lista los atajos disponibles y la acción de cada uno
+// (SPEC-INTERFAZ-ATAJOS, criterio: "Se listan los atajos disponibles y la
+// acción de cada uno"). Cualquier tecla la cierra y no deja efectos.
+func (a *App) viewAyuda() string {
 	var b strings.Builder
-	b.WriteString(strings.TrimRight(LogoCanonico, "\n"))
-	b.WriteString("\n\n")
-	b.WriteString(estiloMarca.Render(Nombre + " · " + Version))
-	b.WriteString("\n\n")
-	b.WriteString("En qué te ayudo hoy: " + a.entrada + "▌")
-	b.WriteString("\n")
+	b.WriteString(estiloTitulo.Render("ATAJOS") + "\n\n")
+	b.WriteString(AyudaAtajos(a.Atajos))
+	b.WriteString("\n(cualquier tecla cierra la ayuda)")
 	return b.String()
 }
 
@@ -317,26 +426,38 @@ func (a *App) viewPrincipal() string {
 	anchoChat := a.anchoChat()
 
 	var partes []string
-	if h := a.Chat.Render(anchoChat); h != "" {
+	if h := recortarAlto(a.Chat.Render(anchoChat), a.Alto); h != "" {
 		partes = append(partes, h)
 	}
-	// El razonamiento va encima de la respuesta, y separado de ella.
-	if r := a.Razon.Render(anchoChat); r != "" {
-		partes = append(partes, r)
+	// El intercambio en curso: razonamiento arriba de la respuesta y separado
+	// de ella (SPEC-INTERFAZ §Razonamiento del modelo). El dibujo vive en
+	// styles.go (T-F002).
+	if x := renderIntercambio(a.Razon.Texto(), a.Chat.EnCurso(), a.Razon.Visible, a.Razon.NoDisponible, anchoChat); x != "" {
+		partes = append(partes, x)
 	}
-	if enCurso := a.Chat.EnCurso(); enCurso != "" {
-		partes = append(partes, estiloAgente.Render(recortar(enCurso, anchoChat)))
+	// Las propuestas pendientes de esta sesión se ven dentro del chat
+	// (SPEC-INTERFAZ §Zonas 1, T-F005-06).
+	if prop := a.Chat.RenderPropuestas(); prop != "" {
+		partes = append(partes, prop)
 	}
 	if ap := a.Aprobs.Render(); ap != "" {
 		partes = append(partes, ap)
 	}
 
 	cuerpo := strings.Join(partes, "\n\n")
-	cuerpo += "\n\n" + estiloUsuario.Render("› ") + a.entrada + "▌"
-	// La línea de aprobaciones pendientes se ve SIEMPRE, con el panel abierto o
-	// cerrado: es la única que no se puede ocultar (SPEC-INTERFAZ).
-	if aviso := a.Panel.AvisoAprobaciones(); aviso != "" {
-		cuerpo += "\n" + aviso
+	cuerpo += "\n\n" + estiloUsuario.Render("› ") + a.Entrada.View()
+	// La confirmación de cancelar se pregunta en línea; mientras tanto, lo
+	// escrito queda a salvo (T-F010-08).
+	if a.PidiendoCancelar {
+		cuerpo += "\n" + estiloAviso.Render("¿cancelar el trabajo en curso? (s/n)")
+	}
+	// El aviso de aprobaciones pendientes es la única información fuera del
+	// panel de datos, y se ve con el panel CERRADO: abierto, el dato ya está
+	// en su fila y el aviso no se repite (T-F009-03).
+	if !a.Panel.Abierto {
+		if aviso := a.Panel.AvisoAprobaciones(); aviso != "" {
+			cuerpo += "\n" + aviso
+		}
 	}
 
 	if !a.Panel.Abierto {

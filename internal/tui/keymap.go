@@ -29,11 +29,13 @@ const (
 	AccionPanel
 	AccionSelector
 	AccionRazonamiento
+	AccionAprobaciones
 	AccionAprobar
 	AccionDeclinar
 	AccionPausar
 	AccionCancelar
 	AccionCerrarSelector
+	AccionAyuda
 )
 
 // Atajo une una tecla (en la notación de Bubble Tea: "ctrl+s", "enter") con su
@@ -44,19 +46,22 @@ type Atajo struct {
 	Descripcion string
 }
 
-// AtajosPorDefecto devuelve el mapa por defecto. Es una copia: cambiar el
-// resultado no cambia los atajos del programa.
+// AtajosPorDefecto devuelve el mapa por defecto, alineado con la propuesta de
+// INTERFACES §4: Ctrl+D panel, Ctrl+S selector, Ctrl+R razonamiento, Ctrl+A
+// aprobaciones, Ctrl+F cancelar (con confirmación), ? ayuda y Ctrl+Q salir.
+// Pausar no trae tecla de fábrica: la acción existe y el usuario la puede
+// asignar en su keys.json. Es una copia: cambiar el resultado no cambia los
+// atajos del programa.
 func AtajosPorDefecto() []Atajo {
 	return []Atajo{
 		{Tecla: "enter", Accion: AccionEnviar, Descripcion: "enviar la petición"},
-		{Tecla: "ctrl+c", Accion: AccionSalir, Descripcion: "salir"},
-		{Tecla: "ctrl+o", Accion: AccionPanel, Descripcion: "abrir o cerrar el panel de datos"},
+		{Tecla: "ctrl+q", Accion: AccionSalir, Descripcion: "salir"},
+		{Tecla: "ctrl+d", Accion: AccionPanel, Descripcion: "abrir o cerrar el panel de datos"},
 		{Tecla: "ctrl+s", Accion: AccionSelector, Descripcion: "selector de sesiones"},
 		{Tecla: "ctrl+r", Accion: AccionRazonamiento, Descripcion: "mostrar u ocultar el razonamiento"},
-		{Tecla: "ctrl+a", Accion: AccionAprobar, Descripcion: "aprobar la propuesta seleccionada"},
-		{Tecla: "ctrl+d", Accion: AccionDeclinar, Descripcion: "declinar la propuesta seleccionada"},
-		{Tecla: "ctrl+p", Accion: AccionPausar, Descripcion: "pausar la cola en curso"},
-		{Tecla: "ctrl+x", Accion: AccionCancelar, Descripcion: "cancelar el trabajo en curso"},
+		{Tecla: "ctrl+a", Accion: AccionAprobaciones, Descripcion: "abrir o cerrar el panel de aprobaciones"},
+		{Tecla: "ctrl+f", Accion: AccionCancelar, Descripcion: "cancelar el trabajo en curso (pide confirmación)"},
+		{Tecla: "?", Accion: AccionAyuda, Descripcion: "mostrar u ocultar la ayuda de atajos"},
 		{Tecla: "esc", Accion: AccionCerrarSelector, Descripcion: "cerrar el selector"},
 	}
 }

@@ -51,6 +51,19 @@ func (s *Selector) Mover(delta int) {
 	s.Indice = (s.Indice + delta + len(s.Sesiones)) % len(s.Sesiones)
 }
 
+// ActualizarEstado refresca el estado de una sesión en la lista abierta. El
+// selector es momentáneo, pero mientras está abierto pinta estados vivos: una
+// sesión de segundo plano cambia delante del usuario (T-F007-05). Si la sesión
+// no está en la lista, no toca nada.
+func (s *Selector) ActualizarEstado(sesionID, estado string) {
+	for i := range s.Sesiones {
+		if s.Sesiones[i].ID == sesionID {
+			s.Sesiones[i].Estado = estado
+			return
+		}
+	}
+}
+
 // Elegida devuelve la sesión seleccionada.
 func (s *Selector) Elegida() (session.Sesion, bool) {
 	if len(s.Sesiones) == 0 || s.Indice < 0 || s.Indice >= len(s.Sesiones) {

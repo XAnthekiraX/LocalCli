@@ -15,8 +15,6 @@ package tui
 import (
 	"fmt"
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 // UmbralContexto es el porcentaje a partir del cual se avisa de que el contexto
@@ -148,32 +146,20 @@ func (p Panel) Render(ancho int) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// AvisoAprobaciones es la línea que se ve SIEMPRE que haya algo esperando, con
-// el panel abierto o cerrado: es la única información fuera del panel, porque su
-// ausencia detiene el trabajo en segundo plano (SPEC-INTERFAZ).
+// AvisoAprobaciones pinta la línea de aviso con el formato de notify.go. La
+// visibilidad la decide la vista (app.go): con el panel de datos abierto el
+// dato ya está en su fila, y el aviso es para cuando el panel está cerrado
+// (T-F009-03).
 func (p Panel) AvisoAprobaciones() string {
-	if p.Aprobaciones <= 0 {
+	aviso := formatoAvisoPendientes(p.Aprobaciones)
+	if aviso == "" {
 		return ""
 	}
-	n := "aprobaciones"
-	if p.Aprobaciones == 1 {
-		n = "aprobación"
-	}
-	return estiloAviso.Render(fmt.Sprintf("%d %s esperando tu decisión", p.Aprobaciones, n))
+	return estiloAviso.Render(aviso)
 }
 
 // AnchoPanel es el ancho fijo del panel cuando está abierto.
 const AnchoPanel = 34
 
-// estilos de la vista, en un solo sitio para que la pantalla no tenga colores
-// sueltos por los archivos.
-var (
-	estiloUsuario      = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
-	estiloAgente       = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
-	estiloSistema      = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	estiloRazonamiento = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
-	estiloTitulo       = lipgloss.NewStyle().Bold(true)
-	estiloEtiqueta     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
-	estiloAviso        = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true)
-	estiloMarca        = lipgloss.NewStyle().Bold(true)
-)
+// Los estilos de la vista viven en styles.go (T-F002): un solo sitio para que
+// la pantalla no tenga colores sueltos por los archivos.

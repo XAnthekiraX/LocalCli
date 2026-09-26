@@ -1,0 +1,13 @@
+ATAJOS
+
+enter     enviar la petición
+ctrl+q    salir
+ctrl+d    abrir o cerrar el panel de datos
+ctrl+s    selector de sesiones
+ctrl+r    mostrar u ocultar el razonamiento
+ctrl+a    abrir o cerrar el panel de aprobaciones
+ctrl+f    cancelar el trabajo en curso (pide confirmación)
+?         mostrar u ocultar la ayuda de atajos
+esc       cerrar el selector
+
+(cualquier tecla cierra la ayuda)

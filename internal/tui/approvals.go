@@ -48,6 +48,18 @@ func (a *Aprobaciones) Fijar(items []Aprobacion) {
 	a.Abierto = len(items) > 0
 }
 
+// MarcarObsoleta deja la línea visible pero sin decisión posible: la sesión
+// terminó mientras esperaba (SPEC-INTERFAZ-ATAJOS §Flujos alternativos,
+// T-F008-06). Da igual que la sesión haya terminado bien o mal: su propuesta
+// ya no puede aplicarse.
+func (a *Aprobaciones) MarcarObsoleta(sesionID string) {
+	for i := range a.Items {
+		if a.Items[i].Sesion == sesionID {
+			a.Items[i].Obsoleta = true
+		}
+	}
+}
+
 // Pendientes cuenta las que siguen esperando decisión.
 func (a *Aprobaciones) Pendientes() int {
 	n := 0
@@ -101,7 +113,7 @@ func (a *Aprobaciones) Lineas() []string {
 		if i == a.Indice {
 			marca = "› "
 		}
-		opciones := "aprobar | declinar"
+		opciones := "aprobar | declinar | —"
 		if it.Obsoleta {
 			opciones = "obsoleta"
 		}
@@ -132,6 +144,6 @@ func (a *Aprobaciones) Render() string {
 		}
 		b.WriteString(l + "\n")
 	}
-	b.WriteString(estiloSistema.Render("(ctrl+a aprobar · ctrl+d declinar)"))
+	b.WriteString(estiloSistema.Render("(a aprueba · d declina · esc cierra)"))
 	return strings.TrimRight(b.String(), "\n")
 }

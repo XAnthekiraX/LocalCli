@@ -32,19 +32,24 @@ import (
 // --- dobles ---------------------------------------------------------------
 
 type puertoStub struct {
-	activa    *session.Sesion
-	sesiones  []session.Sesion
-	enviados  []string
-	resueltas []string
-	pausadas  []string
-	cancelado []string
-	err       error
+	activa           *session.Sesion
+	sesiones         []session.Sesion
+	historial        []MensajeHistorial
+	enviados         []string
+	resueltas        []string
+	pausadas         []string
+	cancelado        []string
+	activasResueltas int
+	suscripciones    int
+	canal            chan Evento
+	err              error
 }
 
 func (p *puertoStub) ResolverActiva() (*session.Sesion, error) {
 	if p.err != nil {
 		return nil, p.err
 	}
+	p.activasResueltas++
 	if p.activa == nil {
 		p.activa = &session.Sesion{ID: "s1", Nombre: "primera", Estado: session.EstadoInactiva}
 	}
@@ -57,6 +62,13 @@ func (p *puertoStub) Listar() ([]session.Sesion, error) {
 		return nil, p.err
 	}
 	return p.sesiones, nil
+}
+
+func (p *puertoStub) Historial(sesionID string) ([]MensajeHistorial, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	return p.historial, nil
 }
 
 func (p *puertoStub) Enviar(ctx context.Context, sesionID, texto string) error {
@@ -89,8 +101,9 @@ func (p *puertoStub) Pausar(sesionID string) error {
 func (p *puertoStub) Cancelar(sesionID string) { p.cancelado = append(p.cancelado, sesionID) }
 
 func (p *puertoStub) Suscribir() (<-chan Evento, func()) {
-	ch := make(chan Evento)
-	return ch, func() { close(ch) }
+	p.suscripciones++
+	p.canal = make(chan Evento, 8)
+	return p.canal, func() {}
 }
 
 // --- helpers ---------------------------------------------------------------
@@ -135,8 +148,10 @@ func tecla(t *testing.T, a *App, k tea.KeyType) tea.Cmd {
 
 func TestElModeloArrancaYSePintaSinPánico(t *testing.T) {
 	a := Nuevo(&puertoStub{})
-	if a.Init() != nil {
-		t.Error("Init no debe lanzar nada: la bienvenida no depende de nada externo")
+	// Init arma la escucha de eventos (T-F010-06): devuelve su comando, pero
+	// no consulta la base ni el modelo, y la bienvenida se pinta igual.
+	if a.Init() == nil {
+		t.Error("Init arma la escucha del canal de eventos")
 	}
 	if a.Vista != VistaBienvenida {
 		t.Fatal("la primera vista es la bienvenida (SPEC-INTERFAZ)")
@@ -192,7 +207,7 @@ func TestEnviarEnLaBienvenidaAbreLaInterfazUnaVez(t *testing.T) {
 	if len(a.Chat.Mensajes()) != 1 || a.Chat.Mensajes()[0].Texto != "documentar la capa" {
 		t.Fatalf("el chat debe tener el mensaje como primero: %+v", a.Chat.Mensajes())
 	}
-	if a.entrada != "" {
+	if a.Entrada.Texto() != "" {
 		t.Error("tras enviar, la entrada se vacía")
 	}
 	// No se repite ni se pide confirmación: la petición sale una sola vez.
@@ -333,18 +348,18 @@ func TestElPanelSeAbreYCierraSinTocarLaEntrada(t *testing.T) {
 	a.Vista = VistaPrincipal
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 	escribe(t, a, "a medio escribir")
-	tecla(t, a, tea.KeyCtrlO)
+	tecla(t, a, tea.KeyCtrlD)
 	if !a.Panel.Abierto || !strings.Contains(sinEstilo(a.View()), "PANEL") {
-		t.Fatal("ctrl+o abre el panel")
+		t.Fatal("ctrl+d abre el panel")
 	}
-	if a.entrada != "a medio escribir" {
+	if a.Entrada.Texto() != "a medio escribir" {
 		t.Error("abrir el panel no puede perder lo escrito")
 	}
-	tecla(t, a, tea.KeyCtrlO)
+	tecla(t, a, tea.KeyCtrlD)
 	if a.Panel.Abierto || strings.Contains(sinEstilo(a.View()), "PANEL") {
-		t.Fatal("ctrl+o cierra el panel")
+		t.Fatal("ctrl+d cierra el panel")
 	}
-	if a.entrada != "a medio escribir" {
+	if a.Entrada.Texto() != "a medio escribir" {
 		t.Error("cerrar el panel no puede perder lo escrito")
 	}
 }
@@ -392,6 +407,8 @@ func TestElSelectorListaYCambiaDeSesión(t *testing.T) {
 		},
 	}
 	a := Nuevo(p)
+	// El selector existe en la interfaz principal, no en la bienvenida.
+	a.Vista = VistaPrincipal
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 	// Se abre la sesión activa con una primera petición.
 	escribe(t, a, "abre la sesión")
@@ -426,6 +443,9 @@ func TestElSelectorListaYCambiaDeSesión(t *testing.T) {
 func TestElSelectorSeCierraConEsc(t *testing.T) {
 	p := &puertoStub{sesiones: []session.Sesion{{ID: "s1", Nombre: "una"}}}
 	a := Nuevo(p)
+	// El selector solo existe en la interfaz principal (INTERFACES §4: en la
+	// bienvenida no hay atajos de selector ni panel).
+	a.Vista = VistaPrincipal
 	tecla(t, a, tea.KeyCtrlS)
 	if !a.Selector.Abierto {
 		t.Fatal("el selector debería estar abierto")
@@ -453,14 +473,14 @@ func TestLasAprobacionesMandanLaDecisiónDeSuLínea(t *testing.T) {
 			t.Errorf("falta la línea %q:\n%s", esperado, v)
 		}
 	}
-	tecla(t, a, tea.KeyCtrlA)
+	pulsa(t, a, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	if len(p.resueltas) != 1 || p.resueltas[0] != "a1:aprobar" {
-		t.Fatalf("aprobar debe resolver la línea seleccionada: %v", p.resueltas)
+		t.Fatalf("a aprueba la línea seleccionada: %v", p.resueltas)
 	}
 	if a.Aprobs.Pendientes() != 1 {
 		t.Errorf("la línea resuelta sale del panel: quedan %d", a.Aprobs.Pendientes())
 	}
-	tecla(t, a, tea.KeyCtrlD)
+	pulsa(t, a, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	if len(p.resueltas) != 2 || p.resueltas[1] != "a2:declinar" {
 		t.Fatalf("declinar debe resolver la siguiente línea: %v", p.resueltas)
 	}
@@ -508,14 +528,13 @@ func TestLosAtajosPorDefectoNoSeSolapan(t *testing.T) {
 	}
 	casos := map[string]Accion{
 		"enter":  AccionEnviar,
-		"ctrl+c": AccionSalir,
-		"ctrl+o": AccionPanel,
+		"ctrl+q": AccionSalir,
+		"ctrl+d": AccionPanel,
 		"ctrl+s": AccionSelector,
 		"ctrl+r": AccionRazonamiento,
-		"ctrl+a": AccionAprobar,
-		"ctrl+d": AccionDeclinar,
-		"ctrl+p": AccionPausar,
-		"ctrl+x": AccionCancelar,
+		"ctrl+a": AccionAprobaciones,
+		"ctrl+f": AccionCancelar,
+		"?":      AccionAyuda,
 		"esc":    AccionCerrarSelector,
 	}
 	for tecla, quiere := range casos {
@@ -544,14 +563,46 @@ func TestLosAtajosPorDefectoNoSeSolapan(t *testing.T) {
 func TestLasTeclasDeAcciónFuncionan(t *testing.T) {
 	p := &puertoStub{}
 	a := Nuevo(p)
+	// Cancelar es un atajo de la interfaz principal: en la bienvenida no
+	// existe (INTERFACES §4).
+	a.Vista = VistaPrincipal
 	a.Panel.SesionID = "s1"
-	tecla(t, a, tea.KeyCtrlP)
-	if len(p.pausadas) != 1 || p.pausadas[0] != "s1" {
-		t.Errorf("ctrl+p pausa la cola en curso: %v", p.pausadas)
+	// Ctrl+F pide confirmación; solo tras el sí se corta el trabajo
+	// (T-F010-08).
+	tecla(t, a, tea.KeyCtrlF)
+	if len(p.cancelado) != 0 {
+		t.Fatalf("cancelar no corta nada sin confirmación: %v", p.cancelado)
 	}
-	tecla(t, a, tea.KeyCtrlX)
+	if !a.PidiendoCancelar {
+		t.Fatal("ctrl+f abre la confirmación")
+	}
+	pulsa(t, a, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if a.PidiendoCancelar || len(p.cancelado) != 0 {
+		t.Fatal("el no descarta la cancelación")
+	}
+	tecla(t, a, tea.KeyCtrlF)
+	pulsa(t, a, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	if len(p.cancelado) != 1 || p.cancelado[0] != "s1" {
-		t.Errorf("ctrl+x cancela el trabajo en curso: %v", p.cancelado)
+		t.Errorf("el sí cancela el trabajo en curso: %v", p.cancelado)
+	}
+}
+
+// Un mapa reasignado por el usuario enruta la misma acción con otra tecla
+// (INTERFACES §4: reasignar solo cambia la forma de invocar, T-F010-04).
+func TestUnAtajoReasignadoDisparaLaMismaAcción(t *testing.T) {
+	p := &puertoStub{}
+	a := Nuevo(p)
+	a.Vista = VistaPrincipal
+	a.Panel.SesionID = "s1"
+	a.Atajos = []Atajo{{Tecla: "ctrl+k", Accion: AccionPanel, Descripcion: "panel"}}
+
+	tecla(t, a, tea.KeyCtrlO)
+	if a.Panel.Abierto {
+		t.Error("ctrl+o ya no es panel en este mapa")
+	}
+	tecla(t, a, tea.KeyCtrlK)
+	if !a.Panel.Abierto {
+		t.Error("ctrl+k dispara la acción reasignada")
 	}
 }
 

@@ -12,10 +12,10 @@
 
 | ID | Acción | Tarea | Estado | Archivos | Verificación |
 |----|--------|-------|--------|----------|--------------|
-| T-F002-01 | crear | Estilos Lip Gloss base: mensaje de usuario, razonamiento (atenuado/cursiva con prefijo), respuesta (normal), avisos y paneles | pendiente | `internal/tui/styles.go` | `go build ./internal/tui/` sin errores |
-| T-F002-02 | crear | Recorte de líneas al ancho de pantalla (`clipLine`) como función pura | pendiente | `internal/tui/styles.go` | Test `TestClipLineRecortaAlAncho` en verde |
-| T-F002-03 | crear | Render del bloque de razonamiento distinguible y ocultable sin tocar la generación (`renderReasoning`) | pendiente | `internal/tui/styles.go` | Test `TestRenderRazonamientoDistinguibleYOcultable` en verde |
-| T-F002-04 | crear | Render del intercambio razonamiento-arriba-de-respuesta garantizando separación visual | pendiente | `internal/tui/styles.go` | Test `TestRenderIntercambioRazonamientoAntesQueRespuesta` en verde |
-| T-F002-05 | crear | Pruebas unitarias puras de estilos y recorte | pendiente | `internal/tui/styles_test.go` | `go test ./internal/tui/ -run Styles\|Clip\|Render` en verde |
+| T-F002-01 | crear | Estilos Lip Gloss base: mensaje de usuario, razonamiento (atenuado/cursiva con prefijo), respuesta (normal), avisos y paneles | completada | `internal/tui/styles.go` | `go build ./internal/tui/` sin errores |
+| T-F002-02 | crear | Recorte de líneas al ancho de pantalla (`clipLine`) como función pura | completada | `internal/tui/styles.go` | Test `TestClipLineRecortaAlAncho` en verde |
+| T-F002-03 | crear | Render del bloque de razonamiento distinguible y ocultable sin tocar la generación (`renderReasoning`) | completada | `internal/tui/styles.go` | Test `TestRenderRazonamientoDistinguibleYOcultable` en verde |
+| T-F002-04 | crear | Render del intercambio razonamiento-arriba-de-respuesta garantizando separación visual | completada | `internal/tui/styles.go` | Test `TestRenderIntercambioRazonamientoAntesQueRespuesta` en verde |
+| T-F002-05 | crear | Pruebas unitarias puras de estilos y recorte | completada | `internal/tui/styles_test.go` | `go test ./internal/tui/ -run Styles\|Clip\|Render` en verde |
 
 Dependencias: T-F002-02..04 dependen de T-F002-01; T-F002-05 depende de T-F002-01..04.
