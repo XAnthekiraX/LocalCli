@@ -223,9 +223,9 @@ func (a *App) selectorModelos() string {
 		nombres := make([]string, 0, len(bienvenida.Modelos))
 		for i, m := range bienvenida.Modelos {
 			if i == bienvenida.Elegido {
-				nombres[i] = estiloEtiqueta.Render(m.Nombre)
+				nombres = append(nombres, estiloEtiqueta.Render(m.Nombre))
 			} else {
-				nombres[i] = m.Nombre
+				nombres = append(nombres, m.Nombre)
 			}
 		}
 		linea += strings.Join(nombres, " ▸ ")

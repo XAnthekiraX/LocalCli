@@ -1,2 +1,5 @@
-# Local CLI state files
-.localcli/
+# Go coverage
+coverage.out
+.localcli/..
+.vscode
+.serena
