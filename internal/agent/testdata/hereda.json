@@ -1,0 +1,8 @@
+{
+  "nombre": "derivado",
+  "descripcion": "Intenta heredar, y no se permite.",
+  "prompt": "Eres un agente que hereda.",
+  "herramientas": ["leer_archivo"],
+  "skills": [],
+  "hereda_de": "plan"
+}

@@ -159,6 +159,37 @@ func actualizarEstadoSesion(e ejecutor, id, estadoNuevo string) error {
 	return filasAfectadas(res, 1, fmt.Sprintf("sesión %s", id))
 }
 
+// Sesiones es el adaptador de `session` para módulos que no pueden importar
+// `database/sql` (invariante TestStoreEsElUnicoEscritorDeSQLite): `session`
+// depende de métodos, no de la conexión. Los métodos de las otras tablas que el
+// ciclo de una sesión toca (messages, approvals) viven en el archivo dueño de
+// cada tabla.
+type Sesiones struct{ DB *sql.DB }
+
+// Crear inserta una sesión nueva en estado inactiva.
+func (s Sesiones) Crear(nombre, capa string) (*Session, error) {
+	return CrearSesion(s.DB, nombre, capa)
+}
+
+// Obtener lee una sesión por id (ErrNoEncontrado si no existe).
+func (s Sesiones) Obtener(id string) (*Session, error) { return ObtenerSesion(s.DB, id) }
+
+// Listar lista las sesiones de este proyecto, opcionalmente por estado.
+//
+// Nota de aislamiento: el listado no filtra por carpeta porque no hay carpeta
+// que filtrar — cada proyecto tiene su propio archivo SQLite (DATABASE.md), así
+// que las sesiones de otra carpeta están en otra base y no pueden aparecer aquí.
+func (s Sesiones) Listar(estado string) ([]Session, error) { return ListarSesiones(s.DB, estado) }
+
+// CambiarEstado aplica una transición de estado validada.
+func (s Sesiones) CambiarEstado(id, estado string) error {
+	return ActualizarEstadoSesion(s.DB, id, estado)
+}
+
+// Borrar elimina la sesión; messages, reasoning y approvals caen en cascada y
+// change_history sobrevive con session_id a NULL.
+func (s Sesiones) Borrar(id string) error { return BorrarSesion(s.DB, id) }
+
 // BorrarSesion elimina una sesión de forma definitiva. messages, reasoning
 // (vía messages), approvals y context_audit caen en cascada; change_history
 // sobrevive con session_id a NULL (RELATIONSHIPS.md §3).

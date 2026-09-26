@@ -22,6 +22,14 @@ const (
 	AuditDescartado = "descartado"
 )
 
+// Auditoria es el adaptador de RegistrarAuditoria para módulos que no pueden
+// importar `database/sql` (invariante TestStoreEsElUnicoEscritorDeSQLite): el
+// nodo de contexto registra a través de un método, no de la conexión.
+type Auditoria struct{ DB *sql.DB }
+
+// Registrar inserta una fila de auditoría. Cumple la interfaz de context.
+func (a Auditoria) Registrar(x *ContextAudit) error { return RegistrarAuditoria(a.DB, x) }
+
 // RegistrarAuditoria inserta la decisión sobre un documento en una etapa. El
 // CHECK (decision = 'descartado') = (reason IS NOT NULL) de CONSTRAINTS.md §2
 // rechaza en la base un descarte sin motivo o un incluido con él.

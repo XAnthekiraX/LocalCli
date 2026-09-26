@@ -114,6 +114,21 @@ func UltimoMensaje(db *sql.DB, sessionID string) (*Message, error) {
 	return &m, nil
 }
 
+// Historial es el método del adaptador Sesiones (sessions.go) para la tabla
+// messages: el historial de una sesión, en orden, con su razonamiento.
+func (s Sesiones) Historial(sessionID string) ([]MensajeConRazonamiento, error) {
+	return HistorialSesion(s.DB, sessionID)
+}
+
+// EscribirMensaje inserta un turno de conversación.
+func (s Sesiones) EscribirMensaje(m *Message) error { return InsertarMensaje(s.DB, m) }
+
+// CerrarTurno cierra la respuesta de un agente: razonamiento final, mensaje del
+// agente y estado de la sesión, en la misma transacción (DATA_FLOW.md).
+func (s Sesiones) CerrarTurno(sessionID, contenido string, inputTokens, outputTokens int, razonamiento, estadoSesion string) (*Message, error) {
+	return CerrarTurnoAgente(s.DB, sessionID, contenido, inputTokens, outputTokens, razonamiento, estadoSesion)
+}
+
 // RazonamientoPersistido es el límite de frecuencia con que el streaming
 // escribe el razonamiento acumulado: cada 200 ms y al terminar la respuesta
 // (DECISIONS.md, fila "Razonamiento en streaming"). Un UpsertRazonamiento por

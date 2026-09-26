@@ -24,6 +24,16 @@ type Approval struct {
 	ResolvedAt  string // "" = NULL mientras siga pendiente
 }
 
+// Permisos es el adaptador de PedirPermiso para módulos que no pueden importar
+// `database/sql` (invariante TestStoreEsElUnicoEscritorDeSQLite): `fileops` pide
+// la aprobación a través de un método, no de la conexión.
+type Permisos struct{ DB *sql.DB }
+
+// PedirPermiso registra la aprobación y deja la sesión esperando la decisión.
+func (p Permisos) PedirPermiso(sessionID, descripcion string) (*Approval, error) {
+	return PedirPermiso(p.DB, sessionID, descripcion)
+}
+
 // PedirAprobación registra lo que una sesión necesita que decidas antes de
 // seguir. Nace pendiente, con resolved_at NULL (el CHECK de la base lo exige).
 // DATA_FLOW.md exige que esta insercion vaya en la misma transaccion que el
@@ -128,6 +138,13 @@ func AprobacionesPendientes(db *sql.DB) ([]AprobacionPendiente, error) {
 		out = append(out, p)
 	}
 	return out, traducirError(rows.Err())
+}
+
+// PendientesDeAprobacion es el método del adaptador Sesiones (sessions.go) para
+// la consulta del panel global: lo que espera decisión, de cualquier sesión.
+// `session` lo usa para avisar de que una sesión está esperando permiso.
+func (s Sesiones) PendientesDeAprobacion() ([]AprobacionPendiente, error) {
+	return AprobacionesPendientes(s.DB)
 }
 
 // ContarAprobacionesPendientes mantiene el contador del panel en cada

@@ -43,6 +43,14 @@ func contenidoValido(operation string, before, after bool) bool {
 	return false
 }
 
+// Historial es el adaptador de RegistrarCambio para módulos que no pueden
+// importar `database/sql` (invariante TestStoreEsElUnicoEscritorDeSQLite):
+// `fileops` depende de un método, no de la conexión.
+type Historial struct{ DB *sql.DB }
+
+// Registrar inserta un cambio aplicado. Cumple la interfaz que espera fileops.
+func (h Historial) Registrar(c *ChangeHistory) error { return RegistrarCambio(h.DB, c) }
+
 // RegistrarCambio inserta un cambio aplicado a un archivo del proyecto. Solo el
 // módulo de herramientas de archivo llama aquí, y solo tras una aprobación
 // (QUERIES.md §5); store no decide esa política, solo la sostiene.

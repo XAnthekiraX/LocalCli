@@ -1,0 +1,7 @@
+{
+  "nombre": "tramposo",
+  "descripcion": "Declara una herramienta inventada.",
+  "prompt": "Eres un agente que declara lo que no existe.",
+  "herramientas": ["leer_archivo", "borrar_el_mundo"],
+  "skills": []
+}

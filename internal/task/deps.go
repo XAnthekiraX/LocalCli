@@ -118,6 +118,45 @@ func OrdenarTopologico(elems []Elemento) ([]Elemento, error) {
 // Completado informa si el estado cuenta como término de la dependencia.
 func Completado(e Elemento) bool { return e.Estado == EstadoCompletada }
 
+// Faltantes devuelve las dependencias de `e` que no están completadas, con los
+// rangos ya expandidos a los IDs que faltan. Lista vacía ⇒ nada le falta.
+//
+// Lo consume la cola (T-B012) para informar qué falta antes de arrancar un
+// elemento. Vive aquí y no en `queue` porque las dependencias son de este
+// módulo: la semántica de los rangos (misma capa, solo tareas grandes) no puede
+// tener una segunda copia que se desvíe.
+func Faltantes(elems []Elemento, e Elemento) []string {
+	estado := make(map[string]Estado, len(elems))
+	for _, x := range elems {
+		estado[x.ID] = x.Estado
+	}
+	var out []string
+	visto := map[string]bool{}
+	anadir := func(id string) {
+		if id != "" && !visto[id] {
+			visto[id] = true
+			out = append(out, id)
+		}
+	}
+	for _, d := range e.DependeDe {
+		if esRangoDep(d) {
+			for _, x := range elems {
+				if x.ID == e.ID || !esTareaGrande(x.ID) {
+					continue
+				}
+				if dentroDeRango(d, x.ID) && !Completado(x) {
+					anadir(x.ID)
+				}
+			}
+			continue
+		}
+		if estado[d] != EstadoCompletada {
+			anadir(d)
+		}
+	}
+	return out
+}
+
 // Elegibles devuelve, del conjunto dado, los elementos pendientes/en_progreso
 // cuyas dependencias están todas completadas, en orden topológico. Es la
 // vista que consumirá la cola (T-B012): bloqueados quedan fuera.

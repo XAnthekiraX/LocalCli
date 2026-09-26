@@ -1,0 +1,7 @@
+{
+  "nombre": "charlatan",
+  "descripcion": "Solo conversa, sin herramientas.",
+  "prompt": "Conversa sin tocar nada.",
+  "herramientas": [],
+  "skills": []
+}
