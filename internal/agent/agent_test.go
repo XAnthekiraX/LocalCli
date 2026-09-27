@@ -12,11 +12,11 @@ import (
 // los cinco campos del contrato (DECISIONS.md).
 func TestAgenteTieneExactamenteCincoCampos(t *testing.T) {
 	a := Agente{
-		Nombre:       "x",
-		Descripcion:  "d",
-		Prompt:       "p",
-		Herramientas: []string{"leer_archivo"},
-		Skills:       []string{"s"},
+		Nombre:      "x",
+		Descripcion: "d",
+		Prompt:      "p",
+		Permisos:    []Permiso{{Accion: "leer", Efecto: EfectoPermitir}},
+		Skills:      []string{"s"},
 	}
 	b, err := json.Marshal(a)
 	if err != nil {
@@ -44,11 +44,29 @@ func TestHeredaDeSeRechaza(t *testing.T) {
 	}
 }
 
-// TestHerramientaInventadaSeRechaza — el catálogo es cerrado: un agente que
-// declara una herramienta que no existe no se carga.
-func TestHerramientaInventadaSeRechaza(t *testing.T) {
+// TestPermisoInventadoSeRechaza — el catálogo de acciones es cerrado: un
+// agente que declara un permiso sobre una acción que no existe no se carga.
+func TestPermisoInventadoSeRechaza(t *testing.T) {
 	if _, err := Cargar(filepath.Join("testdata", "inventada.json")); err == nil {
-		t.Fatal("un agente con una herramienta inventada no puede cargarse")
+		t.Fatal("un agente con una acción de permiso inventada no puede cargarse")
+	}
+}
+
+// TestPermisosContradictoriosSeRechazan — `permitir` y `denegar` sobre la
+// misma acción es un contrato que se contradice: no se carga.
+func TestPermisosContradictoriosSeRechazan(t *testing.T) {
+	if _, err := Cargar(filepath.Join("testdata", "contradictorio.json")); err == nil {
+		t.Fatal("unos permisos contradictorios no pueden cargarse")
+	}
+}
+
+// TestCampoHerramientasSeRechaza — el contrato ya no declara la lista de
+// herramientas: `permisos` es la fuente. Un JSON viejo con `herramientas` no
+// se ignora, rompe la carga.
+func TestCampoHerramientasSeRechaza(t *testing.T) {
+	datos := []byte(`{"nombre":"viejo","descripcion":"","prompt":"p","herramientas":["leer_archivo"],"skills":[]}`)
+	if _, err := DecodificarAgente(datos); err == nil {
+		t.Fatal("un agente con el campo viejo `herramientas` no puede cargarse")
 	}
 }
 
@@ -61,15 +79,24 @@ func TestJSONRotoDaErrorLocalizado(t *testing.T) {
 	}
 }
 
-// TestCargarAgenteValido — un fixture con los cinco campos carga y conserva
-// sus datos.
+// TestCargarAgenteValido — un fixture con los cinco campos carga, deriva el
+// catálogo efectivo de sus permisos y conserva sus datos.
 func TestCargarAgenteValido(t *testing.T) {
 	a, err := Cargar(filepath.Join("testdata", "valido.json"))
 	if err != nil {
 		t.Fatalf("Cargar: %v", err)
 	}
-	if a.Nombre != "lector" || len(a.Herramientas) != 2 || len(a.Skills) != 1 {
+	// `leer` son las cuatro herramientas de lectura: el catálogo se deriva.
+	if a.Nombre != "lector" || len(a.Herramientas) != 4 || len(a.Skills) != 1 {
 		t.Fatalf("agente cargado inesperado: %+v", a)
+	}
+	for _, h := range a.Herramientas {
+		if !a.Declara(h) {
+			t.Errorf("la herramienta %s debería estar en el catálogo derivado", h)
+		}
+	}
+	if a.TieneEscritura() {
+		t.Error("un agente con solo `leer` no puede tener escritura")
 	}
 }
 

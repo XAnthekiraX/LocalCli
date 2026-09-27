@@ -25,9 +25,9 @@ Cada módulo tiene una responsabilidad y un límite. Si un módulo necesita hace
 | `tui` | La pantalla: chat, panel de datos, selector de sesiones, aprobaciones, razonamiento en vivo | No decide nada ni habla con el modelo; pinta lo que llega |
 | `session` | Ciclo de vida de las sesiones y su estado; ejecución en segundo plano | No ejecuta tareas; eso es `flow` y `queue` |
 | `flow` | Motor de etapas: encadenar, decidir si sigue, parar o esperar permiso | No sabe de herramientas ni de SQL |
-| `queue` | Cola de la ejecución en curso: consume el TODO que creó esta solicitud, en orden, y marca lo bloqueado | No inventa trabajo; el TODO lo creó el flujo a partir de lo que pediste |
+| `queue` | Cola de la ejecución en curso: consume el TODO de la ejecución que el usuario arrancó, en orden, y marca lo bloqueado | No inventa trabajo ni arranca solo; el TODO lo propuso el flujo y el usuario lo ejecuta |
 | `context` | Grafo de frontmatter, selección de lo relevante, recorte y auditoría | No llama al modelo por su cuenta; pide la decisión y aplica |
-| `agent` | Cargar las definiciones de agente desde JSON: prompt, herramientas y relevo. El agente base es un JSON, no código | No ejecuta herramientas; las despacha a `tools` |
+| `agent` | Cargar las definiciones de agente desde JSON: prompt, permisos y relevo. Corre el ciclo conversacional del agente. El agente base es un JSON, no código | No ejecuta herramientas; las despacha a `tools` |
 | `ollama` | Cliente HTTP con streaming, extracción de razonamiento, perfil de hardware | Es el único que habla con el modelo; no sabe de tareas |
 | `tools` | Registro de las trece herramientas, comprobación de permiso, enrutado | No inventa herramientas ni las aplica |
 | `fileops` | Operaciones de archivo y carpeta, frontera de rutas, historial de cambios | No decide permisos; comprueba y aplica |
@@ -53,7 +53,7 @@ Dos planos. Ver [[database/02-rules/DATA_FLOW]].
 | Agente base y derivados | `ai/agents/*.json` | Estructura fija, aún por confirmar |
 | Skill | `ai/skills/**/*.md` | Instrucciones en markdown con frontmatter |
 
-**El TODO no viene dado: se crea.** Cuando una petición tuya implica una lista ordenada de trabajo, el sistema la detecta y genera el TODO. Por eso la cola no es global: cada petición ordenada crea el suyo. Ver [[backend/01-domain/BUSINESS_RULES]].
+**El TODO no viene dado: se propone.** Cuando una petición tuya implica una lista ordenada de trabajo, el sistema la detecta y **propone** el TODO; no lo ejecuta hasta que tú lo confirmas o escribes `/ejecutar`. Por eso la cola no es global: cada petición ordenada tiene el suyo. Ver [[backend/01-domain/BUSINESS_RULES]].
 
 **El agente base existe, pero no está hardcodeado.** No está en Go: vive en un JSON que el usuario puede modificar, y del que puede derivar otros agentes. Esa es la decisión tomada; los campos concretos del JSON se definirán más adelante. Ver [[backend/DECISIONS]].
 

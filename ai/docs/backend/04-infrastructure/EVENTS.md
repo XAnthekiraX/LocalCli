@@ -59,7 +59,7 @@ Los payloads llevan lo mínimo para que el consumidor pueda pintar o decidir. No
 
 - **`token`:** el texto del fragmento y si es razonamiento o respuesta final. Es lo único que va token a token, porque la pantalla lo muestra en vivo. Ver [[specs/SPEC-INTERFAZ]].
 - **`estado_sesion`:** el identificador de la sesión y el nuevo estado. El nombre de la capa y la marca de tiempo se leen de la base si hacen falta. Ver [[database/01-schema/TABLES]].
-- **`notificacion`:** el identificador de la sesión, el motivo (esperando permiso o terminada) y una línea con qué hacer a continuación. No lleva el contenido: la aprobación está en `approvals` y el resultado en el historial de la sesión. Se emite en los dos casos, se vea la sesión o no. Ver [[backend/01-domain/BUSINESS_RULES]].
+- **`notificacion`:** el identificador de la sesión, el motivo (esperando permiso o terminada) y una línea con qué hacer a continuación. No lleva el contenido: la aprobación está en `approvals` y el resultado en el historial de la sesión. Se emite en los dos casos, se vea la sesión o no. El motivo de «terminada» distingue el camino: un flujo o la cola anuncian «la sesión terminó el trabajo» y un turno de chat anuncia «la sesión terminó de responder» (NotificacionDeChat), porque el chat no ejecuta etapas. Ver [[backend/01-domain/BUSINESS_RULES]].
 - **`peticion_aprobacion`:** el identificador de la aprobación y una descripción de lo que se pide (qué archivo, o qué comando). La fila completa está en `approvals`.
 - **`etapa_terminada`:** el identificador de la etapa y un resumen de su resultado. Lo que recibió la etapa y qué entregó está en `context_audit`.
 - **`cambio_aplicado`:** el identificador del cambio y la ruta del archivo. El antes y el después están en `change_history`.

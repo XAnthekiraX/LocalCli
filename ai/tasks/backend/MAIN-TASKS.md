@@ -20,6 +20,8 @@ Fuente de verdad del progreso del backend. Derivada exclusivamente de `ai/docs/`
 | T-B013 | crear | session: ciclo de vida de sesiones, segundo plano, estados y notificaciones | T-B002, T-B010 | completada | `013-task-session.md` |
 | T-B014 | crear | tui: pantalla Bubble Tea (chat, panel, selector, aprobaciones, streaming) | T-B013 | completada | `014-task-tui.md` |
 | T-B015 | crear | Validaciones finales: suite de tests por regla/invariante y verificación integral | T-B002..T-B014 | completada | `015-task-validaciones.md` |
+| T-B016 | actualizar | chat normal por defecto y flujos solo con comando explícito; el chat usa las herramientas del agente activo | T-B006, T-B010, T-B013 | completada | `016-task-chat-y-flujos.md` |
+| T-B017 | actualizar | permisos explícitos por acción con catálogo derivado; ciclo conversacional único en `agent` y catálogo inyectado en el mensaje de sistema | T-B006, T-B007 | completada | `017-task-permisos-y-ciclo-agente.md` |
 
 ## Referencias
 

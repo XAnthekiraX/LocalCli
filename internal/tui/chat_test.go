@@ -106,7 +106,7 @@ func TestAlCambiarDeSesiónLlegaElHistorialDeEsaSesión(t *testing.T) {
 	a.Vista = VistaPrincipal
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 
-	tecla(t, a, tea.KeyCtrlS)
+	ejecuta(t, a, abreElModalDeSesiones(t, a))
 	tecla(t, a, tea.KeyDown)
 	// Elegir la sesión dispara la carga: el comando la pide y la entrega.
 	cmd := pulsa(t, a, tea.KeyMsg{Type: tea.KeyEnter})

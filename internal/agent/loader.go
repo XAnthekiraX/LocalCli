@@ -9,8 +9,8 @@ package agent
 // JSON"). Los agentes son datos: este módulo solo los lee.
 //
 // Cada error de carga nombra el archivo, para que un JSON roto no se confunda
-// con otro. La estructura y los tipos los impone DecodificarAgente; el
-// catálogo, ValidarHerramientas.
+// con otro. La estructura y los tipos los impone DecodificarAgente (que además
+// deriva el catálogo efectivo); los permisos los valida ValidarPermisos.
 
 import (
 	"os"
@@ -29,7 +29,7 @@ func Cargar(ruta string) (Agente, error) {
 	if err != nil {
 		return Agente{}, errAgente(ruta + ": " + err.Error())
 	}
-	if err := ValidarHerramientas(a); err != nil {
+	if err := ValidarPermisos(a); err != nil {
 		return Agente{}, errAgente(ruta + ": " + err.Error())
 	}
 	return a, nil

@@ -18,7 +18,7 @@ Qué se prueba en la capa de presentación y cómo. La estrategia global está e
 
 | Nivel | Qué cubre | Cómo |
 |---|---|---|
-| Unitario | Funciones puras de render: recorte de líneas, formato del bloque de razonamiento, formato del contador, detección de atajos duplicados | Funciones aisladas, sin bucle de Bubble Tea |
+| Unitario | Funciones puras de render: recorte de líneas, formato del bloque de razonamiento, formato del contador, formato del tiempo de respuesta, detección de atajos duplicados | Funciones aisladas, sin bucle de Bubble Tea |
 | De componente | `update` y `view` de cada componente ante secuencias fijas de eventos | Bubble Tea en proceso, con el arnés de pruebas de la librería, inyectando mensajes sintéticos |
 | De integración | El recorrido completo: tecla → petición a `session` → evento de vuelta → pantalla | `session` real con base temporal y un doble de `ollama` que emita tokens fijos |
 
@@ -26,6 +26,7 @@ Qué se prueba en la capa de presentación y cómo. La estrategia global está e
 
 - El panel muestra los nueve datos definidos en [[specs/SPEC-INTERFAZ]] y refleja la sesión activa, no otra.
 - El razonamiento se distingue de la respuesta, se muestra en vivo y se oculta sin detener la generación.
+- Cada respuesta lleva su tiempo de llegada y el contador en vivo corre mientras el turno está en curso y se detiene al cerrarse; el formato de la duración es una función pura (milisegundos, segundos, minutos y segundos).
 - Con el panel cerrado, el contador de aprobaciones pendientes sigue visible y se actualiza con cada evento.
 - `Ctrl+X l` abre el modal de sesiones con todas las del proyecto y su estado, incluidas las de segundo plano; elegir una con `Enter` abre esa sesión (el chat cambia a su historial) sin detener nada.
 - `Ctrl+P` abre el modal de atajos: cada línea muestra la acción y su tecla; es de solo lectura. `Esc` cierra los tres modales sin cambiar nada.

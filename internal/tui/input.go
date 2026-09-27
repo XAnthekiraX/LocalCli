@@ -18,19 +18,38 @@ import (
 )
 
 // Entrada es la línea de texto de la interfaz principal. Una sola fila: lo que
-// se escribe va hacia la sesión activa cuando se confirma.
+// se escribe va hacia la sesión activa cuando se confirma. La precede el
+// indicador del agente activo (T-F015-01).
 type Entrada struct {
 	campo textinput.Model
 	Ancho int
+	// Agente es el que está activo, `AgentePlan` o `AgenteBuild`: solo lo pinta,
+	// no decide nada. Lo escribe la acción `agent_cycle`.
+	Agente string
 }
 
 // NuevaEntrada crea la línea enfocada, con su placeholder y de una sola fila.
 func NuevaEntrada() Entrada {
 	campo := textinput.New()
 	campo.Placeholder = "Escribe tu petición…"
+	// El indicador del agente ya compone el `> ` (T-F015-01), así que el
+	// prompt propio del campo se apaga: sin esto la línea saldría
+	// `[plan] > > …`, con la flecha duplicada (SPEC-INTERFAZ §Zonas 2: el
+	// render canónico es `[plan] > █`).
+	campo.Prompt = ""
 	campo.Focus()
 	campo.Width = 80
-	return Entrada{campo: campo}
+	return Entrada{campo: campo, Agente: AgentePlan}
+}
+
+// FijarAgente deja el agente activo que se pinta en el indicador. Un valor
+// inesperado se trata como `plan`: el indicador nunca sale vacío ni inventa un
+// tercer agente (SPEC-INTERFAZ §Zonas 2).
+func (e *Entrada) FijarAgente(agente string) {
+	if agente != AgenteBuild {
+		agente = AgentePlan
+	}
+	e.Agente = agente
 }
 
 // Foco activa la línea y devuelve el comando del cursor, que es como bubbles
@@ -40,8 +59,7 @@ func (e *Entrada) Foco() tea.Cmd {
 	return textinput.Blink
 }
 
-// Desenfocar la apaga, por ejemplo mientras otra zona (el selector) se lleva
-// el teclado.
+// Desenfocar la apaga, por ejemplo mientras un modal se lleva el teclado.
 func (e *Entrada) Desenfocar() { e.campo.Blur() }
 
 // Texto devuelve lo escrito hasta ahora, tal cual.
@@ -70,9 +88,6 @@ func (e *Entrada) Update(msg tea.Msg) (Entrada, tea.Cmd) {
 	e.campo = campo
 	return *e, cmd
 }
-
-// View pinta la línea: el placeholder cuando está vacía, el texto y su cursor
-// cuando no.
 
 // DesactivarTeclasPropias deja al campo textinput solo con la edición esencial:
 // desde T-F012-06 las teclas de acción (flechas, home/end, tab, ctrl+u/k…) las
@@ -106,4 +121,16 @@ func (e *Entrada) DesactivarTeclasPropias() {
 	e.campo.KeyMap = km
 }
 
-func (e *Entrada) View() string { return e.campo.View() }
+// View pinta la línea con su indicador de agente a la izquierda y, detrás, el
+// campo: el placeholder cuando está vacía, el texto y su cursor cuando no
+// (SPEC-INTERFAZ §Zonas 2, "Indicador de agente a la izquierda del input",
+// p. ej. `[plan] > █`).
+func (e *Entrada) View() string { return IndicadorAgente(e.Agente) + e.campo.View() }
+
+// IndicadorAgente compone el indicador del agente activo: `[plan] > ` o
+// `[build] > `. Vive aquí porque las dos vistas lo pintan —la principal a
+// través de `Entrada.View` y la bienvenida en su línea de entrada— y tiene que
+// ser la misma palabra en las dos (SPEC-INTERFAZ §Zonas 2).
+func IndicadorAgente(agente string) string {
+	return estiloIndicador.Render("[" + agente + "] > ")
+}

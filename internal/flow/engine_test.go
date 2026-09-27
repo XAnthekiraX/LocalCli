@@ -12,10 +12,14 @@ import (
 
 // --- stubs -----------------------------------------------------------------
 
-type stubContexto struct{ llamadas int }
+type stubContexto struct {
+	llamadas int
+	etapas   []string
+}
 
-func (s *stubContexto) ContextoPara(ctx context.Context, objetivo string) (string, error) {
+func (s *stubContexto) ContextoPara(ctx context.Context, etapa, objetivo string) (string, error) {
 	s.llamadas++
+	s.etapas = append(s.etapas, etapa)
 	return "contexto:" + objetivo, nil
 }
 
@@ -145,6 +149,48 @@ func TestResolverSecuenciaDocumentada(t *testing.T) {
 }
 
 // --- T-B010-07: eventos por decisión --------------------------------------
+
+// TestCadaEtapaPideContextoConSuEtapa — la etapa viaja con la petición: es lo
+// que permite que context_audit distinga una etapa de otra (una fila por
+// documento y etapa). Sin ella, todas las etapas comparten la terna y la
+// segunda revienta contra el índice único de la base.
+func TestCadaEtapaPideContextoConSuEtapa(t *testing.T) {
+	ctx := &stubContexto{}
+	m := &Motor{
+		Contexto:  ctx,
+		Agente:    &stubAgente{},
+		Aprobador: &stubAprobador{aprobar: true},
+	}
+	if _, err := m.EjecutarFlujo(context.Background(), FlujoResolver(), "objetivo"); err != nil {
+		t.Fatalf("EjecutarFlujo: %v", err)
+	}
+	if len(ctx.etapas) < 2 {
+		t.Fatalf("peticiones de contexto = %d, quiero al menos 2", len(ctx.etapas))
+	}
+	visto := map[string]bool{}
+	for i, e := range ctx.etapas {
+		if e == "" {
+			t.Fatalf("la petición %d no lleva etapa", i)
+		}
+		if visto[e] {
+			t.Errorf("la etapa %q pidió contexto dos veces con la misma etiqueta", e)
+		}
+		visto[e] = true
+	}
+}
+
+// TestConversarPideContextoComoChat — el chat no es una etapa de flujo: pide
+// su contexto bajo EtapaChat para que su auditoría no se mezcle con las etapas.
+func TestConversarPideContextoComoChat(t *testing.T) {
+	ctx := &stubContexto{}
+	m := &Motor{Contexto: ctx, Agente: &stubAgente{}}
+	if _, err := m.Conversar(context.Background(), tools.AgenteBuild, "hola"); err != nil {
+		t.Fatalf("Conversar: %v", err)
+	}
+	if len(ctx.etapas) != 1 || ctx.etapas[0] != EtapaChat {
+		t.Fatalf("etapas = %v, quiero [%s]", ctx.etapas, EtapaChat)
+	}
+}
 
 func TestEventosPorEtapa(t *testing.T) {
 	emisor := &stubEmisor{}

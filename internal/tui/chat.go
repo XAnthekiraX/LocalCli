@@ -11,9 +11,16 @@
 // El mensaje en curso se guarda aparte del historial porque se llena token a
 // token: mezclarlo con los mensajes cerrados obligaría a reescribir el último en
 // cada token y a distinguir "ya terminado" de "a medias" en cada lectura.
+//
+// El chat también lleva el tiempo: marca cuándo se envió el turno en curso y
+// cuánto tardó en cerrarse. Es un dato de presentación —cuánto tarda el modelo
+// en responder—, no una regla de negocio, así que vive aquí y no en el motor.
 package tui
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // Rol es quién produjo un mensaje del chat.
 type Rol string
@@ -30,6 +37,9 @@ type Mensaje struct {
 	Texto        string
 	Razonamiento string
 	SinRazonami  bool // el modelo no entregó razonamiento (SPEC-PANEL-CONTEXTO)
+	// Duracion es lo que tardó el modelo en entregar esta respuesta, del envío
+	// al cierre del turno. Cero = no se midió (p. ej. un historial recargado).
+	Duracion time.Duration
 }
 
 // Chat es el historial de la sesión activa.
@@ -38,12 +48,32 @@ type Chat struct {
 	enCurso    strings.Builder
 	hayCurso   bool
 	propuestas []Propuesta
+	// inicio marca cuándo se envió el turno en curso; cero = no hay turno vivo.
+	inicio time.Time
 }
 
-// AñadirUsuario añade lo que escribió el usuario.
+// AñadirUsuario añade lo que escribió el usuario y arranca el contador del
+// turno: el tiempo que se mide es el que percibe quien espera la respuesta.
 func (c *Chat) AñadirUsuario(texto string) {
+	c.inicio = time.Now()
 	c.mensajes = append(c.mensajes, Mensaje{Rol: RolUsuario, Texto: texto})
 }
+
+// HayTurno informa si hay una respuesta en camino: desde que se envió el
+// mensaje hasta que su turno se cierra. Es lo que hace latir el contador en vivo.
+func (c *Chat) HayTurno() bool { return !c.inicio.IsZero() }
+
+// Transcurrido devuelve lo que lleva el turno en curso (0 si no hay ninguno).
+func (c *Chat) Transcurrido() time.Duration {
+	if c.inicio.IsZero() {
+		return 0
+	}
+	return time.Since(c.inicio)
+}
+
+// CancelarTurno deja de contar el turno sin cerrar mensaje: la petición no llegó
+// a arrancar (el envío falló), así que no hay respuesta que fechar.
+func (c *Chat) CancelarTurno() { c.inicio = time.Time{} }
 
 // AñadirSistema añade una línea del sistema (un aviso, el desenlace de un
 // turno). Va como mensaje para que quede en el hilo, no en una barra aparte.
@@ -66,13 +96,17 @@ func (c *Chat) Token(texto string) {
 // EnCurso devuelve la respuesta que se está generando ("" si no hay ninguna).
 func (c *Chat) EnCurso() string { return c.enCurso.String() }
 
-// CerrarTurno pasa la respuesta en curso al historial. Con `razonamiento` vacío
-// se marca que el modelo no lo entregó, para que la vista lo pueda decir.
+// CerrarTurno pasa la respuesta en curso al historial, con el tiempo que tardó
+// el turno. Con `razonamiento` vacío se marca que el modelo no lo entregó, para
+// que la vista lo pueda decir. El contador se detiene siempre, aunque no haya
+// nada que cerrar (turno terminado sin emitir un token).
 func (c *Chat) CerrarTurno(razonamiento string) {
+	duracion := c.Transcurrido()
+	c.inicio = time.Time{}
 	if !c.hayCurso && !c.tieneUltimoAgente() {
 		return
 	}
-	m := Mensaje{Rol: RolAgente, Texto: c.enCurso.String(), Razonamiento: razonamiento}
+	m := Mensaje{Rol: RolAgente, Texto: c.enCurso.String(), Razonamiento: razonamiento, Duracion: duracion}
 	m.SinRazonami = razonamiento == ""
 	c.mensajes = append(c.mensajes, m)
 	c.enCurso.Reset()
@@ -98,6 +132,7 @@ func (c *Chat) Vaciar() {
 	c.enCurso.Reset()
 	c.hayCurso = false
 	c.propuestas = nil
+	c.inicio = time.Time{}
 }
 
 // MensajeHistorial es un turno cargado de la sesión activa, ya con su
@@ -133,6 +168,11 @@ func (c *Chat) Render(ancho int) string {
 		b.WriteString(prefijoDe(m.Rol))
 		if m.Rol == RolAgente {
 			b.WriteString(renderIntercambio(m.Razonamiento, m.Texto, true, false, ancho))
+			// El tiempo de la respuesta se cuelga al final, atenuado, para no
+			// confundirse con lo que dijo el modelo. Sin medición no se pinta.
+			if s := sufijoDuracion(m.Duracion); s != "" {
+				b.WriteString(" " + s)
+			}
 		} else {
 			b.WriteString(m.Texto)
 		}

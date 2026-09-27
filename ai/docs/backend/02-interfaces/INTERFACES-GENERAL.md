@@ -58,7 +58,7 @@ Sin respuestas JSON ni códigos HTTP. Las convenciones son:
 
 No es REST, ni GraphQL, ni RPC. El estilo es **comando en terminal, herramienta estructurada y evento**:
 
-- **Comandos:** el usuario escribe. La TUI los traduce a peticiones a la sesión. Ver [[specs/SPEC-INTERFAZ-ATAJOS]].
+- **Comandos:** el usuario escribe. La TUI los traduce a peticiones a la sesión. Los comandos que empiezan por `/` (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver`, `/ejecutar`) arrancan un flujo; el resto se responde como chat. Ver [[specs/SPEC-INTERFAZ]].
 - **Herramientas:** el modelo pide una operación con argumentos estructurados (ruta, contenido, comando), y recibe un resultado estructurado. El catálogo es cerrado y cada herramienta pertenece a un agente. Ver [[backend/02-interfaces/TOOLS]].
 - **Eventos:** el motor notifica cambios de estado, peticiones de aprobación y token de streaming. Unidireccionales; el consumidor decide qué hacer. Ver [[backend/04-infrastructure/EVENTS]].
 
@@ -68,9 +68,9 @@ Lo que cada módulo expone a los que dependen de él. El detalle de payloads est
 
 | Módulo | Expone | A quién |
 |---|---|---|
-| `session` | Crear, cambiar, retomar, cerrar sesión; mandar mensaje; aprobar o declinar | `tui` |
-| `flow` | Lanzar un flujo oficial; pausar, cancelar, reanudar | `session`, `queue` |
-| `context` | Pedir contexto para un objetivo; devolver documentos seleccionados y auditados | `flow` |
+| `session` | Crear, cambiar, retomar, cerrar sesión; mandar mensaje; decidir si es chat o comando de flujo; aprobar o declinar | `tui` |
+| `flow` | Lanzar un flujo oficial pedido por el usuario; detectar trabajo ordenado y proponer el TODO; pausar, cancelar, reanudar | `session`, `queue` |
+| `context` | Pedir contexto para una etapa y un objetivo; devolver documentos seleccionados y auditados (la etapa viaja con la petición para que `context_audit` distinga una de otra) | `flow` |
 | `agent` | Construir la llamada de un agente (`plan`/`build`) y despachar sus herramientas | `flow` |
 | `ollama` | Enviar una petición en streaming; devolver tokens y razonamiento | `agent`, `context` |
 | `tools` | Registrar y enrutar una herramienta; comprobar permiso | `agent` |

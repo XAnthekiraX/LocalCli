@@ -31,8 +31,16 @@ const (
 	AccionSalir
 	// AccionPanel abre o cierra el panel de datos (panel_toggle).
 	AccionPanel
-	// AccionSelector abre el selector/modal de sesiones (session_picker).
+	// AccionSelector abre el modal de sesiones (session_picker, <leader>l).
 	AccionSelector
+	// AccionSesionNueva crea una sesión y la deja activa (session_new,
+	// <leader>n): solo desde la vista principal (SPEC-KEYBINDS).
+	AccionSesionNueva
+	// AccionEliminarSesion borra la sesión resaltada en el modal de sesiones
+	// (session_delete, ctrl+d). Si está trabajando, pide confirmación. El
+	// literal es el mismo que panel_toggle, pero en ámbitos distintos: el
+	// modal captura la tecla y la vista de abajo no la ve.
+	AccionEliminarSesion
 	// AccionRazonamiento muestra u oculta el razonamiento (reasoning_toggle).
 	AccionRazonamiento
 	// AccionAprobaciones abre o cierra el panel de aprobaciones (approvals_toggle).
@@ -46,14 +54,12 @@ const (
 	AccionCancelar
 	// AccionCerrarSelector cierra lo abierto sin cambiar nada (dismiss).
 	AccionCerrarSelector
-	// AccionAyuda abre o cierra la ayuda de atajos (command_palette).
+	// AccionAyuda abre el modal de atajos (command_palette, ctrl+p).
 	AccionAyuda
 	// AccionEnviar envía la petición (send); solo aplica con el input enfocado.
 	AccionEnviar
 	// AccionModalModelos abre el modal de modelos (model_picker, <leader>m).
 	AccionModalModelos
-	// AccionModalSesiones abre el modal de sesiones (<leader>l).
-	AccionModalSesiones
 	// AccionCiclarAgente alterna plan ↔ build (agent_cycle, tab): nunca dentro
 	// de un modal ni escribiendo.
 	AccionCiclarAgente
@@ -65,21 +71,23 @@ const (
 // LíderPorDefecto y TimeoutPorDefecto son los valores de fábrica de la
 // configuración (SPEC-KEYBINDS §Tecla líder, §Configuración).
 const (
-	LíderPorDefecto    = "ctrl+x"
+	LíderPorDefecto     = "ctrl+x"
 	TimeoutPorDefectoMs = 2000
 	TimeoutMínimoMs     = 500
 	TimeoutMáximoMs     = 10000
 )
 
 // DescripcionDeAccion da la ayuda legible de cada acción. Es la fuente de la
-// lista de atajos (la ayuda clásica `?` queda sustituida por el listado de
+// lista de atajos (la ayuda clásica `?` queda sustituida por el modal de
 // command_palette, SPEC-KEYBINDS §Acción), incluida «pausar», que existe como
 // acción pero no trae tecla de fábrica.
 var DescripcionDeAccion = map[Accion]string{
 	AccionEnviar:         "enviar la petición",
 	AccionSalir:          "salir",
 	AccionPanel:          "abrir o cerrar el panel de datos",
-	AccionSelector:       "selector de sesiones",
+	AccionSelector:       "modal de sesiones",
+	AccionSesionNueva:    "crear una sesión nueva",
+	AccionEliminarSesion: "eliminar la sesión resaltada",
 	AccionRazonamiento:   "mostrar u ocultar el razonamiento",
 	AccionAprobaciones:   "abrir o cerrar el panel de aprobaciones",
 	AccionAprobar:        "aprobar la propuesta seleccionada",
@@ -87,9 +95,8 @@ var DescripcionDeAccion = map[Accion]string{
 	AccionPausar:         "pausar la cola en curso",
 	AccionCancelar:       "cancelar el trabajo en curso (pide confirmación)",
 	AccionCerrarSelector: "cerrar lo abierto",
-	AccionAyuda:          "mostrar u ocultar la ayuda de atajos",
+	AccionAyuda:          "modal de atajos de teclado",
 	AccionModalModelos:   "modal de modelos",
-	AccionModalSesiones:  "modal de sesiones",
 	AccionCiclarAgente:   "cambiar de agente (plan ↔ build)",
 	AccionSubir:          "subir en la lista",
 	AccionBajar:          "bajar en la lista",
@@ -136,20 +143,19 @@ func NuevoAtajo(lider string, accion Accion, descripcion string, literales ...st
 func MapasPorDefecto() map[Accion][]string {
 	return map[Accion][]string{
 		AccionEnviar:         {"enter"},
-		// ctrl+c es el interrupt universal de la terminal: se casa en el
-		// resolver antes de que ninguna zona lo capture (escape hatch,
-		// SPEC-KEYBINDS §Tecla líder). No duplica a app_exit porque el
-		// literal no choca con ningún otro binding.
-		AccionSalir:          {"ctrl+q", "ctrl+c"},
+		AccionSalir:          {"ctrl+c"},
 		AccionPanel:          {"ctrl+d"},
-		AccionSelector:       {"ctrl+s"},
+		AccionSelector:       {"<leader>l"},
+		AccionSesionNueva:    {"<leader>n"},
+		AccionEliminarSesion: {"ctrl+d"},
 		AccionRazonamiento:   {"ctrl+r"},
 		AccionAprobaciones:   {"ctrl+a"},
 		AccionCancelar:       {"ctrl+f"},
-		AccionAyuda:          {"?"},
+		AccionAyuda:          {"ctrl+p"},
+		// dismiss pertenece al modal: con una lista abierta, esc cierra lo
+		// abierto y no llega a la vista de abajo.
 		AccionCerrarSelector: {"esc"},
 		AccionModalModelos:   {"<leader>m"},
-		AccionModalSesiones:  {"<leader>l"},
 		AccionCiclarAgente:   {"tab"},
 		AccionSubir:          {"up"},
 		AccionBajar:          {"down"},
@@ -165,8 +171,8 @@ func MapasPorDefecto() map[Accion][]string {
 // nunca son texto para bubbles, así que un literal reasignado como «ctrl+a»
 // sigue disparando su acción aunque coincida con una letra. Enter, tab y las
 // flechas se resuelven por el mapa; esc se comporta como texto para que el
-// selector lo use cuando está abierto (la máquina de líder lo cancela igual
-// durante una espera).
+// modal de sesiones lo use cuando está abierto (la máquina de líder lo cancela
+// igual durante una espera).
 func EsEntradaDeTexto(m tea.KeyMsg) bool {
 	switch m.Type {
 	case tea.KeyRunes, tea.KeySpace, tea.KeyBackspace, tea.KeyEsc:
@@ -179,11 +185,11 @@ func EsEntradaDeTexto(m tea.KeyMsg) bool {
 // recorrer el map daría errores y ayuda irreproducibles.
 func OrdenDeAcciones() []Accion {
 	return []Accion{
-		AccionEnviar, AccionSalir, AccionPanel, AccionSelector, AccionRazonamiento,
+		AccionEnviar, AccionSalir, AccionPanel, AccionSelector, AccionSesionNueva,
+		AccionEliminarSesion, AccionRazonamiento,
 		AccionAprobaciones, AccionAprobar, AccionDeclinar, AccionPausar,
 		AccionCancelar, AccionCerrarSelector, AccionAyuda,
-		AccionModalModelos, AccionModalSesiones, AccionCiclarAgente,
-		AccionSubir, AccionBajar,
+		AccionModalModelos, AccionCiclarAgente, AccionSubir, AccionBajar,
 	}
 }
 
@@ -273,15 +279,23 @@ func (k *Keymap) ConLíderYTimeout(lider string, timeoutMs int) (*Keymap, error)
 }
 
 // validar comprueba el mapa completo: timeout en rango, acciones conocidas y
-// únicas, y ningún literal repetido (SPEC-KEYBINDS §Reglas de negocio: "Un
-// literal no puede pertenecer a dos acciones"; aquí el contexto único por
-// literal basta porque cada acción vive en un solo contexto de foco).
+// únicas, y ningún literal repetido EN EL MISMO ÁMBITO (SPEC-KEYBINDS §Reglas
+// de negocio: "Un literal no puede pertenecer a dos acciones en un mismo
+// contexto"). Los ámbitos viven en keyresolver.go: `ctrl+d` es panel en la
+// vista y eliminar en el modal de sesiones sin pisarse, porque con un modal
+// abierto la vista de abajo no recibe teclas. El ámbito global está presente
+// en todos los contextos, así que su literal no puede compartirse con nadie.
 func (k *Keymap) validar() error {
 	if k.timeoutMs < TimeoutMínimoMs || k.timeoutMs > TimeoutMáximoMs {
 		return fmt.Errorf("tui: el timeout de la líder debe estar entre %d y %d ms (recibido %d)",
 			TimeoutMínimoMs, TimeoutMáximoMs, k.timeoutMs)
 	}
-	vistas := map[string]Accion{}
+	type visto struct {
+		lit    string
+		ambito Ambito
+		accion Accion
+	}
+	var vistos []visto
 	puestas := map[Accion]bool{}
 	for _, e := range k.entradas {
 		if e.Accion == AccionNinguna {
@@ -294,16 +308,21 @@ func (k *Keymap) validar() error {
 			return fmt.Errorf("tui: la acción %s aparece dos veces en el mapa", nombreDeAccion(e.Accion))
 		}
 		puestas[e.Accion] = true
+		amb := ambitoDeAccion(e.Accion)
 		for _, sec := range e.Secuencias {
 			lit := sec.Describir()
 			if lit == "" {
 				return fmt.Errorf("tui: la acción %s tiene un literal vacío", nombreDeAccion(e.Accion))
 			}
-			if previa, ok := vistas[lit]; ok {
-				return fmt.Errorf("tui: el literal %q está asignado a dos acciones (%s y %s)",
-					lit, nombreDeAccion(previa), nombreDeAccion(e.Accion))
+			for _, v := range vistos {
+				pisa := v.ambito == amb || v.ambito == AmbitoGlobal || amb == AmbitoGlobal
+				if v.lit != lit || !pisa {
+					continue
+				}
+				return fmt.Errorf("tui: el literal %q está asignado a dos acciones en el mismo contexto (%s y %s)",
+					lit, nombreDeAccion(v.accion), nombreDeAccion(e.Accion))
 			}
-			vistas[lit] = e.Accion
+			vistos = append(vistos, visto{lit: lit, ambito: amb, accion: e.Accion})
 		}
 	}
 	return nil
@@ -335,17 +354,24 @@ func AcciónDe(entradas []Atajo, literal string) (Accion, bool) {
 func AyudaAtajos(entradas []Atajo) string {
 	var b strings.Builder
 	for _, a := range entradas {
-		literales := make([]string, 0, len(a.Secuencias))
-		for _, sec := range a.Secuencias {
-			literales = append(literales, sec.Describir())
-		}
-		texto := strings.Join(literales, ", ")
-		if texto == "" {
-			texto = "(deshabilitada)"
-		}
-		b.WriteString(fmt.Sprintf("%-16s %s\n", texto, a.Descripcion))
+		b.WriteString(lineaDeAtajo(a) + "\n")
 	}
 	return b.String()
+}
+
+// lineaDeAtajo compone la fila «tecla(s) + descripción» de un atajo. La comparten
+// el listado de atajos y el modal de atajos (keysmodal.go, DOMAIN §1
+// `keysmodal`): la tabla es la misma, solo cambia dónde se pinta.
+func lineaDeAtajo(a Atajo) string {
+	literales := make([]string, 0, len(a.Secuencias))
+	for _, sec := range a.Secuencias {
+		literales = append(literales, sec.Describir())
+	}
+	texto := strings.Join(literales, ", ")
+	if texto == "" {
+		texto = "(deshabilitada)"
+	}
+	return fmt.Sprintf("%-16s %s", texto, a.Descripcion)
 }
 
 // --- puentes de compatibilidad -------------------------------------------------

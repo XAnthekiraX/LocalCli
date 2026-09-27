@@ -39,7 +39,7 @@ Todas van a `session`, la única puerta del motor:
 |---|---|
 | Enviar mensaje | El usuario escribe y confirma, tanto en la bienvenida (primera petición) como en el chat |
 | Crear o retomar sesión | Al enviar desde la bienvenida: la sesión activa se retoma si existe o se crea nueva, y luego va el mensaje |
-| Cambiar de sesión | Elige en el selector momentáneo |
+| Cambiar de sesión | Elige en el selector momentáneo; también desde la bienvenida, donde al elegir la vista pasa a la principal con el historial de esa sesión |
 | Aprobar / declinar | Resuelve una línea del panel de aprobaciones |
 | Cancelar flujo | Lo pide con su atajo; si había flujo en marcha, `session` pregunta qué hacer, según [[specs/SPEC-SESIONES]] |
 
@@ -56,6 +56,8 @@ Atajos por defecto, reasignables desde la ayuda y guardados en `~/.config/localc
 | `Ctrl+C` | Salir (`app_exit`) | global, también con modales abiertos |
 | `Ctrl+X m` | Abrir el modal de modelos (`model_picker`) | global |
 | `Ctrl+X l` | Abrir el modal de sesiones; al elegir una con `Enter` se abre esa sesión (`session_picker`) | global |
+| `Ctrl+X n` | Crear una sesión nueva y dejarla activa (`session_new`) | vista principal |
+| `Ctrl+D` | Eliminar la sesión resaltada en el modal; si trabaja, pide confirmación (`session_delete`) | modal de sesiones |
 | `Ctrl+P` | Abrir el modal con la lista de atajos existentes (`command_palette`) | global |
 | `Tab` | Cambiar de agente: `plan` ↔ `build` (`agent_cycle`); el agente activo se pinta a la izquierda del input | vista y bienvenida (no con modal abierto) |
 | `Esc` | Cerrar cualquier modal (`dismiss`) | modal |
@@ -68,7 +70,7 @@ Atajos por defecto, reasignables desde la ayuda y guardados en `~/.config/localc
 | `Ctrl+F` | Cancelar el flujo en curso (pide confirmación) | vista |
 | `a` / `d` | Aprobar / declinar la línea seleccionada | panel de aprobaciones |
 
-No hay acción «sesión nueva»: las sesiones se crean enviando la primera petición desde la bienvenida. No hay ayuda por `?`: el listado de atajos es el modal de `Ctrl+P`.
+Las sesiones se crean con `Ctrl+X n` desde la vista principal o enviando la primera petición desde la bienvenida. No hay ayuda por `?`: el listado de atajos es el modal de `Ctrl+P`.
 
 Reglas, según [[specs/SPEC-INTERFAZ-ATAJOS]] y [[specs/SPEC-KEYBINDS]]:
 

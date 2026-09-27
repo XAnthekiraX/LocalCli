@@ -32,7 +32,22 @@ func Notificacion(estado string) (motivo, siguiente string, ok bool) {
 	return "", "", false
 }
 
+// NotificacionDeChat es el aviso de cierre de un turno de CHAT: el chat no
+// ejecuta etapas ni cola, así que decirle al usuario que «terminó el trabajo»
+// haría parecer que arrancó un flujo que no pidió. Para el resto de estados
+// (incluido el error) devuelve exactamente lo mismo que Notificacion.
+func NotificacionDeChat(estado string) (motivo, siguiente string, ok bool) {
+	if estado != EstadoTerminada {
+		return Notificacion(estado)
+	}
+	return "la sesión terminó de responder", "revisa su respuesta en el historial", true
+}
+
 // cambiarEstado aplica una transición ya validada y avisa del estado nuevo.
+// Deja el estado nuevo reflejado en la `Sesion` recibida: sin esto, una
+// transición siguiente se validaría contra el estado viejo (p. ej.
+// terminada → trabajando, que es ilegal incluso después de haber pasado por
+// inactiva).
 func (g *Gestor) cambiarEstado(ses *Sesion, nuevo string) error {
 	if err := ses.PuedePasarA(nuevo); err != nil {
 		return err
@@ -40,6 +55,7 @@ func (g *Gestor) cambiarEstado(ses *Sesion, nuevo string) error {
 	if err := g.Alcance.Almacen.CambiarEstado(ses.ID, nuevo); err != nil {
 		return err
 	}
+	ses.Estado = nuevo
 	g.avisar(ses.ID, nuevo, "")
 	return nil
 }
@@ -47,6 +63,24 @@ func (g *Gestor) cambiarEstado(ses *Sesion, nuevo string) error {
 // avisar emite `estado_sesion` y, si toca, `notificacion`. No bloquea y no
 // espera respuesta: quien lo reciba decide qué hacer (EVENTS.md §4).
 func (g *Gestor) avisar(sesionID, estado, detalle string) {
+	motivo, siguiente, ok := Notificacion(estado)
+	if ok && detalle != "" {
+		motivo += ": " + detalle
+	}
+	g.avisarTexto(sesionID, estado, motivo, siguiente, ok)
+}
+
+// avisarComo hace lo mismo que avisar pero con el texto que decida `texto`:
+// es lo que usa el cierre de un turno de chat (NotificacionDeChat), que no
+// ejecuta etapas y por eso no se anuncia como trabajo terminado.
+func (g *Gestor) avisarComo(sesionID, estado string, texto func(string) (string, string, bool)) {
+	motivo, siguiente, ok := texto(estado)
+	g.avisarTexto(sesionID, estado, motivo, siguiente, ok)
+}
+
+// avisarTexto emite los dos eventos. El estado siempre; la notificación solo
+// si el estado la merece y solo la primera vez de cada estado (idempotente).
+func (g *Gestor) avisarTexto(sesionID, estado, motivo, siguiente string, notificar bool) {
 	if g.Bus == nil {
 		return
 	}
@@ -54,12 +88,8 @@ func (g *Gestor) avisar(sesionID, estado, detalle string) {
 		Nombre: EventoEstadoSesion,
 		Datos:  map[string]string{"sesion": sesionID, "estado": estado},
 	})
-	motivo, siguiente, ok := Notificacion(estado)
-	if !ok {
+	if !notificar {
 		return
-	}
-	if detalle != "" {
-		motivo += ": " + detalle
 	}
 	if !g.marcarNotificado(sesionID, estado) {
 		return

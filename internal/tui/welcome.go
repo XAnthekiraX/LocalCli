@@ -1,40 +1,34 @@
-// welcome.go — T-F003: la pantalla de bienvenida.
+// welcome.go — T-F003 y T-F013: la pantalla de bienvenida.
 //
 // Fuente de verdad: frontend/01-domain/DOMAIN.md §3 (reglas de la bienvenida:
-// logotipo, nombre con versión, selector de modelos y una línea de entrada, con
-// el bloque centrado; "Se pinta sin esperar a Ollama ni a la base"),
-// SPEC-INTERFAZ §Pantalla de bienvenida y §Arte canónico del logotipo ("se
-// pinta tal cual", "no se reescala"; el bloque completo sí se centra) e
-// INTERFACES §2 ("Crear o retomar sesión: al enviar desde la bienvenida… y
-// luego va el mensaje").
+// logotipo, nombre con versión, línea con el modelo en uso y una línea de
+// entrada, con el bloque centrado; "Se pinta sin esperar a Ollama ni a la
+// base"), SPEC-INTERFAZ §Pantalla de bienvenida ("Solo hay logotipo, nombre con
+// su versión, una línea que muestra el modelo en uso y una línea de entrada.
+// Los modelos NO se listan en la bienvenida: se consultan y eligen desde un
+// modal") y §Arte canónico del logotipo ("se pinta tal cual", "no se
+// reescala"; el bloque completo sí se centra) e INTERFACES §2 ("Crear o retomar
+// sesión: al enviar desde la bienvenida… y luego va el mensaje").
 //
-// Es un modelo con el estado mínimo —lo escrito y lo elegido en el selector— y
-// su propio teclado: en la bienvenida no existen los atajos de la interfaz
-// principal, y eso se cumple aquí y no con un `if` repartido por app.go.
+// Es un modelo con el estado mínimo —lo escrito— y su propio teclado: en la
+// bienvenida no existen los atajos de la interfaz principal, y eso se cumple
+// aquí y no con un `if` repartido por app.go. Los modelos ya no viven aquí:
+// se eligen en el modal de modelos (`Ctrl+X m`, modelsmodal.go) y de la
+// pantalla solo se ve la línea con el modelo en uso.
 package tui
 
 import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // Bienvenida es el modelo de la primera pantalla: lo escrito, que será la
-// primera petición, el foco de su única línea de entrada y el selector de
-// modelos (SPEC-INTERFAZ §Reglas: «lo elegido pasa al motor como modelo de la
-// sesión», así que la selección vive aquí y no en un componente aparte).
+// primera petición, y el foco de su única línea de entrada. No guarda la lista
+// de modelos: esa vive en el modal (SPEC-INTERFAZ §Pantalla de bienvenida).
 type Bienvenida struct {
 	Texto string
 	Foco  bool
-
-	// Modelos es la lista que reporta el puerto; llega vacía hasta que arriba
-	// `modelosMsg` — la bienvenida se pinta sin esperar a Ollama (DOMAIN §3).
-	Modelos []ModeloLocal
-	// Elegido es el índice resaltado del selector.
-	Elegido int
-	// Aviso guarda el error del listado («sin modelos»): se muestra, no bloquea.
-	Aviso string
 }
 
 // NuevaBienvenida deja la pantalla lista con la entrada enfocada: es la única
@@ -55,57 +49,17 @@ func (b *Bienvenida) Borrar() {
 	}
 }
 
-// ModeloElegido devuelve el nombre resaltado en el selector, o vacío si no hay
-// lista todavía (sin Ollama, o antes de que llegue `modelosMsg`).
-func (b *Bienvenida) ModeloElegido() string {
-	if b.Elegido < 0 || b.Elegido >= len(b.Modelos) {
-		return ""
-	}
-	return b.Modelos[b.Elegido].Nombre
-}
-
-// MoverModelo desplaza el resaltado del selector con ↑/↓ (SPEC-INTERFAZ: «↑/↓
-// mueven la selección»). Sin lista no hay a dónde moverse; el recorrido es
-// circular para poder alternar entre modelos sin llegar al borde.
-func (b *Bienvenida) MoverModelo(paso int) {
-	if len(b.Modelos) == 0 {
-		return
-	}
-	n := (b.Elegido + paso) % len(b.Modelos)
-	if n < 0 {
-		n += len(b.Modelos)
-	}
-	b.Elegido = n
-}
-
-// fijarModelos deja la lista del selector a punto: conserva la elección anterior
-// si el modelo sigue disponible y resalta el primero en caso contrario. El error
-// del puerto no se propaga ni bloquea: queda como aviso («sin modelos»,
-// SPEC-INTERFAZ §Reglas).
-func (b *Bienvenida) fijarModelos(modelos []ModeloLocal, err error) {
-	previo := b.ModeloElegido()
-	b.Modelos = modelos
-	b.Aviso = ""
-	if err != nil {
-		b.Aviso = "sin modelos"
-		b.Modelos = nil
-	}
-	b.Elegido = 0
-	for i, m := range b.Modelos {
-		if m.Nombre == previo {
-			b.Elegido = i
-			break
-		}
-	}
-}
-
 // teclaBienvenida resuelve una pulsación de la bienvenida. T-F012-06: también
-// pasa por el KeyResolver, con el mapa recortado a lo que existe aquí (salir,
-// enviar, subir/bajar del selector de modelos). Las acciones propias de la
-// interfaz principal —panel, aprobaciones, ayuda— no están en este mapa: "los
-// atajos de la interfaz principal no existen en la bienvenida" (SPEC-INTERFAZ),
-// y eso se cumple filtrando el mapa, no con un `if` suelto. Cualquier otra
-// tecla se escribe.
+// pasa por el KeyResolver. Las acciones propias de la interfaz principal
+// —panel, aprobaciones, modal de atajos— no están en este mapa: "los atajos de la interfaz
+// principal no existen en la bienvenida" (SPEC-INTERFAZ), y eso se cumple
+// filtrando el mapa, no con un `if` suelto. Cualquier otra tecla se escribe.
+//
+// Con el modal de modelos abierto el contexto es el del modal: sus teclas
+// (↑/↓/enter/esc) son suyas y la escritura de la bienvenida no las recibe
+// (SPEC-INTERFAZ §Modal de modelos: "Mientras el modal está abierto, las teclas
+// son solo del modal"). El atajo de abrirlo, en cambio, es global: se puede
+// abrir y cerrar desde aquí.
 func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Ctrl+C es la salida de emergencia de Bubble Tea y sigue valiendo aquí
 	// aunque el mapa la reasigne (DOMAIN §3: "la salida es Ctrl+C").
@@ -113,9 +67,13 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, tea.Quit
 	}
 
-	accion, cmd := a.TeclaRes.Resolver(m, ContextoInput)
+	ctx := ContextoInput
+	if a.modalAbierto() {
+		ctx = ContextoModal
+	}
+	accion, cmd := a.TeclaRes.Resolver(m, ctx)
 	if accion != AccionNinguna && !accionesDeBienvenida()[accion] {
-		// Atajo de la interfaz principal (panel, aprobaciones, ayuda…): en la
+		// Atajo de la interfaz principal (panel, aprobaciones, atajos…): en la
 		// bienvenida no existe, así que se ignora y el carácter puede escribirse.
 		accion = AccionNinguna
 	}
@@ -125,15 +83,71 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch accion {
 	case AccionSalir:
 		return a, tea.Quit
-	case AccionEnviar:
-		return a, a.enviarDesdeBienvenida()
+	case AccionModalModelos:
+		return a, a.abrirModalModelos()
+	case AccionSelector:
+		// `Ctrl+X l` abre el modal de sesiones también desde la bienvenida: al
+		// elegir una, la vista pasa a la principal con esa sesión
+		// (SPEC-INTERFAZ §Pantalla de bienvenida).
+		if a.Sesiones.Abierto {
+			a.Sesiones.Cerrar()
+			return a, nil
+		}
+		return a, a.abrirModalSesiones()
+	case AccionEliminarSesion:
+		// `Ctrl+D` borra la resaltada; solo con el modal de sesiones abierto.
+		if !a.Sesiones.Abierto {
+			return a, nil
+		}
+		return a, a.eliminarSesion()
+	case AccionCiclarAgente:
+		// Tab alterna `plan` ↔ `build` también en la bienvenida: el indicador
+		// se ve junto a su línea de entrada y cambia al instante
+		// (SPEC-INTERFAZ §Zonas 2). Con un modal abierto la acción ni siquiera
+		// llega —el resolver la filtra por contexto—, así que no cicla.
+		a.ciclarAgente()
+		return a, nil
+	case AccionCerrarSelector:
+		// Esc cierra el modal abierto (dismiss). Sin modal no hace nada visible.
+		a.cerrarModales()
+		return a, nil
 	case AccionSubir:
-		a.Bienvenida.MoverModelo(-1)
-		a.fijarModeloEnPuerto()
+		// Con un modal abierto la flecha es suya; sin él la línea de entrada la
+		// recibe (DOMAIN §3: "sin modal abierto no hay navegación: las flechas
+		// escriben/historial según su componente").
+		switch {
+		case a.Modelos.Abierto:
+			a.Modelos.Mover(-1)
+		case a.Sesiones.Abierto:
+			a.Sesiones.Mover(-1)
+		}
 		return a, nil
 	case AccionBajar:
-		a.Bienvenida.MoverModelo(1)
-		a.fijarModeloEnPuerto()
+		switch {
+		case a.Modelos.Abierto:
+			a.Modelos.Mover(1)
+		case a.Sesiones.Abierto:
+			a.Sesiones.Mover(1)
+		}
+		return a, nil
+	case AccionEnviar:
+		switch {
+		case a.Modelos.Abierto:
+			return a, a.aplicarModelo()
+		case a.Sesiones.Abierto:
+			// Elegir una sesión desde la bienvenida lleva a la vista principal
+			// con el historial de esa sesión (INTERFACES §2).
+			if _, ok := a.Sesiones.SesionElegida(); !ok {
+				return a, nil
+			}
+			a.Vista = VistaPrincipal
+			return a, a.elegirSesion()
+		}
+		return a, a.enviarDesdeBienvenida()
+	}
+	// Con un modal abierto, todo lo demás se lo queda el modal: lo escrito en
+	// la línea de entrada espera (SPEC-INTERFAZ §Modal de modelos).
+	if a.modalAbierto() {
 		return a, nil
 	}
 	switch m.Type {
@@ -145,25 +159,6 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.Bienvenida.Borrar()
 	}
 	return a, nil
-}
-
-// fijarModeloEnPuerto entrega al motor el modelo resaltado: lo elegido por el
-// usuario prevalece sobre la autodetección del arranque (SPEC-OLLAMA-PERFIL).
-// Se llama en cada movimiento del selector, para que el cambio sea inmediato.
-func (a *App) fijarModeloEnPuerto() {
-	if nombre := a.Bienvenida.ModeloElegido(); nombre != "" {
-		a.Puerto.FijarModelo(nombre)
-	}
-}
-
-// cargarModelos pide la lista del selector al puerto. Es un comando asíncrono:
-// la pantalla se pinta antes, sin esperar a Ollama (DOMAIN §3), y la lista
-// arriba cuando llega — con error incluido, que se muestra como aviso.
-func (a *App) cargarModelos() tea.Cmd {
-	return func() tea.Msg {
-		modelos, err := a.Puerto.Modelos()
-		return modelosMsg{Modelos: modelos, Err: err}
-	}
 }
 
 // enviarDesdeBienvenida manda lo escrito como primera petición: la sesión
@@ -185,17 +180,28 @@ func (a *App) enviarDesdeBienvenida() tea.Cmd {
 		a.activar(ses)
 	}
 	a.Bienvenida.Texto = ""
-	// Lo elegido en el selector viaja con la primera petición (DOMAIN §2): se
-	// fija en el puerto justo antes de enviar, por si el usuario nunca movió
-	// las flechas pero Ollama respondió después del arranque.
+	// El modelo elegido en el modal viaja con la primera petición (DOMAIN §2):
+	// se entrega al motor justo antes de enviar, para que la petición salga con
+	// el modelo que el usuario eligió y no con el de la autodetección.
 	a.fijarModeloEnPuerto()
 	a.Chat.AñadirUsuario(texto)
 	a.Vista = VistaPrincipal
 	return a.enviarCmd(a.Panel.SesionID, texto)
 }
 
+// fijarModeloEnPuerto entrega al motor el modelo en uso. Lo elige el usuario
+// desde el modal y prevalece sobre la autodetección del arranque
+// (SPEC-OLLAMA-PERFIL: "El modelo lo elige el usuario"), así que se vuelve a
+// entregar al enviar: si el modal se abrió y se eligió algo, la primera
+// petición sale con ese modelo aunque el arranque hubiera detectado otro.
+func (a *App) fijarModeloEnPuerto() {
+	if a.Modelo != "" {
+		a.Puerto.FijarModelo(a.Modelo)
+	}
+}
+
 // viewBienvenida compone la pantalla completa: el bloque «logotipo + nombre con
-// versión + selector de modelos + línea de entrada» se centra en la ventana. El
+// versión + línea de modelo + línea de entrada» se centra en la ventana. El
 // arte se pinta tal cual —sin reescalar: cada línea conserva sus 53 columnas
 // doradas; lo que cambia es solo su posición dentro de la pantalla
 // (SPEC-INTERFAZ §Pantalla de bienvenida, donde el render canónico ya muestra el
@@ -207,42 +213,28 @@ func (a *App) viewBienvenida() string {
 	b.WriteString("\n\n")
 	b.WriteString(estiloMarca.Render(Nombre + " · " + Version))
 	b.WriteString("\n\n")
-	b.WriteString(a.selectorModelos())
+	b.WriteString(a.lineaDeModelo())
 	b.WriteString("\n\n")
-	b.WriteString("En qué te ayudo hoy: " + a.Bienvenida.Texto)
+	// El indicador del agente precede a la línea de entrada, igual que en la
+	// interfaz principal: el render canónico de SPEC-INTERFAZ §Pantalla de
+	// bienvenida es `[plan] > En qué te ayudo hoy: █╚` (T-F015-02).
+	b.WriteString(IndicadorAgente(a.Agente) + "En qué te ayudo hoy: " + a.Bienvenida.Texto)
 	if a.Bienvenida.Foco {
 		b.WriteString("▌")
 	}
-
-	bloque := b.String()
-	if a.Ancho <= 0 || a.Alto <= 0 {
-		return bloque + "\n"
-	}
-	return lipgloss.Place(a.Ancho, a.Alto, lipgloss.Center, lipgloss.Center, bloque)
+	return centrar(b.String(), a.Ancho, a.Alto)
 }
 
-// selectorModelos pinta la fila del selector: los nombres separados por el
-// marcador «▸», con el elegido resaltado, y el aviso «sin modelos» cuando Ollama
-// no respondió (SPEC-INTERFAZ §Reglas). Vacío antes de la primera respuesta: la
-// bienvenida nunca espera a nada externo para mostrarse.
-func (a *App) selectorModelos() string {
-	bienvenida := &a.Bienvenida
-	linea := "Modelos: "
-	switch {
-	case bienvenida.Aviso != "":
-		linea += estiloAviso.Render(bienvenida.Aviso)
-	case len(bienvenida.Modelos) == 0:
-		return ""
-	default:
-		nombres := make([]string, 0, len(bienvenida.Modelos))
-		for i, m := range bienvenida.Modelos {
-			if i == bienvenida.Elegido {
-				nombres = append(nombres, estiloEtiqueta.Render(m.Nombre))
-			} else {
-				nombres = append(nombres, m.Nombre)
-			}
-		}
-		linea += strings.Join(nombres, " ▸ ")
+// lineaDeModelo pinta el modelo en uso y el recordatorio del atajo que lo
+// cambia (SPEC-INTERFAZ §Línea de modelo: "se muestra solo el modelo en uso —el
+// detectado en el arranque o el último elegido en el modal— y el recordatorio
+// del atajo para cambiarlo"). Sin modelo detectado —Ollama no estaba al
+// arrancar— se muestra el hueco con el mismo recordatorio: la pantalla se
+// muestra igual y el modal es el camino para elegir uno.
+func (a *App) lineaDeModelo() string {
+	nombre := a.Modelo
+	if nombre == "" {
+		nombre = "—"
 	}
-	return linea + "    (↑/↓ elegir)"
+	return estiloEtiqueta.Render("modelo: "+nombre) + "  (Ctrl+X m cambiar)"
 }

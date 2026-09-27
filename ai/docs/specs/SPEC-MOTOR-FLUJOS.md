@@ -31,19 +31,20 @@ No incluye la cola que el motor ejecuta, que está en [[specs/SPEC-COLA-TAREAS]]
 
 ## Flujo principal — ejecutar cola
 
-Es el flujo por defecto. Encadena varias tareas grandes de la misma capa sin que el usuario las pida una por una.
+Se arranca con el comando explícito `/ejecutar`. Encadena las tareas grandes disponibles de la capa, una tras otra.
 
-1. La cola de la capa se puebla con las tareas grandes disponibles.
-2. El motor toma la siguiente tarea cuyas dependencias estén cumplidas.
-3. La ejecuta como una secuencia de etapas.
-4. Al terminar, marca la tarea y toma la siguiente.
-5. Al vaciarse la cola, se detiene y avisa.
+1. El usuario escribe `/ejecutar`.
+2. La cola de la capa se puebla con las tareas grandes disponibles.
+3. El motor toma la siguiente tarea cuyas dependencias estén cumplidas.
+4. La ejecuta como una secuencia de etapas.
+5. Al terminar, marca la tarea y toma la siguiente.
+6. Al vaciarse la cola, se detiene y avisa.
 
 ## Flujo principal — flujo con objetivo
 
-1. El usuario lanza un flujo con un objetivo.
+1. El usuario escribe el comando que nombra el flujo con un objetivo.
 2. El motor lo descompone en sus etapas.
-3. Cada etapa pide su contexto al nodo de contexto.
+3. Cada etapa pide su contexto al nodo de contexto, identificándose con su etapa: es lo que hace auditable qué recibió cada una (`context_audit`, una fila por documento y etapa).
 4. La etapa produce un resultado.
 5. El resultado pasa a la etapa siguiente.
 6. El flujo termina y se muestra el resultado final.
@@ -65,13 +66,17 @@ Es el flujo por defecto. Encadena varias tareas grandes de la misma capa sin que
 - Todo lo que hace cada etapa queda registrado: qué recibió, qué hizo y qué produjo.
 - Los flujos oficiales vienen con la herramienta y funcionan sin configuración.
 - Un flujo que se cancela no deja etapas ejecutándose.
-- El motor ejecuta la cola por su cuenta. El usuario no lanza tarea por tarea.
+- Un flujo no arranca solo: lo solicita el usuario con un comando explícito (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`).
+- Una petición que no es un comando de flujo se responde en el chat, no arranca etapas.
+- El motor puede detectar trabajo ordenado y proponer un TODO, pero no lo ejecuta hasta que el usuario confirme o escriba el comando.
 - Una tarea de la cola no arranca si sus dependencias no están cumplidas.
 
 ## Criterios de aceptación
 
 - [ ] Lanzar un flujo oficial ejecuta sus etapas en orden.
-- [ ] El motor toma la siguiente tarea de la cola sin que se la pidan.
+- [ ] Un flujo solo arranca con el comando explícito del usuario.
+- [ ] La cola avanza cuando el usuario escribe `/ejecutar`.
+- [ ] Una petición sin comando se responde en el chat y no arranca etapas.
 - [ ] Una tarea con dependencias sin cumplir no arranca.
 - [ ] Cada etapa recibe solo el contexto que necesita.
 - [ ] Si una etapa falla, el flujo se detiene y el usuario elige qué hacer.

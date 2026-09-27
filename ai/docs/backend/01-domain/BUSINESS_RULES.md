@@ -29,22 +29,25 @@ Las reglas que rigen el motor. Las que dependen de cómo se guardan los datos es
 - Cuando una sesión pasa a **terminada**, se manda una notificación, para que te entere sin tener que estar mirando.
 - La notificación se manda aunque no estés viendo esa sesión, y aunque hayas cambiado a otra sesión o a otra carpeta.
 - Dice qué pasó y qué hacer a continuación: qué aprobación espera, o que el trabajo terminó.
+- El cierre de un turno de **chat** no se anuncia como trabajo: dice «la sesión terminó de responder» y «revisa su respuesta en el historial», porque no corrió ninguna etapa y el usuario no debe pensar que arrancó un flujo que no pidió.
 - Es un aviso, no una interrupción: no detiene la sesión ni cambia lo que se está haciendo.
 - No duplica información. Los detalles están donde siempre: la fila en `approvals` y el historial de la sesión.
 
 ### Motor de etapas
 
+- Un flujo no arranca solo: lo solicita el usuario con un comando explícito (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`). Una petición que no sea comando se responde en el chat.
 - Las etapas se ejecutan en orden y cada una arranca cuando la anterior terminó.
 - Cada etapa recibe solo el contexto que necesita, no todo lo que produjo la anterior.
 - Si una etapa falla, el flujo se detiene y el usuario elige reintentar, saltar esa etapa o cancelar.
 - Un flujo pausado por un permiso se retoma desde la misma etapa, sin repetir lo ya hecho.
 - El usuario puede cancelar en cualquier momento, y un flujo cancelado no deja etapas corriendo.
 - Todo lo que hace cada etapa queda registrado: qué recibió, qué hizo y qué produjo.
+- Cada etapa pide su contexto identificándose: es lo que permite que `context_audit` tenga una fila por documento **y etapa** en lugar de mezclarlas.
 - Un flujo no recibe el contexto de otro flujo.
 
 ### Detección de trabajo ordenado
 
-- Una petición tuya que implique una lista ordenada de trabajo **crea un TODO**. No hay que pedirlo: el sistema lo detecta.
+- Una petición tuya que implique una lista ordenada de trabajo **propone un TODO**. El sistema lo detecta, pero no lo ejecuta sin tu confirmación o el comando `/ejecutar`.
 - "Documentar capa por capa", "ejecutar tarea 1, tarea 2, tarea 3", "primero esto, luego esto" son todas peticiones que crean un TODO.
 - Quien detecta es `flow`, no `queue`. `queue` consume lo que hay.
 - El TODO se crea en el flujo que corresponde:
@@ -66,6 +69,7 @@ Las reglas que rigen el motor. Las que dependen de cómo se guardan los datos es
 - Un elemento bloqueado se marca y se informa qué falta; si nada depende de él, la cola sigue con el siguiente.
 - Un elemento nuevo hace que la cola se re-derive y entre en su posición.
 - El estado de la cola es visible desde cualquier sesión.
+- La cola solo avanza cuando el usuario la arranca con `/ejecutar` o confirma la propuesta del TODO.
 - Al vaciarse, la cola se detiene sola y avisa.
 - La cola refleja siempre el estado real del TODO. Como se deriva de él, si el TODO cambia, la vista cambia; no hay una segunda verdad que reconciliar.
 
@@ -75,6 +79,8 @@ Las reglas que rigen el motor. Las que dependen de cómo se guardan los datos es
 - La decisión de qué es relevante la toma siempre el modelo.
 - El contexto entregado nunca supera el límite de contexto del modelo.
 - Todo lo que se descartó queda registrado con su motivo, en `context_audit`.
+- La auditoría es por terna (sesión, etapa, documento): si una etapa se repite —reinteto, resumen o segundo turno del chat—, la fila ya registrada se conserva y el turno sigue; la base no admite dos filas para la misma terna.
+- En el chat, si el modelo no selecciona nada y no hay semilla, el bloque va **sin documentos**: el proyecto entero no entra en una conversación casual. Las etapas de flujo conservan el respaldo a los candidatos.
 - El nodo de contexto no lee fuera de la carpeta del proyecto sin permiso.
 - Un documento que entra en el contexto se lee primero; no se entrega nada sin leer.
 - El contexto de una etapa no arrastra el de etapas anteriores si no lo necesita.
@@ -91,8 +97,9 @@ Las reglas que rigen el motor. Las que dependen de cómo se guardan los datos es
 - Una aprobación vale para el cambio propuesto, no para lo que siga. Si `build` necesita algo que `plan` no propuso, vuelve a preguntar.
 - El relevo no se puede saltar cambiando de agente con un trick: no hay interruptor, son dos catálogos distintos.
 - Los agentes se definen en archivos JSON, no en el código. El agente base existe, y se puede modificar o derivar de él otros sin recompilar.
-- Un agente sin `herramientas` de escritura no puede escribir, aunque se le pida. Es lo que hace que la garantía se sostenga en datos y no en una promesa del código.
+- Un agente cuyos permisos deniegan `editar` no puede escribir, aunque se le pida. Es lo que hace que la garantía se sostenga en datos y no en una promesa del código.
 - **No hay skills por defecto.** Las crea el usuario, en markdown. El motor no trae ninguna.
+- En el chat, cada agente responde con las herramientas derivadas de sus permisos; el chat no añade ni quita herramientas.
 
 ### Herramientas y terminal
 

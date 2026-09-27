@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"localcli/internal/session"
 )
 
@@ -59,18 +61,20 @@ func TestLasDoradasDeVistaSeMantienen(t *testing.T) {
 	}
 	compararDorada(t, "panel.golden", sinEstilo(p.Render(AnchoPanel-4))+"\n")
 
-	// Ayuda con el mapa por defecto.
-	a := Nuevo(&puertoStub{})
-	compararDorada(t, "ayuda.golden", sinEstilo(a.viewAyuda())+"\n")
+	// Modal de atajos con el keymap de fábrica: acción y tecla de cada una.
+	km := &KeysModal{}
+	km.AbrirAtajos(KeymapPorDefecto().Entradas())
+	compararDorada(t, "atajos.golden", sinEstilo(km.Render(100, 30))+"\n")
 
-	// Selector con las tres sesiones y sus estados.
-	s := Selector{}
-	s.Abrir([]session.Sesion{
+	// Modal de sesiones con las tres sesiones y sus estados.
+	sm := &SessionsModal{}
+	sm.AbrirSesiones("s1")
+	sm.FijarSesiones([]session.Sesion{
 		{ID: "s1", Nombre: "primera", Estado: session.EstadoInactiva},
 		{ID: "s2", Nombre: "segunda", Estado: session.EstadoTrabajando},
 		{ID: "s3", Nombre: "tercera", Estado: session.EstadoEsperandoPermiso},
-	}, "s1")
-	compararDorada(t, "selector.golden", sinEstilo(s.Render())+"\n")
+	})
+	compararDorada(t, "sesiones.golden", sinEstilo(sm.Render(100, 30))+"\n")
 
 	// Panel de aprobaciones con dos líneas, la primera seleccionada.
 	ap := Aprobaciones{}
@@ -79,4 +83,23 @@ func TestLasDoradasDeVistaSeMantienen(t *testing.T) {
 		{ID: "a2", Sesion: "cli", Descripcion: "borrar carpeta"},
 	})
 	compararDorada(t, "aprobaciones.golden", sinEstilo(ap.Render())+"\n")
+
+	// Línea de entrada de la interfaz principal con su indicador de agente
+	// (T-F015-01): la línea empieza por el agente actual, `[plan] >`.
+	e := NuevaEntrada()
+	compararDorada(t, "entrada.golden", sinEstilo(e.View())+"\n")
+
+	// Bienvenida con la línea de modelo y sin lista de modelos: la selección
+	// vive en el modal, no en la pantalla (SPEC-INTERFAZ §Pantalla de
+	// bienvenida, T-F013-01).
+	b := Nuevo(&puertoStub{modelo: "llama3.2"})
+	pulsa(t, b, tea.WindowSizeMsg{Width: 100, Height: 30})
+	compararDorada(t, "bienvenida.golden", sinEstilo(b.View())+"\n")
+
+	// Modal de modelos con dos modelos, el segundo resaltado (T-F013-02).
+	mm := &ModelsModal{}
+	mm.AbrirModelos()
+	mm.FijarModelos([]ModeloLocal{{Nombre: "llama3.2"}, {Nombre: "qwen2.5"}}, nil)
+	mm.Mover(1)
+	compararDorada(t, "modelos.golden", sinEstilo(mm.Render(100, 30))+"\n")
 }

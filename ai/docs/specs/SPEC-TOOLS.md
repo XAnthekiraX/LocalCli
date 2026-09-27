@@ -60,11 +60,15 @@ No incluye las reglas de permiso sobre archivos, que están en [[specs/SPEC-ARCH
 
 ## El reparto: `plan` mira, `build` escribe
 
-`plan` solo recibe herramientas que **recopilan información**. No tiene ninguna que escriba. Existe para entender el proyecto, decidir qué hay que hacer y proponerlo.
+El reparto sale de los `permisos` de cada agente, que se declaran **por acción**: `leer` (archivos de lectura), `editar` (archivos de escritura), `ejecutar` (terminal) e `internet`. El catálogo efectivo de herramientas se deriva de ahí contra el catálogo cerrado: no hay una lista de herramientas suelta que pueda contradecir los permisos.
 
-`build` recibe el catálogo completo. Es el único que crea, modifica y borra.
+`plan` permite `leer`, `ejecutar` e `internet`, y deniega `editar`. Nunca recibe una herramienta que escriba. Existe para entender el proyecto, decidir qué hay que hacer y proponerlo.
+
+`build` permite las cuatro acciones y recibe el catálogo completo. Es el único que crea, modifica y borra.
 
 Esto no es una restricción de estilo: es la garantía de que nada cambia en tu proyecto sin que `plan` lo haya propuesto antes y tú lo hayas aprobado.
+
+El modelo no adivina qué puede pedir: `agent` le entrega en su mensaje de sistema las herramientas que le corresponden y el formato exacto de llamada, así que el contrato deja de depender de la prosa del prompt.
 
 ## El relevo entre agentes
 
@@ -157,6 +161,9 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 ## Reglas de negocio
 
 - El catálogo es cerrado: el agente no puede inventar herramientas que no estén aquí.
+- En el chat, el agente activo responde con el catálogo derivado de sus permisos: `plan` lee y propone, `build` escribe con aprobación. El chat no añade ni quita herramientas.
+- El reparto sale de acciones (`leer`, `editar`, `ejecutar`, `internet`) declaradas como `permitir`/`denegar`; el catálogo efectivo se deriva de ellas.
+- El modelo recibe en su mensaje de sistema sus herramientas y el formato de llamada.
 - `plan` solo tiene herramientas de lectura. No tiene ninguna forma de escribir.
 - `build` tiene el catálogo completo.
 - El relevo de `plan` a `build` es explícito: propuesta, aprobación, cambio de agente, aplicación.
@@ -184,6 +191,8 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - [ ] La búsqueda por internet envía solo la consulta, nunca contenido del proyecto.
 - [ ] `abrir_pagina` devuelve el contenido de una página y ese contenido se audita.
 - [ ] El agente no tiene herramientas fuera de este catálogo.
+- [ ] En el chat, el agente activo usa exactamente las herramientas derivadas de sus permisos.
+- [ ] El agente recibe su catálogo y el formato de llamada en el mensaje de sistema.
 
 ## Requisitos no funcionales
 

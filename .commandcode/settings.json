@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(go:*)",
+      "Shell(gofmt:*)",
+      "Shell(git commit -F - <<'EOF' Consolida el trabajo pendiente: agentes/permisos/tools y TUI Backend — agente, conversación y tools como un solo ciclo: - El agente declara `permisos` explícitos por acción (leer/editar/ejecutar/ internet) con efecto permitir/denegar; el catálogo efectivo de herramientas se deriva de ellos contra el catálogo cerrado (antes era el campo `herramientas`). Se rechazan acciones/efectos desconocidos y permisos contradictorios. - El ciclo conversacional (modelo → herramienta → resultado → modelo) se extrae a `agent.Ejecutor`: `plan` y `build` son dos configuraciones del mismo bucle. El arranque queda como cableado. - El catálogo del agente y el formato de llamada se inyectan en el mensaje de sistema; el esquema de argumentos se deriva del DTO por reflexión. - Corrige el uso del modelo elegido por turno (el selector no surtía efecto). Interfaz (trabajo previo incluido): - Modales de modelos, sesiones y atajos; control de sesiones; keyresolver y keymap; ajustes de chat, entrada, welcome y estilos; nuevas golden. Documentación y tareas: - Specs y docs de backend/frontend alineados con el nuevo contrato (SPEC-TOOLS, SPEC-AGENTE-BASE, SPEC-INTERFAZ, DECISIONS, TOOLS, DOMAIN, BACKEND). - Tareas T-B017 y de frontend; conteos de MAIN-TASKS actualizados. Incluye también el estado de ejecución `.localcli/`, el binario `localcli` y los directorios `.commandcode/` y `.serena/` por petición explícita. Co-authored-by: CommandCodeBot <noreply@commandcode.ai> EOF)",
+      "Shell(git:*)"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

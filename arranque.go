@@ -185,7 +185,10 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	// una función que reconstruye esas piezas sobre el mismo motor antes de
 	// cada turno: es el sitio del arranque, no de session ni de flow.
 	motorFlows.Contexto = &nodoPorTurno{ad: ad, grafo: grafo, cliente: cliente, modelo: modelo}
-	motorFlows.Agente = &ejecutorPorTurno{ad: ad, runner: agenteRunner, despachar: despachador, modelo: modelo, infer: infer, agente: agenteBase(carpeta)}
+	// El bucle conversacional (agente → modelo → herramientas → modelo) vive en
+	// `agent`; aquí solo se le dan sus dependencias reales y el mapa de agentes.
+	ejecutor := &agent.Ejecutor{Runner: agenteRunner, Despachar: despachador, MaxPasadas: 3}
+	motorFlows.Agente = &ejecutorPorTurno{ad: ad, ejecutor: ejecutor, infer: infer, agente: agenteBase(carpeta)}
 	motorFlows.Aprobador = &aprobadorPorTurno{ad: ad}
 
 	// Arranque de sesión: retomar la activa del proyecto o crearla
@@ -252,11 +255,40 @@ func (ad *Adaptador) ResolverActiva() (*session.Sesion, error) {
 
 func (ad *Adaptador) Listar() ([]session.Sesion, error) { return ad.gest.Listar() }
 
-// Modelos da al selector de la bienvenida la lista que reporta Ollama, ya
-// traducida a `tui.ModeloLocal`: la vista no importa el paquete ollama ni toca
-// HTTP (wire.go). Si Ollama no responde, el error sube tal cual y la TUI lo
-// pinta como aviso «sin modelos» sin bloquear la escritura (SPEC-INTERFAZ
-// §Reglas); el tiempo de espera es el del arranque, acotado por timeoutDeteccion.
+// Crear deja una sesión nueva activa (SPEC-SESIONES): es lo que hace `Ctrl+X n`
+// desde la vista principal. El nombre es legible y único en lo posible; la capa
+// queda vacía porque es una sesión general (ENUMS.md: layer NULL).
+func (ad *Adaptador) Crear() (*session.Sesion, error) {
+	sesiones, err := ad.gest.Listar()
+	if err != nil {
+		return nil, err
+	}
+	nombre := fmt.Sprintf("sesión %d", len(sesiones)+1)
+	ses, err := ad.gest.Crear(nombre, "")
+	if err != nil {
+		return nil, err
+	}
+	ad.fijarSesion(ses.ID)
+	return ses, nil
+}
+
+// Eliminar borra una sesión y todo lo suyo en cascada (RELATIONSHIPS.md §3):
+// mensajes, razonamiento y aprobaciones caen con ella. Es lo que hace `Ctrl+D`
+// en el modal de sesiones; la confirmación cuando está trabajando la pide la
+// vista antes de llegar aquí.
+func (ad *Adaptador) Eliminar(sesionID string) error {
+	if err := ad.gest.Cerrar(sesionID, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Modelos da al modal de modelos la lista que reporta Ollama, ya traducida a
+// `tui.ModeloLocal`: la vista no importa el paquete ollama ni toca HTTP
+// (wire.go). Se pide al abrir el modal, no al arrancar (SPEC-INTERFAZ §Modal de
+// modelos). Si Ollama no responde, el error sube tal cual y la TUI lo pinta como
+// aviso «sin modelos» sin bloquear nada; el tiempo de espera es el del
+// arranque, acotado por timeoutDeteccion.
 func (ad *Adaptador) Modelos() ([]tui.ModeloLocal, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
 	defer cancel()
@@ -270,6 +302,13 @@ func (ad *Adaptador) Modelos() ([]tui.ModeloLocal, error) {
 	}
 	return out, nil
 }
+
+// ModeloActual devuelve el modelo con el que trabaja el motor ahora mismo: el
+// que detectó el arranque o el último que eligió el usuario en el modal de
+// modelos. Es lo que la línea de modelo de la bienvenida muestra
+// (SPEC-INTERFAZ §Línea de modelo); es una lectura en memoria, sin llamar a
+// Ollama, así que la pantalla se pinta sin esperar a nada externo.
+func (ad *Adaptador) ModeloActual() string { return ad.modeloElegido() }
 
 // FijarModelo guarda la elección del usuario: a partir de ahora cada turno del
 // motor usa este modelo, aunque la autodetección del arranque hubiera tomado
@@ -294,19 +333,33 @@ func (ad *Adaptador) Historial(sesionID string) ([]tui.MensajeHistorial, error) 
 	return out, nil
 }
 
-// Enviar manda el mensaje al gestor y, tras el turno, intenta consumir la cola
-// si la petición era trabajo ordenado (SPEC-COLA-TAREAS). La vista recibe el
-// desenlace por eventos, no por el retorno.
-func (ad *Adaptador) Enviar(ctx context.Context, sesionID, texto string) error {
+// Enviar manda el mensaje al gestor. La vista principal responde como chat por
+// defecto; solo un comando explícito arranca un flujo (SPEC-INTERFAZ §Reglas:
+// "/planificar, /crear, /actualizar, /eliminar, /resolver o /ejecutar"). La
+// vista recibe el desenlace por eventos, no por el retorno.
+//
+// El agente viaja con la petición (T-F015-04): lo elige el usuario con el
+// indicador y con él responde el chat. La detección de trabajo ordenado ya no
+// arranca nada: se propone en `session` (SPEC-COLA-TAREAS).
+func (ad *Adaptador) Enviar(ctx context.Context, sesionID, agente, texto string) error {
 	ad.fijarSesion(sesionID)
-	ordenado := flow.EsTrabajoOrdenado(texto)
-	err := ad.gest.Enviar(ctx, sesionID, texto)
-	if err != nil {
+	if cmd, ok := flow.ComandoDe(texto); ok {
+		if cmd.Consumir {
+			return ad.ejecutarCola(sesionID, texto)
+		}
+		return ad.gest.ArrancarFlujo(ctx, sesionID, cmd.Flujo, flow.ObjetivoDe(texto))
+	}
+	return ad.gest.Conversar(ctx, sesionID, agente, texto)
+}
+
+// ejecutarCola atiende `/ejecutar`: deja constancia del comando en el historial
+// y consume la cola del TODO en segundo plano. Es el único camino que arranca
+// la cola (SPEC-COLA-TAREAS: "El usuario decide si se ejecuta").
+func (ad *Adaptador) ejecutarCola(sesionID, texto string) error {
+	if err := ad.gest.Anotar(sesionID, texto); err != nil {
 		return err
 	}
-	if ordenado {
-		go ad.consumirCola(sesionID)
-	}
+	go ad.consumirCola(sesionID)
 	return nil
 }
 
@@ -782,7 +835,7 @@ type nodoPorTurno struct {
 	modelo  string
 }
 
-func (n *nodoPorTurno) ContextoPara(ctx context.Context, objetivo string) (string, error) {
+func (n *nodoPorTurno) ContextoPara(ctx context.Context, etapa, objetivo string) (string, error) {
 	modelo := n.ad.modeloElegido()
 	if n.grafo == nil || modelo == "" {
 		return "", fmt.Errorf("arranque: sin grafo o modelo no hay contexto que entregar")
@@ -793,21 +846,20 @@ func (n *nodoPorTurno) ContextoPara(ctx context.Context, objetivo string) (strin
 		Auditor:   n.ad.auditar,
 		SessionID: n.ad.sesionActual(),
 	}
-	return nodo.ContextoPara(ctx, objetivo)
+	return nodo.ContextoPara(ctx, etapa, objetivo)
 }
 
 // ejecutorPorTurno implementa flow.Agente: corre la etapa con el agente base
-// (`plan` o `build`) cargado de ai/agents, encolando la inferencia en la FIFO,
-// transmitiendo tokens y razonamiento a la TUI como eventos (EVENTS.md §1,
-// DECISIONS.md [25]) y despachando las herramientas que el modelo solicite a
-// través de `agent` → `tools` (TOOLS.md §7).
+// (`plan` o `build`) cargado de ai/agents. Serializa la inferencia en la FIFO,
+// delega el ciclo conversacional (LLM → herramienta → resultado → LLM) en
+// `agent.Ejecutor` —el bucle único que comparten los dos agentes—, traduce los
+// tokens a eventos de la TUI (EVENTS.md §1, DECISIONS.md [25]) y guarda el
+// turno al terminar.
 type ejecutorPorTurno struct {
-	ad        *Adaptador
-	runner    agent.Runner
-	despachar *agent.Despachador
-	modelo    string
-	infer     *ollama.ColaInferencia
-	agente    map[string]agent.Agente
+	ad       *Adaptador
+	ejecutor *agent.Ejecutor
+	infer    *ollama.ColaInferencia
+	agente   map[string]agent.Agente
 }
 
 func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, nombreAgente, contexto string) (flow.Resultado, error) {
@@ -823,63 +875,20 @@ func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, nombreAgente, contexto 
 	}
 	sesionID := e.ad.sesionActual()
 
-	var texto strings.Builder
-	var razon strings.Builder
+	var salida agent.Resultado
 	err := e.infer.Encolar(ctx, ollama.OpcionesEncolar{IdSesion: sesionID}, func(c context.Context) error {
-		texto.Reset()
-		razon.Reset()
-		mensajes := []ollama.Mensaje{{Role: "user", Content: contexto}}
-		// Tres pasadas como máximo: el modelo responde, pide herramientas, se
-		// ejecutan, y vuelve a responder con los resultados. Un turno no puede
-		// quedar abierto indefinidamente.
-		for pasada := 0; pasada < 3; pasada++ {
-			ch, err := e.runner.Generar(c, agente, e.modelo, mensajes)
-			if err != nil {
-				e.ad.bus.Emitir(tui.Evento{Nombre: tui.EventoToken, Datos: map[string]string{
-					"sesion": sesionID, "texto": "[sin respuesta del modelo]",
-				}})
-				return err
-			}
-			texto.Reset()
-			razon.Reset()
-			var pedidos []agent.SolicitudHerramienta
-			for ev := range ch {
-				switch ev.Tipo {
-				case ollama.EventoToken:
-					texto.WriteString(ev.Texto)
-					e.emitirToken(sesionID, ev.Texto, false)
-				case ollama.EventoRazonamiento:
-					razon.WriteString(ev.Texto)
-					e.emitirToken(sesionID, ev.Texto, true)
-				case ollama.EventoError:
-					return ev.Error
-				}
-			}
-			pedidos = solicitudesDeHerramienta(texto.String())
-			if len(pedidos) == 0 {
-				return nil
-			}
-			mensajes = append(mensajes, ollama.Mensaje{Role: "assistant", Content: texto.String()})
-			var informe strings.Builder
-			for _, sol := range pedidos {
-				resultado, err := e.despachar.Despachar(c, agente, sol)
-				if err != nil {
-					resultado = map[string]string{"error": err.Error()}
-				}
-				datos, mErr := json.Marshal(resultado)
-				if mErr != nil {
-					datos = []byte(`{"error":"respuesta no serializable"}`)
-				}
-				informe.WriteString(sol.Nombre + " → " + string(datos) + "\n")
-			}
-			mensajes = append(mensajes, ollama.Mensaje{Role: "user", Content: "Resultados de herramientas:\n" + informe.String()})
+		res, err := e.ejecutor.Ejecutar(c, agente, modelo, contexto, sinkBus{ad: e.ad, sesionID: sesionID})
+		if err != nil {
+			return err
 		}
+		salida = res
 		return nil
 	})
 	if err != nil {
 		return flow.Resultado{}, err
 	}
-	resumen := strings.TrimSpace(texto.String())
+
+	resumen := strings.TrimSpace(salida.Texto)
 	if resumen == "" {
 		resumen = "(respuesta vacía)"
 	}
@@ -887,59 +896,29 @@ func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, nombreAgente, contexto 
 	// y su estado (DATA_FLOW.md): el historial que verá la próxima vez incluye
 	// esta respuesta.
 	if sesionID != "" {
-		if _, cErr := cerrarTurnoGuardado(e.ad, sesionID, resumen, razon.String()); cErr != nil {
+		if _, cErr := cerrarTurnoGuardado(e.ad, sesionID, resumen, salida.Razonamiento); cErr != nil {
 			return flow.Resultado{}, cErr
 		}
 	}
 	return flow.Resultado{Texto: resumen}, nil
 }
 
-func (e *ejecutorPorTurno) emitirToken(sesionID, texto string, esRazon bool) {
+// sinkBus traduce los fragmentos que produce el modelo a eventos de token de
+// la TUI. Es el único punto donde el ciclo de `agent` toca el bus.
+type sinkBus struct {
+	ad       *Adaptador
+	sesionID string
+}
+
+func (s sinkBus) Token(texto string, esRazon bool) {
 	if texto == "" {
 		return
 	}
-	datos := map[string]string{"sesion": sesionID, "texto": texto}
+	datos := map[string]string{"sesion": s.sesionID, "texto": texto}
 	if esRazon {
 		datos["razonamiento"] = "true"
 	}
-	e.ad.bus.Emitir(tui.Evento{Nombre: tui.EventoToken, Datos: datos})
-}
-
-// solicitudesDeHerramienta extrae del texto del modelo los bloques
-// ```herramienta ...``` con argumentos JSON. Es el contrato mínimo de llamada
-// a herramientas para un modelo local sin function-calling nativo: lo que el
-// modelo no declara en ese formato no se ejecuta, y `tools` valida el nombre y
-// los argumentos contra el catálogo cerrado antes de enrutar (VALIDATION.md).
-func solicitudesDeHerramienta(texto string) []agent.SolicitudHerramienta {
-	var out []agent.SolicitudHerramienta
-	resto := texto
-	for {
-		i := strings.Index(resto, "```herramienta")
-		if i < 0 {
-			break
-		}
-		resto = resto[i+len("```herramienta"):]
-		j := strings.Index(resto, "\n```")
-		if j < 0 {
-			break
-		}
-		cuerpo := strings.TrimSpace(resto[:j])
-		resto = resto[j+4:]
-		nombre, args, ok := strings.Cut(cuerpo, "\n")
-		nombre = strings.TrimSpace(nombre)
-		if !ok || !tools.Existe(nombre) {
-			continue
-		}
-		argJSON := strings.TrimSpace(args)
-		if argJSON == "" {
-			argJSON = "{}"
-		}
-		if !json.Valid([]byte(argJSON)) {
-			continue
-		}
-		out = append(out, agent.SolicitudHerramienta{Nombre: nombre, Argumentos: json.RawMessage(argJSON)})
-	}
-	return out
+	s.ad.bus.Emitir(tui.Evento{Nombre: tui.EventoToken, Datos: datos})
 }
 
 // cerrarTurnoGuardado persiste la respuesta del agente con su razonamiento,

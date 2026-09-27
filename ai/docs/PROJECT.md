@@ -87,7 +87,7 @@ internal/
 ### Recorrido de una petición
 
 1. `tui` recibe lo que escribes y lo envía a la sesión activa.
-2. `session` decide si la petición es un chat o el arranque de un flujo.
+2. `session` responde la petición como chat; solo arranca un flujo cuando la línea es un comando explícito (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`).
 3. `context` arma el contexto de la etapa: lee el grafo de dependencias, filtra, deja que el modelo elija y recorta hasta el límite.
 4. `agent` construye la llamada con el prompt de `plan` o de `build`, respetando qué herramientas tiene cada uno.
 5. `ollama` envía la petición y devuelve el token a token.

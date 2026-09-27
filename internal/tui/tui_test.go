@@ -32,20 +32,33 @@ import (
 // --- dobles ---------------------------------------------------------------
 
 type puertoStub struct {
-	activa           *session.Sesion
-	sesiones         []session.Sesion
-	historial        []MensajeHistorial
-	enviados         []string
-	resueltas        []string
-	pausadas         []string
-	cancelado        []string
-	activasResueltas int
-	suscripciones    int
-	canal            chan Evento
-	err              error
-	modelos          []ModeloLocal
-	modelosErr       error
-	fijados          []string
+	activa            *session.Sesion
+	sesiones          []session.Sesion
+	historial         []MensajeHistorial
+	enviados          []string
+	resueltas         []string
+	pausadas          []string
+	cancelado         []string
+	activasResueltas  int
+	suscripciones     int
+	canal             chan Evento
+	err               error
+	modelos           []ModeloLocal
+	modelosErr        error
+	modelo            string
+	peticionesModelos int
+	fijados           []string
+	// Lecturas bajo demanda del modal de sesiones: cada apertura pide la lista
+	// una vez (T-F014-04) y elegir una sesión pide su historial.
+	lecturas       int
+	peticionesChat int
+	// agentes es el agente con el que salió cada petición, en el mismo orden
+	// que `enviados` (T-F015-04).
+	agentes []string
+	// creadas y eliminadas registran las operaciones de `session_new` y
+	// `session_delete` (T-F017).
+	creadas    int
+	eliminadas []string
 }
 
 func (p *puertoStub) ResolverActiva() (*session.Sesion, error) {
@@ -53,6 +66,20 @@ func (p *puertoStub) ResolverActiva() (*session.Sesion, error) {
 		return nil, p.err
 	}
 	p.activasResueltas++
+	if p.activa != nil && !p.eliminada(p.activa.ID) {
+		copia := *p.activa
+		return &copia, nil
+	}
+	// La que había ya no está (se borró desde el modal): se retoma otra viva.
+	for i := range p.sesiones {
+		s := p.sesiones[i]
+		if s.Estado == session.EstadoTerminada || s.Estado == session.EstadoError {
+			continue
+		}
+		copia := s
+		p.activa = &copia
+		return &copia, nil
+	}
 	if p.activa == nil {
 		p.activa = &session.Sesion{ID: "s1", Nombre: "primera", Estado: session.EstadoInactiva}
 	}
@@ -60,25 +87,65 @@ func (p *puertoStub) ResolverActiva() (*session.Sesion, error) {
 	return &copia, nil
 }
 
+// eliminada dice si ese id ya no está en el listado del doble. Sin sesiones que
+// listar no hay con qué decidir, así que la activa se da por vigente.
+func (p *puertoStub) eliminada(id string) bool {
+	for _, s := range p.sesiones {
+		if s.ID == id {
+			return false
+		}
+	}
+	return len(p.sesiones) > 0
+}
+
 func (p *puertoStub) Listar() ([]session.Sesion, error) {
+	p.lecturas++
 	if p.err != nil {
 		return nil, p.err
 	}
 	return p.sesiones, nil
 }
 
+func (p *puertoStub) Crear() (*session.Sesion, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	p.creadas++
+	ses := &session.Sesion{ID: "nueva", Nombre: "sesión nueva", Estado: session.EstadoInactiva}
+	p.activa = ses
+	return ses, nil
+}
+
+func (p *puertoStub) Eliminar(sesionID string) error {
+	if p.err != nil {
+		return p.err
+	}
+	p.eliminadas = append(p.eliminadas, sesionID)
+	for i, s := range p.sesiones {
+		if s.ID == sesionID {
+			p.sesiones = append(p.sesiones[:i], p.sesiones[i+1:]...)
+			break
+		}
+	}
+	return nil
+}
+
 func (p *puertoStub) Historial(sesionID string) ([]MensajeHistorial, error) {
+	p.peticionesChat++
 	if p.err != nil {
 		return nil, p.err
 	}
 	return p.historial, nil
 }
 
-func (p *puertoStub) Enviar(ctx context.Context, sesionID, texto string) error {
+// Enviar registra también el agente: lo que se pide con `build` sale con
+// `build` (T-F015-04).
+func (p *puertoStub) Enviar(ctx context.Context, sesionID, agente, texto string) error {
 	if p.err != nil {
 		return p.err
 	}
 	p.enviados = append(p.enviados, sesionID+"|"+texto)
+	p.agentes = append(p.agentes, agente)
 	return nil
 }
 
@@ -104,14 +171,21 @@ func (p *puertoStub) Pausar(sesionID string) error {
 func (p *puertoStub) Cancelar(sesionID string) { p.cancelado = append(p.cancelado, sesionID) }
 
 func (p *puertoStub) Modelos() ([]ModeloLocal, error) {
+	p.peticionesModelos++
 	if p.modelosErr != nil {
 		return nil, p.modelosErr
 	}
 	return p.modelos, nil
 }
 
+// ModeloActual es lo que el motor autodetectó al arrancar; el doble lo declara
+// en `modelo` para que la línea de modelo de la bienvenida tenga algo que
+// enseñar sin llamar a Ollama.
+func (p *puertoStub) ModeloActual() string { return p.modelo }
+
 func (p *puertoStub) FijarModelo(nombre string) {
 	p.fijados = append(p.fijados, nombre)
+	p.modelo = nombre
 }
 
 func (p *puertoStub) Suscribir() (<-chan Evento, func()) {
@@ -156,6 +230,32 @@ func escribe(t *testing.T, a *App, texto string) {
 func tecla(t *testing.T, a *App, k tea.KeyType) tea.Cmd {
 	t.Helper()
 	return pulsa(t, a, tea.KeyMsg{Type: k})
+}
+
+// secuencia pulsa la líder y su segunda tecla, como el teclado real: el
+// indicador aparece y desaparece solo, sin que la prueba tenga que saber cómo
+// está armado el resolver.
+func secuencia(t *testing.T, a *App, k tea.KeyType, segunda string) tea.Cmd {
+	t.Helper()
+	tecla(t, a, tea.KeyCtrlX)
+	return pulsa(t, a, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(segunda)})
+}
+
+// abreElModalDeSesiones pulsa la secuencia documentada del modal de sesiones
+// (`<leader>l`) y entrega la lectura que devuelve el puerto, como hace el bucle
+// real: el comando de la apertura produce `sesionesMsg` y el Update lo aplica
+// (T-F014-04).
+func abreElModalDeSesiones(t *testing.T, a *App) tea.Cmd {
+	t.Helper()
+	return secuencia(t, a, tea.KeyCtrlX, "l")
+}
+
+// abreElModalDeModelos pulsa la secuencia documentada del modal de modelos y
+// entrega la lista que devuelve el puerto, como hace el bucle real: el comando
+// de la apertura produce `modelosMsg` y el Update lo aplica (T-F013).
+func abreElModalDeModelos(t *testing.T, a *App) tea.Cmd {
+	t.Helper()
+	return secuencia(t, a, tea.KeyCtrlX, "m")
 }
 
 // --- T-B014-01: arranque ---------------------------------------------------
@@ -412,7 +512,7 @@ func TestLaNotificaciónLlegaAunqueNoSeVeaLaSesión(t *testing.T) {
 
 // --- T-B014-05: el selector de sesiones -----------------------------------
 
-func TestElSelectorListaYCambiaDeSesión(t *testing.T) {
+func TestElModalDeSesionesListaYCambiaDeSesión(t *testing.T) {
 	p := &puertoStub{
 		activa: &session.Sesion{ID: "s1", Nombre: "primera", Estado: session.EstadoInactiva},
 		sesiones: []session.Sesion{
@@ -432,8 +532,8 @@ func TestElSelectorListaYCambiaDeSesión(t *testing.T) {
 	}
 	a.Chat.AñadirUsuario("de la primera")
 
-	tecla(t, a, tea.KeyCtrlS)
-	if !a.Selector.Abierto {
+	ejecuta(t, a, abreElModalDeSesiones(t, a))
+	if !a.Sesiones.Abierto {
 		t.Fatal("ctrl+s abre el selector")
 	}
 	v := sinEstilo(a.View())
@@ -443,7 +543,7 @@ func TestElSelectorListaYCambiaDeSesión(t *testing.T) {
 	tecla(t, a, tea.KeyDown)
 	tecla(t, a, tea.KeyEnter)
 
-	if a.Selector.Abierto {
+	if a.Sesiones.Abierto {
 		t.Error("elegir una sesión cierra el selector")
 	}
 	if a.Panel.SesionID != "s2" {
@@ -454,18 +554,18 @@ func TestElSelectorListaYCambiaDeSesión(t *testing.T) {
 	}
 }
 
-func TestElSelectorSeCierraConEsc(t *testing.T) {
+func TestElModalDeSesionesSeCierraConEsc(t *testing.T) {
 	p := &puertoStub{sesiones: []session.Sesion{{ID: "s1", Nombre: "una"}}}
 	a := Nuevo(p)
 	// El selector solo existe en la interfaz principal (INTERFACES §4: en la
 	// bienvenida no hay atajos de selector ni panel).
 	a.Vista = VistaPrincipal
-	tecla(t, a, tea.KeyCtrlS)
-	if !a.Selector.Abierto {
+	ejecuta(t, a, abreElModalDeSesiones(t, a))
+	if !a.Sesiones.Abierto {
 		t.Fatal("el selector debería estar abierto")
 	}
 	tecla(t, a, tea.KeyEsc)
-	if a.Selector.Abierto {
+	if a.Sesiones.Abierto {
 		t.Error("esc cierra el selector")
 	}
 }
@@ -542,20 +642,31 @@ func TestLosAtajosPorDefectoNoSeSolapan(t *testing.T) {
 	}
 	casos := map[string]Accion{
 		"enter":  AccionEnviar,
-		"ctrl+q": AccionSalir,
+		"ctrl+c": AccionSalir,
 		"ctrl+d": AccionPanel,
-		"ctrl+s": AccionSelector,
 		"ctrl+r": AccionRazonamiento,
 		"ctrl+a": AccionAprobaciones,
 		"ctrl+f": AccionCancelar,
-		"?":      AccionAyuda,
+		"ctrl+p": AccionAyuda,
+		"tab":    AccionCiclarAgente,
 		"esc":    AccionCerrarSelector,
+		"up":     AccionSubir,
+		"down":   AccionBajar,
+		"a":      AccionAprobar,
+		"d":      AccionDeclinar,
 	}
 	for tecla, quiere := range casos {
 		got, ok := AccionDe(atajos, tecla)
 		if !ok || got != quiere {
 			t.Errorf("AccionDe(%q) = %d,%v; quería %d", tecla, got, ok, quiere)
 		}
+	}
+	// Las dos secuencias con líder son las documentadas y ninguna más.
+	if accion, ok := ResolverSecuencia(atajos, "<leader>m"); !ok || accion != AccionModalModelos {
+		t.Errorf("<leader>m abre el modal de modelos: %d, %v", accion, ok)
+	}
+	if accion, ok := ResolverSecuencia(atajos, "<leader>l"); !ok || accion != AccionSelector {
+		t.Errorf("<leader>l abre el modal de sesiones: %d, %v", accion, ok)
 	}
 	if _, ok := AccionDe(atajos, "j"); ok {
 		t.Error("una letra suelta no puede ser atajo: se está escribiendo")
@@ -602,19 +713,28 @@ func TestLasTeclasDeAcciónFuncionan(t *testing.T) {
 }
 
 // Un mapa reasignado por el usuario enruta la misma acción con otra tecla
-// (INTERFACES §4: reasignar solo cambia la forma de invocar, T-F010-04).
+// (INTERFACES §4: reasignar solo cambia la forma de invocar y surte efecto sin
+// reiniciar, T-F010-04).
 func TestUnAtajoReasignadoDisparaLaMismaAcción(t *testing.T) {
 	p := &puertoStub{}
 	a := Nuevo(p)
 	a.Vista = VistaPrincipal
 	a.Panel.SesionID = "s1"
-	a.Atajos = []Atajo{{Secuencias: []Secuencia{{Paso1: "ctrl+k"}}, Accion: AccionPanel, Descripcion: "panel"}}
+	porAccion := MapasPorDefecto()
+	porAccion[AccionPanel] = []string{"ctrl+k"}
+	km, err := NuevoKeymap(LíderPorDefecto, TimeoutPorDefectoMs, porAccion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.FijarMapa(km); err != nil {
+		t.Fatal(err)
+	}
 
-	pulsa(t, a, tea.KeyCtrlO)
+	tecla(t, a, tea.KeyCtrlO)
 	if a.Panel.Abierto {
 		t.Error("ctrl+o ya no es panel en este mapa")
 	}
-	pulsa(t, a, tea.KeyCtrlK)
+	tecla(t, a, tea.KeyCtrlK)
 	if !a.Panel.Abierto {
 		t.Error("ctrl+k dispara la acción reasignada")
 	}

@@ -243,7 +243,7 @@ func TestElFrontmatterCoincideConLasDependenciasFuncionales(t *testing.T) {
 			}
 		}
 	}
-	if revisadas != 17 {
-		t.Errorf("revisadas %d secciones 'Dependencias funcionales', se esperaban 17", revisadas)
+	if revisadas != 18 {
+		t.Errorf("revisadas %d secciones 'Dependencias funcionales', se esperaban 18", revisadas)
 	}
 }

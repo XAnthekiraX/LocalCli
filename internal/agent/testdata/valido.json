@@ -2,6 +2,6 @@
   "nombre": "lector",
   "descripcion": "Agente de prueba que solo lee.",
   "prompt": "Eres un agente de prueba.",
-  "herramientas": ["leer_archivo", "listar_carpeta"],
+  "permisos": [{ "accion": "leer", "efecto": "permitir" }],
   "skills": ["demo"]
 }

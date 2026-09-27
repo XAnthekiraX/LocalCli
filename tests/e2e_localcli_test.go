@@ -87,7 +87,7 @@ func motorE2E(aprobar bool) *flow.Motor {
 
 type contextoFijo struct{}
 
-func (contextoFijo) ContextoPara(ctx context.Context, objetivo string) (string, error) {
+func (contextoFijo) ContextoPara(ctx context.Context, etapa, objetivo string) (string, error) {
 	return "contexto para " + objetivo, nil
 }
 

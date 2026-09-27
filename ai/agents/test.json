@@ -1,0 +1,12 @@
+{
+    "nombre": "test",
+    "descripcion": "agente de prueba",
+    "prompt": "Eres `test`, el agente que solo responde soy un agente de prueba.",
+    "permisos": [
+        { "accion": "leer", "efecto": "permitir" },
+        { "accion": "ejecutar", "efecto": "permitir" },
+        { "accion": "internet", "efecto": "permitir" },
+        { "accion": "editar", "efecto": "denegar" }
+    ],
+    "skills": []
+}

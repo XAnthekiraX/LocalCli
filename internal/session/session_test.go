@@ -172,6 +172,8 @@ type motorStub struct {
 	primerHecho chan struct{} // se cierra al completar el primer elemento
 	continuar   chan struct{} // el motor espera esto tras el primer elemento
 	marcados    int
+	// conversaciones registra "agente:objetivo" de cada turno de chat.
+	conversaciones []string
 }
 
 func nuevoMotor(estado flow.EstadoFlujo) *motorStub {
@@ -203,6 +205,38 @@ func (m *motorStub) EjecutarFlujo(ctx context.Context, f flow.Flujo, objetivo st
 		return flow.EstadoConError, m.err
 	}
 	return m.estado, nil
+}
+
+func (m *motorStub) Conversar(ctx context.Context, agente, objetivo string) (flow.Resultado, error) {
+	m.mu.Lock()
+	m.conversaciones = append(m.conversaciones, agente+":"+objetivo)
+	bloqueo := m.bloqueo
+	iniciado := m.iniciado
+	m.mu.Unlock()
+	if iniciado != nil {
+		select {
+		case <-iniciado:
+		default:
+			close(iniciado)
+		}
+	}
+	if bloqueo != nil {
+		select {
+		case <-bloqueo:
+		case <-ctx.Done():
+			return flow.Resultado{}, ctx.Err()
+		}
+	}
+	if m.err != nil {
+		return flow.Resultado{}, m.err
+	}
+	return flow.Resultado{Texto: "respuesta de chat"}, nil
+}
+
+func (m *motorStub) conversacionesHechas() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.conversaciones...)
 }
 
 func (m *motorStub) ConsumirCola(ctx context.Context, cola flow.Cola, f flow.Flujo) error {

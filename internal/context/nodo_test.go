@@ -155,11 +155,78 @@ func TestPrepararFallbackSinModelo(t *testing.T) {
 func TestContextoParaDevuelveBloque(t *testing.T) {
 	g := grafoStub{contenido: map[string]string{"a.md": "## A\n\ntexto"}}
 	n := &Nodo{Grafo: g, Modelo: &modeloStub{devuelve: []string{"a.md"}}, Limite: 1000, Etapa: "e"}
-	bloque, err := n.ContextoPara(context.Background(), "objetivo")
+	bloque, err := n.ContextoPara(context.Background(), "e", "objetivo")
 	if err != nil {
 		t.Fatalf("ContextoPara: %v", err)
 	}
 	if !strings.Contains(bloque, "objetivo") || !strings.Contains(bloque, "## A") {
 		t.Fatalf("bloque = %q", bloque)
+	}
+}
+
+// TestElChatNoVuelcaElProyecto — sin selección y sin semilla, el bloque del
+// chat queda sin documentos: el modelo no puede responder resumiendo una
+// estructura que no recibió (el modelo nunca ve el proyecto entero).
+func TestElChatNoVuelcaElProyecto(t *testing.T) {
+	g := grafoStub{contenido: map[string]string{
+		"AGENTS.md": "# agents", "PROJECT.md": "# proyecto",
+	}}
+	n := &Nodo{Grafo: g, Modelo: &modeloStub{devuelve: nil}, Limite: 1000}
+	bloque, err := n.ContextoPara(context.Background(), EtapaChat, "hola")
+	if err != nil {
+		t.Fatalf("ContextoPara: %v", err)
+	}
+	if strings.Contains(bloque, "# agents") || strings.Contains(bloque, "# proyecto") {
+		t.Fatalf("el chat no debe recibir el proyecto entero: %q", bloque)
+	}
+	if !strings.Contains(bloque, "hola") {
+		t.Fatalf("el bloque sin documentos aún lleva el objetivo: %q", bloque)
+	}
+}
+
+// TestElChatSinSemillaNoConsultaAlModelo — el chat sin semilla no pregunta al
+// modelo qué documentos quiere: su bloque va solo con el objetivo, así que la
+// consulta no cambiaría lo entregado y costaría una generación entera por turno.
+func TestElChatSinSemillaNoConsultaAlModelo(t *testing.T) {
+	g := grafoStub{contenido: map[string]string{"a.md": "## A\n\ntexto"}}
+	m := &modeloStub{devuelve: []string{"a.md"}}
+	n := &Nodo{Grafo: g, Modelo: m, Limite: 1000}
+	bloque, err := n.ContextoPara(context.Background(), EtapaChat, "hola")
+	if err != nil {
+		t.Fatalf("ContextoPara: %v", err)
+	}
+	if m.objetivo != "" {
+		t.Errorf("el chat sin semilla no debe consultar al modelo, y lo hizo con %q", m.objetivo)
+	}
+	if strings.Contains(bloque, "## A") {
+		t.Errorf("sin consulta el bloque va solo con el objetivo: %q", bloque)
+	}
+}
+
+// TestElChatConSemillaSiConsultaAlModelo — con semilla, el modelo sigue
+// decidiendo qué es relevante: la omisión es solo del chat sin semilla.
+func TestElChatConSemillaSiConsultaAlModelo(t *testing.T) {
+	g := grafoStub{contenido: map[string]string{"a.md": "## A\n\ntexto"}}
+	m := &modeloStub{devuelve: []string{"a.md"}}
+	n := &Nodo{Grafo: g, Modelo: m, Limite: 1000, Semilla: []string{"a.md"}}
+	if _, err := n.ContextoPara(context.Background(), EtapaChat, "hola"); err != nil {
+		t.Fatalf("ContextoPara: %v", err)
+	}
+	if m.objetivo != "hola" {
+		t.Errorf("con semilla el modelo sigue decidiendo qué es relevante: %q", m.objetivo)
+	}
+}
+
+// TestUnaEtapaDeFlujoConservaElRespaldo — fuera del chat, sin selección ni
+// semilla se usan los candidatos: los flujos siguen recibiendo contexto.
+func TestUnaEtapaDeFlujoConservaElRespaldo(t *testing.T) {
+	g := grafoStub{contenido: map[string]string{"a.md": "## A\n\ntexto"}}
+	n := &Nodo{Grafo: g, Modelo: &modeloStub{devuelve: nil}, Limite: 1000}
+	bloque, err := n.ContextoPara(context.Background(), "etapa_flujo", "objetivo")
+	if err != nil {
+		t.Fatalf("ContextoPara: %v", err)
+	}
+	if !strings.Contains(bloque, "## A") {
+		t.Fatalf("la etapa de flujo conserva el respaldo a candidatos: %q", bloque)
 	}
 }

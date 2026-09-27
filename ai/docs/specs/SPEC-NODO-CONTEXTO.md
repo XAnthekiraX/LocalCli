@@ -47,13 +47,15 @@ Un documento de APIs declara que usa los DTOs de respuesta. El documento de esos
 - Hay documentos sin dependencias declaradas: se avisa para que se completen.
 - Un documento es demasiado grande: se recorta por sección.
 - El modelo no puede decidir: se usa por defecto el objetivo declarado por la etapa.
+- El chat sin semilla no consulta al modelo qué documentos necesita: su bloque va solo con el objetivo, sin documentos —el proyecto entero no entra en una conversación casual—. Se omite la consulta porque no cambiaría lo entregado y costaría una generación entera por turno, antes de la respuesta.
 
 ## Reglas de negocio
 
 - La documentación declara sus dependencias en el frontmatter mediante enlaces. Ese mapa sirve para orientarse, no decide por sí solo.
-- La decisión de qué es relevante la toma siempre el modelo.
+- La decisión de qué es relevante la toma el modelo. Única excepción: el chat sin semilla no lo consulta —su bloque va solo con el objetivo—, porque preguntar no cambiaría lo entregado y añadiría una generación entera a cada turno.
 - El contexto entregado nunca supera el límite de contexto del modelo.
 - Todo lo que se descartó queda registrado con el motivo.
+- La auditoría es por terna (sesión, etapa, documento): una etapa repetida conserva la fila ya registrada en lugar de duplicarla o fallar.
 - El nodo de contexto no lee fuera de la carpeta del proyecto sin permiso.
 - Un documento que entra en el contexto se lee primero; no se entrega nada sin leer.
 - El contexto de una etapa no arrastra el de etapas anteriores si no lo necesita.

@@ -1,0 +1,10 @@
+{
+  "nombre": "dudoso",
+  "descripcion": "Se contradice sobre una misma acción.",
+  "prompt": "Eres un agente cuyos permisos se contradicen.",
+  "permisos": [
+    { "accion": "leer", "efecto": "permitir" },
+    { "accion": "leer", "efecto": "denegar" }
+  ],
+  "skills": []
+}

@@ -41,6 +41,16 @@ const (
 	EventoFlujoCancelado     = "flujo_cancelado"
 )
 
+// Agentes que puede cyclical la acción `agent_cycle` (SPEC-KEYBINDS §Acción
+// `agent_cycle`: "plan ↔ build"). Son los dos valores de `tools`, pero la vista
+// no puede importarlos: `tui` no conoce `tools` (tests/arquitectura_test.go
+// §TestLimitesDeImporteEntreModulos). El puerto los viaja como texto y es el
+// adaptador quien los reconoce.
+const (
+	AgentePlan  = "plan"
+	AgenteBuild = "build"
+)
+
 // ModeloLocal es una entrada del selector de modelos de la bienvenida
 // (SPEC-INTERFAZ §Reglas, "Selector de modelos"). La vista no importa el
 // paquete `ollama`: lo que reporta Ollama llega traducido a este dato mínimo,
@@ -55,24 +65,41 @@ type Puerto interface {
 	// ResolverActiva devuelve la sesión activa del proyecto: la retoma si
 	// existe o crea una nueva (SPEC-INTERFAZ §Pantalla de bienvenida).
 	ResolverActiva() (*session.Sesion, error)
-	// Modelos lista los modelos locales que reporta Ollama para el selector de
-	// la bienvenida (SPEC-INTERFAZ §Reglas). Es una lectura que llega como
-	// dato: sin Ollama devuelve lista vacía y la bienvenida se pinta igual,
-	// con el aviso «sin modelos» — nunca bloquea ni espera (DOMAIN §3).
+	// Modelos lista los modelos locales que reporta Ollama para el modal de
+	// modelos (SPEC-INTERFAZ §Modal de modelos). Se pide al abrir el modal, no
+	// al arrancar: si Ollama no responde, el modal avisa «sin modelos» y nada
+	// se bloquea — nunca espera (DOMAIN §3).
 	Modelos() ([]ModeloLocal, error)
+	// ModeloActual devuelve el modelo con el que trabaja el motor ahora mismo: el
+	// detectado en el arranque o el último elegido en el modal. Es la línea de
+	// modelo de la bienvenida (SPEC-INTERFAZ §Línea de modelo), y lo lee la
+	// pantalla una vez al construirse, sin llamar a Ollama.
+	ModeloActual() string
 	// FijarModelo elige el modelo con el que trabajará el motor a partir de
 	// ahora; lo elegido por el usuario prevalece sobre la autodetección del
-	// arranque (SPEC-OLLAMA-PERFIL: el modelo lo elige el usuario). Se llama
-	// al mover el selector con ↑/↓ y otra vez al enviar desde la bienvenida.
+	// arranque (SPEC-OLLAMA-PERFIL: el modelo lo elige el usuario). Se llama al
+	// aplicar en el modal y otra vez al enviar desde la bienvenida, para que la
+	// primera petición salga con ese modelo.
 	FijarModelo(nombre string)
-	// Listar lista las sesiones del proyecto para el selector.
+	// Listar lista las sesiones del proyecto para el modal de sesiones.
 	Listar() ([]session.Sesion, error)
+	// Crear deja una sesión nueva activa (SPEC-SESIONES). Es lo que hace
+	// `Ctrl+X n` en la vista principal (SPEC-KEYBINDS `session_new`).
+	Crear() (*session.Sesion, error)
+	// Eliminar borra una sesión y todo lo suyo en cascada; lo usa el modal de
+	// sesiones con `Ctrl+D` (SPEC-SESIONES). Si está trabajando, la vista
+	// pide confirmación antes de llamar aquí.
+	Eliminar(sesionID string) error
 	// Historial devuelve la conversación de una sesión, ya con su razonamiento
 	// cerrado, para pintarla al cambiar de sesión (INTERFACES §3). Es una
 	// lectura que llega como dato; la vista nunca consulta la base.
 	Historial(sesionID string) ([]MensajeHistorial, error)
-	// Enviar manda un mensaje a una sesión.
-	Enviar(ctx context.Context, sesionID, texto string) error
+	// Enviar manda un mensaje a una sesión indicando con qué agente se pide: el
+	// que el usuario tiene elegido en el indicador, no el que la vista adivine.
+	// `agente` es `AgentePlan` o `AgenteBuild`; la vista nunca envía otro
+	// (SPEC-INTERFAZ §Zonas 2, "Indicador de agente": el agente activo es el que
+	// manda).
+	Enviar(ctx context.Context, sesionID, agente, texto string) error
 	// Pendientes devuelve lo que espera decisión, de cualquier sesión.
 	Pendientes() ([]Aprobacion, error)
 	// Resolver aplica la decisión sobre una aprobación.
@@ -89,12 +116,18 @@ type Puerto interface {
 type (
 	// initMsg marca el arranque del bucle: al llegar, la vista arma la
 	// escucha del canal del motor (T-F010-06).
-	initMsg         struct{}
-	eventoMsg       struct{ Evento Evento }
-	sesionesMsg     struct{ Sesiones []session.Sesion }
-	// modelosMsg trae la lista del selector de la bienvenida. Si hay error,
-	// la vista no se bloquea ni espera: `Err` se pinta como aviso y la lista
-	// queda vacía (SPEC-INTERFAZ §Reglas, "Selector de modelos").
+	initMsg   struct{}
+	eventoMsg struct{ Evento Evento }
+	// sesionesMsg trae la lista del modal de sesiones. Si hay error, la vista no
+	// se bloquea: `Err` se registra en el chat y el modal muestra el aviso «sin
+	// sesiones», cerrándose igual con Esc (T-F014-04).
+	sesionesMsg struct {
+		Sesiones []session.Sesion
+		Err      error
+	}
+	// modelosMsg trae la lista del modal de modelos. Si hay error, la vista no se
+	// bloquea ni espera: `Err` se pinta como aviso «sin modelos» y el modal
+	// sigue cerrándose con Esc (SPEC-INTERFAZ §Modal de modelos).
 	modelosMsg struct {
 		Modelos []ModeloLocal
 		Err     error
@@ -150,22 +183,31 @@ func (a *App) AplicarEvento(e Evento) {
 		}
 		a.Chat.Token(texto)
 	case session.EventoEstadoSesion:
-		// El selector, si está abierto, ve el cambio sea de quien sea: es la
-		// lista de TODAS las sesiones del proyecto (T-F007-05).
-		a.Selector.ActualizarEstado(e.Datos["sesion"], e.Datos["estado"])
+		// El modal de sesiones, si está abierto, ve el cambio sea de quien sea:
+		// es la lista de TODAS las sesiones del proyecto (T-F007-05).
+		a.Sesiones.ActualizarEstado(e.Datos["sesion"], e.Datos["estado"])
 		if e.Datos["sesion"] != a.Panel.SesionID {
-			// Es de otra sesión: su estado se ve en el selector, no en el panel
+			// Es de otra sesión: su estado se ve en el modal de sesiones, no en el panel
 			// (el panel refleja la sesión activa, y solo esa).
 			return
 		}
 		a.Panel.Estado = e.Datos["estado"]
-		if e.Datos["estado"] == session.EstadoTerminada || e.Datos["estado"] == session.EstadoError {
-			a.Chat.CerrarTurno(a.Razon.Texto())
-			a.Razon.CerrarTurno()
-			// La sesión terminó mientras esperaba: sus líneas quedan marcadas
-			// como obsoletas, visibles pero ya sin decisión posible
-			// (SPEC-INTERFAZ-ATAJOS, T-F008-06).
-			a.Aprobs.MarcarObsoleta(e.Datos["sesion"])
+		switch e.Datos["estado"] {
+		case session.EstadoTrabajando:
+			a.enTurno = true
+		case session.EstadoTerminada, session.EstadoError:
+			// La sesión terminó su turno: se cierra con el tiempo medido y, si
+			// esperaba una decisión, sus líneas quedan obsoletas —visibles pero
+			// ya sin decisión posible (SPEC-INTERFAZ-ATAJOS, T-F008-06)—.
+			a.cerrarTurnoDeVista(true)
+		case session.EstadoEsperandoPermiso, session.EstadoInactiva:
+			// Parada (pausa de un flujo o cancelación): el contador deja de
+			// correr, pero la aprobación pendiente sigue viva y no se marca
+			// obsoleta. Solo cierra si el turno llegó a trabajar: el `inactiva`
+			// previo a arrancar no toca nada.
+			if a.enTurno {
+				a.cerrarTurnoDeVista(false)
+			}
 		}
 	case session.EventoNotificacion:
 		// Llega aunque no se esté viendo esa sesión (SPEC-SESIONES).
@@ -228,6 +270,19 @@ func (a *App) AplicarEvento(e Evento) {
 		if n, err := enteroDe(e.Datos["pendientes"]); err == nil {
 			a.Panel.ElementosRestantes = n
 		}
+	}
+}
+
+// cerrarTurnoDeVista cierra el turno de la sesión activa: pasa la respuesta en
+// curso al historial (con el tiempo que tardó), limpia el razonamiento y apaga
+// el contador. Con `obsoletas` marca las aprobaciones pendientes como tales, que
+// es lo que corresponde cuando la sesión terminó, no cuando quedó pausada.
+func (a *App) cerrarTurnoDeVista(obsoletas bool) {
+	a.enTurno = false
+	a.Chat.CerrarTurno(a.Razon.Texto())
+	a.Razon.CerrarTurno()
+	if obsoletas {
+		a.Aprobs.MarcarObsoleta(a.Panel.SesionID)
 	}
 }
 

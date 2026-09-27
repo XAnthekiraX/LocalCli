@@ -27,7 +27,7 @@ func TestLaBienvenidaArrancaConElFocoEnSuUnicaEntrada(t *testing.T) {
 	}
 	v := sinEstilo(a.View())
 	if !strings.Contains(v, "En qué te ayudo hoy: ▌") {
-		t.Errorf("la línea de entrada con su cursor debe verse:\\n%s", v)
+		t.Errorf("la línea de entrada con su cursor debe verse:\n%s", v)
 	}
 }
 
@@ -55,10 +55,10 @@ func TestLaComposicionPoneElArtePrimeroYElRestoFuera(t *testing.T) {
 	iNombre := strings.Index(v, Nombre+" · "+Version)
 	iEntrada := strings.Index(v, "En qué te ayudo hoy:")
 	if iArte != 0 || iNombre < 0 || iEntrada < 0 {
-		t.Fatalf("falta el arte, el nombre o la entrada:\\n%s", v)
+		t.Fatalf("falta el arte, el nombre o la entrada:\n%s", v)
 	}
 	if iNombre <= iArte || iEntrada <= iNombre {
-		t.Errorf("el orden es arte, nombre y entrada:\\n%s", v)
+		t.Errorf("el orden es arte, nombre y entrada:\n%s", v)
 	}
 	// Nombre y entrada se componen alrededor pero fuera del arte.
 	if iNombre < iArte+len(arte) {
@@ -73,9 +73,14 @@ func TestEnLaBienvenidaLosAtajosDeLaPrincipalNoExisten(t *testing.T) {
 	a := Nuevo(p)
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 
-	tecla(t, a, tea.KeyCtrlS)
-	if a.Selector.Abierto {
-		t.Error("en la bienvenida no hay selector")
+	// T-F016: el modal de sesiones SÍ vive en la bienvenida; Esc lo cierra.
+	ejecuta(t, a, abreElModalDeSesiones(t, a))
+	if !a.Sesiones.Abierto {
+		t.Error("en la bienvenida se abre el modal de sesiones")
+	}
+	tecla(t, a, tea.KeyEsc)
+	if a.Sesiones.Abierto {
+		t.Error("esc cierra el modal de sesiones en la bienvenida")
 	}
 	tecla(t, a, tea.KeyCtrlO)
 	if a.Panel.Abierto {

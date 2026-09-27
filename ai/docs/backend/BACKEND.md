@@ -42,7 +42,7 @@ internal/
   flow/            motor de etapas y encadenamiento
   queue/           cola de trabajo en forma de TODO y su orden
   context/         grafo de frontmatter, selección de contexto y auditoría
-  agent/           agentes desde JSON: prompt, herramientas y relevo
+  agent/           agentes desde JSON: prompt, permisos, ciclo conversacional y relevo
   ollama/          cliente HTTP, streaming, razonamiento, perfil de hardware
   task/            archivos de tarea
   tools/           registro de herramientas y comprobación de permisos
@@ -61,7 +61,7 @@ Cada módulo tiene un límite. Ver [[backend/01-domain/DOMAIN]] para el detalle.
 - **`flow`** — Motor de etapas. Encadena las etapas de los ciclos oficiales (planificación, trabajo, resolver), decide si sigue, si para o si espera tu aprobación. No sabe de herramientas ni de SQL.
 - **`queue`** — Cola de la ejecución en curso. Consume el TODO que creó esta solicitud, respeta su orden y marca lo bloqueado. No inventa trabajo: el TODO se lo creó `flow` al detectar tu petición.
 - **`context`** — Nodo de contexto. Lee el grafo de dependencias, deja que el modelo decida qué es relevante, recorta hasta el límite y registra qué entró y qué salió. No llama al modelo por su cuenta.
-- **`agent`** — Carga las definiciones de agente desde JSON: prompt, herramientas y relevo. El agente base es un JSON editable, no código. Las skills no vienen de fábrica; las crea el usuario en markdown. No ejecuta herramientas; las despacha a `tools`.
+- **`agent`** — Carga las definiciones de agente desde JSON: prompt, permisos y relevo. El agente base es un JSON editable, no código. Corre el ciclo conversacional (modelo → herramienta → resultado → modelo); no ejecuta herramientas: las despacha a `tools`. Las skills no vienen de fábrica; las crea el usuario en markdown.
 - **`ollama`** — Cliente de Ollama: HTTP en local, streaming token a token, extracción de razonamiento y perfil de hardware. Es el único que habla con el modelo.
 - **`tools`** — Registro de las trece herramientas, comprobación de permiso y enrutado. No inventa herramientas y no aplica permisos: solo enruta.
 - **`fileops`** — Aplica operaciones de archivo y carpeta, valida la frontera de rutas y guarda el historial de cambios. Donde vive la frontera de la carpeta del proyecto.

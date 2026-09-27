@@ -190,10 +190,10 @@ func TestUnAgenteBaseTieneSuCatalogo(t *testing.T) {
 	if !okPlan || !okBuild {
 		t.Fatalf("faltan los agentes base: %v", nombresDe(agentes))
 	}
-	if err := agent.ValidarHerramientas(planJSON); err != nil {
+	if err := agent.ValidarPermisos(planJSON); err != nil {
 		t.Errorf("el agente plan no valida: %v", err)
 	}
-	if err := agent.ValidarHerramientas(buildJSON); err != nil {
+	if err := agent.ValidarPermisos(buildJSON); err != nil {
 		t.Errorf("el agente build no valida: %v", err)
 	}
 	if len(planJSON.Herramientas) != len(plan) {

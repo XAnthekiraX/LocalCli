@@ -1,0 +1,30 @@
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                               ATAJOS                                               
+                                                                                                    
+                                 enter            enviar la petición                                
+                                        ctrl+c           salir                                      
+                          ctrl+d           abrir o cerrar el panel de datos                         
+                                  <leader>l        modal de sesiones                                
+                               <leader>n        crear una sesión nueva                              
+                            ctrl+d           eliminar la sesión resaltada                           
+                          ctrl+r           mostrar u ocultar el razonamiento                        
+                       ctrl+a           abrir o cerrar el panel de aprobaciones                     
+                          a                aprobar la propuesta seleccionada                        
+                         d                declinar la propuesta seleccionada                        
+                               (deshabilitada)  pausar la cola en curso                             
+                  ctrl+f           cancelar el trabajo en curso (pide confirmación)                 
+                                  esc              cerrar lo abierto                                
+                             ctrl+p           modal de atajos de teclado                            
+                                  <leader>m        modal de modelos                                 
+                          tab              cambiar de agente (plan ↔ build)                         
+                                  up               subir en la lista                                
+                                  down             bajar en la lista                                
+                                    (solo lectura · esc cerrar)                                     
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    

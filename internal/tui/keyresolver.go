@@ -44,6 +44,64 @@ const (
 	EstadoLider
 )
 
+// Ambito es la zona donde una acción resuelve: la columna «Contexto» de la tabla
+// de SPEC-KEYBINDS §Acción, que el resolver usa para filtrar qué bindings
+// aplican según qué componente tiene el foco.
+type Ambito int
+
+const (
+	// AmbitoVista: la vista principal (toggles, cancelar, enviar).
+	AmbitoVista Ambito = iota
+	// AmbitoGlobal: siempre, también con un modal abierto.
+	AmbitoGlobal
+	// AmbitoModal: solo con una lista abierta (navegar, cerrar).
+	AmbitoModal
+	// AmbitoAprobaciones: solo con el panel de aprobaciones con el foco.
+	AmbitoAprobaciones
+	// AmbitoEntrada: `enter` resuelve en todas partes porque su significado lo
+	// da el contexto: con un modal abierto aplica lo resaltado y en el resto
+	// envía la petición (INTERFACES §4).
+	AmbitoEntrada
+)
+
+// ambitoDeAccion dice dónde resuelve cada acción. La lista es abierta: una
+// acción nueva nace en AmbitoVista, que es el contexto menos sorprendente.
+func ambitoDeAccion(a Accion) Ambito {
+	switch a {
+	case AccionSalir, AccionModalModelos, AccionSelector, AccionAyuda:
+		return AmbitoGlobal
+	case AccionCerrarSelector, AccionSubir, AccionBajar, AccionEliminarSesion:
+		return AmbitoModal
+	case AccionAprobar, AccionDeclinar:
+		return AmbitoAprobaciones
+	case AccionEnviar:
+		return AmbitoEntrada
+	}
+	return AmbitoVista
+}
+
+// resuelveConFoco dice si una acción resuelve con ese foco. Con un modal
+// abierto solo responden sus propias teclas y las globales; ninguna de la vista
+// de abajo llega (SPEC-KEYBINDS §Acción de app_exit y §Resolución por
+// contexto). El panel de aprobaciones no es un modal: sus toggles de vista
+// siguen vivos, porque el panel se abre y se cierra sin detener el trabajo
+// (SPEC-INTERFAZ-ATAJOS).
+func resuelveConFoco(amb Ambito, ctx Contexto) bool {
+	if amb == AmbitoEntrada {
+		// `enter` es la misma tecla con dos significados, y el contexto los
+		// separa: con un modal abierto aplica lo resaltado, en cualquier otro
+		// sitio envía la petición (INTERFACES §4, las dos filas de `Enter`).
+		return true
+	}
+	switch ctx {
+	case ContextoModal:
+		return amb == AmbitoGlobal || amb == AmbitoModal
+	case ContextoVista:
+		return amb != AmbitoModal
+	}
+	return true
+}
+
 // LiderExpiradoMsg llega cuando pasó leader_timeout_ms sin segunda tecla. Es un
 // mensaje interno de la vista: la app lo entrega al resolver para volver a
 // NORMAL y quitar el indicador «lider ».
@@ -67,7 +125,7 @@ type Secuencia struct {
 	Paso2 string
 }
 
-// Describir reproduce el literal tal como lo ve el usuario en la ayuda de
+// Describir reproduce el literal tal como lo ve el usuario en el modal de
 // atajos: "<leader>m" o "ctrl+p".
 func (s Secuencia) Describir() string {
 	if s.Paso2 == "" {
@@ -101,14 +159,19 @@ func AnalizarSecuencia(literal, lider string) (Secuencia, error) {
 // KeyResolver traduce pulsaciones de Bubble Tea a acciones resueltas. Vive en
 // la app raíz: los componentes reciben acciones, nunca teclas (T-F012-06).
 type KeyResolver struct {
-	Kmap    *Keymap
-	Estado  EstadoResolver
+	Kmap      *Keymap
+	Estado    EstadoResolver
 	Pendiente []Secuencia // candidatas que empiezan por la líder pulsada
+
+	// esperar es el temporizador de la espera de líder. Es una función para que
+	// las pruebas inyecten un reloj propio y no dependan del tiempo real
+	// (TESTING §3: «no hay sleep ni esperas fijas»).
+	esperar func(time.Duration) tea.Cmd
 }
 
 // NuevoKeyResolver deja el resolver en NORMAL con el mapa dado.
 func NuevoKeyResolver(km *Keymap) *KeyResolver {
-	return &KeyResolver{Kmap: km, Estado: EstadoNormal}
+	return &KeyResolver{Kmap: km, Estado: EstadoNormal, esperar: CmdLiderEsperando}
 }
 
 // EsperandoLeader dice si hay una secuencia a medias (para pintar el indicador
@@ -124,52 +187,29 @@ func (r *KeyResolver) Cancelar() {
 
 // Resolver procesa una pulsación y devuelve la acción resultante (posible cero)
 // y el comando del temporizador de líder, que la app debe encadenar si entra en
-// LEADER. Reglas de SPEC-KEYBINDS:
+// LEADER. Sigue el orden de SPEC-KEYBINDS §Resolución por contexto:
 //
-//   - Con un modal o el panel de aprobaciones abierto, las teclas simples van al
-//     componente (Contexto != Vista): el resolver no interrumpe su navegación.
-//   - La líder funciona desde cualquier contexto: es el escape hatch.
-//   - En LEADER, la segunda tecla resuelve la secuencia; si no forma ningún
-//     binding, se descarta todo y se vuelve a NORMAL sin emitir (la líder y su
-//     intento no se escriben).
-//   - Pulsar la líder otra vez reinicia la espera.
-//   - `esc` cancela la espera.
-//   - Con el input enfocado, las letras sueltas no activan acciones: el texto
-//     manda (por eso los atajos de fábrica usan modificadores o la líder).
+//  1. Una secuencia a medias manda: en LEADER, la tecla se combina.
+//  2. La líder abre la secuencia, desde cualquier contexto: es el escape hatch.
+//  3. Modal abierto: solo sus teclas (navegar, cerrar) y las globales.
+//  4. Input enfocado: una letra suelta es texto, nunca un atajo.
+//  5. Vista principal: cualquier binding del mapa; gana la primera coincidencia.
 func (r *KeyResolver) Resolver(m tea.KeyMsg, ctx Contexto) (Accion, tea.Cmd) {
 	nombre := strings.ToLower(strings.TrimSpace(m.String()))
 
-	// 1. Dentro de un modal o del panel de aprobaciones: manda el componente.
-	//    Sus teclas propias (esc, flechas, a/d, enter) no se convierten en acción
-	//    aquí; la app las reparte según el foco. La líder y una secuencia a medias
-	//    sí siguen vivas desde cualquier contexto (SPEC-KEYBINDS §Tecla líder:
-	//    escape hatch).
-	if ctx == ContextoModal || ctx == ContextoAprobaciones {
-		if r.Estado == EstadoLider {
-			return r.combinar(nombre)
-		}
-		if nombre == r.Kmap.Lider() {
-			return r.entrarEnLider()
-		}
-		return AccionNinguna, nil
-	}
-
-	// 2. Si estaba esperando la segunda tecla, se combina.
 	if r.Estado == EstadoLider {
 		return r.combinar(nombre)
 	}
-
-	// 3. Estado NORMAL: la líder abre la secuencia.
 	if nombre == r.Kmap.Lider() {
 		return r.entrarEnLider()
 	}
-
-	// 4. Binding simple del contexto. Con el input enfocado, una letra suelta
-	//    es texto, no atajo.
 	if ctx == ContextoInput && len([]rune(nombre)) == 1 {
 		return AccionNinguna, nil
 	}
 	for _, e := range r.Kmap.Entradas() {
+		if !resuelveConFoco(ambitoDeAccion(e.Accion), ctx) {
+			continue
+		}
 		for _, sec := range e.Secuencias {
 			if sec.Paso2 != "" {
 				continue // las secuencias requieren la líder: paso 2
@@ -194,7 +234,11 @@ func (r *KeyResolver) entrarEnLider() (Accion, tea.Cmd) {
 	}
 	r.Estado = EstadoLider
 	r.Pendiente = candidatas
-	return AccionNinguna, CmdLiderEsperando(r.Kmap.TimeoutMs())
+	esperar := r.esperar
+	if esperar == nil {
+		esperar = CmdLiderEsperando
+	}
+	return AccionNinguna, esperar(r.Kmap.TimeoutMs())
 }
 
 // combinar resuelve la segunda tecla de la secuencia.

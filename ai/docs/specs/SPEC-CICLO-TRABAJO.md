@@ -135,6 +135,7 @@ La ejecución no se pide aquí. El elemento entra en la cola de [[specs/SPEC-COL
 
 ## Reglas de negocio
 
+- El flujo se arranca con un comando explícito: `/crear`, `/actualizar` o `/eliminar`. Una petición que no sea un comando de flujo se responde en el chat.
 - Una tarea no se ejecuta sin su contexto adjunto.
 - El contexto de la tarea es el que entrega el flujo de optimización, no el proyecto completo.
 - La tarea declara su ubicación dentro del proyecto.
@@ -147,7 +148,7 @@ La ejecución no se pide aquí. El elemento entra en la cola de [[specs/SPEC-COL
 
 ## Criterios de aceptación
 
-- [ ] Crear, actualizar y eliminar son el mismo flujo con entradas distintas.
+- [ ] Crear, actualizar y eliminar son el mismo flujo con entradas distintas, cada una por su comando explícito.
 - [ ] La documentación se actualiza antes que la tarea, con aprobación archivo por archivo.
 - [ ] `plan` propone cada documento y `build` lo escribe.
 - [ ] El impacto se presenta y se espera confirmación antes de tocar nada.

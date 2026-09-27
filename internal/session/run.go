@@ -23,9 +23,10 @@ import (
 	"localcli/internal/task"
 )
 
-// Motor es lo que `session` necesita de `flow`: arrancar un flujo y consumir una
-// cola. Lo implementa `flow.Motor`.
+// Motor es lo que `session` necesita de `flow`: responder como chat, arrancar
+// un flujo explícito y consumir una cola. Lo implementa `flow.Motor`.
 type Motor interface {
+	Conversar(ctx context.Context, agente, objetivo string) (flow.Resultado, error)
 	EjecutarFlujo(ctx context.Context, f flow.Flujo, objetivo string) (flow.EstadoFlujo, error)
 	ConsumirCola(ctx context.Context, cola flow.Cola, f flow.Flujo) error
 }
@@ -43,9 +44,51 @@ func FlujoPorDefecto() flow.Flujo { return flow.FlujoTrabajo(task.AccionCrear) }
 // agente, no de `session`.
 func ObjetivoDeMensaje(texto string) string { return strings.TrimSpace(texto) }
 
-// Enviar guarda el mensaje del usuario y arranca el flujo en segundo plano.
-// Devuelve en cuanto el trabajo quedó arrancado: la respuesta llega por eventos.
+// ArrancarFlujo guarda el objetivo y arranca un flujo explícito en segundo
+// plano. Es lo que corre un comando (`/planificar`, `/crear`, `/actualizar`,
+// `/eliminar`, `/resolver`); sin comando, `session` responde como chat
+// (`Conversar`) y no arranca etapas (SPEC-MOTOR-FLUJOS §Reglas).
+func (g *Gestor) ArrancarFlujo(ctx context.Context, sesionID string, f flow.Flujo, objetivo string) error {
+	if strings.TrimSpace(objetivo) == "" {
+		return fmt.Errorf("session: el flujo necesita un objetivo")
+	}
+	ses, err := g.sesion(sesionID)
+	if err != nil {
+		return err
+	}
+	if err := g.preparar(ses); err != nil {
+		return err
+	}
+	if err := g.Alcance.Almacen.EscribirMensaje(&store.Message{
+		SessionID: sesionID,
+		Role:      "user",
+		Content:   objetivo,
+	}); err != nil {
+		return err
+	}
+	if err := g.marcarTrabajando(ses); err != nil {
+		return err
+	}
+	if f.Nombre == "" {
+		f = g.flujoOFectivo()
+	}
+	g.lanzar(ctx, sesionID, &trabajo{}, func(c context.Context) error {
+		return g.ejecutarFlujo(c, sesionID, objetivo, f)
+	})
+	return nil
+}
+
+// Enviar arranca el flujo configurado con el mensaje del usuario. Es el arranque
+// explícito de un flujo; el camino por defecto de la vista es `Conversar`.
 func (g *Gestor) Enviar(ctx context.Context, sesionID, texto string) error {
+	return g.ArrancarFlujo(ctx, sesionID, g.flujoOFectivo(), ObjetivoDeMensaje(texto))
+}
+
+// Conversar responde el mensaje como chat con el agente activo: es el camino
+// por defecto de la vista principal (SPEC-INTERFAZ §Reglas). El agente corre con
+// su JSON y sus herramientas, y su respuesta queda en el historial (la escribe
+// el ejecutor del agente); `session` solo cierra el turno y deja el estado.
+func (g *Gestor) Conversar(ctx context.Context, sesionID, agente, texto string) error {
 	if strings.TrimSpace(texto) == "" {
 		return fmt.Errorf("session: mensaje vacío")
 	}
@@ -53,12 +96,8 @@ func (g *Gestor) Enviar(ctx context.Context, sesionID, texto string) error {
 	if err != nil {
 		return err
 	}
-	if ses.Estado == EstadoTerminada || ses.Estado == EstadoError {
-		// Una sesión terminada o en error vuelve a trabajar pasando antes por
-		// inactiva (ENUMS.md §3): se hace explícito, no se salta la regla.
-		if err := g.cambiarEstado(ses, EstadoInactiva); err != nil {
-			return err
-		}
+	if err := g.preparar(ses); err != nil {
+		return err
 	}
 	if err := g.Alcance.Almacen.EscribirMensaje(&store.Message{
 		SessionID: sesionID,
@@ -67,12 +106,84 @@ func (g *Gestor) Enviar(ctx context.Context, sesionID, texto string) error {
 	}); err != nil {
 		return err
 	}
-	if err := g.cambiarEstado(ses, EstadoTrabajando); err != nil {
+	// La detección de trabajo ordenado solo propone: se deja constancia y se
+	// responde como chat (SPEC-COLA-TAREAS). Nunca arranca la cola.
+	if aviso, ok := flow.SugerenciaTrabajo(texto); ok {
+		_ = g.Alcance.Almacen.EscribirMensaje(&store.Message{
+			SessionID: sesionID,
+			Role:      "system",
+			Content:   aviso,
+		})
+	}
+	if err := g.marcarTrabajando(ses); err != nil {
 		return err
 	}
 	g.lanzar(ctx, sesionID, &trabajo{}, func(c context.Context) error {
-		return g.ejecutarFlujo(c, sesionID, ObjetivoDeMensaje(texto), g.Flujo)
+		_, cErr := g.Motor.Conversar(c, agente, ObjetivoDeMensaje(texto))
+		return g.cerrarChat(sesionID, cErr)
 	})
+	return nil
+}
+
+// preparar deja la sesión lista para un turno nuevo. Una sesión terminada o en
+// error vuelve pasando por inactiva (ENUMS.md §3), no se salta la regla. Una que
+// quedó en `trabajando` sin trabajo vivo —el proceso se cerró a media
+// generación— también: su estado es obsoleto y `trabajando → trabajando` es una
+// transición ilegal, así que una petición nueva fallaría sin este paso.
+func (g *Gestor) preparar(ses *Sesion) error {
+	switch {
+	case ses.Estado == EstadoTerminada || ses.Estado == EstadoError:
+		return g.cambiarEstado(ses, EstadoInactiva)
+	case ses.Estado == EstadoTrabajando && !g.EnCurso(ses.ID):
+		return g.cambiarEstado(ses, EstadoInactiva)
+	}
+	return nil
+}
+
+// marcarTrabajando pasa la sesión a trabajando. Si ya lo está —turno anterior
+// vivo que este va a reemplazar— no repite la transición, que sería ilegal.
+func (g *Gestor) marcarTrabajando(ses *Sesion) error {
+	if ses.Estado == EstadoTrabajando {
+		return nil
+	}
+	return g.cambiarEstado(ses, EstadoTrabajando)
+}
+
+// Anotar deja constancia de un comando en el historial sin arrancar nada. Lo
+// usa `/ejecutar`, que consume la cola que ya existe en lugar de correr etapas.
+func (g *Gestor) Anotar(sesionID, texto string) error {
+	if strings.TrimSpace(texto) == "" {
+		return fmt.Errorf("session: mensaje vacío")
+	}
+	return g.Alcance.Almacen.EscribirMensaje(&store.Message{
+		SessionID: sesionID,
+		Role:      "user",
+		Content:   texto,
+	})
+}
+
+// cerrarChat cierra un turno de chat. Con desenlace correcto, el ejecutor del
+// agente ya guardó su respuesta, así que aquí solo se deja el estado: escribir
+// otro mensaje duplicaría el turno. Con error o cancelación se cierra con el
+// resumen para que quede rastro (ERRORS.md: un error no borra trabajo hecho).
+func (g *Gestor) cerrarChat(sesionID string, err error) error {
+	if err != nil {
+		return g.cerrarTurno(sesionID, flow.EstadoTerminado, err)
+	}
+	actual, oErr := g.Alcance.Almacen.Obtener(sesionID)
+	if oErr != nil {
+		return oErr
+	}
+	if store.ValidarTransicionSesion(actual.Status, EstadoTerminada) {
+		if cErr := g.Alcance.Almacen.CambiarEstado(sesionID, EstadoTerminada); cErr != nil {
+			return cErr
+		}
+		// Un turno de chat termina igual que un flujo, pero su aviso dice
+		// «terminó de responder»: aquí no corrió ninguna etapa (NotificacionDeChat).
+		g.avisarComo(sesionID, EstadoTerminada, NotificacionDeChat)
+		return nil
+	}
+	g.avisar(sesionID, actual.Status, "")
 	return nil
 }
 

@@ -40,11 +40,13 @@ No incluye agentes propios, skills ni flujos.
 
 ## Dónde se definen
 
-Cada agente es un `ai/agents/*.json` con campos fijos: `nombre`, `descripcion`, `prompt`, `herramientas` y `skills`. Se eligió JSON y no un README porque un README deja margen a interpretación de qué significa cada parte.
+Cada agente es un `ai/agents/*.json` con campos fijos: `nombre`, `descripcion`, `prompt`, `permisos` y `skills`. Se eligió JSON y no un README porque un README deja margen a interpretación de qué significa cada parte.
 
-El campo `herramientas` es el que sostiene la garantía de permisos: si `plan` no lista una herramienta de escritura, no la tiene, aunque se la pidan. La garantía vive en los datos, no en el código.
+El campo `permisos` es el que sostiene la garantía: declara, por acción (`leer`, `editar`, `ejecutar`, `internet`), si el agente puede (`permitir`) o no (`denegar`). Si `plan` deniega `editar`, no tiene ninguna herramienta que escriba, aunque se la pidan. El catálogo efectivo de herramientas se **deriva** de los permisos contra el catálogo cerrado de `tools`: no hay una segunda lista que pueda contradecirlos. La garantía vive en los datos, no en el código.
 
-El formato exacto de los campos sigue por confirmar. Ver [[backend/DECISIONS]].
+Un agente es una configuración sobre un mismo ciclo conversacional: su prompt, sus permisos y su catálogo. No hay un camino «de chat» y otro «de herramientas»: las herramientas son una capacidad que el modelo pide dentro del mismo ciclo. El usuario ve el catálogo disponible —con el formato de llamada— en el mensaje de sistema del agente.
+
+Un cambio de contrato: un JSON viejo con el campo `herramientas` ya no se carga; la lista de herramientas no se declara, se deriva. El formato exacto de cada campo está en [[backend/DECISIONS]].
 
 ## Los dos agentes
 
@@ -65,12 +67,12 @@ Su trabajo termina en una propuesta aprobada.
 Tiene **el catálogo completo**. Es el único que crea, modifica y borra.
 
 - Aplica exactamente lo que `plan` propuso y tú aprobaste.
-- Toma el siguiente elemento del TODO de la ejecución en curso, sin que se lo pidan.
+- Dentro de un flujo arrancado con comando, toma el siguiente elemento del TODO.
 - Trata **un elemento del TODO por iteración**, sin importar si es de código o de documentación.
 - La documentación es su única fuente de verdad.
 - Si falta información, marca la tarea como bloqueada y dice exactamente qué falta. No rellena huecos inventando.
 - Verifica el resultado antes de dar la tarea por terminada.
-- Al terminar la tarea, toma la siguiente de la cola.
+- Al terminar la tarea, toma la siguiente de la cola, siempre dentro del flujo que arrancó el usuario.
 
 ## El relevo
 
@@ -99,7 +101,7 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 5. `plan` investiga, propone y pide aprobación.
 6. El usuario cambia a `build`.
 7. `build` aplica el cambio.
-8. `build` verifica y continúa con la cola.
+8. `build` verifica y continúa con la cola del flujo que arrancó el usuario.
 
 ## Flujos alternativos
 
@@ -123,7 +125,8 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 - Ninguna escritura pasa sin que `plan` la haya propuesto y tú la hayas aprobado.
 - `build` no inventa endpoints, entidades, reglas de negocio ni relaciones.
 - Un intercambio de chat empieza con el contexto de esa sesión, no con el de otra.
-- `plan` alimenta la cola; `build` la drena. Ninguno espera a que se le pida el siguiente trabajo.
+- Fuera de un flujo, ambos agentes atienden el chat con el catálogo derivado de sus permisos: `plan` lee y propone, `build` escribe con aprobación.
+- `plan` propone y `build` aplica dentro de un flujo; un flujo solo existe cuando el usuario lo arranca con un comando explícito.
 
 ## Criterios de aceptación
 
@@ -138,7 +141,7 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 - [ ] Si le falta información del contexto, la pide en vez de inventarla.
 - [ ] `build` marca la tarea como bloqueada y dice qué falta cuando no puede continuar.
 - [ ] `build` verifica el resultado antes de cerrar la tarea.
-- [ ] `build` toma la siguiente tarea de la cola sin que se lo pidan.
+- [ ] Dentro de un flujo arrancado por comando, `build` toma la siguiente tarea de la cola.
 - [ ] El contenido de una sesión no aparece en otra sesión del mismo proyecto.
 
 ## Requisitos no funcionales

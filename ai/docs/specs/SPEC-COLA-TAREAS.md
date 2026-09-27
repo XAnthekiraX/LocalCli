@@ -17,7 +17,7 @@ Prioridad: P0 (núcleo)
 
 ## Propósito
 
-Convertir las tareas grandes del proyecto en una cola que se ejecuta sola, sin que tengas que lanzar cada tanda a mano.
+Convertir las tareas grandes del proyecto en una cola que se ejecuta en orden cuando tú la lanzas, sin lanzar cada tanda por separado.
 
 ## Alcance
 
@@ -71,8 +71,8 @@ Ejemplo: un elemento "implementar API de pedidos" puede necesitar elementos de d
 ## Flujo principal
 
 1. Pides algo que implica una lista ordenada: "documentar capa por capa", "ejecutar tarea 1, tarea 2, tarea 3".
-2. El sistema lo detecta y crea el TODO con los elementos que van a seguir, en orden.
-3. La cola arranca sola.
+2. El sistema lo detecta y **propone** el TODO con los elementos que van a seguir, en orden.
+3. La cola arranca cuando tú la lanzas: confirmas la propuesta o escribes el comando `/ejecutar`.
 4. `build` toma el siguiente elemento disponible cuyas dependencias ya estén cumplidas.
 5. Ejecuta **un elemento por iteración**: pide su contexto, propone el cambio, espera aprobación, aplica, verifica y lo marca completado.
 6. Toca el siguiente.
@@ -90,7 +90,8 @@ Ejemplo: un elemento "implementar API de pedidos" puede necesitar elementos de d
 
 - La cola no es por capa ni es una cola global. Es la cola de esta ejecución.
 - La cola tiene forma de TODO, y el TODO es la cola: no hay una representación paralela.
-- El TODO se crea al detectar una petición ordenada. El usuario no lo lanza a mano.
+- Al detectar una petición ordenada, el sistema propone el TODO; el usuario decide si se ejecuta (confirmación o `/ejecutar`).
+- Ningún texto arranca la cola por sí solo: sin comando o confirmación, la petición se responde en el chat.
 - Cada petición ordenada crea su propio TODO. Dos ejecuciones simultáneas no se ven.
 - El orden del TODO es el orden de ejecución, y se respeta.
 - Se ejecuta un elemento por iteración, nunca varios a la vez.
@@ -103,8 +104,9 @@ Ejemplo: un elemento "implementar API de pedidos" puede necesitar elementos de d
 
 ## Criterios de aceptación
 
-- [ ] Una petición ordenada crea un TODO, sin intervención del usuario.
-- [ ] "Documentar capa por capa", "ejecutar tarea 1, tarea 2, tarea 3" y "primero esto, luego esto" crean un TODO.
+- [ ] Una petición ordenada propone un TODO; no lo ejecuta por sí sola.
+- [ ] "Documentar capa por capa", "ejecutar tarea 1, tarea 2, tarea 3" y "primero esto, luego esto" proponen un TODO.
+- [ ] La cola solo arranca con la confirmación del usuario o el comando `/ejecutar`.
 - [ ] En el flujo de planificar, el TODO contiene todas las fases de la planificación.
 - [ ] En el flujo de ejecutar tareas, el TODO contiene los pasos de cada tarea.
 - [ ] Una petición sin orden no crea TODO y se responde en el chat.

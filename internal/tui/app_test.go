@@ -7,7 +7,8 @@ package tui
 //	T-F010-05 → los eventos del motor llegan a la vista por el canal
 //	T-F010-06 → la escucha se arma en Init, se re-arma tras cada evento y
 //	            no abre suscripciones nuevas
-//	T-F010-07 → ? abre la ayuda con la lista de atajos; se cierra sin efectos
+//	T-F010-07 → el modal de atajos (Ctrl+P) lista el keymap vigente; Esc lo
+//	            cierra sin efectos (T-F014-03 lo tirelesse)
 //	T-F010-09 → la vista compone chat, entrada, panel y línea de aviso
 
 import (
@@ -39,9 +40,10 @@ func TestLaEscuchaSeArmaUnaVezYSeRearmaTrasCadaEvento(t *testing.T) {
 	}
 	for _, e := range eventos {
 		p.canal <- e
-		msg := cmd()
-		var nueva tea.Cmd
-		_, nueva = a.Update(msg)
+		// Init devuelve el comando de la escucha: el bucle reparte su mensaje
+		// uno a uno, y la prueba hace lo mismo en vez de entregar el comando
+		// entero a Update.
+		nueva := entrega(t, a, cmd)
 		if nueva == nil {
 			t.Fatal("tras cada evento la escucha queda re-armada")
 		}
@@ -56,31 +58,70 @@ func TestLaEscuchaSeArmaUnaVezYSeRearmaTrasCadaEvento(t *testing.T) {
 	}
 }
 
-// --- T-F010-07: la ayuda ---------------------------------------------------------
+// --- T-F010-07: el modal de atajos -------------------------------------------
 
-func TestLaAyudaListaLosAtajosYSeCierraSinEfectos(t *testing.T) {
+// entrega corre el comando y entrega a Update cada mensaje que produce,
+// deshaciendo el Batch igual que el bucle de Bubble Tea. Devuelve el último
+// comando no vacío, que es el que el bucle encadenaría.
+func entrega(t *testing.T, a *App, cmd tea.Cmd) tea.Cmd {
+	t.Helper()
+	var ultimo tea.Cmd
+	for _, msg := range mensajesDe(cmd) {
+		var siguiente tea.Cmd
+		_, siguiente = a.Update(msg)
+		if siguiente != nil {
+			ultimo = siguiente
+		}
+	}
+	return ultimo
+}
+
+// mensajesDe ejecuta un comando y devuelve sus mensajes, recursively si el
+// comando era un lote.
+func mensajesDe(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	if msg == nil {
+		return nil
+	}
+	if lote, ok := msg.(tea.BatchMsg); ok {
+		var msgs []tea.Msg
+		for _, sub := range lote {
+			msgs = append(msgs, mensajesDe(sub)...)
+		}
+		return msgs
+	}
+	return []tea.Msg{msg}
+}
+
+// T-F014-03: la ayuda clásica (`?`) quedó sustituida por el modal de atajos
+// (`command_palette`, Ctrl+P). Se abre desde cualquier vista, lista el keymap
+// vigente y se cierra con Esc, sin aplicar nada.
+func TestElModalDeAtajosListaLosAtajosYSeCierraConEsc(t *testing.T) {
 	p := &puertoStub{}
 	a := Nuevo(p)
 	a.Vista = VistaPrincipal
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 
-	pulsa(t, a, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
-	if !a.AyudaAbierta {
-		t.Fatal("? abre la ayuda")
+	tecla(t, a, tea.KeyCtrlP)
+	if !a.AtajosModal.Abierto {
+		t.Fatal("ctrl+p abre el modal de atajos")
 	}
 	v := a.View()
 	for _, atajo := range a.Atajos {
 		if !strings.Contains(v, atajo.Tecla()) || !strings.Contains(v, atajo.Descripcion) {
-			t.Errorf("la ayuda debe listar %q con su acción: %s", atajo.Tecla(), atajo.Descripcion)
+			t.Errorf("el modal debe listar %q con su acción: %s", atajo.Tecla(), atajo.Descripcion)
 		}
 	}
-	// Cualquier tecla la cierra y no deja rastro: no escribe en la entrada.
-	pulsa(t, a, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
-	if a.AyudaAbierta {
-		t.Error("cualquier tecla cierra la ayuda")
+	// Esc lo cierra y no deja rastro: no escribe en la entrada.
+	pulsa(t, a, tea.KeyMsg{Type: tea.KeyEsc})
+	if a.AtajosModal.Abierto {
+		t.Error("esc cierra el modal de atajos")
 	}
 	if a.Entrada.Texto() != "" {
-		t.Errorf("cerrar la ayuda no escribe: %q", a.Entrada.Texto())
+		t.Errorf("cerrar el modal no escribe: %q", a.Entrada.Texto())
 	}
 }
 
@@ -161,7 +202,7 @@ func TestRecorridoCambioDeSesiónEnVivo(t *testing.T) {
 	}
 	h.puerto.historial = []MensajeHistorial{{Rol: "user", Texto: "del pasado"}}
 
-	h.tecla("ctrl+s")
+	h.modalDeSesiones()
 	h.veSiContiene("segunda")
 	h.veSiContiene("trabajando")
 	h.tecla("down")
@@ -171,8 +212,8 @@ func TestRecorridoCambioDeSesiónEnVivo(t *testing.T) {
 	if h.app.Panel.SesionID != "s2" {
 		t.Fatalf("la activa pasa a la elegida: %q", h.app.Panel.SesionID)
 	}
-	if h.app.Selector.Abierto {
-		t.Error("el selector desaparece al elegir")
+	if h.app.Sesiones.Abierto {
+		t.Error("el modal desaparece al elegir")
 	}
 	// El historial de la elegida llega y se pinta, y nada se detiene.
 	h.veSiContiene("del pasado")

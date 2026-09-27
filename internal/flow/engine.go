@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"localcli/internal/task"
+	"localcli/internal/tools"
 )
 
 // Nombres de los eventos que emite el motor (EVENTS.md §1). No se inventa
@@ -56,10 +57,19 @@ type Resultado struct {
 }
 
 // Contexto entrega a una etapa solo el contexto que necesita. Lo implementa
-// `context` (T-B011); el motor no lo arma por su cuenta.
+// `context` (T-B011); el motor no lo arma por su cuenta. La etapa viaja con la
+// petición: es lo que permite que `context_audit` distinga una etapa de otra
+// (una fila por documento y etapa; TABLES.md §3).
 type Contexto interface {
-	ContextoPara(ctx context.Context, objetivo string) (string, error)
+	ContextoPara(ctx context.Context, etapa, objetivo string) (string, error)
 }
+
+// EtapaChat es la etapa bajo la que se arma y se audita el contexto de una
+// respuesta del chat: no es una etapa de flujo, pero el nodo de contexto
+// necesita saber que no vino de una. `context` mantiene el mismo literal
+// (context.EtapaChat) para decidir su fallback; tests de integración de ambas
+// capas comprueban que los dos literales coinciden.
+const EtapaChat = "chat"
 
 // Agente ejecuta una etapa con el agente indicado (`plan` o `build`) sobre el
 // contexto que recibe. Lo implementa `agent` (T-B006). No ejecuta herramientas
@@ -117,7 +127,7 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 
 		m.emitir(EventoEtapaIniciada, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 
-		contexto, cErr := m.Contexto.ContextoPara(ctx, objetivo)
+		contexto, cErr := m.Contexto.ContextoPara(ctx, etapa.ID, objetivo)
 		if cErr != nil {
 			m.emitir(EventoEtapaFallida, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 			return EstadoConError, fmt.Errorf("%w: %s: %v", ErrEtapaFallida, etapa.ID, cErr)
@@ -164,6 +174,29 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 
 	estado = EstadoTerminado
 	return estado, nil
+}
+
+// Conversar responde una petición como chat: arma el contexto del objetivo y
+// lo corre con el agente activo, sin etapas ni aprobaciones. Es el camino por
+// defecto de la vista principal (SPEC-INTERFAZ §Reglas: "La vista principal es
+// un chat… Ningún texto arranca un flujo de trabajo por sí solo"); el flujo
+// solo arranca con un comando explícito.
+//
+// El agente llega como argumento porque lo elige el usuario con el indicador de
+// la TUI: cada agente responde con las herramientas declaradas en su JSON
+// (SPEC-TOOLS §Reglas). El motor no inventa un catálogo ni decide el agente.
+func (m *Motor) Conversar(ctx context.Context, agente, objetivo string) (Resultado, error) {
+	if agente != tools.AgentePlan && agente != tools.AgenteBuild {
+		return Resultado{}, fmt.Errorf("flow: agente inválido %q", agente)
+	}
+	if m.Contexto == nil || m.Agente == nil {
+		return Resultado{}, fmt.Errorf("flow: el motor no tiene contexto y agente conectados")
+	}
+	contexto, err := m.Contexto.ContextoPara(ctx, EtapaChat, objetivo)
+	if err != nil {
+		return Resultado{}, err
+	}
+	return m.Agente.Ejecutar(ctx, agente, contexto)
 }
 
 // ElementoCola es un elemento del TODO listo para ejecutarse.

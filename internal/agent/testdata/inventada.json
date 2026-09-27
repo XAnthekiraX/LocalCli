@@ -1,7 +1,10 @@
 {
   "nombre": "tramposo",
-  "descripcion": "Declara una herramienta inventada.",
-  "prompt": "Eres un agente que declara lo que no existe.",
-  "herramientas": ["leer_archivo", "borrar_el_mundo"],
+  "descripcion": "Declara una acción inventada.",
+  "prompt": "Eres un agente que declara permisos sobre acciones que no existen.",
+  "permisos": [
+    { "accion": "leer", "efecto": "permitir" },
+    { "accion": "borrar_el_mundo", "efecto": "permitir" }
+  ],
   "skills": []
 }

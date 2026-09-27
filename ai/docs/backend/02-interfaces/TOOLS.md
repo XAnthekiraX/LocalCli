@@ -53,8 +53,12 @@ Cerrado. El agente no puede inventar herramientas fuera de esta lista.
 
 ## 2. El reparto: `plan` mira, `build` escribe
 
-- `plan` recibe solo herramientas que **recopilan información**: las diez de lectura de archivos, la de terminal y las dos de internet. No tiene ninguna que escriba.
-- `build` recibe el catálogo completo. Es el único que crea, modifica y borra.
+El reparto sale de los `permisos` del agente ([[specs/SPEC-AGENTE-BASE]]), no de una lista de herramientas declarada. Cada herramienta pertenece a una **acción** según su categoría y su modo: archivos de lectura → `leer`; archivos de escritura → `editar`; terminal → `ejecutar`; internet → `internet`.
+
+- `plan` permite `leer`, `ejecutar` e `internet`, y deniega `editar`. No tiene ninguna herramienta que escriba.
+- `build` permite las cuatro acciones y recibe el catálogo completo. Es el único que crea, modifica y borra.
+
+El catálogo efectivo de cada agente se deriva de sus permisos contra este catálogo cerrado: no hay dos listas que puedan contradecirse.
 
 Esto no es una restricción de estilo que se pueda desactivar: es la garantía estructural de que nada cambia sin que `plan` lo haya propuesto y tú lo hayas aprobado. Ver [[backend/03-security/SECURITY]].
 
@@ -119,12 +123,14 @@ Son las únicas que hacen salir información de la máquina.
 `tools` es el registro y el enrutado, no el permiso aplicado ni la herramienta ejecutada:
 
 1. Recibe la petición del agente (nombre de herramienta y argumentos).
-2. Comprueba que la herramienta existe en el catálogo y que el agente activo la tiene (`plan` no tiene ninguna de escritura).
+2. Comprueba que la herramienta existe en el catálogo y que el agente activo la tiene: el catálogo del agente es el derivado de sus `permisos` (el de `plan` no contiene ninguna de escritura).
 3. Enruta: archivo → `fileops`; terminal → `exec`; internet → el cliente de internet.
 4. `fileops` o `exec` comprueban el permiso concreto, lo aplican y devuelven el resultado.
 5. `tools` devuelve el resultado al agente.
 
 `tools` no inventa herramientas y no aplica permisos: los aplica `fileops` y `exec`. Ver [[backend/DECISIONS]].
+
+El modelo conoce qué herramientas tiene y el formato para pedirlas porque `agent` inyecta el catálogo en el mensaje de sistema ([[specs/SPEC-TOOLS]]). El contrato textual es un bloque `herramienta` con el nombre exacto y los argumentos en JSON; lo que no siga ese formato no se ejecuta.
 
 ## Referencias
 

@@ -50,6 +50,7 @@ Se abre una sesión y se deja una tarea de frontend trabajando. Se abre otra ses
 - El contenido de una sesión no se ve desde otra sesión del mismo proyecto.
 - Una sesión en segundo plano sigue ejecutándose aunque el usuario cambie de sesión o salga de la vista.
 - Cada sesión expone su estado: inactiva, trabajando, esperando permiso, terminada o con error.
+- Una sesión nueva se crea enviando la primera petición desde la bienvenida o con `Ctrl+X n` desde la vista principal, que la deja activa.
 - Cambiar de sesión no detiene nada.
 - El chat de una carpeta nunca aparece en otra carpeta.
 - El contexto acumulado de una sesión no se comparte con las demás del mismo proyecto.
@@ -62,6 +63,7 @@ Se abre una sesión y se deja una tarea de frontend trabajando. Se abre otra ses
 - [ ] Una sesión en segundo plano sigue trabajando y su estado es visible desde otra sesión.
 - [ ] Al reabrir una carpeta se listan sus sesiones y se puede retomar cualquiera con su historial.
 - [ ] El estado de cada sesión es visible en todo momento.
+- [ ] `Ctrl+X n` crea una sesión nueva y la deja activa.
 
 ## Requisitos no funcionales
 

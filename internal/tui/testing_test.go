@@ -41,11 +41,25 @@ func (h *arnes) tecla(nombre string) {
 	pulsa(h.t, h.app, teclaConNombre(nombre))
 }
 
+// secuencia pulsa la líder y su segunda tecla, como el teclado real.
+func (h *arnes) secuencia(segunda string) {
+	h.t.Helper()
+	secuencia(h.t, h.app, tea.KeyCtrlX, segunda)
+}
+
+// modalDeSesiones abre el modal de sesiones con la secuencia documentada y
+// entrega la lista, como el bucle real (T-F014-04).
+func (h *arnes) modalDeSesiones() {
+	h.t.Helper()
+	ejecuta(h.t, h.app, abreElModalDeSesiones(h.t, h.app))
+}
+
 // teclaConNombre traduce el nombre de la tecla al mensaje de Bubble Tea.
 func teclaConNombre(nombre string) tea.KeyMsg {
 	tipos := map[string]tea.KeyType{
 		"enter": tea.KeyEnter, "esc": tea.KeyEsc, "up": tea.KeyUp,
 		"down": tea.KeyDown, "backspace": tea.KeyBackspace, "space": tea.KeySpace,
+		"ctrl+x": tea.KeyCtrlX, "ctrl+p": tea.KeyCtrlP,
 		"ctrl+c": tea.KeyCtrlC, "ctrl+q": tea.KeyCtrlQ, "ctrl+d": tea.KeyCtrlD,
 		"ctrl+s": tea.KeyCtrlS, "ctrl+r": tea.KeyCtrlR, "ctrl+a": tea.KeyCtrlA,
 		"ctrl+f": tea.KeyCtrlF,

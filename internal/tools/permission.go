@@ -22,16 +22,16 @@ const (
 	AgenteBuild = "build"
 )
 
-// HerramientasDePlan devuelve el catálogo del agente base `plan`: solo las
-// herramientas de lectura. Que esta lista no contenga ninguna de escritura es
-// la garantía; no hay ningún filtro posterior que la pueda debilitar.
+// HerramientasDePlan devuelve el catálogo del agente base `plan`: leer,
+// ejecutar e internet, nunca editar. Que esta lista no contenga ninguna acción
+// de escritura es la garantía; no hay ningún filtro posterior que la pueda
+// debilitar. Se conserva como valor por defecto y para los tests; el catálogo
+// real de cada agente sale de sus `permisos` (agent.HerramientasDe).
 func HerramientasDePlan() []string {
 	var out []string
-	for _, h := range catalogo {
-		if h.Modo == Lee {
-			out = append(out, h.Nombre)
-		}
-	}
+	out = append(out, NombresDeAccion(AccionLeer)...)
+	out = append(out, NombresDeAccion(AccionEjecutar)...)
+	out = append(out, NombresDeAccion(AccionInternet)...)
 	return out
 }
 

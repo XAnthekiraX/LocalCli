@@ -104,3 +104,68 @@ func TestHerramientasDevuelveCopia(t *testing.T) {
 		t.Error("alterar la copia no puede borrar entradas reales")
 	}
 }
+
+// TestAccionSeDerivaDeCategoriaYModo — el reparto por acción sale de un solo
+// dato (categoría + modo), sin un campo aparte que pueda contradecirlo.
+func TestAccionSeDerivaDeCategoriaYModo(t *testing.T) {
+	casos := []struct {
+		nombre string
+		accion Accion
+	}{
+		{"leer_archivo", AccionLeer},
+		{"buscar_en_archivos", AccionLeer},
+		{"crear_archivo", AccionEditar},
+		{"eliminar_carpeta", AccionEditar},
+		{"ejecutar_comando", AccionEjecutar},
+		{"buscar_en_internet", AccionInternet},
+		{"abrir_pagina", AccionInternet},
+	}
+	for _, c := range casos {
+		got, ok := AccionDe(c.nombre)
+		if !ok {
+			t.Errorf("%s no está en el catálogo", c.nombre)
+			continue
+		}
+		if got != c.accion {
+			t.Errorf("%s: acción = %s, quiero %s", c.nombre, got, c.accion)
+		}
+	}
+}
+
+// TestNombresDeAccionReparteLasTrece — las cuatro acciones cubren las trece
+// herramientas sin solaparse: la partición que sostiene el catálogo derivado.
+func TestNombresDeAccionReparteLasTrece(t *testing.T) {
+	var total int
+	for _, a := range []Accion{AccionLeer, AccionEditar, AccionEjecutar, AccionInternet} {
+		total += len(NombresDeAccion(a))
+	}
+	if total != len(NombresCatalogo()) {
+		t.Errorf("las acciones cubren %d herramientas, quiero %d", total, len(NombresCatalogo()))
+	}
+	if len(NombresDeAccion(AccionEditar)) != 6 {
+		t.Errorf("`editar` tiene %d herramientas, quiero 6", len(NombresDeAccion(AccionEditar)))
+	}
+	if Accion("inventada").Valida() {
+		t.Error("una acción fuera de las cuatro no puede ser válida")
+	}
+}
+
+// TestCamposDeSaleDelContrato — el esquema de argumentos del catálogo que ve el
+// modelo se deriva del DTO, así que no puede divergir de él.
+func TestCamposDeSaleDelContrato(t *testing.T) {
+	campos, ok := CamposDe("leer_archivo")
+	if !ok || len(campos) != 1 || campos[0].Nombre != "ruta" || !campos[0].Obligatorio {
+		t.Fatalf("campos de leer_archivo = %+v, quiero `ruta` obligatorio", campos)
+	}
+	// `buscar_en_archivos` tiene una ruta opcional (omitempty).
+	campos, _ = CamposDe("buscar_en_archivos")
+	var opcional bool
+	for _, c := range campos {
+		if c.Nombre == "ruta" && !c.Obligatorio {
+			opcional = true
+		}
+	}
+	if !opcional {
+		t.Error("`ruta` de buscar_en_archivos debe ser opcional")
+	}
+}
