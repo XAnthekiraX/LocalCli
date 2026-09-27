@@ -66,6 +66,13 @@ type Chat struct {
 // turno: el tiempo que se mide es el que percibe quien espera la respuesta.
 func (c *Chat) AñadirUsuario(texto string) {
 	c.inicio = time.Now()
+	c.AñadirEntrada(texto)
+}
+
+// AñadirEntrada añade una línea del usuario SIN arrancar el contador del turno.
+// Es lo que se usa cuando lo escrito no va al modelo —por ejemplo un comando de
+// flujo—: no hay respuesta en camino que medir.
+func (c *Chat) AñadirEntrada(texto string) {
 	c.mensajes = append(c.mensajes, Mensaje{Rol: RolUsuario, Texto: texto})
 }
 

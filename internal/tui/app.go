@@ -114,6 +114,11 @@ type App struct {
 	// Entrada es la línea de texto de la interfaz principal (input.go, T-F004).
 	Entrada Entrada
 
+	// Paleta es la lista de comandos de flujo que se despliega encima del input
+	// mientras se escribe un comando (comandos.go). La alimenta el texto de la
+	// línea de entrada.
+	Paleta Paleta
+
 	// PidiendoCancelar espera la confirmación de ctrl+f (T-F010-08). El texto
 	// escrito se conserva mientras tanto.
 	PidiendoCancelar bool
@@ -394,8 +399,7 @@ func (a *App) tecla(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// espera de líder, todas las pulsaciones van al resolver (el literal
 	// «ctrl+x» no deja texto huérfano y la segunda tecla cierra la secuencia).
 	if ctx == ContextoVista && !a.TeclaRes.EsperandoLeader() && EsEntradaDeTexto(m) {
-		_, cmd := a.Entrada.Update(m)
-		return a, cmd
+		return a, a.actualizarEntrada(m)
 	}
 
 	accion, cmdLider := a.TeclaRes.Resolver(m, ctx)
@@ -526,12 +530,29 @@ func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// §Zonas 2: "Cambia al instante con Tab"). La acción es de contexto de
 		// vista, así que con un modal abierto no llega hasta aquí: el indicador
 		// y lo que se envía son los del último `Tab` pulsado.
+		//
+		// Con la paleta de comandos desplegada, Tab no cambia de agente:
+		// autocompleta el comando resaltado para poder escribir la petición
+		// detrás (`/comando [petición]`).
+		if a.Paleta.Abierto {
+			return a, a.autocompletarComando()
+		}
 		a.ciclarAgente()
 		return a, nil
 	case AccionChatSubir:
+		// Con la paleta de comandos desplegada, las flechas la recorren a ella;
+		// sin paleta, recorren el historial del chat.
+		if a.Paleta.Abierto {
+			a.Paleta.Mover(-1)
+			return a, nil
+		}
 		a.Chat.Subir(1)
 		return a, nil
 	case AccionChatBajar:
+		if a.Paleta.Abierto {
+			a.Paleta.Mover(1)
+			return a, nil
+		}
 		a.Chat.Bajar(1)
 		return a, nil
 	case AccionChatPaginaArriba:
@@ -641,6 +662,7 @@ func (a *App) volverABienvenida() {
 	a.enTurno = false
 	a.PidiendoCancelarEsc = false
 	a.Bienvenida = NuevaBienvenida()
+	a.Paleta.Filtrar("")
 }
 
 // teclaConfirmarEliminar atiende la confirmación de borrado: s confirma, n y
@@ -673,6 +695,12 @@ func (a *App) enviar() tea.Cmd {
 	if texto == "" {
 		return nil
 	}
+	// Un comando de flujo no es una petición al modelo: se reconoce y se
+	// responde en el chat (SPEC-INTERFAZ §Reglas de negocio: un flujo arranca
+	// con su comando explícito).
+	if c, ok := a.comandoAplicable(texto); ok {
+		return a.ejecutarComando(c, texto)
+	}
 	id := a.Panel.SesionID
 	if id == "" {
 		ses, err := a.Puerto.Crear()
@@ -684,6 +712,7 @@ func (a *App) enviar() tea.Cmd {
 		id = ses.ID
 	}
 	a.Entrada.Limpiar()
+	a.Paleta.Filtrar("")
 	a.Chat.AñadirUsuario(texto)
 	a.Vista = VistaPrincipal
 	return a.enviarCmd(id, texto)
@@ -700,6 +729,54 @@ func (a *App) enviarCmd(sesionID, texto string) tea.Cmd {
 		}
 		return enviadoMsg{Sesion: sesionID, Texto: texto}
 	}
+}
+
+// actualizarEntrada entrega la pulsación al editor y refresca la paleta de
+// comandos con lo que quedó escrito. Es el único punto por el que cambia el
+// texto de la línea principal, así que la paleta nunca queda desincronizada.
+func (a *App) actualizarEntrada(m tea.Msg) tea.Cmd {
+	_, cmd := a.Entrada.Update(m)
+	a.Paleta.Filtrar(a.Entrada.Texto())
+	return cmd
+}
+
+// comandoAplicable decide qué comando, si alguno, corresponde a la línea. Con
+// la paleta desplegada manda el comando resaltado —Enter y Tab actúan sobre
+// él—; sin paleta, se reconoce el texto escrito.
+func (a *App) comandoAplicable(texto string) (ComandoFlujo, bool) {
+	if a.Paleta.Abierto {
+		if c, ok := a.Paleta.Seleccionado(); ok {
+			return c, true
+		}
+	}
+	return ComandoFlujoDe(texto)
+}
+
+// autocompletarComando deja en la línea el comando resaltado seguido de un
+// espacio, listo para escribir la petición detrás (`/comando [petición]`). La
+// paleta se retira sola: con el espacio ya no hay comandos que ofrecer.
+func (a *App) autocompletarComando() tea.Cmd {
+	c, ok := a.Paleta.Seleccionado()
+	if !ok {
+		return nil
+	}
+	a.Entrada.FijarTexto(c.Nombre + " ")
+	a.Paleta.Filtrar(a.Entrada.Texto())
+	return nil
+}
+
+// ejecutarComando responde un comando de flujo en el chat, sin mandarlo al
+// modelo. De momento los flujos no están implementados: la vista reconoce el
+// comando y dice para qué es. Limpia la línea de las dos vistas y la paleta, y
+// deja la interfaz principal a la vista para que el eco y el aviso se vean.
+func (a *App) ejecutarComando(c ComandoFlujo, escrito string) tea.Cmd {
+	a.Entrada.Limpiar()
+	a.Bienvenida.Limpiar()
+	a.Paleta.Filtrar("")
+	a.Chat.AñadirEntrada(lineaDeComando(c, escrito))
+	a.Chat.AñadirSistema(c.Aviso())
+	a.Vista = VistaPrincipal
+	return nil
 }
 
 // ciclarAgente alterna `plan` ↔ `build` y lo propaga a lo único que lo pinta y
@@ -1015,7 +1092,13 @@ func (a *App) bloqueInferior(anchoChat int) string {
 	if a.TeclaRes != nil && a.TeclaRes.EsperandoLeader() {
 		entrada += " " + estiloAviso.Render("lider ")
 	}
-	lineas := []string{entrada}
+	// La paleta de comandos se despliega encima del input mientras se escribe un
+	// comando de flujo (comandos.go).
+	var lineas []string
+	if pal := a.Paleta.Render(); pal != "" {
+		lineas = append(lineas, pal)
+	}
+	lineas = append(lineas, entrada)
 	// La línea de estado del modelo va justo debajo del input.
 	if estado := a.lineaDeEstadoModelo(); estado != "" {
 		lineas = append(lineas, estado)

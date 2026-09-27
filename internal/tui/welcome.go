@@ -153,6 +153,16 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, a.eliminarSesion()
 	case AccionCiclarAgente:
+		// Con la paleta desplegada, Tab autocompleta el comando resaltado y deja
+		// la línea lista para escribir la petición detrás.
+		if a.Paleta.Abierto {
+			if c, ok := a.Paleta.Seleccionado(); ok {
+				a.Bienvenida.Texto = c.Nombre + " "
+				a.Bienvenida.Pos = len([]rune(a.Bienvenida.Texto))
+				a.Paleta.Filtrar(a.Bienvenida.Texto)
+			}
+			return a, nil
+		}
 		// Tab alterna `plan` ↔ `build` también en la bienvenida: el indicador
 		// se ve junto a su línea de entrada y cambia al instante
 		// (SPEC-INTERFAZ §Zonas 2). Con un modal abierto la acción ni siquiera
@@ -164,9 +174,14 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.cerrarModales()
 		return a, nil
 	case AccionSubir:
-		// Con un modal abierto la flecha es suya; sin él la línea de entrada la
-		// recibe (DOMAIN §3: "sin modal abierto no hay navegación: las flechas
-		// escriben/historial según su componente").
+		// Con la paleta desplegada la flecha la recorre; con un modal abierto es
+		// suya; sin nada abierto la línea de entrada la recibe (DOMAIN §3: "sin
+		// modal abierto no hay navegación: las flechas escriben/historial según
+		// su componente").
+		if a.Paleta.Abierto {
+			a.Paleta.Mover(-1)
+			return a, nil
+		}
 		switch {
 		case a.Modelos.Abierto:
 			a.Modelos.Mover(-1)
@@ -175,6 +190,10 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case AccionBajar:
+		if a.Paleta.Abierto {
+			a.Paleta.Mover(1)
+			return a, nil
+		}
 		switch {
 		case a.Modelos.Abierto:
 			a.Modelos.Mover(1)
@@ -220,6 +239,9 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEnd:
 		a.Bienvenida.Fin()
 	}
+	// Lo escrito alimenta la paleta de comandos: al empezar por `/` se despliega
+	// y al escribir un espacio (la petición) se retira.
+	a.Paleta.Filtrar(a.Bienvenida.Texto)
 	return a, nil
 }
 
@@ -234,6 +256,11 @@ func (a *App) enviarDesdeBienvenida() tea.Cmd {
 	texto := strings.TrimSpace(a.Bienvenida.Texto)
 	if texto == "" {
 		return nil
+	}
+	// Un comando de flujo se responde en el chat sin mandarlo al modelo; no
+	// necesita crear sesión (SPEC-INTERFAZ §Reglas de negocio).
+	if c, ok := a.comandoAplicable(texto); ok {
+		return a.ejecutarComando(c, texto)
 	}
 	if a.Panel.SesionID == "" {
 		ses, err := a.Puerto.Crear()
@@ -279,6 +306,11 @@ func (a *App) viewBienvenida() string {
 	b.WriteString("\n\n")
 	b.WriteString(a.lineaDeModelo())
 	b.WriteString("\n\n")
+	// La paleta de comandos se despliega encima de la línea de entrada.
+	if pal := a.Paleta.Render(); pal != "" {
+		b.WriteString(pal)
+		b.WriteString("\n\n")
+	}
 	// El indicador del agente precede a la línea de entrada, igual que en la
 	// interfaz principal: el render canónico de SPEC-INTERFAZ §Pantalla de
 	// bienvenida es `[plan] > En qué te ayudo hoy: █╚` (T-F015-02).

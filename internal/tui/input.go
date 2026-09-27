@@ -71,6 +71,13 @@ func (e *Entrada) Texto() string { return e.campo.Value() }
 // borrarla: un fallo al abrir la sesión no puede perder lo escrito.
 func (e *Entrada) Limpiar() { e.campo.Reset() }
 
+// FijarTexto reemplaza el contenido de la línea y deja el cursor al final. Lo
+// usa la paleta de comandos para autocompletar el comando resaltado.
+func (e *Entrada) FijarTexto(texto string) {
+	e.campo.SetValue(texto)
+	e.campo.CursorEnd()
+}
+
 // FijarAncho adapta la línea al ancho del layout recibido. Un ancho no
 // conocido (0 o menos) no toca nada: mejor la medida anterior que una línea
 // invisible.

@@ -5,6 +5,7 @@
 - Prefiere un único camino de código parametrizado por configuración frente a duplicar funciones por variante: p. ej. que `plan` y `build` sean el mismo componente `Agent` (con distinto system prompt, permisos y tools) sobre un mismo bucle, en lugar de dos programas con sus propios flujos. Confidence: 0.65
 - Prefiere una sola fuente de verdad para evitar estados que puedan contradecirse (que la lista de herramientas se derive de los permisos, y no declarar dos listas que puedan discrepar). Confidence: 0.55
 - Prefiere commitear todo el árbol de trabajo pendiente en un solo commit (trabajo previo no relacionado incluido), no solo los cambios recientes de la tarea en curso. Confidence: 0.6
+- Prefiere consolidar el trabajo en un commit (punto de control) antes de arrancar el siguiente paso o de seguir preguntando, en lugar de acumular cambios sin commitear mientras se avanza. Confidence: 0.55
 - No le importa versionar artefactos que normalmente se ignoran (binarios, estado de ejecución local, directorios de herramientas): al preguntársele, elige incluir «absolutamente todo». Confidence: 0.6
 - Prefiere que el comportamiento sea configurable por el usuario mediante archivos de configuración a nivel de usuario (p. ej. JSON en `~/.config/…`) en lugar de valores hardcodeados o estado guardado en la base de datos del proyecto. Confidence: 0.5
 - Prefiere avisos/alertas no bloqueantes que informan de un problema pero dejan continuar al usuario, frente a bloquear la acción. Confidence: 0.5
