@@ -86,6 +86,24 @@ El tercer modo no es un flag: depende de si Landlock está disponible en el sist
 
 No hay más servicios. No hay base de datos que levantar, ni migraciones que aplicar a mano, ni cuentas que crear. Ver [[specs/SPEC-OLLAMA-PERFIL]].
 
+## 7. Preferencias del usuario
+
+Además de `~/.config/localcli/keys.json` (el mapa de teclas), el usuario tiene sus preferencias en `~/.config/localcli/config.json`:
+
+```json
+{
+  "ultimo_modelo": "llama3.2",
+  "ultimo_agente": "build",
+  "historial_tokens": 4096
+}
+```
+
+- Son **globales del usuario**, no de un proyecto: viven fuera de la carpeta y no se versionan.
+- Al arrancar se reutiliza `ultimo_modelo` si sigue instalado en Ollama; si no, se autodetecta. El agente recordado lo aplica la vista.
+- `historial_tokens` es el presupuesto de tokens del historial de conversación que se le entrega al modelo; sin él se usa `LOCALCLI_CONTEXT_LIMIT` y, en su defecto, un valor por defecto. Ver [[specs/SPEC-HISTORIAL-CONVERSACION]].
+- Un archivo ausente o ilegible no rompe el arranque: se usan los valores por defecto (`plan` como agente, autodetección como modelo).
+- La interfaz los escribe al elegir modelo o al cambiar de agente; no hay que editar el archivo a mano. Ver [[specs/SPEC-OLLAMA-PERFIL]].
+
 ## Referencias
 
 - [[backend/04-infrastructure/INTEGRATIONS]] — cómo se habla con Ollama y cómo se listan los modelos.

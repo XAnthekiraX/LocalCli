@@ -52,6 +52,9 @@ No incluye proveedores distintos de Ollama ni la visualización de tokens, que e
 - El tamaño de contexto se limita para que quepa junto con el modelo cargado.
 - Si el modelo elegido no cabe, la herramienta avisa y no lo carga en silencio.
 - El perfil se aplica a las sesiones nuevas del proyecto.
+- El último modelo y el último agente usados se recuerdan entre ejecuciones como preferencia global del usuario (fuera del proyecto). Al arrancar se reutiliza el modelo recordado si sigue instalado, y el agente recordado.
+- Si el modelo no declara capacidad de herramientas, la interfaz lo marca y avisa sin bloquear al elegirlo, para que el usuario cambie de modelo. No se le impide usarlo: las herramientas viajan como texto y el modelo puede responder igualmente.
+- Bajo la línea de entrada se muestra el modelo en uso y si tiene acceso a herramientas (`sí`/`no`/`?` mientras se desconoce).
 - Todo el modelo y toda la conversación ocurren en la máquina local: no se envía nada fuera.
 - La única excepción es la búsqueda en internet de [[specs/SPEC-TOOLS]], y solo sale la consulta, nunca contenido del proyecto.
 - El tamaño de contexto disponible se tiene en cuenta al decidir cuánto contexto entregar.
@@ -63,6 +66,9 @@ No incluye proveedores distintos de Ollama ni la visualización de tokens, que e
 - [ ] El usuario elige el modelo; la herramienta no lo decide por él.
 - [ ] Si el modelo elegido no cabe, avisa y no lo carga.
 - [ ] El perfil confirmado se aplica a las sesiones nuevas.
+- [ ] Al reabrir LocalCli se parte del último modelo y el último agente usados.
+- [ ] Un modelo que no declara capacidad de herramientas se marca y avisa sin bloquear.
+- [ ] Bajo la entrada se ve el modelo en uso y si tiene acceso a herramientas.
 - [ ] La herramienta sigue funcionando con 16 GB de RAM sin agotar la memoria.
 - [ ] Si Ollama no está disponible, avisa con una instrucción clara.
 - [ ] La única información que sale de la máquina es la consulta de una búsqueda, nunca contenido del proyecto.

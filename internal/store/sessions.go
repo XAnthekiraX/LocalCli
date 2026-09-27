@@ -159,6 +159,19 @@ func actualizarEstadoSesion(e ejecutor, id, estadoNuevo string) error {
 	return filasAfectadas(res, 1, fmt.Sprintf("sesión %s", id))
 }
 
+// RenombrarSesion cambia el nombre visible de una sesión y toca updated_at. El
+// nombre es un atributo mutable: el identificador permanente es `id`, así que
+// renombrar nunca afecta a los mensajes ni a las referencias internas de la
+// sesión. Es lo que usa el título generado a partir de la primera petición.
+func RenombrarSesion(db *sql.DB, id, nombre string) error {
+	res, err := db.Exec(`UPDATE sessions SET name = ?, updated_at = ? WHERE id = ?`,
+		nombre, nowISO(), id)
+	if err != nil {
+		return traducirError(err)
+	}
+	return filasAfectadas(res, 1, fmt.Sprintf("sesión %s", id))
+}
+
 // Sesiones es el adaptador de `session` para módulos que no pueden importar
 // `database/sql` (invariante TestStoreEsElUnicoEscritorDeSQLite): `session`
 // depende de métodos, no de la conexión. Los métodos de las otras tablas que el
@@ -189,6 +202,10 @@ func (s Sesiones) CambiarEstado(id, estado string) error {
 // Borrar elimina la sesión; messages, reasoning y approvals caen en cascada y
 // change_history sobrevive con session_id a NULL.
 func (s Sesiones) Borrar(id string) error { return BorrarSesion(s.DB, id) }
+
+// Renombrar cambia el nombre visible de una sesión (el título). El `id` sigue
+// siendo la identidad de la sesión; esto solo toca el atributo nombre.
+func (s Sesiones) Renombrar(id, nombre string) error { return RenombrarSesion(s.DB, id, nombre) }
 
 // BorrarSesion elimina una sesión de forma definitiva. messages, reasoning
 // (vía messages), approvals y context_audit caen en cascada; change_history

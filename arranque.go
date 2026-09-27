@@ -12,7 +12,7 @@
 // interfaces. Nada de eso sabe de lo demás. Este archivo los ata:
 //   - adapta `session.Gestor` + `store` al `Puerto` que espera la vista,
 //   - conecta Ollama (modelo local detectado, serializado por la cola FIFO),
-//   - crea la sesión activa del proyecto y retoma la conversación,
+//   - deja el ciclo de sesiones listo (sin crear ninguna hasta la primera petición) y reconstruye la conversación al responder,
 //   - y hace vivir el flujo de aprobación real: cada petición de permiso llega
 //     a la vista como `peticion_aprobacion` y la decisión del usuario vuelve al
 //     motor como `aprobacion_resuelta` (el puente entre fileops/AprobadorSQLite
@@ -45,11 +45,6 @@ import (
 	"localcli/internal/tools"
 	"localcli/internal/tui"
 )
-
-// nombreSesionActiva es la sesión del proyecto que la TUI retoma al arrancar
-// (SPEC-INTERFAZ §Pantalla de bienvenida: "la primera pantalla pertenece a la
-// sesión activa del proyecto").
-const nombreSesionActiva = "principal"
 
 // timeoutDeteccion acota cuánto espera el arranque a que Ollama responda con
 // su lista de modelos. Si no responde en ese tiempo, la interfaz arranca igual
@@ -91,6 +86,9 @@ type Adaptador struct {
 	// en cada turno — la elección del usuario prevalece (SPEC-OLLAMA-PERFIL).
 	modeloMu sync.Mutex
 	modelo   string
+	// agenteRecordado es el último agente usado, leído de las preferencias del
+	// usuario al arrancar: la vista empieza en él (SPEC-OLLAMA-PERFIL).
+	agenteRecordado string
 
 	mu         sync.Mutex
 	sesionID   string
@@ -126,7 +124,11 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	infer := ollama.NewColaInferencia()
 	cliente := ollama.NewClient("")
 
-	modelo, err := elegirModelo(cliente)
+	// El último modelo y el último agente que el usuario usó se recuerdan entre
+	// ejecuciones (config.json, preferencia global del usuario). El modelo se
+	// reutiliza si sigue instalado; el agente lo aplica la vista al construirse.
+	prefs, _ := tui.CargarPreferencias()
+	modelo, err := elegirModelo(cliente, prefs.Modelo)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "aviso:", err, "(la interfaz arranca sin modelo)")
 	}
@@ -138,6 +140,7 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	cambios := store.NuevosCambios(conexion)
 	ad := &Adaptador{aprobar: aprobar, cerrar: turnos, auditar: store.NuevasAuditorias(conexion), bus: bus, dir: carpeta, pendientas: map[string]chan string{}, cliente: cliente}
 	ad.modelo = modelo
+	ad.agenteRecordado = prefs.Agente
 	aprobadorTerminal := func(ctx context.Context, descripcion string) (bool, error) {
 		return ad.aprobarComando(ctx, descripcion)
 	}
@@ -175,6 +178,13 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	// El flujo por defecto es el ciclo de trabajo (SPEC-CICLO-TRABAJO); la
 	// detección de trabajo ordenado decide si además se consume la cola.
 	gest.Flujo = session.FlujoPorDefecto()
+	// El título de una sesión y el resumen de su conversación son dos
+	// generaciones cortas del mismo modelo local: viven en el arranque, que es
+	// quien tiene el cliente y la cola. El presupuesto de historial lo fija el
+	// usuario en sus preferencias (SPEC-HISTORIAL-CONVERSACION).
+	gest.Titulador = &tituladorPorTurno{ad: ad, infer: infer}
+	gest.Resumidor = &resumidorPorTurno{ad: ad, infer: infer}
+	gest.Presupuesto = prefs.HistorialTokens
 	ad.gest = gest
 
 	a := &Arranque{cerrarDB: cerrarDB, Bus: bus, Gest: gest, Infer: infer}
@@ -191,15 +201,10 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	motorFlows.Agente = &ejecutorPorTurno{ad: ad, ejecutor: ejecutor, infer: infer, agente: agenteBase(carpeta)}
 	motorFlows.Aprobador = &aprobadorPorTurno{ad: ad}
 
-	// Arranque de sesión: retomar la activa del proyecto o crearla
-	// (SPEC-INTERFAZ §Pantalla de bienvenida).
-	ses, err := ad.ResolverActiva()
-	if err != nil {
-		bus.Cerrar()
-		conexion.Close()
-		return nil, err
-	}
-	ad.fijarSesion(ses.ID)
+	// Arranque de sesión: NO se crea ninguna. La sesión nace con la primera
+	// petición desde la bienvenida (SPEC-SESIONES); hasta entonces no hay sesión
+	// activa. Cada `Enviar` fija la suya antes de arrancar.
+	ad.fijarSesion("")
 
 	// Las aprobaciones que quedaron pendientes de otra ejecución vuelven a
 	// tener dueño: se re-emiten como peticiones al bus (DATA_FLOW.md §7).
@@ -228,43 +233,33 @@ func nuevaApp(a *Arranque) *tui.App { return tui.Nuevo(a.puerto) }
 
 // --- tui.Puerto -------------------------------------------------------------
 
-// ResolverActiva retoma la sesión activa del proyecto o la crea. Es la única
-// lectura de arranque que hace la vista a través del puerto.
+// ResolverActiva retoma la sesión más reciente del proyecto sin crear ninguna:
+// es lo que hace la vista al cambiar a una sesión existente (por ejemplo tras
+// borrar la activa). Devuelve `nil, nil` si el proyecto todavía no tiene
+// sesiones: en ese caso la bienvenida crea una al enviar la primera petición
+// (SPEC-SESIONES: no hay una sesión "principal" que exista antes de usarse).
 func (ad *Adaptador) ResolverActiva() (*session.Sesion, error) {
 	sesiones, err := ad.gest.Listar()
 	if err != nil {
 		return nil, err
 	}
-	for _, s := range sesiones {
-		if s.Nombre == nombreSesionActiva && s.Estado != session.EstadoTerminada && s.Estado != session.EstadoError {
-			return ad.gest.Estado(s.ID)
-		}
+	if len(sesiones) == 0 {
+		return nil, nil
 	}
-	for _, s := range sesiones {
-		if s.Nombre == nombreSesionActiva {
-			// Terminó o falló: se retoma pasando por inactiva (ENUMS.md §3),
-			// que es legal desde cualquiera de los dos.
-			if err := ad.gest.Cerrar(s.ID, true); err != nil {
-				return nil, err
-			}
-			return ad.gest.Crear(nombreSesionActiva, "")
-		}
-	}
-	return ad.gest.Crear(nombreSesionActiva, "")
+	// Listar ordena por actividad reciente: la primera es la más reciente.
+	reciente := sesiones[0]
+	return ad.gest.Estado(reciente.ID)
 }
 
 func (ad *Adaptador) Listar() ([]session.Sesion, error) { return ad.gest.Listar() }
 
 // Crear deja una sesión nueva activa (SPEC-SESIONES): es lo que hace `Ctrl+X n`
-// desde la vista principal. El nombre es legible y único en lo posible; la capa
-// queda vacía porque es una sesión general (ENUMS.md: layer NULL).
+// desde la vista principal y lo que crea la primera petición desde la
+// bienvenida. Nace con el nombre provisional; su título lo genera el modelo a
+// partir de la primera petición. La capa queda vacía porque es una sesión
+// general (ENUMS.md: layer NULL).
 func (ad *Adaptador) Crear() (*session.Sesion, error) {
-	sesiones, err := ad.gest.Listar()
-	if err != nil {
-		return nil, err
-	}
-	nombre := fmt.Sprintf("sesión %d", len(sesiones)+1)
-	ses, err := ad.gest.Crear(nombre, "")
+	ses, err := ad.gest.Crear(session.NombreProvisional, "")
 	if err != nil {
 		return nil, err
 	}
@@ -289,6 +284,9 @@ func (ad *Adaptador) Eliminar(sesionID string) error {
 // modelos). Si Ollama no responde, el error sube tal cual y la TUI lo pinta como
 // aviso «sin modelos» sin bloquear nada; el tiempo de espera es el del
 // arranque, acotado por timeoutDeteccion.
+//
+// Cada modelo trae además si declara capacidad de herramientas (`/api/show`),
+// para que el usuario sepa cuáles sirven antes de elegirlos.
 func (ad *Adaptador) Modelos() ([]tui.ModeloLocal, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
 	defer cancel()
@@ -296,11 +294,32 @@ func (ad *Adaptador) Modelos() ([]tui.ModeloLocal, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]tui.ModeloLocal, 0, len(modelos))
-	for _, m := range modelos {
-		out = append(out, tui.ModeloLocal{Nombre: m.Nombre})
+	out := make([]tui.ModeloLocal, len(modelos))
+	// La ficha de cada modelo se pide en paralelo, con un tope de 4 a la vez:
+	// listar no debe tardar lo que la suma de las fichas.
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	for i, m := range modelos {
+		wg.Add(1)
+		go func(i int, nombre string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			out[i] = tui.ModeloLocal{Nombre: nombre, SinHerramientas: ad.sinHerramientas(ctx, nombre)}
+		}(i, m.Nombre)
 	}
+	wg.Wait()
 	return out, nil
+}
+
+// sinHerramientas dice si el modelo no declara capacidad de herramientas. Ante
+// un fallo de detección devuelve false: mejor no avisar de más.
+func (ad *Adaptador) sinHerramientas(ctx context.Context, nombre string) bool {
+	caps, err := ad.cliente.Capacidades(ctx, nombre)
+	if err != nil {
+		return false
+	}
+	return !ollama.PuedeUsarHerramientas(caps)
 }
 
 // ModeloActual devuelve el modelo con el que trabaja el motor ahora mismo: el
@@ -309,6 +328,24 @@ func (ad *Adaptador) Modelos() ([]tui.ModeloLocal, error) {
 // (SPEC-INTERFAZ §Línea de modelo); es una lectura en memoria, sin llamar a
 // Ollama, así que la pantalla se pinta sin esperar a nada externo.
 func (ad *Adaptador) ModeloActual() string { return ad.modeloElegido() }
+
+// CapacidadesModelo dice si el modelo indicado declara capacidad de usar
+// herramientas, para la línea de estado bajo el input (SPEC-OLLAMA-PERFIL). Un
+// fallo sube tal cual; la vista lo trata como dato desconocido y no bloquea.
+func (ad *Adaptador) CapacidadesModelo(nombre string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
+	defer cancel()
+	caps, err := ad.cliente.Capacidades(ctx, nombre)
+	if err != nil {
+		return false, err
+	}
+	return ollama.PuedeUsarHerramientas(caps), nil
+}
+
+// AgenteRecordado devuelve el último agente con el que trabajó el usuario,
+// leído de sus preferencias al arrancar: la vista empieza en él
+// (SPEC-OLLAMA-PERFIL). Vacío significa «sin preferencia».
+func (ad *Adaptador) AgenteRecordado() string { return ad.agenteRecordado }
 
 // FijarModelo guarda la elección del usuario: a partir de ahora cada turno del
 // motor usa este modelo, aunque la autodetección del arranque hubiera tomado
@@ -804,14 +841,24 @@ func textoPlano(html string) string {
 // --- piezas del motor, ligadas a la sesión del turno -------------------------
 
 // elegirModelo detecta el modelo local (CONFIGURATION.md §3: "se detecta, no se
-// configura"): lista los modelos de Ollama y toma el primero que cabe en la
-// máquina. Si Ollama no responde, devuelve error y el arranque sigue sin modelo.
-func elegirModelo(cliente *ollama.Client) (string, error) {
+// configura"): si el usuario ya usó uno y sigue instalado, ese manda; si no,
+// lista los modelos de Ollama y toma el primero que cabe en la máquina. Si
+// Ollama no responde, devuelve error y el arranque sigue sin modelo.
+func elegirModelo(cliente *ollama.Client, preferido string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
 	defer cancel()
 	modelos, err := cliente.ListarModelos(ctx)
 	if err != nil {
 		return "", fmt.Errorf("no hay conexión con Ollama: %w", err)
+	}
+	// El último modelo usado prevalece si sigue disponible (SPEC-OLLAMA-PERFIL:
+	// el modelo lo elige el usuario y su elección se recuerda).
+	if preferido != "" {
+		for _, m := range modelos {
+			if m.Nombre == preferido {
+				return preferido, nil
+			}
+		}
 	}
 	hw := ollama.PerfilPorDefecto()
 	caben, _, _ := hw.ClasificarModelos(modelos)
@@ -862,7 +909,7 @@ type ejecutorPorTurno struct {
 	agente   map[string]agent.Agente
 }
 
-func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, nombreAgente, contexto string) (flow.Resultado, error) {
+func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, nombreAgente, contexto string, historial []flow.Mensaje) (flow.Resultado, error) {
 	// El modelo se lee en cada turno: si el usuario lo cambió desde el selector
 	// de la bienvenida, esa elección es la que corre (SPEC-OLLAMA-PERFIL).
 	modelo := e.ad.modeloElegido()
@@ -877,7 +924,7 @@ func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, nombreAgente, contexto 
 
 	var salida agent.Resultado
 	err := e.infer.Encolar(ctx, ollama.OpcionesEncolar{IdSesion: sesionID}, func(c context.Context) error {
-		res, err := e.ejecutor.Ejecutar(c, agente, modelo, contexto, sinkBus{ad: e.ad, sesionID: sesionID})
+		res, err := e.ejecutor.Ejecutar(c, agente, modelo, contexto, mensajesDeOllama(historial), sinkBus{ad: e.ad, sesionID: sesionID})
 		if err != nil {
 			return err
 		}
@@ -966,4 +1013,84 @@ func agenteBase(raiz string) map[string]agent.Agente {
 		out[nombre] = a
 	}
 	return out
+}
+
+// mensajesDeOllama traduce el historial neutro de `flow` al formato del cliente
+// de Ollama. Es la frontera donde la conversación deja de ser un dato de
+// `session`/`flow` y pasa a ser lo que se le envía al modelo.
+func mensajesDeOllama(historial []flow.Mensaje) []ollama.Mensaje {
+	if len(historial) == 0 {
+		return nil
+	}
+	out := make([]ollama.Mensaje, 0, len(historial))
+	for _, m := range historial {
+		out = append(out, ollama.Mensaje{Role: m.Rol, Content: m.Texto})
+	}
+	return out
+}
+
+// generarTextoCorrido lanza una generación de un solo turno contra el modelo y
+// devuelve el texto acumulado. Pasa por la FIFO para no solaparse con un turno
+// en curso. La usan el título de sesión y el resumen de conversación, que no se
+// pintan en la TUI: solo importa el texto final.
+func generarTextoCorrido(ctx context.Context, ad *Adaptador, infer *ollama.ColaInferencia, prompt string) (string, error) {
+	modelo := ad.modeloElegido()
+	if modelo == "" {
+		return "", errors.New("arranque: no hay modelo de Ollama disponible")
+	}
+	var b strings.Builder
+	err := infer.Encolar(ctx, ollama.OpcionesEncolar{IdSesion: ad.sesionActual()}, func(c context.Context) error {
+		ch, err := ad.cliente.Chat(c, ollama.GenerarRequest{
+			Model:    modelo,
+			Messages: []ollama.Mensaje{{Role: "user", Content: prompt}},
+		})
+		if err != nil {
+			return err
+		}
+		for ev := range ch {
+			switch ev.Tipo {
+			case ollama.EventoToken:
+				b.WriteString(ev.Texto)
+			case ollama.EventoError:
+				return ev.Error
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}
+
+// tituladorPorTurno implementa `session.Titulador`: pide al modelo un título
+// para la sesión a partir de su primera petición. Es una generación corta que no
+// se pinta en la TUI; el nombre final llega por el evento `titulo_sesion`.
+type tituladorPorTurno struct {
+	ad    *Adaptador
+	infer *ollama.ColaInferencia
+}
+
+func (t *tituladorPorTurno) Titulo(ctx context.Context, texto string) (string, error) {
+	crudo, err := generarTextoCorrido(ctx, t.ad, t.infer, session.PromptTitulo(texto))
+	if err != nil {
+		return "", err
+	}
+	return session.LimpiarTitulo(crudo), nil
+}
+
+// resumidorPorTurno implementa `session.Resumidor`: condensa la conversación
+// antigua cuando no cabe en el presupuesto de contexto. Igual que el título, es
+// una generación de un solo turno.
+type resumidorPorTurno struct {
+	ad    *Adaptador
+	infer *ollama.ColaInferencia
+}
+
+func (r *resumidorPorTurno) Resumir(ctx context.Context, transcripcion string) (string, error) {
+	crudo, err := generarTextoCorrido(ctx, r.ad, r.infer, session.PromptResumen(transcripcion))
+	if err != nil {
+		return "", err
+	}
+	return session.LimpiarResumen(crudo), nil
 }

@@ -46,6 +46,10 @@ type puertoStub struct {
 	modelos           []ModeloLocal
 	modelosErr        error
 	modelo            string
+	agenteRecordado   string
+	capHerramientas   bool
+	capErr            error
+	capConsultas      int
 	peticionesModelos int
 	fijados           []string
 	// Lecturas bajo demanda del modal de sesiones: cada apertura pide la lista
@@ -66,11 +70,12 @@ func (p *puertoStub) ResolverActiva() (*session.Sesion, error) {
 		return nil, p.err
 	}
 	p.activasResueltas++
+	// Retoma sin crear: la activa si sigue viva, o la primera viva de la lista.
+	// Sin sesiones devuelve nil (la bienvenida creará una al enviar).
 	if p.activa != nil && !p.eliminada(p.activa.ID) {
 		copia := *p.activa
 		return &copia, nil
 	}
-	// La que había ya no está (se borró desde el modal): se retoma otra viva.
 	for i := range p.sesiones {
 		s := p.sesiones[i]
 		if s.Estado == session.EstadoTerminada || s.Estado == session.EstadoError {
@@ -80,11 +85,7 @@ func (p *puertoStub) ResolverActiva() (*session.Sesion, error) {
 		p.activa = &copia
 		return &copia, nil
 	}
-	if p.activa == nil {
-		p.activa = &session.Sesion{ID: "s1", Nombre: "primera", Estado: session.EstadoInactiva}
-	}
-	copia := *p.activa
-	return &copia, nil
+	return nil, nil
 }
 
 // eliminada dice si ese id ya no está en el listado del doble. Sin sesiones que
@@ -111,7 +112,7 @@ func (p *puertoStub) Crear() (*session.Sesion, error) {
 		return nil, p.err
 	}
 	p.creadas++
-	ses := &session.Sesion{ID: "nueva", Nombre: "sesión nueva", Estado: session.EstadoInactiva}
+	ses := &session.Sesion{ID: "nueva", Nombre: session.NombreProvisional, Estado: session.EstadoInactiva}
 	p.activa = ses
 	return ses, nil
 }
@@ -182,6 +183,16 @@ func (p *puertoStub) Modelos() ([]ModeloLocal, error) {
 // en `modelo` para que la línea de modelo de la bienvenida tenga algo que
 // enseñar sin llamar a Ollama.
 func (p *puertoStub) ModeloActual() string { return p.modelo }
+
+// AgenteRecordado simula la preferencia leída al arrancar; vacío = sin
+// preferencia (la vista cae en plan).
+func (p *puertoStub) AgenteRecordado() string { return p.agenteRecordado }
+
+// CapacidadesModelo simula la consulta de capacidades del modelo en uso.
+func (p *puertoStub) CapacidadesModelo(nombre string) (bool, error) {
+	p.capConsultas++
+	return p.capHerramientas, p.capErr
+}
 
 func (p *puertoStub) FijarModelo(nombre string) {
 	p.fijados = append(p.fijados, nombre)
@@ -315,8 +326,8 @@ func TestEnviarEnLaBienvenidaAbreLaInterfazUnaVez(t *testing.T) {
 	if a.Vista != VistaPrincipal {
 		t.Fatal("enviar la primera petición cambia a la interfaz principal")
 	}
-	if len(p.enviados) != 1 || p.enviados[0] != "s1|documentar la capa" {
-		t.Fatalf("la petición se envía una vez a la sesión activa: %v", p.enviados)
+	if len(p.enviados) != 1 || p.enviados[0] != "nueva|documentar la capa" {
+		t.Fatalf("la petición se envía una vez a la sesión recién creada: %v", p.enviados)
 	}
 	if len(a.Chat.Mensajes()) != 1 || a.Chat.Mensajes()[0].Texto != "documentar la capa" {
 		t.Fatalf("el chat debe tener el mensaje como primero: %+v", a.Chat.Mensajes())
@@ -521,10 +532,12 @@ func TestElModalDeSesionesListaYCambiaDeSesión(t *testing.T) {
 		},
 	}
 	a := Nuevo(p)
-	// El selector existe en la interfaz principal, no en la bienvenida.
+	// El selector existe en la interfaz principal, no en la bienvenida. La
+	// interfaz principal siempre tiene una sesión activa, así que se fija.
 	a.Vista = VistaPrincipal
+	a.activar(p.activa)
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
-	// Se abre la sesión activa con una primera petición.
+	// Se envía una primera petición a la sesión activa.
 	escribe(t, a, "abre la sesión")
 	ejecuta(t, a, pulsa(t, a, tea.KeyMsg{Type: tea.KeyEnter}))
 	if a.Panel.SesionID != "s1" {
@@ -581,6 +594,7 @@ func TestLasAprobacionesMandanLaDecisiónDeSuLínea(t *testing.T) {
 		{ID: "a1", Sesion: "primera", Descripcion: "crear archivo"},
 		{ID: "a2", Sesion: "segunda", Descripcion: "borrar carpeta"},
 	})
+	tecla(t, a, tea.KeyCtrlA) // enfocar el panel para decidir con el teclado
 	v := sinEstilo(a.View())
 	for _, esperado := range []string{"primera | crear archivo | aprobar | declinar", "segunda | borrar carpeta"} {
 		if !strings.Contains(v, esperado) {
@@ -608,10 +622,11 @@ func TestUnaAprobaciónObsoletaNoSeManda(t *testing.T) {
 	a := Nuevo(p)
 	a.Vista = VistaPrincipal
 	a.Aprobs.Fijar([]Aprobacion{{ID: "a1", Sesion: "vieja", Descripcion: "ya no aplica", Obsoleta: true}})
+	tecla(t, a, tea.KeyCtrlA) // enfocar el panel: la línea ya se ve, se enfoca para decidir
 	if !strings.Contains(sinEstilo(a.View()), "obsoleta") {
 		t.Error("una aprobación que ya no aplica se marca como obsoleta")
 	}
-	tecla(t, a, tea.KeyCtrlA)
+	pulsa(t, a, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	if len(p.resueltas) != 0 {
 		t.Errorf("lo obsoleto no se manda a la sesión: %v", p.resueltas)
 	}

@@ -22,6 +22,7 @@ No hay webhooks ni cola de mensajes externa. Los "eventos" aquí son notificacio
 |---|---|---|
 | `token` | `ollama` | Un fragmento de respuesta o de razonamiento, para el streaming en vivo |
 | `estado_sesion` | `session` | La sesión cambió de estado (inactiva, trabajando, esperando permiso, terminada, con error) |
+| `titulo_sesion` | `session` | La sesión cambió de nombre: el modelo generó su título a partir de la primera petición |
 | `notificacion` | `session`, `flow` | Aviso de que una sesión espera permiso o ha terminado, aunque el usuario no la esté viendo |
 | `peticion_aprobacion` | `fileops`, `exec` | Hay una escritura o un comando esperando tu decisión |
 | `aprobacion_resuelta` | `fileops`, `exec` | Se aprobó o se declinó una petición pendiente |
@@ -44,6 +45,7 @@ Los estados de sesión y sus transiciones están en [[database/01-schema/ENUMS]]
 |---|---|---|
 | `token` | `tui` | `ollama` lo produce; nadie más lo consume |
 | `estado_sesion` | `tui` | `queue` lo usa para saber si puede tomar una tarea |
+| `titulo_sesion` | `tui` | Actualiza el nombre en el panel (si es la sesión activa) y en la fila del modal de sesiones |
 | `notificacion` | `tui` | Llega aunque la sesión no sea la que se está viendo, o el usuario esté en otra carpeta |
 | `peticion_aprobacion` | `tui` | Se guarda la fila en `approvals` para que sobreviva y sea visible desde otra sesión |
 | `aprobacion_resuelta` | `flow`, `queue` | La etapa pausada continúa |
@@ -59,6 +61,7 @@ Los payloads llevan lo mínimo para que el consumidor pueda pintar o decidir. No
 
 - **`token`:** el texto del fragmento y si es razonamiento o respuesta final. Es lo único que va token a token, porque la pantalla lo muestra en vivo. Ver [[specs/SPEC-INTERFAZ]].
 - **`estado_sesion`:** el identificador de la sesión y el nuevo estado. El nombre de la capa y la marca de tiempo se leen de la base si hacen falta. Ver [[database/01-schema/TABLES]].
+- **`titulo_sesion`:** el identificador de la sesión y su nuevo nombre (el título que el modelo generó a partir de la primera petición). El id no viaja cambiado: renombrar solo toca el nombre. Ver [[specs/SPEC-SESIONES]].
 - **`notificacion`:** el identificador de la sesión, el motivo (esperando permiso o terminada) y una línea con qué hacer a continuación. No lleva el contenido: la aprobación está en `approvals` y el resultado en el historial de la sesión. Se emite en los dos casos, se vea la sesión o no. El motivo de «terminada» distingue el camino: un flujo o la cola anuncian «la sesión terminó el trabajo» y un turno de chat anuncia «la sesión terminó de responder» (NotificacionDeChat), porque el chat no ejecuta etapas. Ver [[backend/01-domain/BUSINESS_RULES]].
 - **`peticion_aprobacion`:** el identificador de la aprobación y una descripción de lo que se pide (qué archivo, o qué comando). La fila completa está en `approvals`.
 - **`etapa_terminada`:** el identificador de la etapa y un resumen de su resultado. Lo que recibió la etapa y qué entregó está en `context_audit`.

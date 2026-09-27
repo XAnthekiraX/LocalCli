@@ -104,6 +104,17 @@ func (a *almacenMem) Borrar(id string) error {
 	return nil
 }
 
+func (a *almacenMem) Renombrar(id, nombre string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	s, ok := a.sesiones[id]
+	if !ok {
+		return store.ErrNoEncontrado
+	}
+	s.Name = nombre
+	return nil
+}
+
 func (a *almacenMem) Historial(sessionID string) ([]store.MensajeConRazonamiento, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -174,6 +185,8 @@ type motorStub struct {
 	marcados    int
 	// conversaciones registra "agente:objetivo" de cada turno de chat.
 	conversaciones []string
+	// historiales guarda el historial que recibió cada turno de chat.
+	historiales [][]flow.Mensaje
 }
 
 func nuevoMotor(estado flow.EstadoFlujo) *motorStub {
@@ -207,9 +220,10 @@ func (m *motorStub) EjecutarFlujo(ctx context.Context, f flow.Flujo, objetivo st
 	return m.estado, nil
 }
 
-func (m *motorStub) Conversar(ctx context.Context, agente, objetivo string) (flow.Resultado, error) {
+func (m *motorStub) Conversar(ctx context.Context, agente, objetivo string, historial []flow.Mensaje) (flow.Resultado, error) {
 	m.mu.Lock()
 	m.conversaciones = append(m.conversaciones, agente+":"+objetivo)
+	m.historiales = append(m.historiales, historial)
 	bloqueo := m.bloqueo
 	iniciado := m.iniciado
 	m.mu.Unlock()

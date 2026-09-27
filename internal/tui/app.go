@@ -17,6 +17,7 @@ package tui
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"strings"
 	"time"
 
@@ -81,6 +82,27 @@ type App struct {
 	// (SPEC-INTERFAZ §Zonas 2, T-F015). Lo alterna `Tab`; con un modal abierto
 	// la acción no llega a cambiarlo.
 	Agente string
+	// Aviso es la línea transitoria de la vista (por ahora, el modelo elegido
+	// que no puede usar herramientas). Se pinta al pie de la bienvenida y de la
+	// principal; se limpia al cambiar a un modelo capaz o al enviar.
+	Aviso string
+	// ModeloHerramientas y CapHerramientasConocida dicen si el modelo en uso
+	// tiene acceso a herramientas y si eso se sabe ya. La capacidad se consulta
+	// una vez al arrancar y se refresca al elegir modelo; sin dato conocido, la
+	// línea de estado muestra «?».
+	ModeloHerramientas      bool
+	CapHerramientasConocida bool
+
+	// PidiendoCancelarEsc es la confirmación de doble `esc` cuando la sesión
+	// está trabajando: el primer esc pregunta, el segundo cancela.
+	PidiendoCancelarEsc bool
+
+	// Estado de la selección con el ratón y el último marco pintado, del que se
+	// extrae el texto al soltar (selection.go).
+	ratonSelec  bool
+	ratonIni    posicion
+	ratonFin    posicion
+	ultimaVista string
 	// Los tres modales (SPEC-INTERFAZ §Modales: "Tres modales centrados
 	// comparten el mismo comportamiento: uno abierto a la vez… Esc cierra sin
 	// cambios"). Todos se abren con acciones globales del mapa —session_picker,
@@ -147,10 +169,10 @@ func Nuevo(p Puerto) *App {
 		Aprobs:     Aprobaciones{},
 		Bienvenida: NuevaBienvenida(),
 		Entrada:    NuevaEntrada(),
-		// El agente arranca en `plan`, el que solo analiza y propone
-		// (SPEC-INTERFAZ §Zonas 2: el indicador muestra el agente activo, y el
-		// reparto de etapas lo hace el motor).
-		Agente: AgentePlan,
+		// El agente arranca en el último recordado —`plan` si no hay ninguno—,
+		// el que solo analiza y propone (SPEC-INTERFAZ §Zonas 2: el indicador
+		// muestra el agente activo, y el reparto de etapas lo hace el motor).
+		Agente: ValidarAgente(p.AgenteRecordado()),
 		ctx:    context.Background(),
 	}
 }
@@ -163,7 +185,23 @@ func Nuevo(p Puerto) *App {
 // (SPEC-INTERFAZ §Modal de modelos: "La lista se pide a Ollama al abrir el
 // modal (no en el arranque)"), así que arrancar no toca Ollama.
 func (a *App) Init() tea.Cmd {
-	return a.escucharCmd()
+	// Además de la escucha del motor, se pregunta una vez si el modelo en uso
+	// tiene acceso a herramientas, para la línea de estado bajo el input.
+	return tea.Batch(a.escucharCmd(), a.cmdCapacidades())
+}
+
+// cmdCapacidades pregunta al motor si el modelo en uso declara capacidad de
+// herramientas. Llega como `capacidadesMsg`; un fallo deja el dato como
+// desconocido y no bloquea nada.
+func (a *App) cmdCapacidades() tea.Cmd {
+	if a.Modelo == "" {
+		return nil
+	}
+	nombre := a.Modelo
+	return func() tea.Msg {
+		ok, err := a.Puerto.CapacidadesModelo(nombre)
+		return capacidadesMsg{Nombre: nombre, Herramientas: ok, Err: err}
+	}
 }
 
 // tickMsg es el latido del contador en vivo: cada segundo mientras hay una
@@ -181,14 +219,16 @@ func tickCmd(gen uint64) tea.Cmd {
 // Update maneja las teclas, el tamaño y los mensajes que llegan por eventos.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
+	case tea.MouseMsg:
+		return a.raton(m)
 	case tea.WindowSizeMsg:
 		a.Ancho, a.Alto = m.Width, m.Height
 		a.Entrada.FijarAncho(a.anchoChat())
-		// El teclado propio del campo queda subordinado al KeyResolver
-		// (T-F012-06): flechas, home/end, tab o ctrl+u/k son acciones del mapa,
-		// no edición interna de bubbles. Se reaplica en cada cambio de tamaño
-		// para que un textinput reconstruido nunca recupere sus atajos viejos.
-		a.Entrada.DesactivarTeclasPropias()
+		// La edición interna del campo (flechas, home/end, borrado por palabra)
+		// sigue viva; el KeyResolver resuelve antes las teclas que el mapa
+		// reclama. Se reaplica en cada cambio de tamaño para que un textinput
+		// reconstruido nunca recupere sus atajos viejos.
+		a.Entrada.AjustarTeclasPropias()
 		return a, nil
 	case tea.KeyMsg:
 		// La confirmación de borrado captura el teclado en cualquier vista:
@@ -232,6 +272,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// puerto falló, queda el aviso «sin modelos» y se puede seguir
 		// escribiendo igual (SPEC-INTERFAZ §Modal de modelos).
 		a.Modelos.FijarModelos(m.Modelos, m.Err)
+		return a, nil
+	case capacidadesMsg:
+		// La respuesta llega para el modelo con el que se preguntó. Si para
+		// entonces el usuario cambió de modelo, se descarta: la línea de estado
+		// refleja el modelo en uso, no el consultado.
+		if m.Nombre == a.Modelo {
+			a.CapHerramientasConocida = m.Err == nil
+			a.ModeloHerramientas = m.Herramientas
+		}
 		return a, nil
 	case aprobacionesMsg:
 		a.Aprobs.Fijar(m.Items)
@@ -306,23 +355,42 @@ func (a *App) tecla(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
+	// Doble `esc` para cancelar el trabajo en curso: el primer esc pregunta, el
+	// segundo cancela. Solo sin modal abierto (con modal, esc lo cierra) y solo
+	// si la sesión está trabajando. Cualquier otra tecla descarta la
+	// confirmación y sigue su curso normal.
+	if a.PidiendoCancelarEsc {
+		a.PidiendoCancelarEsc = false
+		if m.Type == tea.KeyEsc {
+			if id := a.Panel.SesionID; id != "" {
+				a.Puerto.Cancelar(id)
+			}
+			return a, nil
+		}
+	}
+	if m.Type == tea.KeyEsc && !a.modalAbierto() && a.trabajando() {
+		a.PidiendoCancelarEsc = true
+		return a, nil
+	}
+
 	// El contexto de resolución (T-F012-04): modal > aprobaciones > input >
-	// vista. Con un modal o el panel de aprobaciones abiertos las teclas
-	// simples las consume el componente; la líder sigue funcionando desde
-	// cualquier contexto (SPEC-KEYBINDS §Tecla líder: escape hatch).
+	// vista. El panel de aprobaciones solo reclama el teclado cuando está
+	// enfocado (`Ctrl+A`); visible sin foco, el input sigue siendo el dueño de
+	// las letras. La líder funciona desde cualquier contexto (SPEC-KEYBINDS
+	// §Tecla líder: escape hatch).
 	ctx := ContextoVista
 	switch {
 	case a.modalAbierto():
 		ctx = ContextoModal
-	case a.Aprobs.Abierto:
+	case a.Aprobs.Enfocado:
 		ctx = ContextoAprobaciones
 	}
 
 	// Regla de oro de SPEC-KEYBINDS §Resolución por contexto: "con el input
 	// enfocado, las letras sueltas son texto, nunca atajo". En la interfaz
 	// principal el input está enfocado salvo cuando un modal o el panel de
-	// aprobaciones reclama el teclado, así que el texto puro se entrega al
-	// editor antes de resolver acciones — con una excepción: durante una
+	// aprobaciones ENFOCADO reclama el teclado, así que el texto puro se entrega
+	// al editor antes de resolver acciones — con una excepción: durante una
 	// espera de líder, todas las pulsaciones van al resolver (el literal
 	// «ctrl+x» no deja texto huérfano y la segunda tecla cierra la secuencia).
 	if ctx == ContextoVista && !a.TeclaRes.EsperandoLeader() && EsEntradaDeTexto(m) {
@@ -377,7 +445,15 @@ func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, a.eliminarSesion()
 	case AccionAprobaciones:
-		a.Aprobs.Abierto = !a.Aprobs.Abierto
+		// `Ctrl+A` enfoca o desenfoca el panel para decidir con el teclado. El
+		// panel se ve solo cuando hay algo pendiente; el foco es lo que le da el
+		// teclado, y solo puede tenerlo si hay algo que decidir.
+		if a.Aprobs.Enfocado {
+			a.Aprobs.Enfocado = false
+		} else if len(a.Aprobs.Items) > 0 {
+			a.Aprobs.Enfocado = true
+			a.Aprobs.Abierto = true
+		}
 		return a, nil
 	case AccionAprobar:
 		return a, a.resolverAprobacion(true)
@@ -400,10 +476,12 @@ func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.abrirModalAtajos()
 	case AccionCerrarSelector:
 		// Esc —`dismiss`— descarta lo que haya abierto: cualquiera de los tres
-		// modales y el panel de aprobaciones. Sin nada abierto no hace nada
-		// visible (SPEC-INTERFAZ §Modales, criterio: "Esc cierra cualquier
-		// modal sin cambiar nada").
+		// modales, y el panel de aprobaciones si tenía el foco (o si el usuario
+		// lo cierra explícitamente). Sin nada abierto no hace nada visible
+		// (SPEC-INTERFAZ §Modales, criterio: "Esc cierra cualquier modal sin
+		// cambiar nada").
 		a.cerrarModales()
+		a.Aprobs.Enfocado = false
 		a.Aprobs.Abierto = false
 		return a, nil
 	case AccionEnviar:
@@ -429,7 +507,7 @@ func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.Modelos.Mover(-1)
 		case a.Sesiones.Abierto:
 			a.Sesiones.Mover(-1)
-		case a.Aprobs.Abierto:
+		case a.Aprobs.Enfocado:
 			a.Aprobs.Mover(-1)
 		}
 		return a, nil
@@ -439,7 +517,7 @@ func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.Modelos.Mover(1)
 		case a.Sesiones.Abierto:
 			a.Sesiones.Mover(1)
-		case a.Aprobs.Abierto:
+		case a.Aprobs.Enfocado:
 			a.Aprobs.Mover(1)
 		}
 		return a, nil
@@ -449,6 +527,18 @@ func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// vista, así que con un modal abierto no llega hasta aquí: el indicador
 		// y lo que se envía son los del último `Tab` pulsado.
 		a.ciclarAgente()
+		return a, nil
+	case AccionChatSubir:
+		a.Chat.Subir(1)
+		return a, nil
+	case AccionChatBajar:
+		a.Chat.Bajar(1)
+		return a, nil
+	case AccionChatPaginaArriba:
+		a.Chat.SubirPagina()
+		return a, nil
+	case AccionChatPaginaAbajo:
+		a.Chat.BajarPagina()
 		return a, nil
 	case AccionModalModelos:
 		// El modal de modelos es global: se abre desde la bienvenida y desde la
@@ -464,12 +554,13 @@ func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Lo que no es acción se entrega al componente con el foco: con un modal
 	// abierto solo viven sus teclas, ya tratadas arriba, y el resto se traga
 	// aquí — nada llega a la línea de entrada (SPEC-INTERFAZ §Modal de modelos);
-	// con las aprobaciones abiertas pasa igual; si no, lo escrito lo compone la
-	// línea de entrada (INTERFACES §5).
+	// con el panel de aprobaciones enfocado pasa igual; si no, lo escrito lo
+	// compone la línea de entrada (INTERFACES §5). El panel visible sin foco no
+	// interviene: el input sigue escribiendo.
 	if a.modalAbierto() {
 		return a, nil
 	}
-	if a.Aprobs.Abierto {
+	if a.Aprobs.Enfocado {
 		return a, nil
 	}
 	_, cmd := a.Entrada.Update(m)
@@ -507,25 +598,49 @@ func (a *App) eliminarSesion() tea.Cmd {
 	return a.ejecutarEliminar(ses.ID)
 }
 
-// ejecutarEliminar mata la sesión y refresca el modal. Si era la activa, se
-// retoma otra del proyecto (o se crea) para que el chat no quede apuntando a una
-// sesión que ya no existe.
+// ejecutarEliminar mata la sesión y refresca el modal. Si era la activa y no
+// queda ninguna otra, la vista vuelve a la bienvenida; si quedan, se retoma la
+// más reciente para que el chat no apunte a una sesión que ya no existe.
 func (a *App) ejecutarEliminar(id string) tea.Cmd {
 	if err := a.Puerto.Eliminar(id); err != nil {
 		a.Chat.AñadirSistema("no se pudo eliminar la sesión: " + err.Error())
 		return nil
 	}
-	if a.Panel.SesionID == id {
-		ses, err := a.Puerto.ResolverActiva()
-		if err != nil {
-			a.Chat.AñadirSistema("no se pudo abrir la sesión: " + err.Error())
-			return nil
-		}
-		a.activar(ses)
-		return tea.Batch(a.cmdHistorial(ses.ID), a.abrirModalSesiones())
+	if a.Panel.SesionID != id {
+		// El modal sigue abierto con la lista ya refrescada.
+		return a.abrirModalSesiones()
 	}
-	// El modal sigue abierto con la lista ya refrescada.
-	return a.abrirModalSesiones()
+	ses, err := a.Puerto.ResolverActiva()
+	if err != nil {
+		a.Chat.AñadirSistema("no se pudo abrir la sesión: " + err.Error())
+		return nil
+	}
+	if ses == nil {
+		// No queda ninguna sesión: la vista cambia a la bienvenida de inmediato
+		// (SPEC-SESIONES); la siguiente petición creará otra.
+		a.volverABienvenida()
+		return nil
+	}
+	a.activar(ses)
+	return tea.Batch(a.cmdHistorial(ses.ID), a.abrirModalSesiones())
+}
+
+// volverABienvenida regresa a la pantalla inicial cuando el proyecto se quedó
+// sin sesiones: limpia la sesión activa y el chat, y cierra cualquier modal. La
+// bienvenida no muestra sesión, así que no queda nada apuntando a una que ya no
+// existe. No toca el agente activo ni el modelo elegido: no son de la sesión.
+func (a *App) volverABienvenida() {
+	a.cerrarModales()
+	a.Vista = VistaBienvenida
+	a.Panel.SesionID = ""
+	a.Panel.Sesion = ""
+	a.Panel.Estado = ""
+	a.Panel.Capa = ""
+	a.Chat.Vaciar()
+	a.Razon = NuevoRazonamiento()
+	a.enTurno = false
+	a.PidiendoCancelarEsc = false
+	a.Bienvenida = NuevaBienvenida()
 }
 
 // teclaConfirmarEliminar atiende la confirmación de borrado: s confirma, n y
@@ -560,9 +675,9 @@ func (a *App) enviar() tea.Cmd {
 	}
 	id := a.Panel.SesionID
 	if id == "" {
-		ses, err := a.Puerto.ResolverActiva()
+		ses, err := a.Puerto.Crear()
 		if err != nil {
-			a.Chat.AñadirSistema("no se pudo abrir la sesión: " + err.Error())
+			a.Chat.AñadirSistema("no se pudo crear la sesión: " + err.Error())
 			return nil
 		}
 		a.activar(ses)
@@ -599,6 +714,19 @@ func (a *App) ciclarAgente() {
 	}
 	a.Entrada.FijarAgente(a.Agente)
 	a.Panel.Agente = a.Agente
+	a.guardarPreferencias()
+}
+
+// guardarPreferencias recuerda el último modelo y el último agente en
+// ~/.config/localcli/config.json, para que la próxima ejecución arranque con
+// ellos (SPEC-OLLAMA-PERFIL). Es best-effort: una preferencia que no se puede
+// guardar no interrumpe nada. Se conservan los campos que la vista no gestiona
+// (p. ej. el presupuesto de historial) releyendo lo que ya había.
+func (a *App) guardarPreferencias() {
+	previas, _ := CargarPreferencias()
+	previas.Modelo = a.Modelo
+	previas.Agente = a.Agente
+	_ = GuardarPreferencias(previas)
 }
 
 // activar fija la sesión activa y limpia lo que era de la anterior: el chat de
@@ -620,6 +748,7 @@ func (a *App) activar(ses *session.Sesion) {
 	// El turno que se seguía era de la sesión anterior: al cambiar de sesión no
 	// se sigue midiendo, para que un evento suyo no cierre el turno de esta.
 	a.enTurno = false
+	a.PidiendoCancelarEsc = false
 }
 
 // cmdHistorial pide la conversación de la sesión activa. La lectura llega como
@@ -685,7 +814,7 @@ func (a *App) abrirModalAtajos() tea.Cmd {
 // rellena cuando llega la respuesta: la pantalla no se bloquea mientras tanto.
 func (a *App) abrirModalModelos() tea.Cmd {
 	a.cerrarModales()
-	a.Modelos.AbrirModelos()
+	a.Modelos.AbrirModelos(a.Modelo)
 	return a.cargarModelos()
 }
 
@@ -706,13 +835,26 @@ func (a *App) cargarModelos() tea.Cmd {
 // nada: entrega la elección y se cierra (DOMAIN §1 `modals`). Sin lista —«sin
 // modelos» o «cargando…»— no hay nada que aplicar: solo se cierra.
 func (a *App) aplicarModelo() tea.Cmd {
-	nombre := a.Modelos.ModeloElegido()
+	m, ok := a.Modelos.ModeloElegidoLocal()
 	a.Modelos.Cerrar()
-	if nombre == "" {
+	if !ok || m.Nombre == "" {
 		return nil
 	}
-	a.Modelo = nombre
+	a.Modelo = m.Nombre
 	a.fijarModeloEnPuerto()
+	// La línea de estado bajo el input ya sabe si el modelo tiene herramientas:
+	// lo eligió el usuario desde la lista, que trae esa marca.
+	a.CapHerramientasConocida = true
+	a.ModeloHerramientas = !m.SinHerramientas
+	// El modelo elegido que no declara herramientas avisa sin bloquear: el
+	// usuario decide si cambia (SPEC-OLLAMA-PERFIL). Al elegir uno capaz, el
+	// aviso se retira.
+	if m.SinHerramientas {
+		a.Aviso = "el modelo «" + m.Nombre + "» no puede usar herramientas; cámbialo con Ctrl+X m"
+	} else {
+		a.Aviso = ""
+	}
+	a.guardarPreferencias()
 	return nil
 }
 
@@ -754,6 +896,14 @@ func (a *App) resolverAprobacion(aprobar bool) tea.Cmd {
 	if !ok {
 		return nil
 	}
+	return a.decidirAprobacion(ap, aprobar)
+}
+
+// decidirAprobacion aplica la decisión sobre una aprobación concreta: la que
+// resuelve el teclado (a/d) o la que se pulsa con el ratón sobre «aprobar» o
+// «declinar» (selection.go). Una obsoleta solo se retira: no se manda a su
+// sesión, que ya terminó.
+func (a *App) decidirAprobacion(ap Aprobacion, aprobar bool) tea.Cmd {
 	if ap.Obsoleta {
 		a.Aprobs.Resolver(ap.ID)
 		return nil
@@ -782,10 +932,18 @@ func (a *App) pausar() tea.Cmd {
 	return nil
 }
 
-// View pinta la pantalla: un modal abierto si lo hay, y si no la bienvenida o la
+// View pinta la pantalla y recuerda el marco: de él se extrae el texto de una
+// selección con el ratón (selection.go).
+func (a *App) View() string {
+	v := a.view()
+	a.ultimaVista = v
+	return v
+}
+
+// view pinta la pantalla: un modal abierto si lo hay, y si no la bienvenida o la
 // interfaz principal. Los tres modales se dibujan centrados sobre la ventana
 // (SPEC-INTERFAZ §Modales: "Tres modales centrados").
-func (a *App) View() string {
+func (a *App) view() string {
 	// La confirmación de borrado se pinta encima de todo: mientras está activa
 	// es lo único que el usuario puede responder.
 	if a.PidiendoEliminarSesion != "" {
@@ -824,18 +982,15 @@ func (a *App) viewConfirmarEliminar() string {
 	return centrar(texto, a.Ancho, a.Alto)
 }
 
-// viewPrincipal pinta chat, razonamiento, respuesta en curso, aprobaciones y
-// avisos; y el panel a la derecha cuando está abierto.
-func (a *App) viewPrincipal() string {
-	anchoChat := a.anchoChat()
-
-	var partes []string
-	if h := recortarAlto(a.Chat.Render(anchoChat), a.Alto); h != "" {
-		partes = append(partes, h)
-	}
+// bloqueInferior compone todo lo que va pegado al pie de la vista principal: el
+// intercambio en curso, el contador, las propuestas, las aprobaciones, la línea
+// de entrada, la línea de estado del modelo y los avisos. Se mide para
+// reservarle su alto exacto y que el chat no empuje el marco fuera de pantalla.
+func (a *App) bloqueInferior(anchoChat int) string {
 	// El intercambio en curso: razonamiento arriba de la respuesta y separado
 	// de ella (SPEC-INTERFAZ §Razonamiento del modelo). El dibujo vive en
 	// styles.go (T-F002).
+	var partes []string
 	if x := renderIntercambio(a.Razon.Texto(), a.Chat.EnCurso(), a.Razon.Visible, a.Razon.NoDisponible, anchoChat); x != "" {
 		partes = append(partes, x)
 	}
@@ -852,36 +1007,119 @@ func (a *App) viewPrincipal() string {
 	if ap := a.Aprobs.Render(); ap != "" {
 		partes = append(partes, ap)
 	}
+	inferior := strings.Join(partes, "\n\n")
 
-	cuerpo := strings.Join(partes, "\n\n")
-	// La línea de entrada lleva su indicador de agente a la izquierda
-	// (`[plan] > …`); el `Entrada` los compone los dos (T-F015-01).
-	cuerpo += "\n\n" + a.Entrada.View()
-	// El indicador de líder pendiente (T-F012-06): mientras el resolver está
-	// en LEADER se muestra «lider » junto a la entrada; al resolverse o
-	// expirar la espera desaparece solo.
+	// La línea de entrada, con su indicador de agente a la izquierda
+	// (`[plan] > …`) y el de líder pendiente (T-F012-06, T-F015-01).
+	entrada := a.Entrada.View()
 	if a.TeclaRes != nil && a.TeclaRes.EsperandoLeader() {
-		cuerpo += " " + estiloAviso.Render("lider ")
+		entrada += " " + estiloAviso.Render("lider ")
 	}
-	// La confirmación de cancelar se pregunta en línea; mientras tanto, lo
-	// escrito queda a salvo (T-F010-08).
+	lineas := []string{entrada}
+	// La línea de estado del modelo va justo debajo del input.
+	if estado := a.lineaDeEstadoModelo(); estado != "" {
+		lineas = append(lineas, estado)
+	}
+	// Cancelar con ctrl+f se pregunta en línea; lo escrito queda a salvo.
 	if a.PidiendoCancelar {
-		cuerpo += "\n" + estiloAviso.Render("¿cancelar el trabajo en curso? (s/n)")
+		lineas = append(lineas, estiloAviso.Render("¿cancelar el trabajo en curso? (s/n)"))
 	}
-	// El aviso de aprobaciones pendientes es la única información fuera del
-	// panel de datos, y se ve con el panel CERRADO: abierto, el dato ya está
-	// en su fila y el aviso no se repite (T-F009-03).
+	// El doble esc para cancelar sin escribir.
+	if a.PidiendoCancelarEsc {
+		lineas = append(lineas, estiloAviso.Render("presiona esc otra vez para cancelar razonamiento"))
+	}
+	// El aviso transitorio (p. ej. el modelo sin herramientas).
+	if a.Aviso != "" {
+		lineas = append(lineas, estiloAviso.Render(a.Aviso))
+	}
+	// El aviso de aprobaciones pendientes, con el panel cerrado (T-F009-03).
 	if !a.Panel.Abierto {
 		if aviso := a.Panel.AvisoAprobaciones(); aviso != "" {
-			cuerpo += "\n" + aviso
+			lineas = append(lineas, aviso)
 		}
 	}
+	pie := strings.Join(lineas, "\n")
+	if inferior == "" {
+		return pie
+	}
+	return inferior + "\n\n" + pie
+}
+
+// lineaDeEstadoModelo muestra, bajo la entrada, el modelo en uso y si tiene
+// acceso a herramientas. Sin modelo no pinta nada; sin dato conocido marca «?».
+func (a *App) lineaDeEstadoModelo() string {
+	if a.Modelo == "" {
+		return ""
+	}
+	herramientas := "?"
+	if a.CapHerramientasConocida {
+		if a.ModeloHerramientas {
+			herramientas = "sí"
+		} else {
+			herramientas = "no"
+		}
+	}
+	return estiloSistema.Render("modelo: " + a.Modelo + " · herramientas: " + herramientas)
+}
+
+// viewPrincipal pinta chat, razonamiento, respuesta en curso, aprobaciones y
+// avisos; y el panel a la derecha cuando está abierto. El alto del pie se mide
+// para que el marco entero quepa en la terminal: si el chat empujara la vista
+// más allá del alto disponible, al pintar se recortaría la parte de arriba.
+func (a *App) viewPrincipal() string {
+	anchoChat := a.anchoChat()
+	abajo := a.bloqueInferior(anchoChat)
+
+	construir := func(alto int) string {
+		var b strings.Builder
+		if h := a.Chat.Ventana(anchoChat, alto); h != "" {
+			if oa := a.Chat.OcultasArriba(); oa > 0 {
+				b.WriteString(estiloSistema.Render(fmt.Sprintf("↑ %d líneas arriba", oa)) + "\n")
+			}
+			b.WriteString(h + "\n")
+			if ob := a.Chat.OcultasAbajo(); ob > 0 {
+				b.WriteString(estiloSistema.Render(fmt.Sprintf("↓ %d líneas abajo", ob)) + "\n")
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString(abajo)
+		b.WriteString("\n")
+		return b.String()
+	}
+
+	// Alto para el chat: lo que queda tras el pie, una línea de separación y
+	// hasta dos de indicadores de scroll. Reservar los indicadores siempre
+	// (aunque no se pinten) mantiene el alto del chat estable: si cambiara al
+	// subir, la posición del scroll saltaría.
+	altoChat := a.Alto - altoDe(abajo) - 1 - 2
+	if altoChat < 3 {
+		altoChat = 3
+	}
+	cuerpo := construir(altoChat)
 
 	if !a.Panel.Abierto {
-		return cuerpo + "\n"
+		return cuerpo
 	}
 	panel := a.Panel.Render(AnchoPanel - 4)
 	return lipgloss.JoinHorizontal(lipgloss.Top, cuerpo, "  ", panel) + "\n"
+}
+
+// lineasDe cuenta las líneas de un bloque (0 si está vacío).
+func lineasDe(texto string) int {
+	if texto == "" {
+		return 0
+	}
+	return strings.Count(texto, "\n") + 1
+}
+
+// altoDe cuenta las líneas que ocupa un bloque ya compuesto; los saltos finales
+// no cuentan, porque el cursor se queda en la última línea con contenido.
+func altoDe(texto string) int { return lineasDe(strings.TrimRight(texto, "\n")) }
+
+// trabajando dice si la sesión activa tiene un turno en curso, que es cuando
+// tiene sentido cancelar con el doble esc.
+func (a *App) trabajando() bool {
+	return a.Chat.HayTurno() || a.Panel.Estado == session.EstadoTrabajando
 }
 
 // anchoChat es el ancho disponible para el chat: el total menos el panel cuando

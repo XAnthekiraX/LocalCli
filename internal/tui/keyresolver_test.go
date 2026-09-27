@@ -196,12 +196,13 @@ func TestLaLiderFuncionaDesdeCualquierContexto(t *testing.T) {
 	}
 }
 
-func TestConElPanelDeAprobacionesAbiertoElAtajoLoCierra(t *testing.T) {
+func TestConElPanelDeAprobacionesEnfocadoSusTeclasResuelven(t *testing.T) {
 	r := NuevoKeyResolver(KeymapPorDefecto())
 	// El panel de aprobaciones no es un modal: sus toggles de vista siguen
-	// vivos, y a/d resuelven la línea seleccionada.
+	// vivos, y a/d resuelven la línea seleccionada. Su contexto es el que tiene
+	// cuando está enfocado (Ctrl+A); visible sin foco, el input manda.
 	if accion, _ := r.Resolver(teclaConNombre("ctrl+a"), ContextoAprobaciones); accion != AccionAprobaciones {
-		t.Errorf("ctrl+a con el panel abierto lo cierra: %d", accion)
+		t.Errorf("ctrl+a con el panel enfocado suelta el foco: %d", accion)
 	}
 	if accion, _ := r.Resolver(teclaConNombre("a"), ContextoAprobaciones); accion != AccionAprobar {
 		t.Errorf("a con el panel abierto aprueba: %d", accion)
@@ -211,12 +212,20 @@ func TestConElPanelDeAprobacionesAbiertoElAtajoLoCierra(t *testing.T) {
 	}
 }
 
-func TestUnaListaDeLaVistaNoSeMueveConLasFlechas(t *testing.T) {
+func TestLasFlechasDeLaVistaNoMuevenUnaLista(t *testing.T) {
 	r := NuevoKeyResolver(KeymapPorDefecto())
-	// Arriba/bajo son de la lista con el foco: en la vista principal no hay
-	// ninguna, así que no mueven el selector de modelos de la bienvenida.
-	if accion, _ := r.Resolver(teclaConNombre("up"), ContextoVista); accion != AccionNinguna {
-		t.Errorf("up en la vista principal no resuelve: %d", accion)
+	// Arriba/bajo en la vista principal recorren el historial del chat, no la
+	// lista de un modal (que ni está abierto): la misma tecla tiene otro
+	// significado por contexto.
+	if accion, _ := r.Resolver(teclaConNombre("up"), ContextoVista); accion != AccionChatSubir {
+		t.Errorf("up en la vista sube por el chat: %d", accion)
+	}
+	if accion, _ := r.Resolver(teclaConNombre("down"), ContextoVista); accion != AccionChatBajar {
+		t.Errorf("down en la vista baja por el chat: %d", accion)
+	}
+	// Con un modal abierto, en cambio, up/down navegan su lista.
+	if accion, _ := r.Resolver(teclaConNombre("up"), ContextoModal); accion != AccionSubir {
+		t.Errorf("con un modal abierto up navega la lista: %d", accion)
 	}
 }
 

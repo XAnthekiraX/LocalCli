@@ -125,7 +125,10 @@ func TestLaBienvenidaEscribeYBorra(t *testing.T) {
 
 // --- T-F003-05: el envío de la primera petición ------------------------------
 
-func TestEnviarDesdeLaBienvenidaResuelveLaSesiónYEnvíaUnaVez(t *testing.T) {
+// T-F003-05 / SPEC-SESIONES: la primera petición desde la bienvenida CREA una
+// sesión nueva (no hay ninguna previa) y luego envía el mensaje. Las dos
+// operaciones, cada una exactamente una vez.
+func TestEnviarDesdeLaBienvenidaCreaLaSesionYEnvíaUnaVez(t *testing.T) {
 	p := &puertoStub{}
 	a := Nuevo(p)
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
@@ -136,12 +139,15 @@ func TestEnviarDesdeLaBienvenidaResuelveLaSesiónYEnvíaUnaVez(t *testing.T) {
 		t.Fatal("enviar la primera petición cambia a la interfaz principal")
 	}
 	// Las dos operaciones del envío (INTERFACES §2), cada una exactamente una
-	// vez: retomar o crear la sesión, y luego el mensaje.
-	if p.activasResueltas != 1 {
-		t.Errorf("la sesión activa se resuelve una sola vez: %d", p.activasResueltas)
+	// vez: crear la sesión (con su nombre provisional) y luego el mensaje.
+	if p.creadas != 1 {
+		t.Errorf("la primera petición desde la bienvenida crea una sesión: %d", p.creadas)
 	}
-	if len(p.enviados) != 1 || p.enviados[0] != "s1|documentar la capa" {
-		t.Fatalf("el mensaje sale una sola vez, después de la sesión: %v", p.enviados)
+	if p.activasResueltas != 0 {
+		t.Errorf("no hay sesión previa que retomar: %d", p.activasResueltas)
+	}
+	if len(p.enviados) != 1 || p.enviados[0] != "nueva|documentar la capa" {
+		t.Fatalf("el mensaje sale una sola vez, después de crear la sesión: %v", p.enviados)
 	}
 	if msgs := a.Chat.Mensajes(); len(msgs) != 1 || msgs[0].Texto != "documentar la capa" {
 		t.Errorf("la petición es el primer mensaje del chat: %+v", msgs)
@@ -165,7 +171,7 @@ func TestEnviarVacioDesdeLaBienvenidaNoHaceNada(t *testing.T) {
 	if a.Vista != VistaBienvenida {
 		t.Error("sin petición no hay transición de vista")
 	}
-	if p.activasResueltas != 0 || len(p.enviados) != 0 {
-		t.Errorf("vacío no abre sesión ni envía: %d, %v", p.activasResueltas, p.enviados)
+	if p.creadas != 0 || p.activasResueltas != 0 || len(p.enviados) != 0 {
+		t.Errorf("vacío no crea sesión ni envía: %d, %d, %v", p.creadas, p.activasResueltas, p.enviados)
 	}
 }

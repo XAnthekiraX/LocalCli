@@ -93,7 +93,7 @@ func (contextoFijo) ContextoPara(ctx context.Context, etapa, objetivo string) (s
 
 type agenteFijo struct{}
 
-func (agenteFijo) Ejecutar(ctx context.Context, agente, contexto string) (flow.Resultado, error) {
+func (agenteFijo) Ejecutar(ctx context.Context, agente, contexto string, historial []flow.Mensaje) (flow.Resultado, error) {
 	if !strings.HasPrefix(contexto, "contexto para ") {
 		return flow.Resultado{}, os.ErrInvalid
 	}

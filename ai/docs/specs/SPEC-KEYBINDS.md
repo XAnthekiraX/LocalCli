@@ -56,11 +56,13 @@ Cada acción tiene un identificador estable, usado como clave en la configuraci�
 | `dismiss` | Cerrar cualquier modal abierto | `esc` | modal (y cancela la espera de líder) |
 | `approve` / `decline` | Aprobar o declinar la línea seleccionada | `a` / `d` | panel de aprobaciones |
 | `up` / `down` | Navegar la lista del modal | `↑` / `↓` | modal |
+| `chat_scroll_up` / `chat_scroll_down` | Recorrer el historial del chat | `↑` / `↓` | vista principal |
+| `chat_page_up` / `chat_page_down` | Página arriba / abajo en el historial del chat | `pgup` / `pgdown` | vista principal |
 | `confirm` | Aplicar lo resaltado en el modal y cerrarlo | `enter` | modal |
 
 `session_new` (`<leader>n`) crea una sesión nueva desde la vista principal y la deja activa; también se crea una enviando la primera petición desde la bienvenida ([[specs/SPEC-SESIONES]]). La ayuda clásica (`?`) queda sustituida por el modal de atajos (`command_palette`).
 
-`ctrl+d` pertenece a dos acciones **en ámbitos distintos**: `panel_toggle` en la vista y `session_delete` en el modal de sesiones. No se pisan porque, con un modal abierto, la vista de abajo no recibe teclas; el duplicado solo se rechaza dentro del mismo ámbito.
+`ctrl+d` pertenece a dos acciones **en ámbitos distintos**: `panel_toggle` en la vista y `session_delete` en el modal de sesiones. No se pisan porque, con un modal abierto, la vista de abajo no recibe teclas; el duplicado solo se rechaza dentro del mismo ámbito. Lo mismo vale para `up`/`down`: son `chat_scroll_up`/`chat_scroll_down` en la vista principal y `up`/`down` (navegar la lista) dentro de un modal.
 
 Modal abierto ⇒ solo responden sus teclas (`up`/`down`/`confirm`/`dismiss`) más `app_exit`; el modal de sesiones añade `session_delete` (`ctrl+d`). Ninguna alcanza la vista de abajo. `tab` tampoco cicla agentes mientras hay un modal abierto.
 
@@ -119,6 +121,7 @@ Reglas:
 
 - Mientras un modal tiene el foco, sus flechas/enter/esc no llegan a la vista de abajo.
 - Mientras el input tiene el foco y el usuario escribe, las letras sueltas no activan acciones (por eso los atajos de fábrica usan modificadores o la líder).
+- Las teclas de edición que no son atajo —flechas, `home`/`end`, `ctrl+b`/`ctrl+e`— llegan al input y mueven el cursor; las que sí lo son (`ctrl+a`, `ctrl+f`) se resuelven como acción y no tocan el texto.
 - La líder funciona desde cualquier contexto: es el escape hatch cuando un atajo choca con la escritura.
 
 ## Configuración
@@ -142,7 +145,11 @@ Vive en `~/.config/localcli/keys.json` (preferencia del usuario, fuera del proye
     "approvals_toggle": ["ctrl+a"],
     "cancel": ["ctrl+f"],
     "send": ["enter"],
-    "dismiss": ["esc"]
+    "dismiss": ["esc"],
+    "chat_scroll_up": ["up"],
+    "chat_scroll_down": ["down"],
+    "chat_page_up": ["pgup"],
+    "chat_page_down": ["pgdown"]
   }
 }
 ```
@@ -175,6 +182,8 @@ Vive en `~/.config/localcli/keys.json` (preferencia del usuario, fuera del proye
 - [ ] Un duplicado en el mismo contexto se rechaza al cargar/guardar con mensaje claro.
 - [ ] Con un modal abierto, sus teclas no alcanzan la vista de abajo.
 - [ ] Con el input enfocado, escribir palabras no dispara acciones.
+- [ ] `↑`/`↓` recorren el historial del chat en la vista principal y navegan la lista cuando hay un modal abierto.
+- [ ] Con el input enfocado, las flechas mueven el cursor y `home`/`end` van al principio y al final del texto.
 - [ ] La configuración persiste entre ejecuciones y los cambios surten efecto sin reiniciar.
 - [ ] Ningún componente de la TUI contiene comparaciones directas contra teclas de acción.
 

@@ -56,6 +56,21 @@ type Resultado struct {
 	Herramienta string
 }
 
+// Roles de un mensaje de conversación. Son los literales que entiende el modelo
+// (`ollama`), expuestos aquí para que `session` no dependa de `ollama`.
+const (
+	RolSistema   = "system"
+	RolUsuario   = "user"
+	RolAsistente = "assistant"
+)
+
+// Mensaje es un turno de la conversación que se le entrega al modelo. `flow` no
+// interpreta su contenido: solo lo transporta desde `session` hasta `agent`.
+type Mensaje struct {
+	Rol   string
+	Texto string
+}
+
 // Contexto entrega a una etapa solo el contexto que necesita. Lo implementa
 // `context` (T-B011); el motor no lo arma por su cuenta. La etapa viaja con la
 // petición: es lo que permite que `context_audit` distinga una etapa de otra
@@ -72,10 +87,12 @@ type Contexto interface {
 const EtapaChat = "chat"
 
 // Agente ejecuta una etapa con el agente indicado (`plan` o `build`) sobre el
-// contexto que recibe. Lo implementa `agent` (T-B006). No ejecuta herramientas
-// aquí: eso es cosa de `agent` → `tools`.
+// contexto que recibe, precedido del historial de conversación de la sesión
+// (vacío en una etapa de flujo; completo o compactado en el chat). Lo implementa
+// `agent` (T-B006). No ejecuta herramientas aquí: eso es cosa de `agent` →
+// `tools`.
 type Agente interface {
-	Ejecutar(ctx context.Context, agente, contexto string) (Resultado, error)
+	Ejecutar(ctx context.Context, agente, contexto string, historial []Mensaje) (Resultado, error)
 }
 
 // Aprobador pide la decisión del usuario para una etapa que la requiere.
@@ -132,7 +149,7 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 			m.emitir(EventoEtapaFallida, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 			return EstadoConError, fmt.Errorf("%w: %s: %v", ErrEtapaFallida, etapa.ID, cErr)
 		}
-		res, aErr := m.Agente.Ejecutar(ctx, etapa.Agente, contexto)
+		res, aErr := m.Agente.Ejecutar(ctx, etapa.Agente, contexto, nil)
 		if aErr != nil {
 			m.emitir(EventoEtapaFallida, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 			return EstadoConError, fmt.Errorf("%w: %s: %v", ErrEtapaFallida, etapa.ID, aErr)
@@ -185,7 +202,11 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 // El agente llega como argumento porque lo elige el usuario con el indicador de
 // la TUI: cada agente responde con las herramientas declaradas en su JSON
 // (SPEC-TOOLS §Reglas). El motor no inventa un catálogo ni decide el agente.
-func (m *Motor) Conversar(ctx context.Context, agente, objetivo string) (Resultado, error) {
+//
+// `historial` es la conversación anterior de la sesión, tal como la arma
+// `session` (completa o compactada). El motor no la interpreta: la pasa al
+// agente junto con el contexto del turno.
+func (m *Motor) Conversar(ctx context.Context, agente, objetivo string, historial []Mensaje) (Resultado, error) {
 	if agente != tools.AgentePlan && agente != tools.AgenteBuild {
 		return Resultado{}, fmt.Errorf("flow: agente inválido %q", agente)
 	}
@@ -196,7 +217,7 @@ func (m *Motor) Conversar(ctx context.Context, agente, objetivo string) (Resulta
 	if err != nil {
 		return Resultado{}, err
 	}
-	return m.Agente.Ejecutar(ctx, agente, contexto)
+	return m.Agente.Ejecutar(ctx, agente, contexto, historial)
 }
 
 // ElementoCola es un elemento del TODO listo para ejecutarse.

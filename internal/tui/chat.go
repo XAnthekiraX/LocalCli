@@ -50,6 +50,16 @@ type Chat struct {
 	propuestas []Propuesta
 	// inicio marca cuándo se envió el turno en curso; cero = no hay turno vivo.
 	inicio time.Time
+
+	// offset y maxOffset son la ventana del historial: la primera línea visible
+	// y el máximo para el ancho de la última pintura. scrolleado se enciende al
+	// subir: mientras está apagado, la vista sigue el final y baja sola con cada
+	// token nuevo; al leer hacia arriba se respeta la posición. altoUltimo
+	// recuerda el alto para avanzar una página entera.
+	offset     int
+	maxOffset  int
+	scrolleado bool
+	altoUltimo int
 }
 
 // AñadirUsuario añade lo que escribió el usuario y arranca el contador del
@@ -133,6 +143,10 @@ func (c *Chat) Vaciar() {
 	c.hayCurso = false
 	c.propuestas = nil
 	c.inicio = time.Time{}
+	c.offset = 0
+	c.maxOffset = 0
+	c.scrolleado = false
+	c.altoUltimo = 0
 }
 
 // MensajeHistorial es un turno cargado de la sesión activa, ya con su
@@ -218,19 +232,92 @@ func (c *Chat) RenderPropuestas() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// recortarAlto conserva el final del texto cuando no cabe en el alto dado: lo
-// que interesa leer es lo último que dijo el modelo, no el principio de la
-// conversación (T-F005-07). Es una función pura, como recortar.
-func recortarAlto(texto string, alto int) string {
-	if alto <= 0 {
+// Ventana devuelve las líneas visibles del historial para el alto dado y deja
+// lista la posición de scroll. Si el historial cabe entero, se ve todo y se
+// sigue el final. Si no cabe y el usuario no ha subido (`scrolleado` apagado),
+// la ventana se pega al final para que lo último dicho siga a la vista; si
+// subió, se respeta su posición, acotada a lo que hay. Anclar arriba con la
+// bandera de seguimiento evita que la vista salte mientras el modelo genera un
+// token detrás de otro.
+func (c *Chat) Ventana(ancho, alto int) string {
+	texto := c.Render(ancho)
+	c.altoUltimo = alto
+	if alto <= 0 || texto == "" {
+		c.offset, c.maxOffset, c.scrolleado = 0, 0, false
 		return texto
 	}
 	lineas := strings.Split(texto, "\n")
 	if len(lineas) <= alto {
+		c.offset, c.maxOffset, c.scrolleado = 0, 0, false
 		return texto
 	}
-	return strings.Join(lineas[len(lineas)-alto:], "\n")
+	c.maxOffset = len(lineas) - alto
+	if c.scrolleado {
+		if c.offset < 0 {
+			c.offset = 0
+		}
+		if c.offset > c.maxOffset {
+			c.offset = c.maxOffset
+		}
+	} else {
+		c.offset = c.maxOffset
+	}
+	return strings.Join(lineas[c.offset:c.offset+alto], "\n")
 }
+
+// Subir asciende el historial n líneas y deja de seguir el final: lo que se está
+// leyendo no debe moverse cuando llegue un token nuevo.
+func (c *Chat) Subir(n int) {
+	if n <= 0 {
+		return
+	}
+	c.scrolleado = true
+	c.offset -= n
+	if c.offset < 0 {
+		c.offset = 0
+	}
+}
+
+// Bajar desciende n líneas. Al alcanzar el final vuelve a seguir el final, de
+// modo que la vista retoma sola las respuestas nuevas.
+func (c *Chat) Bajar(n int) {
+	if n <= 0 {
+		return
+	}
+	c.offset += n
+	if c.offset >= c.maxOffset {
+		c.offset = c.maxOffset
+		c.scrolleado = false
+	}
+}
+
+// SubirPagina y BajarPagina avanzan una pantalla menos una línea, como el
+// paginado de un lector.
+func (c *Chat) SubirPagina() { c.Subir(c.pagina()) }
+func (c *Chat) BajarPagina() { c.Bajar(c.pagina()) }
+
+func (c *Chat) pagina() int {
+	if c.altoUltimo <= 1 {
+		return 1
+	}
+	return c.altoUltimo - 1
+}
+
+// IrAlFinal vuelve a pegar la vista al final y a seguir las respuestas nuevas.
+func (c *Chat) IrAlFinal() {
+	c.scrolleado = false
+	c.offset = c.maxOffset
+}
+
+// HayArriba y HayAbajo dicen si quedan líneas fuera de la ventana, para pintar
+// el aviso de que hay más.
+func (c *Chat) HayArriba() bool { return c.offset > 0 }
+func (c *Chat) HayAbajo() bool  { return c.scrolleado && c.offset < c.maxOffset }
+
+// OcultasArriba y OcultasAbajo cuentan las líneas fuera de la ventana por cada
+// lado.
+func (c *Chat) OcultasArriba() int { return c.offset }
+func (c *Chat) OcultasAbajo() int  { return c.maxOffset - c.offset }
 
 // prefijoDe distingue visualmente quién habla. La spec pide que el razonamiento
 // y la respuesta nunca se confundan; el prefijo es la parte más barata de esa

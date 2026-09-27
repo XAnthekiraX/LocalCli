@@ -47,13 +47,17 @@ Se abre una sesión y se deja una tarea de frontend trabajando. Se abre otra ses
 ## Reglas de negocio
 
 - Una sesión pertenece a un solo proyecto. El proyecto es la carpeta abierta.
+- No existe una sesión previa al uso: al abrir el proyecto la vista es la bienvenida y no hay sesión activa. La primera petición desde la bienvenida crea una sesión nueva; `Ctrl+X n` desde la vista principal también crea una y la deja activa.
+- Toda sesión nace con un nombre provisional (`Nueva sesión`). Con su primera petición, el modelo genera un título breve a partir de ella y ese pasa a ser su nombre.
+- El título se pide una sola vez: una sesión ya titulada no vuelve a pedirlo. Si el modelo falla, se conserva el nombre provisional y se reintenta con la siguiente petición.
+- El identificador de una sesión es permanente; su nombre es un atributo mutable. Renombrar una sesión no cambia sus mensajes ni ninguna referencia interna.
+- Al borrar la última sesión del proyecto, la vista vuelve a la bienvenida de inmediato.
 - El contenido de una sesión no se ve desde otra sesión del mismo proyecto.
 - Una sesión en segundo plano sigue ejecutándose aunque el usuario cambie de sesión o salga de la vista.
 - Cada sesión expone su estado: inactiva, trabajando, esperando permiso, terminada o con error.
-- Una sesión nueva se crea enviando la primera petición desde la bienvenida o con `Ctrl+X n` desde la vista principal, que la deja activa.
 - Cambiar de sesión no detiene nada.
 - El chat de una carpeta nunca aparece en otra carpeta.
-- El contexto acumulado de una sesión no se comparte con las demás del mismo proyecto.
+- El contexto acumulado de una sesión no se comparte con las demás del mismo proyecto; su historial se reconstruye para el modelo según [[specs/SPEC-HISTORIAL-CONVERSACION]].
 
 ## Criterios de aceptación
 
@@ -64,6 +68,10 @@ Se abre una sesión y se deja una tarea de frontend trabajando. Se abre otra ses
 - [ ] Al reabrir una carpeta se listan sus sesiones y se puede retomar cualquiera con su historial.
 - [ ] El estado de cada sesión es visible en todo momento.
 - [ ] `Ctrl+X n` crea una sesión nueva y la deja activa.
+- [ ] La primera petición desde la bienvenida crea una sesión nueva, sin que exista ninguna antes.
+- [ ] Una sesión recién creada se llama «Nueva sesión» y pasa a llevar un título generado por el modelo tras su primera petición.
+- [ ] Si el modelo no puede generar el título, la sesión conserva el nombre provisional y lo reintenta con la siguiente petición.
+- [ ] Al borrar la última sesión del proyecto, la vista vuelve a la bienvenida.
 
 ## Requisitos no funcionales
 

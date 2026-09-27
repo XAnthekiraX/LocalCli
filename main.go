@@ -23,8 +23,9 @@ func main() {
 
 	// El cableado completo vive en arranque.go: ahí se abre la base (por
 	// `store`, el único escritor SQLite), se monta el motor contra Ollama
-	// local, se crea o retoma la sesión activa del proyecto y se ata todo al
-	// `tui.Puerto` de producción. main solo levanta y baja el telón.
+	// local, se deja listo el ciclo de sesiones (sin crear ninguna hasta la
+	// primera petición) y se ata todo al `tui.Puerto` de producción. main solo
+	// levanta y baja el telón.
 	a, err := nuevoArranque(cwd)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error al preparar la base del proyecto:", err)
@@ -32,7 +33,10 @@ func main() {
 	}
 	defer a.Cerrar()
 
-	p := tea.NewProgram(nuevaApp(a), tea.WithAltScreen())
+	// Se captura el ratón para poder seleccionar texto y copiarlo al portapapeles
+	// (selection.go) y para desplazar el chat con la rueda. La selección nativa
+	// de la terminal sigue disponible manteniendo Shift.
+	p := tea.NewProgram(nuevaApp(a), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error en la interfaz:", err)
 		os.Exit(1)

@@ -26,6 +26,9 @@ type Almacen interface {
 	CambiarEstado(id, estado string) error
 	// Borrar elimina la sesión y todo lo que cuelga de ella.
 	Borrar(id string) error
+	// Renombrar cambia el nombre visible de la sesión (su título). El id sigue
+	// siendo la identidad: renombrar nunca toca los mensajes ni las referencias.
+	Renombrar(id, nombre string) error
 	// Historial devuelve la conversación en orden, con su razonamiento.
 	Historial(sessionID string) ([]store.MensajeConRazonamiento, error)
 	// EscribirMensaje inserta un turno de conversación.

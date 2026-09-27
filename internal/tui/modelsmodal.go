@@ -18,6 +18,8 @@ package tui
 
 import (
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Modal es la mecánica común de los modales de la TUI (DOMAIN §1 `modals`): una
@@ -79,21 +81,35 @@ func (m *Modal) Elegida() (int, bool) {
 // resaltado y el pie con las teclas. Con aviso, el aviso sustituye a la lista:
 // «cargando…» mientras llega y «sin modelos» si Ollama no responde
 // (SPEC-INTERFAZ §Modal de modelos).
+//
+// Las filas se rellenan a un ancho común: el centrado alinea cada línea por su
+// cuenta, así que sin rellenar la tabla saldría escalonada.
 func (m *Modal) Render(ancho, alto int) string {
 	if !m.Abierto {
 		return ""
 	}
+	filas := make([]string, 0, len(m.Lineas))
+	for i, linea := range m.Lineas {
+		if i == m.Indice {
+			filas = append(filas, estiloUsuario.Render("› "+linea))
+			continue
+		}
+		filas = append(filas, "  "+linea)
+	}
+	anchoFilas := 0
+	for _, f := range filas {
+		if w := lipgloss.Width(f); w > anchoFilas {
+			anchoFilas = w
+		}
+	}
+
 	var b strings.Builder
 	b.WriteString(estiloTitulo.Render(m.Titulo) + "\n\n")
 	if m.Aviso != "" {
 		b.WriteString(estiloAviso.Render(m.Aviso) + "\n")
 	}
-	for i, linea := range m.Lineas {
-		if i == m.Indice {
-			b.WriteString(estiloUsuario.Render("› "+linea) + "\n")
-			continue
-		}
-		b.WriteString("  " + linea + "\n")
+	for _, f := range filas {
+		b.WriteString(f + strings.Repeat(" ", anchoFilas-lipgloss.Width(f)) + "\n")
 	}
 	b.WriteString(estiloSistema.Render(m.pie()))
 	return centrar(b.String(), ancho, alto)
@@ -115,6 +131,9 @@ type ModelsModal struct {
 	// Modelos es la lista real, en el mismo orden que Modal.Lineas: la elegida
 	// se traduce con el índice resaltado.
 	Modelos []ModeloLocal
+	// Actual es el nombre del modelo en uso: al rellenar la lista, el resaltado
+	// arranca en él para no obligar a recorrerla desde el principio.
+	Actual string
 }
 
 // AvisoCargando es lo que se ve mientras Ollama responde: el modal se abre al
@@ -129,15 +148,19 @@ const AvisoSinModelos = "sin modelos"
 
 // AbrirModelos muestra el modal vacío y pidiendo la lista. Cada apertura es una
 // petición: el modal no guarda la lista entre aperturas para que lo que se ve
-// sea siempre lo que hay ahora en Ollama.
-func (mm *ModelsModal) AbrirModelos() {
+// sea siempre lo que hay ahora en Ollama. `actual` es el modelo en uso: el
+// resaltado caerá en él cuando llegue la lista.
+func (mm *ModelsModal) AbrirModelos(actual string) {
 	mm.Modelos = nil
+	mm.Actual = actual
 	mm.Modal.Abrir("MODELOS", nil, AvisoCargando)
 }
 
 // FijarModelos rellena el modal con la lista que llegó. El error del puerto no
 // bloquea ni propaga: queda como aviso «sin modelos» (SPEC-INTERFAZ §Modal de
 // modelos). Si el modal ya no está abierto, la lista se descarta: llegó tarde.
+// Al rellenar, el resaltado arranca en el modelo en uso (o en el primero si no
+// está en la lista), igual que el modal de sesiones enfoca la sesión activa.
 func (mm *ModelsModal) FijarModelos(modelos []ModeloLocal, err error) {
 	if !mm.Abierto {
 		return
@@ -150,17 +173,49 @@ func (mm *ModelsModal) FijarModelos(modelos []ModeloLocal, err error) {
 	mm.Modelos = modelos
 	lineas := make([]string, 0, len(modelos))
 	for _, m := range modelos {
-		lineas = append(lineas, m.Nombre)
+		lineas = append(lineas, lineaDeModelo(m))
 	}
 	mm.Modal.Abrir(mm.Titulo, lineas, "")
+	mm.Indice = mm.IndiceDe(mm.Actual)
+}
+
+// IndiceDe devuelve la posición de un modelo en la lista, o 0 si no está: al
+// abrir, el resaltado arranca en el modelo en uso.
+func (mm *ModelsModal) IndiceDe(nombre string) int {
+	for i, m := range mm.Modelos {
+		if m.Nombre == nombre {
+			return i
+		}
+	}
+	return 0
+}
+
+// lineaDeModelo compone la fila del modelo. Los que no declaran capacidad de
+// herramientas se marcan para que se sepa antes de elegirlos (SPEC-OLLAMA-PERFIL:
+// el usuario cambia de modelo si el suyo no sirve).
+func lineaDeModelo(m ModeloLocal) string {
+	if m.SinHerramientas {
+		return m.Nombre + "  (sin herramientas)"
+	}
+	return m.Nombre
+}
+
+// ModeloElegidoLocal devuelve el modelo resaltado con todos sus datos (nombre
+// y si le faltan herramientas). Sin lista no hay nada que elegir.
+func (mm *ModelsModal) ModeloElegidoLocal() (ModeloLocal, bool) {
+	i, ok := mm.Elegida()
+	if !ok {
+		return ModeloLocal{}, false
+	}
+	return mm.Modelos[i], true
 }
 
 // ModeloElegido devuelve el nombre del modelo resaltado, listo para viajar al
 // motor. Vacío si el modal está vacío o sin lista todavía.
 func (mm *ModelsModal) ModeloElegido() string {
-	i, ok := mm.Elegida()
+	m, ok := mm.ModeloElegidoLocal()
 	if !ok {
 		return ""
 	}
-	return mm.Modelos[i].Nombre
+	return m.Nombre
 }

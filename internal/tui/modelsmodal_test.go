@@ -32,7 +32,7 @@ func modelosDePrueba() []ModeloLocal {
 
 func TestElModalDeModelosAbrePidiendoLaLista(t *testing.T) {
 	mm := &ModelsModal{}
-	mm.AbrirModelos()
+	mm.AbrirModelos("")
 	if !mm.Abierto {
 		t.Fatal("el modal se abre")
 	}
@@ -46,7 +46,7 @@ func TestElModalDeModelosAbrePidiendoLaLista(t *testing.T) {
 
 func TestElModalNavegaResaltandoCadaModelo(t *testing.T) {
 	mm := &ModelsModal{}
-	mm.AbrirModelos()
+	mm.AbrirModelos("")
 	mm.FijarModelos(modelosDePrueba(), nil)
 
 	if mm.ModeloElegido() != "llama3.2" {
@@ -66,9 +66,42 @@ func TestElModalNavegaResaltandoCadaModelo(t *testing.T) {
 	}
 }
 
+func TestElModalDeModelosEnfocaElModeloEnUso(t *testing.T) {
+	mm := &ModelsModal{}
+	mm.AbrirModelos("qwen2.5")
+	mm.FijarModelos(modelosDePrueba(), nil)
+	if mm.ModeloElegido() != "qwen2.5" {
+		t.Errorf("al abrir se resalta el modelo en uso: %q", mm.ModeloElegido())
+	}
+
+	// Si el modelo en uso ya no está en la lista, el resaltado cae en el primero.
+	mm2 := &ModelsModal{}
+	mm2.AbrirModelos("desinstalado")
+	mm2.FijarModelos(modelosDePrueba(), nil)
+	if mm2.ModeloElegido() != "llama3.2" {
+		t.Errorf("sin coincidencia se resalta el primero: %q", mm2.ModeloElegido())
+	}
+}
+
+func TestElModalMarcaLosModelosSinHerramientas(t *testing.T) {
+	mm := &ModelsModal{}
+	mm.AbrirModelos("")
+	mm.FijarModelos([]ModeloLocal{
+		{Nombre: "llama3.2"},
+		{Nombre: "sin-tools", SinHerramientas: true},
+	}, nil)
+	v := sinEstilo(mm.Render(80, 24))
+	if !strings.Contains(v, "sin-tools  (sin herramientas)") {
+		t.Errorf("el modelo sin herramientas se marca:\n%s", v)
+	}
+	if strings.Contains(v, "llama3.2  (sin herramientas)") {
+		t.Errorf("el que sí puede no se marca:\n%s", v)
+	}
+}
+
 func TestSinOllamaElModalAvisaYSeCierraSinBloquear(t *testing.T) {
 	mm := &ModelsModal{}
-	mm.AbrirModelos()
+	mm.AbrirModelos("")
 	mm.FijarModelos(nil, errSinOllama)
 	if mm.Aviso != AvisoSinModelos {
 		t.Errorf("sin Ollama el modal avisa: %q", mm.Aviso)
@@ -89,7 +122,7 @@ func TestSinOllamaElModalAvisaYSeCierraSinBloquear(t *testing.T) {
 
 func TestLaRespuestaTardíaNoRellenaUnModalYaCerrado(t *testing.T) {
 	mm := &ModelsModal{}
-	mm.AbrirModelos()
+	mm.AbrirModelos("")
 	mm.Cerrar()
 	mm.FijarModelos(modelosDePrueba(), nil)
 	if mm.Abierto || len(mm.Modelos) != 0 {
@@ -275,6 +308,41 @@ func TestConElModalAbiertoLaEscrituraNoLlegaAlInput(t *testing.T) {
 	}
 }
 
+// --- T-F013-06: el aviso de modelo sin herramientas --------------------------
+
+func TestElegirUnModeloSinHerramientasAvisaSinBloquear(t *testing.T) {
+	p := &puertoStub{
+		modelo: "con-tools",
+		modelos: []ModeloLocal{
+			{Nombre: "con-tools"},
+			{Nombre: "sin-tools", SinHerramientas: true},
+		},
+	}
+	a := Nuevo(p)
+	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	ejecuta(t, a, abreElModalDeModelos(t, a))
+
+	tecla(t, a, tea.KeyDown)  // sin-tools
+	tecla(t, a, tea.KeyEnter) // aplica
+	if a.Modelo != "sin-tools" {
+		t.Fatalf("modelo elegido: %q", a.Modelo)
+	}
+	if !strings.Contains(sinEstilo(a.View()), "no puede usar herramientas") {
+		t.Errorf("el modelo sin herramientas avisa sin bloquear:\n%s", sinEstilo(a.View()))
+	}
+
+	// Elegir uno capaz retira el aviso.
+	ejecuta(t, a, abreElModalDeModelos(t, a))
+	tecla(t, a, tea.KeyUp) // vuelve a con-tools (el foco arranca en el actual)
+	tecla(t, a, tea.KeyEnter)
+	if a.Modelo != "con-tools" {
+		t.Fatalf("modelo elegido: %q", a.Modelo)
+	}
+	if strings.Contains(sinEstilo(a.View()), "no puede usar herramientas") {
+		t.Errorf("el aviso se retira con un modelo capaz:\n%s", sinEstilo(a.View()))
+	}
+}
+
 // --- T-F013-05: el modelo viaja con la primera petición ----------------------
 
 func TestEnLaPrincipalElModalTambiénSecuestraLaEntrada(t *testing.T) {
@@ -315,7 +383,7 @@ func TestElModeloElegidoViajaConLaPrimeraPetición(t *testing.T) {
 	if len(p.fijados) == 0 || p.fijados[len(p.fijados)-1] != "qwen2.5" {
 		t.Errorf("el motor recibe el modelo elegido: %v", p.fijados)
 	}
-	if len(p.enviados) != 1 || p.enviados[0] != "s1|documentar la capa" {
+	if len(p.enviados) != 1 || p.enviados[0] != "nueva|documentar la capa" {
 		t.Fatalf("la primera petición sale una vez: %v", p.enviados)
 	}
 }

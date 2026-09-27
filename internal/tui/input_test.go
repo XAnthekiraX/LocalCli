@@ -88,6 +88,57 @@ func TestEnterConTextoEnviaYVacioNoEnvia(t *testing.T) {
 	}
 }
 
+// --- T-F004-05: la edición del cursor ----------------------------------------
+
+func TestElCursorSeMueveConLasFlechasYHomeEnd(t *testing.T) {
+	e := NuevaEntrada()
+	escribir := func(e *Entrada, k tea.KeyType) {
+		e2, _ := e.Update(tea.KeyMsg{Type: k})
+		*e = e2
+	}
+	for _, r := range "hole como estas" {
+		e2, _ := e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		e = e2
+	}
+	if e.Texto() != "hole como estas" {
+		t.Fatalf("texto escrito: %q", e.Texto())
+	}
+
+	// La flecha izquierda mueve el caret sin tocar el texto; escribir en medio
+	// inserta donde está el cursor (el caso «hole| como estas»).
+	escribir(&e, tea.KeyLeft)
+	if e.Texto() != "hole como estas" {
+		t.Errorf("mover el cursor no cambia el texto: %q", e.Texto())
+	}
+	e2, _ := e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("X")})
+	e = e2
+	if e.Texto() != "hole como estaXs" {
+		t.Errorf("se escribe donde está el cursor: %q", e.Texto())
+	}
+
+	// Home lleva al principio y End al final.
+	escribir(&e, tea.KeyHome)
+	e2, _ = e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(">")})
+	e = e2
+	if e.Texto() != ">hole como estaXs" {
+		t.Errorf("home lleva el cursor al principio: %q", e.Texto())
+	}
+	escribir(&e, tea.KeyEnd)
+	e2, _ = e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("<")})
+	e = e2
+	if e.Texto() != ">hole como estaXs<" {
+		t.Errorf("end lleva el cursor al final: %q", e.Texto())
+	}
+
+	// Ctrl+B / Ctrl+E son los equivalentes de emacs y también editan.
+	escribir(&e, tea.KeyCtrlB)
+	e2, _ = e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("!")})
+	e = e2
+	if e.Texto() != ">hole como estaXs!<" {
+		t.Errorf("ctrl+b mueve el cursor: %q", e.Texto())
+	}
+}
+
 // --- T-F004-04: el ancho ------------------------------------------------------
 
 func TestElAnchoDeLaEntradaSeAdaptaAlLayout(t *testing.T) {

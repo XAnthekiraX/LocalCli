@@ -188,29 +188,135 @@ func TestLaPropuestaDeOtraSesiónNoSeVeEnEsteChat(t *testing.T) {
 	}
 }
 
-// --- T-F005-07: el recorte por alto ---------------------------------------------
+// --- T-F005-07: la ventana del chat (scroll) ------------------------------------
 
-func TestElChatRecortaPorArribaConservandoElFinal(t *testing.T) {
+func TestElChatMuestraElFinalYSePuedeSubir(t *testing.T) {
 	var lineas []string
 	for i := 1; i <= 30; i++ {
 		lineas = append(lineas, fmt.Sprintf("línea %d", i))
 	}
-	texto := strings.Join(lineas, "\n")
-	got := recortarAlto(texto, 10)
+	c := Chat{}
+	c.AñadirSistema(strings.Join(lineas, "\n"))
+
+	// Sin subir, la ventana se pega al final: lo último dicho sigue a la vista.
+	got := c.Ventana(200, 10)
 	if n := len(strings.Split(got, "\n")); n != 10 {
-		t.Fatalf("quedan las últimas 10 líneas, hay %d", n)
+		t.Fatalf("la ventana tiene 10 líneas, tiene %d", n)
 	}
-	// Lo que se recorta es el principio: el final visible es lo último dicho.
-	if strings.Contains(got, lineas[0]) {
-		t.Error("el principio es lo que sale de la ventana")
+	if !strings.Contains(got, "línea 30") {
+		t.Errorf("al final se ve lo último:\n%s", got)
 	}
-	if !strings.Contains(got, lineas[29]) {
-		t.Error("lo último dicho debe seguir visible")
+	if strings.Contains(got, "línea 1\n") {
+		t.Errorf("el principio queda fuera de la ventana:\n%s", got)
 	}
-	if recortarAlto(texto, 0) != texto {
-		t.Error("sin alto conocido no se recorta")
+	if !c.HayArriba() {
+		t.Error("quedan líneas arriba: se puede subir")
 	}
-	if recortarAlto("corto", 10) != "corto" {
-		t.Error("lo que cabe no se toca")
+
+	// Subir deja de seguir el final y muestra líneas anteriores.
+	c.Subir(5)
+	got = c.Ventana(200, 10)
+	if !strings.Contains(got, "línea 25") {
+		t.Errorf("tras subir se ven líneas anteriores:\n%s", got)
+	}
+	if c.OcultasArriba() != 15 || c.OcultasAbajo() != 5 {
+		t.Errorf("ventana en 20 con 30 líneas: arriba %d, abajo %d (quiero 15 y 5)",
+			c.OcultasArriba(), c.OcultasAbajo())
+	}
+	if !c.HayAbajo() {
+		t.Error("con líneas por debajo, se puede bajar")
+	}
+
+	// Bajar hasta el final vuelve a seguir las respuestas nuevas.
+	c.Bajar(5)
+	if c.HayAbajo() {
+		t.Error("al llegar al final ya no queda nada abajo")
+	}
+	got = c.Ventana(200, 10)
+	if !strings.Contains(got, "línea 30") {
+		t.Errorf("volver al final muestra lo último:\n%s", got)
+	}
+}
+
+func TestLoQueCabeEnteroNoSeRecorta(t *testing.T) {
+	c := Chat{}
+	c.AñadirSistema("corto")
+	if got := sinEstilo(c.Ventana(80, 10)); !strings.Contains(got, "corto") {
+		t.Errorf("lo que cabe se ve entero: %q", got)
+	}
+	if c.HayArriba() || c.HayAbajo() {
+		t.Error("si cabe entero no hay scroll")
+	}
+	if got := sinEstilo(c.Ventana(80, 0)); !strings.Contains(got, "corto") {
+		t.Errorf("sin alto conocido se devuelve todo: %q", got)
+	}
+}
+
+func TestElMarcoCabeEnLaTerminal(t *testing.T) {
+	for _, alto := range []int{10, 15, 24, 30, 40} {
+		a := Nuevo(&puertoStub{})
+		a.Vista = VistaPrincipal
+		a.Panel.SesionID = "s1"
+		pulsa(t, a, tea.WindowSizeMsg{Width: 80, Height: alto})
+		for i := 1; i <= 100; i++ {
+			a.Chat.AñadirSistema(fmt.Sprintf("mensaje %d", i))
+		}
+		if got := altoDe(a.View()); got > alto {
+			t.Errorf("alto %d: el marco mide %d líneas y se recortaría la parte de arriba", alto, got)
+		}
+	}
+}
+
+func TestElScrollAlcanzaElPrincipioDeLaConversación(t *testing.T) {
+	var lineas []string
+	for i := 1; i <= 200; i++ {
+		lineas = append(lineas, fmt.Sprintf("mensaje %d", i))
+	}
+	c := Chat{}
+	c.AñadirSistema(strings.Join(lineas, "\n"))
+
+	// Al principio sigue el final.
+	c.Ventana(200, 10)
+
+	// Subiendo muchas veces se llega al primer mensaje.
+	for i := 0; i < 500; i++ {
+		c.Subir(1)
+	}
+	got := sinEstilo(c.Ventana(200, 10))
+	if !strings.Contains(got, "mensaje 1\n") {
+		t.Fatalf("subiendo hasta el tope se ve el principio:\n%s", got)
+	}
+	if c.HayArriba() {
+		t.Errorf("en el tope ya no queda nada arriba (offset %d)", c.OcultasArriba())
+	}
+}
+
+func TestLasFlechasRecorrenElHistorialDelChat(t *testing.T) {
+	a := Nuevo(&puertoStub{})
+	a.Vista = VistaPrincipal
+	a.Panel.SesionID = "s1"
+	pulsa(t, a, tea.WindowSizeMsg{Width: 60, Height: 12})
+	for i := 1; i <= 20; i++ {
+		a.Chat.AñadirSistema(fmt.Sprintf("mensaje %d", i))
+	}
+	// Al pie: la ventana sigue el final y no hay nada por debajo.
+	_ = a.View()
+	if a.Chat.OcultasAbajo() != 0 {
+		t.Fatalf("al principio se sigue el final, quedan %d abajo", a.Chat.OcultasAbajo())
+	}
+	// ↑ sube por el historial y deja de seguir el final.
+	tecla(t, a, tea.KeyUp)
+	tecla(t, a, tea.KeyUp)
+	tecla(t, a, tea.KeyUp)
+	_ = a.View()
+	if a.Chat.OcultasAbajo() != 3 {
+		t.Errorf("tras tres ↑ quedan 3 líneas abajo, quedan %d", a.Chat.OcultasAbajo())
+	}
+	// ↓ hasta el final retoma el seguimiento.
+	for i := 0; i < 5; i++ {
+		tecla(t, a, tea.KeyDown)
+	}
+	if a.Chat.OcultasAbajo() != 0 {
+		t.Errorf("bajar al final retoma el seguimiento, quedan %d", a.Chat.OcultasAbajo())
 	}
 }

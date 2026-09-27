@@ -1,30 +1,36 @@
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
                                                ATAJOS                                               
                                                                                                     
-                                 enter            enviar la petición                                
-                                        ctrl+c           salir                                      
-                          ctrl+d           abrir o cerrar el panel de datos                         
-                                  <leader>l        modal de sesiones                                
-                               <leader>n        crear una sesión nueva                              
-                            ctrl+d           eliminar la sesión resaltada                           
-                          ctrl+r           mostrar u ocultar el razonamiento                        
-                       ctrl+a           abrir o cerrar el panel de aprobaciones                     
-                          a                aprobar la propuesta seleccionada                        
-                         d                declinar la propuesta seleccionada                        
-                               (deshabilitada)  pausar la cola en curso                             
+                  General                                                                           
+                  ctrl+c           salir                                                            
+                  <leader>l        modal de sesiones                                                
+                  ctrl+p           modal de atajos de teclado                                       
+                  <leader>m        modal de modelos                                                 
+                                                                                                    
+                  Chat                                                                              
+                  up               subir por el historial del chat                                  
+                  down             bajar por el historial del chat                                  
+                  pgup             página arriba en el historial                                    
+                  pgdown           página abajo en el historial                                     
+                                                                                                    
+                  Vista                                                                             
+                  ctrl+d           abrir o cerrar el panel de datos                                 
+                  <leader>n        crear una sesión nueva                                           
+                  ctrl+r           mostrar u ocultar el razonamiento                                
+                  ctrl+a           abrir o cerrar el panel de aprobaciones                          
+                  (deshabilitada)  pausar la cola en curso                                          
                   ctrl+f           cancelar el trabajo en curso (pide confirmación)                 
-                                  esc              cerrar lo abierto                                
-                             ctrl+p           modal de atajos de teclado                            
-                                  <leader>m        modal de modelos                                 
-                          tab              cambiar de agente (plan ↔ build)                         
-                                  up               subir en la lista                                
-                                  down             bajar en la lista                                
+                  tab              cambiar de agente (plan ↔ build)                                 
+                                                                                                    
+                  Modales                                                                           
+                  ctrl+d           eliminar la sesión resaltada                                     
+                  esc              cerrar lo abierto                                                
+                  up               subir en la lista                                                
+                  down             bajar en la lista                                                
+                                                                                                    
+                  Aprobaciones                                                                      
+                  a                aprobar la propuesta seleccionada                                
+                  d                declinar la propuesta seleccionada                               
+                                                                                                    
+                  Entrada                                                                           
+                  enter            enviar la petición                                               
                                     (solo lectura · esc cerrar)                                     
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    

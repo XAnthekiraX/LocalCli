@@ -39,7 +39,9 @@ func NuevaEntrada() Entrada {
 	campo.Prompt = ""
 	campo.Focus()
 	campo.Width = 80
-	return Entrada{campo: campo, Agente: AgentePlan}
+	e := Entrada{campo: campo, Agente: AgentePlan}
+	e.AjustarTeclasPropias()
+	return e
 }
 
 // FijarAgente deja el agente activo que se pinta en el indicador. Un valor
@@ -89,31 +91,19 @@ func (e *Entrada) Update(msg tea.Msg) (Entrada, tea.Cmd) {
 	return *e, cmd
 }
 
-// DesactivarTeclasPropias deja al campo textinput solo con la edición esencial:
-// desde T-F012-06 las teclas de acción (flechas, home/end, tab, ctrl+u/k…) las
-// decide el KeyResolver en la app, no el componente. Si el mapa se reasigna —o
-// una letra suelta pasa a ser atajo— el campo seguiría moviendo el cursor,
-// pegando o aceptando sugerencias con teclas que ya no son suyas; aquí se
-// apagan todas menos imprimir, retroceso y suprimir. La líder ctrl+x tampoco
-// debe dejar un literal huérfano en el texto.
+// AjustarTeclasPropias deja al campo textinput con la edición de línea completa:
+// flechas (con ctrl+b/ctrl+f y ctrl+←/→), home/end (con ctrl+a/ctrl+e) y borrado
+// por palabra y por delante/atrás del caret. El KeyResolver sigue mandando: las
+// teclas que el mapa reclame se resuelven antes de llegar aquí, así que no hay
+// colisión (por ejemplo, ctrl+a y ctrl+f son acciones de la app y nunca alcanzan
+// el editor). Solo se anulan las teclas que no queremos del campo: pegar y las
+// sugerencias de autocompletado, que aquí no se usan.
 //
-// Los bindings desactivados se fijan a una secuencia inexistente ("ctrl+@"):
-// bubbles nunca la produce, así que key.Matches jamás coincide. Se conservan
-// DeleteCharacterBackward (backspace/ctrl+h) y DeleteCharacterForward
-// (supr/ctrl+d) porque forman parte de la escritura básica.
-func (e *Entrada) DesactivarTeclasPropias() {
+// Se aplica al construir la línea y se reaplica en cada cambio de tamaño: un
+// textinput reconstruido no debe recuperar sus atajos viejos.
+func (e *Entrada) AjustarTeclasPropias() {
 	km := e.campo.KeyMap
 	uno := key.NewBinding(key.WithKeys("ctrl+@"), key.WithHelp("ctrl+@", ""))
-	km.CharacterForward = uno
-	km.CharacterBackward = uno
-	km.WordForward = uno
-	km.WordBackward = uno
-	km.DeleteWordBackward = uno
-	km.DeleteWordForward = uno
-	km.DeleteAfterCursor = uno
-	km.DeleteBeforeCursor = uno
-	km.LineStart = uno
-	km.LineEnd = uno
 	km.Paste = uno
 	km.AcceptSuggestion = uno
 	km.NextSuggestion = uno

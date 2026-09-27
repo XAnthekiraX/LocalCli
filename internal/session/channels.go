@@ -30,6 +30,10 @@ type Evento = flow.Evento
 const (
 	EventoEstadoSesion = "estado_sesion"
 	EventoNotificacion = "notificacion"
+	// EventoTituloSesion avisa de que una sesión cambió de nombre (su título se
+	// generó a partir de la primera petición). Payload: `sesion` y `nombre`. La
+	// TUI lo pinta en el panel y en el modal de sesiones; el id no cambia.
+	EventoTituloSesion = "titulo_sesion"
 )
 
 // BufferSuscriptor es la cola de cada suscriptor. Un suscriptor que no lee a

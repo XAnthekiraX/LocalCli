@@ -26,7 +26,7 @@ import (
 // Motor es lo que `session` necesita de `flow`: responder como chat, arrancar
 // un flujo explícito y consumir una cola. Lo implementa `flow.Motor`.
 type Motor interface {
-	Conversar(ctx context.Context, agente, objetivo string) (flow.Resultado, error)
+	Conversar(ctx context.Context, agente, objetivo string, historial []flow.Mensaje) (flow.Resultado, error)
 	EjecutarFlujo(ctx context.Context, f flow.Flujo, objetivo string) (flow.EstadoFlujo, error)
 	ConsumirCola(ctx context.Context, cola flow.Cola, f flow.Flujo) error
 }
@@ -88,6 +88,12 @@ func (g *Gestor) Enviar(ctx context.Context, sesionID, texto string) error {
 // por defecto de la vista principal (SPEC-INTERFAZ §Reglas). El agente corre con
 // su JSON y sus herramientas, y su respuesta queda en el historial (la escribe
 // el ejecutor del agente); `session` solo cierra el turno y deja el estado.
+//
+// El historial se lee ANTES de escribir este mensaje: así el turno en curso no
+// aparece duplicado (viaja como contexto, no como turno de la conversación) y
+// `len(previos) == 0` marca la primera petición de la sesión. Con esa primera
+// petición —y mientras el nombre siga siendo el provisional— se pide al modelo
+// un título para la sesión, sin bloquear la respuesta ([[specs/SPEC-SESIONES]]).
 func (g *Gestor) Conversar(ctx context.Context, sesionID, agente, texto string) error {
 	if strings.TrimSpace(texto) == "" {
 		return fmt.Errorf("session: mensaje vacío")
@@ -99,6 +105,15 @@ func (g *Gestor) Conversar(ctx context.Context, sesionID, agente, texto string) 
 	if err := g.preparar(ses); err != nil {
 		return err
 	}
+	previos, err := g.historialPara(ctx, sesionID)
+	if err != nil {
+		return err
+	}
+	// Se pide título mientras el nombre siga siendo el provisional: con la
+	// primera petición se genera; si el modelo falló, la siguiente lo reintenta
+	// (el nombre solo deja de ser provisional cuando un título se aplica). Una
+	// sesión ya titulada no vuelve a pedirlo.
+	titular := EsProvisional(ses.Nombre)
 	if err := g.Alcance.Almacen.EscribirMensaje(&store.Message{
 		SessionID: sesionID,
 		Role:      "user",
@@ -119,10 +134,44 @@ func (g *Gestor) Conversar(ctx context.Context, sesionID, agente, texto string) 
 		return err
 	}
 	g.lanzar(ctx, sesionID, &trabajo{}, func(c context.Context) error {
-		_, cErr := g.Motor.Conversar(c, agente, ObjetivoDeMensaje(texto))
-		return g.cerrarChat(sesionID, cErr)
+		_, cErr := g.Motor.Conversar(c, agente, ObjetivoDeMensaje(texto), previos)
+		if cErr := g.cerrarChat(sesionID, cErr); cErr != nil {
+			return cErr
+		}
+		if titular {
+			g.generarTitulo(c, sesionID, texto)
+		}
+		return nil
 	})
 	return nil
+}
+
+// generarTitulo pide al modelo un título para la sesión a partir de su primera
+// petición y lo persiste. Es best-effort: un fallo deja el nombre provisional y
+// se reintenta con la siguiente petición (mientras siga siendo provisional), sin
+// bloquear nunca la respuesta. El `id` no cambia: renombrar solo toca el nombre.
+func (g *Gestor) generarTitulo(ctx context.Context, sesionID, texto string) {
+	if g.Titulador == nil {
+		return
+	}
+	titulo, err := g.Titulador.Titulo(ctx, texto)
+	if err != nil {
+		return
+	}
+	titulo = LimpiarTitulo(titulo)
+	if titulo == "" {
+		return
+	}
+	if err := g.Alcance.Almacen.Renombrar(sesionID, titulo); err != nil {
+		return
+	}
+	if g.Bus == nil {
+		return
+	}
+	g.Bus.Emitir(Evento{Nombre: EventoTituloSesion, Datos: map[string]string{
+		"sesion": sesionID,
+		"nombre": titulo,
+	}})
 }
 
 // preparar deja la sesión lista para un turno nuevo. Una sesión terminada o en

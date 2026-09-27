@@ -43,7 +43,7 @@ internal/
   queue/           cola de trabajo en forma de TODO y su orden
   context/         grafo de frontmatter, selección de contexto y auditoría
   agent/           agentes desde JSON: prompt, permisos, ciclo conversacional y relevo
-  ollama/          cliente HTTP, streaming, razonamiento, perfil de hardware
+  ollama/          cliente HTTP, streaming, razonamiento, perfil de hardware y capacidades
   task/            archivos de tarea
   tools/           registro de herramientas y comprobación de permisos
   fileops/         validación de rutas, acceso a archivos e historial
@@ -57,12 +57,12 @@ internal/
 Cada módulo tiene un límite. Ver [[backend/01-domain/DOMAIN]] para el detalle.
 
 - **`tui`** — Toda la pantalla. Recibe teclado, muestra chat, panel de datos, selector de sesiones, aprobaciones y razonamiento en vivo. No decide nada: solo pinta lo que le llega y manda lo que pulsas.
-- **`session`** — Ciclo de vida de las sesiones: crear, cambiar, retomar, cerrar, y su estado. Corre en segundo plano aunque cambies de vista. No ejecuta tareas; eso es `flow` y `queue`.
+- **`session`** — Ciclo de vida de las sesiones: crear, cambiar, retomar, cerrar, y su estado. Corre en segundo plano aunque cambies de vista. Reconstruye el historial de conversación de la sesión y lo compacta (resumen) cuando no cabe en el presupuesto antes de cada turno de chat, y pide al modelo el título de la sesión con su primera petición. No ejecuta tareas; eso es `flow` y `queue`.
 - **`flow`** — Motor de etapas. Encadena las etapas de los ciclos oficiales (planificación, trabajo, resolver), decide si sigue, si para o si espera tu aprobación. No sabe de herramientas ni de SQL.
 - **`queue`** — Cola de la ejecución en curso. Consume el TODO que creó esta solicitud, respeta su orden y marca lo bloqueado. No inventa trabajo: el TODO se lo creó `flow` al detectar tu petición.
 - **`context`** — Nodo de contexto. Lee el grafo de dependencias, deja que el modelo decida qué es relevante, recorta hasta el límite y registra qué entró y qué salió. No llama al modelo por su cuenta.
-- **`agent`** — Carga las definiciones de agente desde JSON: prompt, permisos y relevo. El agente base es un JSON editable, no código. Corre el ciclo conversacional (modelo → herramienta → resultado → modelo); no ejecuta herramientas: las despacha a `tools`. Las skills no vienen de fábrica; las crea el usuario en markdown.
-- **`ollama`** — Cliente de Ollama: HTTP en local, streaming token a token, extracción de razonamiento y perfil de hardware. Es el único que habla con el modelo.
+- **`agent`** — Carga las definiciones de agente desde JSON: prompt, permisos y relevo. El agente base es un JSON editable, no código. Corre el ciclo conversacional (modelo → herramienta → resultado → modelo) y antepone al contexto del turno el historial de conversación que le entrega `flow`; no ejecuta herramientas: las despacha a `tools`. Las skills no vienen de fábrica; las crea el usuario en markdown.
+- **`ollama`** — Cliente de Ollama: HTTP en local, streaming token a token, extracción de razonamiento, perfil de hardware y capacidades del modelo (`/api/show`). Es el único que habla con el modelo.
 - **`tools`** — Registro de las trece herramientas, comprobación de permiso y enrutado. No inventa herramientas y no aplica permisos: solo enruta.
 - **`fileops`** — Aplica operaciones de archivo y carpeta, valida la frontera de rutas y guarda el historial de cambios. Donde vive la frontera de la carpeta del proyecto.
 - **`exec`** — Terminal. Lista blanca de comandos y bloqueo estructural de escritura con Landlock. Lo único que puede lanzar procesos.
@@ -75,9 +75,9 @@ Cada módulo tiene un límite. Ver [[backend/01-domain/DOMAIN]] para el detalle.
 Los módulos se comunican por canales de Go, no por red. Un solo proceso. La forma exacta de cada contrato entre módulos está en [[backend/02-interfaces/INTERFACES-GENERAL]].
 
 - `tui` → `session`: la TUI pide a la sesión activa que mande lo escrito; pide cambiar de sesión, aprobar o declinar.
-- `session` → `flow`: al arrancar un flujo, la sesión pide al motor que encadene etapas.
+- `session` → `flow`: al arrancar un flujo, la sesión pide al motor que encadene etapas; en el chat, le entrega además el historial de la sesión (completo o compactado).
 - `flow` → `context`: cada etapa pide su contexto por un objetivo concreto.
-- `flow` → `agent`: el motor dice qué agente corre (`plan` o `build`) en cada etapa.
+- `flow` → `agent`: el motor dice qué agente corre (`plan` o `build`) en cada etapa y le pasa el contexto del turno junto con el historial de la conversación.
 - `context` → `ollama` y `store`: para pedir al modelo qué documentos necesita, y para registrar la auditoría.
 - `agent` → `ollama`: el agente construye la llamada con su prompt y la envía.
 - `agent` → `tools`: el agente pide una herramienta; `tools` comprueba permiso y enruta.

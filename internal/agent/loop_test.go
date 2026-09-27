@@ -15,9 +15,13 @@ import (
 type generadorGuion struct {
 	pasadas  [][]ollama.Evento
 	llamadas int
+	// ultimos guarda los mensajes de la última llamada, para comprobar que el
+	// historial se antepone al contexto del turno.
+	ultimos []ollama.Mensaje
 }
 
 func (g *generadorGuion) Generar(ctx context.Context, a Agente, modelo string, mensajes []ollama.Mensaje) (<-chan ollama.Evento, error) {
+	g.ultimos = append([]ollama.Mensaje(nil), mensajes...)
 	var evs []ollama.Evento
 	if g.llamadas < len(g.pasadas) {
 		evs = g.pasadas[g.llamadas]
@@ -67,7 +71,7 @@ func TestElBucleRespondeSinHerramientasEnUnaPasada(t *testing.T) {
 	}}}
 	sink := &sinkGrabador{}
 	e := &Ejecutor{Runner: g}
-	res, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", sink)
+	res, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, sink)
 	if err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
@@ -79,6 +83,29 @@ func TestElBucleRespondeSinHerramientasEnUnaPasada(t *testing.T) {
 	}
 	if strings.Join(sink.partes, "") != "hola mundo" {
 		t.Errorf("el sink recibió %v", sink.partes)
+	}
+}
+
+// El historial de conversación se antepone al contexto del turno: los mensajes
+// previos viajan tal cual y el contexto actual va al final, como usuario.
+func TestElBucleAnteponeElHistorialAlContexto(t *testing.T) {
+	g := &generadorGuion{pasadas: [][]ollama.Evento{{{Tipo: ollama.EventoToken, Texto: "ok"}}}}
+	e := &Ejecutor{Runner: g}
+	historial := []ollama.Mensaje{
+		{Role: "user", Content: "hola"},
+		{Role: "assistant", Content: "qué tal"},
+	}
+	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", historial, nil); err != nil {
+		t.Fatalf("Ejecutar: %v", err)
+	}
+	if len(g.ultimos) != len(historial)+1 {
+		t.Fatalf("mensajes = %d, quiero %d: %+v", len(g.ultimos), len(historial)+1, g.ultimos)
+	}
+	if g.ultimos[0].Content != "hola" || g.ultimos[1].Role != "assistant" {
+		t.Errorf("el historial no se antepone: %+v", g.ultimos)
+	}
+	if ult := g.ultimos[len(g.ultimos)-1]; ult.Role != "user" || ult.Content != "ctx" {
+		t.Errorf("el contexto del turno debe ir al final como usuario: %+v", ult)
 	}
 }
 
@@ -95,7 +122,7 @@ func TestElBucleEjecutaHerramientaYVuelveAlModelo(t *testing.T) {
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
 	ag := Agente{Nombre: "plan", Herramientas: tools.HerramientasDePlan()}
 
-	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil)
+	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil)
 	if err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
@@ -122,7 +149,7 @@ func TestElBucleUnRechazoNoCortaElTurno(t *testing.T) {
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
 	ag := Agente{Nombre: "plan", Herramientas: tools.HerramientasDePlan()}
 
-	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil)
+	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil)
 	if err != nil {
 		t.Fatalf("un rechazo no debe cortar el turno: %v", err)
 	}
@@ -143,7 +170,7 @@ func TestElBucleSeDetieneEnElTopeDePasadas(t *testing.T) {
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 2}
 	ag := Agente{Nombre: "plan", Herramientas: tools.HerramientasDePlan()}
 
-	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil); err != nil {
+	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil); err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
 	if g.llamadas != 2 {
@@ -156,7 +183,7 @@ func TestElBuclePropagaElErrorDelModelo(t *testing.T) {
 	fallo := errors.New("modelo caído")
 	g := &generadorGuion{pasadas: [][]ollama.Evento{{{Tipo: ollama.EventoError, Error: fallo}}}}
 	e := &Ejecutor{Runner: g}
-	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil); !errors.Is(err, fallo) {
+	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil); !errors.Is(err, fallo) {
 		t.Fatalf("err = %v, quiero %v", err, fallo)
 	}
 }

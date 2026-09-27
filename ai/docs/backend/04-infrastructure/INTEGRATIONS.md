@@ -24,6 +24,7 @@ Dos integraciones: Ollama, en local, y la búsqueda por internet. Ninguna otra s
 - **Dónde:** API HTTP en local, por defecto `http://localhost:11434`.
 - **Streaming:** obligatorio. Peticiones en streaming para poder mostrar el razonamiento mientras llega, que es el requisito de la interfaz. Ver [[specs/SPEC-INTERFAZ]].
 - **Perfil de hardware:** el harness detecta la máquina, avisa si el modelo elegido no cabe en la VRAM y limita el contexto. El modelo lo elige el usuario, no el harness. Ver [[specs/SPEC-OLLAMA-PERFIL]].
+- **Capacidades:** el harness consulta `/api/show` para leer qué declara saber cada modelo (`completion`, `tools`, `vision`…). LocalCli no usa function-calling nativo —las herramientas viajan como texto en el prompt—, así que la capacidad `tools` no bloquea nada: sirve para marcar en el modal y avisar al usuario si el modelo elegido probablemente no sabrá pedir herramientas.
 - **Concurrencia:** como las sesiones comparten un único modelo cargado, sus respuestas se serializan: mientras una genera, la otra espera. Es una consecuencia del hardware, no un defecto del diseño. Ver [[backend/DECISIONS]] para el mecanismo de serialización, aún abierto.
 
 ### Búsqueda en internet
@@ -58,6 +59,7 @@ Lo que sí se necesita en la máquina, pero no es una credencial: Ollama instala
 
 - El harness espera respuestas en streaming, con el razonamiento distinguible del texto final. De ahí sale el razonamiento en vivo de la interfaz.
 - El harness detecta el hardware y valida el modelo antes de cargarlo. Si un modelo no cabe en la VRAM, avisa y lo carga en RAM, más lento, sin fallar en silencio.
+- El harness lee la ficha del modelo (`/api/show`) para conocer sus capacidades; la ausencia de `tools` se comunica al usuario como aviso, sin impedir el uso.
 - El límite de contexto del modelo manda: el nodo de contexto recorta para que lo entregado quepa. Ver [[backend/01-domain/DOMAIN]].
 
 Si el contrato de streaming de Ollama cambiara, el módulo afectado es `ollama`, y el resto no debería enterarse.

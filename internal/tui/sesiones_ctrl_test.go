@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"localcli/internal/session"
 )
 
 // T-F016: la bienvenida abre el modal de sesiones y elegir una de ellas lleva a
@@ -171,4 +173,32 @@ func TestCtrlDPideConfirmacionCuandoLaSesionTrabaja(t *testing.T) {
 			t.Errorf("esc cancela el borrado: %v", p.eliminadas)
 		}
 	})
+}
+
+// SPEC-SESIONES / T-F027: al borrar la última sesión del proyecto la vista
+// vuelve a la bienvenida de inmediato, sin sesión activa ni modal abierto.
+func TestCtrlDSobreLaUltimaSesionVuelveALaBienvenida(t *testing.T) {
+	p := &puertoStub{sesiones: []session.Sesion{
+		{ID: "s1", Nombre: "única", Estado: session.EstadoInactiva},
+	}}
+	a := Nuevo(p)
+	a.Vista = VistaPrincipal
+	a.Panel.SesionID = "s1"
+	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	ejecuta(t, a, abreElModalDeSesiones(t, a))
+	tecla(t, a, tea.KeyCtrlD)
+
+	if len(p.eliminadas) != 1 || p.eliminadas[0] != "s1" {
+		t.Fatalf("ctrl+d borra la última sesión: %v", p.eliminadas)
+	}
+	if a.Vista != VistaBienvenida {
+		t.Errorf("sin sesiones la vista vuelve a la bienvenida: %v", a.Vista)
+	}
+	if a.Panel.SesionID != "" {
+		t.Errorf("no queda sesión activa: %q", a.Panel.SesionID)
+	}
+	if a.modalAbierto() {
+		t.Error("al volver a la bienvenida no queda ningún modal abierto")
+	}
 }

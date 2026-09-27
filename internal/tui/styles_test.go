@@ -29,7 +29,18 @@ import (
 // obtienen con sinEstilo, igual que hace el ojo.
 func TestMain(m *testing.M) {
 	lipgloss.SetColorProfile(termenv.ANSI)
-	os.Exit(m.Run())
+	// Aísla las preferencias del usuario: `Nuevo` lee config.json y los tests
+	// que aplican modelo o ciclan agente lo escriben. Sin esto, un test tocaría
+	// la configuración real de quien lo ejecuta.
+	home, err := os.MkdirTemp("", "localcli-home-")
+	if err == nil {
+		os.Setenv("HOME", home)
+	}
+	codigo := m.Run()
+	if err == nil {
+		os.RemoveAll(home)
+	}
+	os.Exit(codigo)
 }
 
 // --- T-F002-02: recortar ----------------------------------------------------

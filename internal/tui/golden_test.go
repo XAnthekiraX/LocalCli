@@ -76,7 +76,9 @@ func TestLasDoradasDeVistaSeMantienen(t *testing.T) {
 	})
 	compararDorada(t, "sesiones.golden", sinEstilo(sm.Render(100, 30))+"\n")
 
-	// Panel de aprobaciones con dos líneas, la primera seleccionada.
+	// Panel de aprobaciones con dos líneas, la primera seleccionada. Se muestra
+	// solo (hay algo que decidir) y sin foco, así que el pie invita a Ctrl+A o
+	// al clic.
 	ap := Aprobaciones{}
 	ap.Fijar([]Aprobacion{
 		{ID: "a1", Sesion: "api", Descripcion: "crear archivo"},
@@ -98,7 +100,7 @@ func TestLasDoradasDeVistaSeMantienen(t *testing.T) {
 
 	// Modal de modelos con dos modelos, el segundo resaltado (T-F013-02).
 	mm := &ModelsModal{}
-	mm.AbrirModelos()
+	mm.AbrirModelos("")
 	mm.FijarModelos([]ModeloLocal{{Nombre: "llama3.2"}, {Nombre: "qwen2.5"}}, nil)
 	mm.Mover(1)
 	compararDorada(t, "modelos.golden", sinEstilo(mm.Render(100, 30))+"\n")

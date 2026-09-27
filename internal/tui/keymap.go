@@ -66,6 +66,14 @@ const (
 	// AccionSubir / AccionBajar navegan la lista del componente con el foco.
 	AccionSubir
 	AccionBajar
+	// AccionChatSubir / AccionChatBajar / AccionChatPaginaArriba /
+	// AccionChatPaginaAbajo recorren el historial del chat (chat_scroll_up,
+	// chat_scroll_down, chat_page_up, chat_page_down). Son de la vista: en el
+	// modal, up/down siguen siendo AccionSubir/AccionBajar.
+	AccionChatSubir
+	AccionChatBajar
+	AccionChatPaginaArriba
+	AccionChatPaginaAbajo
 )
 
 // LíderPorDefecto y TimeoutPorDefecto son los valores de fábrica de la
@@ -82,24 +90,28 @@ const (
 // command_palette, SPEC-KEYBINDS §Acción), incluida «pausar», que existe como
 // acción pero no trae tecla de fábrica.
 var DescripcionDeAccion = map[Accion]string{
-	AccionEnviar:         "enviar la petición",
-	AccionSalir:          "salir",
-	AccionPanel:          "abrir o cerrar el panel de datos",
-	AccionSelector:       "modal de sesiones",
-	AccionSesionNueva:    "crear una sesión nueva",
-	AccionEliminarSesion: "eliminar la sesión resaltada",
-	AccionRazonamiento:   "mostrar u ocultar el razonamiento",
-	AccionAprobaciones:   "abrir o cerrar el panel de aprobaciones",
-	AccionAprobar:        "aprobar la propuesta seleccionada",
-	AccionDeclinar:       "declinar la propuesta seleccionada",
-	AccionPausar:         "pausar la cola en curso",
-	AccionCancelar:       "cancelar el trabajo en curso (pide confirmación)",
-	AccionCerrarSelector: "cerrar lo abierto",
-	AccionAyuda:          "modal de atajos de teclado",
-	AccionModalModelos:   "modal de modelos",
-	AccionCiclarAgente:   "cambiar de agente (plan ↔ build)",
-	AccionSubir:          "subir en la lista",
-	AccionBajar:          "bajar en la lista",
+	AccionEnviar:           "enviar la petición",
+	AccionSalir:            "salir",
+	AccionPanel:            "abrir o cerrar el panel de datos",
+	AccionSelector:         "modal de sesiones",
+	AccionSesionNueva:      "crear una sesión nueva",
+	AccionEliminarSesion:   "eliminar la sesión resaltada",
+	AccionRazonamiento:     "mostrar u ocultar el razonamiento",
+	AccionAprobaciones:     "abrir o cerrar el panel de aprobaciones",
+	AccionAprobar:          "aprobar la propuesta seleccionada",
+	AccionDeclinar:         "declinar la propuesta seleccionada",
+	AccionPausar:           "pausar la cola en curso",
+	AccionCancelar:         "cancelar el trabajo en curso (pide confirmación)",
+	AccionCerrarSelector:   "cerrar lo abierto",
+	AccionAyuda:            "modal de atajos de teclado",
+	AccionModalModelos:     "modal de modelos",
+	AccionCiclarAgente:     "cambiar de agente (plan ↔ build)",
+	AccionSubir:            "subir en la lista",
+	AccionBajar:            "bajar en la lista",
+	AccionChatSubir:        "subir por el historial del chat",
+	AccionChatBajar:        "bajar por el historial del chat",
+	AccionChatPaginaArriba: "página arriba en el historial",
+	AccionChatPaginaAbajo:  "página abajo en el historial",
 }
 
 // Atajo une una acción con sus literales: cero (deshabilitada), uno o varios
@@ -159,9 +171,16 @@ func MapasPorDefecto() map[Accion][]string {
 		AccionCiclarAgente:   {"tab"},
 		AccionSubir:          {"up"},
 		AccionBajar:          {"down"},
-		AccionAprobar:        {"a"},
-		AccionDeclinar:       {"d"},
-		AccionPausar:         {},
+		// El historial del chat se recorre con las flechas y el paginado. `up`
+		// y `down` no chocan con AccionSubir/AccionBajar (ámbito del modal):
+		// sin modal, la vista no las ve y el chat las usa.
+		AccionChatSubir:        {"up"},
+		AccionChatBajar:        {"down"},
+		AccionChatPaginaArriba: {"pgup"},
+		AccionChatPaginaAbajo:  {"pgdown"},
+		AccionAprobar:          {"a"},
+		AccionDeclinar:         {"d"},
+		AccionPausar:           {},
 	}
 }
 
@@ -190,6 +209,7 @@ func OrdenDeAcciones() []Accion {
 		AccionAprobaciones, AccionAprobar, AccionDeclinar, AccionPausar,
 		AccionCancelar, AccionCerrarSelector, AccionAyuda,
 		AccionModalModelos, AccionCiclarAgente, AccionSubir, AccionBajar,
+		AccionChatSubir, AccionChatBajar, AccionChatPaginaArriba, AccionChatPaginaAbajo,
 	}
 }
 
@@ -359,19 +379,11 @@ func AyudaAtajos(entradas []Atajo) string {
 	return b.String()
 }
 
-// lineaDeAtajo compone la fila «tecla(s) + descripción» de un atajo. La comparten
-// el listado de atajos y el modal de atajos (keysmodal.go, DOMAIN §1
-// `keysmodal`): la tabla es la misma, solo cambia dónde se pinta.
+// lineaDeAtajo compone la fila «tecla(s) + descripción» de un atajo para el
+// listado de ayuda (AyudaAtajos). El modal de atajos compone sus filas con el
+// ancho calculado por grupo (keysmodal.go, filaDeAtajo).
 func lineaDeAtajo(a Atajo) string {
-	literales := make([]string, 0, len(a.Secuencias))
-	for _, sec := range a.Secuencias {
-		literales = append(literales, sec.Describir())
-	}
-	texto := strings.Join(literales, ", ")
-	if texto == "" {
-		texto = "(deshabilitada)"
-	}
-	return fmt.Sprintf("%-16s %s", texto, a.Descripcion)
+	return fmt.Sprintf("%-16s %s", teclasDeAtajo(a), a.Descripcion)
 }
 
 // --- puentes de compatibilidad -------------------------------------------------

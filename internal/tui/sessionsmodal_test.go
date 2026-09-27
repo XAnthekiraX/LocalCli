@@ -245,6 +245,47 @@ func TestLaRespuestaTardíaNoRellenaElModalDeSesionesYaCerrado(t *testing.T) {
 	}
 }
 
+// T-F027: el evento `titulo_sesion` (el título que el modelo generó con la
+// primera petición) renombra la sesión en el panel —si es la activa— y en la
+// lista del modal, sin cambiar su id.
+func TestElEventoTituloRenombraLaSesionEnPanelYModal(t *testing.T) {
+	a, _ := appConModales(t)
+	ejecuta(t, a, abreElModalDeSesiones(t, a))
+
+	// El evento se inyecta como llega del motor; su comando re-arma la escucha,
+	// así que no se ejecuta aquí (como el resto de pruebas de eventos).
+	pulsa(t, a, eventoMsg{Evento: Evento{
+		Nombre: EventoTituloSesion,
+		Datos:  map[string]string{"sesion": "s1", "nombre": "Documentar sesiones"},
+	}})
+
+	if a.Panel.Sesion != "Documentar sesiones" {
+		t.Errorf("el panel refleja el título de la sesión activa: %q", a.Panel.Sesion)
+	}
+	if v := sinEstilo(a.View()); !strings.Contains(v, "Documentar sesiones") {
+		t.Errorf("el modal refleja el título:\n%s", v)
+	}
+	if a.Panel.SesionID != "s1" {
+		t.Errorf("el id no cambia al renombrar: %q", a.Panel.SesionID)
+	}
+}
+
+// El título de otra sesión no toca el panel de la activa: solo su fila del
+// modal (SPEC-INTERFAZ: el panel refleja la sesión activa, y solo esa).
+func TestUnTituloDeOtraSesionNoTocaElPanel(t *testing.T) {
+	a, _ := appConModales(t)
+	a.Panel.Sesion = "primera"
+
+	pulsa(t, a, eventoMsg{Evento: Evento{
+		Nombre: EventoTituloSesion,
+		Datos:  map[string]string{"sesion": "s2", "nombre": "Otra cosa"},
+	}})
+
+	if a.Panel.Sesion != "primera" {
+		t.Errorf("un título ajeno no cambia el panel: %q", a.Panel.Sesion)
+	}
+}
+
 // sesionesDePrueba es la lista que devuelve el doble: tres sesiones del
 // proyecto con sus estados.
 func sesionesDePrueba() []session.Sesion {

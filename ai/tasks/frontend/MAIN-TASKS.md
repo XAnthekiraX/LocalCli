@@ -22,6 +22,17 @@ Fuente de verdad del progreso del frontend. Derivada exclusivamente de `ai/docs/
 | T-F015 | actualizar | indicador de agente a la izquierda del input ([plan]/[build]) en bienvenida y vista principal; Tab alterna el agente | T-F012 | completada | `015-task-indicador-agente.md` |
 | T-F016 | actualizar | modal de sesiones en la bienvenida: `Ctrl+X l` lo abre y al elegir una sesión la vista pasa a la principal con su historial | T-F003, T-F010 | completada | `016-task-sesiones-bienvenida.md` |
 | T-F017 | actualizar | atajos de sesión: `Ctrl+X n` crea una sesión y la deja activa; `Ctrl+D` elimina la resaltada en el modal, pidiendo confirmación si trabaja | T-F014 | completada | `017-task-sesiones-ctrl.md` |
+| T-F018 | actualizar | input: edición del cursor (flechas, home/end) sin perder los atajos de la app | T-F004 | completada | `018-task-edicion-input.md` |
+| T-F019 | actualizar | chat: scroll del historial (ventana con seguimiento del final) y sus atajos ↑/↓ y PgUp/PgDn | T-F005 | completada | `019-task-scroll-chat.md` |
+| T-F020 | actualizar | modal de modelos: resalta el modelo en uso, marca los que no declaran herramientas y avisa al elegirlos | T-F013 | completada | `020-task-modal-modelos-foco.md` |
+| T-F021 | actualizar | preferencias de usuario: arranca con el último agente y persiste modelo/agente en `~/.config/localcli/config.json` | T-F004, T-F010 | completada | `021-task-preferencias-tui.md` |
+| T-F022 | actualizar | modal de atajos: agrupado por categorías y con tecla y descripción alineadas | T-F014 | completada | `022-task-modal-atajos-orden.md` |
+| T-F023 | actualizar | bienvenida: la línea de entrada se edita en cualquier punto (flechas, home/end) | T-F003 | completada | `023-task-bienvenida-edicion.md` |
+| T-F024 | actualizar | ratón: rueda para el historial, arrastre para seleccionar y copia al portapapeles | T-F005 | completada | `024-task-raton-seleccion-copia.md` |
+| T-F025 | actualizar | línea de estado bajo el input: modelo en uso y acceso a herramientas | T-F004, T-F020 | completada | `025-task-estado-modelo.md` |
+| T-F026 | actualizar | doble `esc` para cancelar el trabajo en curso, con confirmación | T-F010 | completada | `026-task-doble-esc-cancelar.md` |
+| T-F027 | actualizar | la bienvenida crea la sesión; borrar la última vuelve a la bienvenida; evento `titulo_sesion` | T-F003, T-F014, T-F017 | completada | `027-task-sesiones-bienvenida-titulo.md` |
+| T-F028 | actualizar | aprobaciones: el panel se muestra sin robar el teclado; `Ctrl+A` enfoca (`a`/`d`) y un clic sobre «aprobar»/«declinar» decide | T-F008 | completada | `028-task-aprobaciones-input-raton.md` |
 
 ## Referencias
 

@@ -52,16 +52,23 @@ type Ejecutor struct {
 	MaxPasadas int // por defecto pasadasPorDefecto
 }
 
-// Ejecutar responde una petición: arma los mensajes con el contexto, llama al
-// modelo y, mientras el modelo pida herramientas, las despacha a `tools` y
-// reinyecta sus resultados hasta agotar las pasadas o quedarse sin pedidos.
-func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto string, sink Sink) (Resultado, error) {
+// Ejecutar responde una petición: arma los mensajes con el historial de la
+// conversación y el contexto del turno, llama al modelo y, mientras el modelo
+// pida herramientas, las despacha a `tools` y reinyecta sus resultados hasta
+// agotar las pasadas o quedarse sin pedidos.
+//
+// `historial` es la conversación anterior (turnos ya cerrados); `contexto` es el
+// contexto de ESTE turno y viaja como último mensaje de usuario. Un historial
+// vacío deja el comportamiento igual que antes de la memoria de conversación.
+func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto string, historial []ollama.Mensaje, sink Sink) (Resultado, error) {
 	max := e.MaxPasadas
 	if max <= 0 {
 		max = pasadasPorDefecto
 	}
 
-	mensajes := []ollama.Mensaje{{Role: "user", Content: contexto}}
+	mensajes := make([]ollama.Mensaje, 0, len(historial)+1)
+	mensajes = append(mensajes, historial...)
+	mensajes = append(mensajes, ollama.Mensaje{Role: "user", Content: contexto})
 	var texto, razon strings.Builder
 	for pasada := 0; pasada < max; pasada++ {
 		ch, err := e.Runner.Generar(ctx, a, modelo, mensajes)

@@ -24,11 +24,13 @@ func (s *stubContexto) ContextoPara(ctx context.Context, etapa, objetivo string)
 }
 
 type stubAgente struct {
-	traza  *[]string
-	fallar bool
+	traza     *[]string
+	fallar    bool
+	historial []Mensaje
 }
 
-func (s *stubAgente) Ejecutar(ctx context.Context, agente, contexto string) (Resultado, error) {
+func (s *stubAgente) Ejecutar(ctx context.Context, agente, contexto string, historial []Mensaje) (Resultado, error) {
+	s.historial = historial
 	if s.traza != nil {
 		*s.traza = append(*s.traza, "agente:"+agente)
 	}
@@ -184,11 +186,39 @@ func TestCadaEtapaPideContextoConSuEtapa(t *testing.T) {
 func TestConversarPideContextoComoChat(t *testing.T) {
 	ctx := &stubContexto{}
 	m := &Motor{Contexto: ctx, Agente: &stubAgente{}}
-	if _, err := m.Conversar(context.Background(), tools.AgenteBuild, "hola"); err != nil {
+	if _, err := m.Conversar(context.Background(), tools.AgenteBuild, "hola", nil); err != nil {
 		t.Fatalf("Conversar: %v", err)
 	}
 	if len(ctx.etapas) != 1 || ctx.etapas[0] != EtapaChat {
 		t.Fatalf("etapas = %v, quiero [%s]", ctx.etapas, EtapaChat)
+	}
+}
+
+// El motor transporta el historial tal cual hasta el agente: no lo interpreta.
+func TestConversarPasaElHistorialAlAgente(t *testing.T) {
+	ag := &stubAgente{}
+	m := &Motor{Contexto: &stubContexto{}, Agente: ag}
+	historial := []Mensaje{
+		{Rol: RolUsuario, Texto: "hola"},
+		{Rol: RolAsistente, Texto: "qué tal"},
+	}
+	if _, err := m.Conversar(context.Background(), tools.AgenteBuild, "sigue", historial); err != nil {
+		t.Fatalf("Conversar: %v", err)
+	}
+	if len(ag.historial) != 2 || ag.historial[0].Texto != "hola" || ag.historial[1].Rol != RolAsistente {
+		t.Fatalf("el historial no llegó al agente: %+v", ag.historial)
+	}
+}
+
+// Un flujo no lleva historial de conversación: sus etapas corren sin él.
+func TestEjecutarFlujoNoPasaHistorial(t *testing.T) {
+	ag := &stubAgente{}
+	m := &Motor{Contexto: &stubContexto{}, Agente: ag, Aprobador: &stubAprobador{aprobar: true}}
+	if _, err := m.EjecutarFlujo(context.Background(), FlujoPlanificacion(), "objetivo"); err != nil {
+		t.Fatalf("EjecutarFlujo: %v", err)
+	}
+	if len(ag.historial) != 0 {
+		t.Errorf("una etapa de flujo no debe llevar historial: %+v", ag.historial)
 	}
 }
 

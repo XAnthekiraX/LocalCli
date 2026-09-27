@@ -24,30 +24,82 @@ import (
 )
 
 // Bienvenida es el modelo de la primera pantalla: lo escrito, que será la
-// primera petición, y el foco de su única línea de entrada. No guarda la lista
-// de modelos: esa vive en el modal (SPEC-INTERFAZ §Pantalla de bienvenida).
+// primera petición, el foco de su única línea de entrada y la posición del
+// cursor (en runas). No guarda la lista de modelos: esa vive en el modal
+// (SPEC-INTERFAZ §Pantalla de bienvenida).
 type Bienvenida struct {
 	Texto string
 	Foco  bool
+	// Pos es la posición del cursor en runas dentro de Texto (0..len). Permite
+	// editar en cualquier punto, igual que la línea de la vista principal.
+	Pos int
 }
 
 // NuevaBienvenida deja la pantalla lista con la entrada enfocada: es la única
 // línea que existe aquí, así que el foco es el estado por defecto.
 func NuevaBienvenida() Bienvenida { return Bienvenida{Foco: true} }
 
-// Escribir añade lo tecleado a la primera petición.
-func (b *Bienvenida) Escribir(s string) {
-	if b.Foco {
-		b.Texto += s
+func (b *Bienvenida) clampPos() {
+	if b.Pos < 0 {
+		b.Pos = 0
+	}
+	if n := len([]rune(b.Texto)); b.Pos > n {
+		b.Pos = n
 	}
 }
 
-// Borrar quita el último carácter escrito.
-func (b *Bienvenida) Borrar() {
-	if r := []rune(b.Texto); len(r) > 0 {
-		b.Texto = string(r[:len(r)-1])
+// Escribir inserta lo tecleado en la posición del cursor y lo avanza.
+func (b *Bienvenida) Escribir(s string) {
+	if !b.Foco {
+		return
 	}
+	b.clampPos()
+	r := []rune(b.Texto)
+	ins := []rune(s)
+	nuevo := make([]rune, 0, len(r)+len(ins))
+	nuevo = append(nuevo, r[:b.Pos]...)
+	nuevo = append(nuevo, ins...)
+	nuevo = append(nuevo, r[b.Pos:]...)
+	b.Texto = string(nuevo)
+	b.Pos += len(ins)
 }
+
+// Borrar quita el carácter anterior al cursor (retroceso).
+func (b *Bienvenida) Borrar() {
+	if !b.Foco {
+		return
+	}
+	b.clampPos()
+	r := []rune(b.Texto)
+	if b.Pos == 0 {
+		return
+	}
+	nuevo := append([]rune{}, r[:b.Pos-1]...)
+	nuevo = append(nuevo, r[b.Pos:]...)
+	b.Texto = string(nuevo)
+	b.Pos--
+}
+
+// BorrarAdelante quita el carácter en la posición del cursor (suprimir).
+func (b *Bienvenida) BorrarAdelante() {
+	b.clampPos()
+	r := []rune(b.Texto)
+	if b.Pos >= len(r) {
+		return
+	}
+	nuevo := append([]rune{}, r[:b.Pos]...)
+	nuevo = append(nuevo, r[b.Pos+1:]...)
+	b.Texto = string(nuevo)
+}
+
+// Izquierda/Derecha/Inicio/Fin mueven el cursor sin tocar el texto.
+func (b *Bienvenida) Izquierda() { b.Pos--; b.clampPos() }
+func (b *Bienvenida) Derecha()   { b.Pos++; b.clampPos() }
+func (b *Bienvenida) Inicio()    { b.Pos = 0 }
+func (b *Bienvenida) Fin()       { b.Pos = len([]rune(b.Texto)) }
+
+// Limpiar vacía la línea y devuelve el cursor al principio.
+func (b *Bienvenida) Limpiar() { b.Texto = ""; b.Pos = 0 }
 
 // teclaBienvenida resuelve una pulsación de la bienvenida. T-F012-06: también
 // pasa por el KeyResolver. Las acciones propias de la interfaz principal
@@ -157,29 +209,41 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.Bienvenida.Escribir(" ")
 	case tea.KeyBackspace:
 		a.Bienvenida.Borrar()
+	case tea.KeyDelete:
+		a.Bienvenida.BorrarAdelante()
+	case tea.KeyLeft:
+		a.Bienvenida.Izquierda()
+	case tea.KeyRight:
+		a.Bienvenida.Derecha()
+	case tea.KeyHome:
+		a.Bienvenida.Inicio()
+	case tea.KeyEnd:
+		a.Bienvenida.Fin()
 	}
 	return a, nil
 }
 
-// enviarDesdeBienvenida manda lo escrito como primera petición: la sesión
-// activa se retoma si existe o se crea si no (INTERFACES §2) y después va el
-// mensaje. Son las dos operaciones de este envío, cada una exactamente una vez;
-// la vista cambia a la principal sin repetir la petición ni pedir
-// confirmación (DOMAIN §3).
+// enviarDesdeBienvenida manda lo escrito como primera petición: no existe una
+// sesión previa, así que se crea una nueva (con su nombre provisional; el título
+// lo genera el modelo con esta petición) y después va el mensaje. Son las dos
+// operaciones de este envío, cada una exactamente una vez; la vista cambia a la
+// principal sin repetir la petición ni pedir confirmación (DOMAIN §3,
+// SPEC-SESIONES: una sesión nueva se crea con la primera petición desde la
+// bienvenida).
 func (a *App) enviarDesdeBienvenida() tea.Cmd {
 	texto := strings.TrimSpace(a.Bienvenida.Texto)
 	if texto == "" {
 		return nil
 	}
 	if a.Panel.SesionID == "" {
-		ses, err := a.Puerto.ResolverActiva()
+		ses, err := a.Puerto.Crear()
 		if err != nil {
-			a.Chat.AñadirSistema("no se pudo abrir la sesión: " + err.Error())
+			a.Chat.AñadirSistema("no se pudo crear la sesión: " + err.Error())
 			return nil
 		}
 		a.activar(ses)
 	}
-	a.Bienvenida.Texto = ""
+	a.Bienvenida.Limpiar()
 	// El modelo elegido en el modal viaja con la primera petición (DOMAIN §2):
 	// se entrega al motor justo antes de enviar, para que la petición salga con
 	// el modelo que el usuario eligió y no con el de la autodetección.
@@ -218,9 +282,26 @@ func (a *App) viewBienvenida() string {
 	// El indicador del agente precede a la línea de entrada, igual que en la
 	// interfaz principal: el render canónico de SPEC-INTERFAZ §Pantalla de
 	// bienvenida es `[plan] > En qué te ayudo hoy: █╚` (T-F015-02).
-	b.WriteString(IndicadorAgente(a.Agente) + "En qué te ayudo hoy: " + a.Bienvenida.Texto)
+	// El cursor se pinta en su posición (no siempre al final), como en
+	// cualquier editor de una línea.
+	b.WriteString(IndicadorAgente(a.Agente) + "En qué te ayudo hoy: ")
+	r := []rune(a.Bienvenida.Texto)
+	pos := a.Bienvenida.Pos
+	if pos < 0 {
+		pos = 0
+	}
+	if pos > len(r) {
+		pos = len(r)
+	}
 	if a.Bienvenida.Foco {
-		b.WriteString("▌")
+		b.WriteString(string(r[:pos]) + "▌" + string(r[pos:]))
+	} else {
+		b.WriteString(a.Bienvenida.Texto)
+	}
+	// El aviso transitorio (p. ej. el modelo sin herramientas) también se ve
+	// aquí: la bienvenida es donde primero se elige modelo.
+	if a.Aviso != "" {
+		b.WriteString("\n\n" + estiloAviso.Render(a.Aviso))
 	}
 	return centrar(b.String(), a.Ancho, a.Alto)
 }

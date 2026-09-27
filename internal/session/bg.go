@@ -31,10 +31,25 @@ type Gestor struct {
 	// Flujo es el ciclo que se arranca al enviar un mensaje. Vacío =
 	// FlujoPorDefecto().
 	Flujo flow.Flujo
+	// Titulador produce el título de una sesión a partir de su primera petición.
+	// Opcional: sin él, la sesión conserva el nombre provisional.
+	Titulador Titulador
+	// Resumidor compacta la conversación cuando no cabe en el presupuesto.
+	// Opcional: sin él, se entrega solo el tramo reciente.
+	Resumidor Resumidor
+	// Presupuesto es el tope de tokens del historial que se le envía al modelo.
+	// 0 = LOCALCLI_CONTEXT_LIMIT o el valor por defecto.
+	Presupuesto int
+	// PresupuestoRecencia es cuántos tokens de ese tope se reservan al tramo
+	// literal más reciente. 0 = la mitad del presupuesto.
+	PresupuestoRecencia int
 
 	mu         sync.Mutex
 	enCurso    map[string]*trabajo
 	notificado map[string]string
+	// resumenes guarda, por sesión, el resumen compactado y hasta qué mensaje
+	// abarca. Vive en memoria: se recalcula de forma perezosa al reiniciar.
+	resumenes map[string]resumenSesion
 }
 
 // trabajo es la ejecución viva de una sesión.
@@ -67,6 +82,7 @@ func NuevoGestor(alcance *Alcance, motor Motor, bus *Bus) (*Gestor, error) {
 		Bus:        bus,
 		enCurso:    map[string]*trabajo{},
 		notificado: map[string]string{},
+		resumenes:  map[string]resumenSesion{},
 	}, nil
 }
 

@@ -27,16 +27,27 @@ type Aprobacion struct {
 }
 
 // Aprobaciones es el panel de decisiones pendientes.
+//
+// `Abierto` es que se vea; `Enfocado` es que el teclado sea suyo. Son dos cosas
+// distintas a propósito: una aprobación pendiente se muestra sin más (para que
+// la decisión se vea), pero no le quita el teclado al input. El usuario decide
+// pulsando la opción con el ratón, o enfocando el panel con `Ctrl+A` para usar
+// `a`/`d`.
 type Aprobaciones struct {
-	Abierto bool
-	Items   []Aprobacion
-	Indice  int
+	Abierto  bool
+	Enfocado bool
+	Items    []Aprobacion
+	Indice   int
 }
 
 // Fijar reemplaza la lista, conservando la selección dentro de los límites.
 //
-// El panel se abre solo cuando hay algo que decidir y se cierra cuando no queda
-// nada: es un panel de decisiones, y vacío no aporta nada a la pantalla.
+// El panel se MUESTRA cuando hay algo que decidir, pero no se enfoca: el input
+// sigue escribiendo y la decisión se ve en pantalla. El foco se pide con
+// `Ctrl+A`; mientras tanto, un clic sobre la opción del ratón también decide
+// (SPEC-INTERFAZ-ATAJOS §Reglas: "El panel no se abre solo" y "un clic sobre
+// «aprobar» o «declinar» resuelve esa aprobación"). Sin nada que decidir, se
+// cierra y suelta el foco.
 func (a *Aprobaciones) Fijar(items []Aprobacion) {
 	a.Items = items
 	if a.Indice >= len(items) {
@@ -46,6 +57,9 @@ func (a *Aprobaciones) Fijar(items []Aprobacion) {
 		a.Indice = 0
 	}
 	a.Abierto = len(items) > 0
+	if len(items) == 0 {
+		a.Enfocado = false
+	}
 }
 
 // MarcarObsoleta deja la línea visible pero sin decisión posible: la sesión
@@ -89,7 +103,8 @@ func (a *Aprobaciones) Seleccionada() (Aprobacion, bool) {
 
 // Resolver saca una línea del panel: la decisión se fue a la sesión dueña y la
 // línea ya no espera nada. Devuelve la aprobación resuelta para que quien la
-// reciba sepa a quién afecta.
+// reciba sepa a quién afecta. Si con ella se vacía el panel, el panel se cierra
+// y suelta el foco: no queda nada que decidir.
 func (a *Aprobaciones) Resolver(id string) (Aprobacion, bool) {
 	for i, it := range a.Items {
 		if it.ID != id {
@@ -99,9 +114,29 @@ func (a *Aprobaciones) Resolver(id string) (Aprobacion, bool) {
 		if a.Indice >= len(a.Items) && a.Indice > 0 {
 			a.Indice--
 		}
+		if len(a.Items) == 0 {
+			a.Abierto = false
+			a.Enfocado = false
+		}
 		return it, true
 	}
 	return Aprobacion{}, false
+}
+
+// opcionesAprobarDeclinar es el hueco de opciones del formato documentado
+// (SPEC-INTERFAZ-ATAJOS §Formato de una línea del panel). La tercera opción
+// sigue por definir y sale como un hueco, no se inventa.
+const opcionesAprobarDeclinar = "aprobar | declinar | —"
+
+// FilaDe compone la fila de una aprobación SIN el marcador de selección. La
+// usan `Lineas` (que le añade la marca) y el ratón, que localiza con ella la
+// línea pulsada en el marco pintado (selection.go).
+func FilaDe(it Aprobacion) string {
+	opciones := opcionesAprobarDeclinar
+	if it.Obsoleta {
+		opciones = "obsoleta"
+	}
+	return it.Sesion + " | " + it.Descripcion + " | " + opciones
 }
 
 // Lineas devuelve cada aprobación en el formato documentado, con la seleccionada
@@ -113,11 +148,7 @@ func (a *Aprobaciones) Lineas() []string {
 		if i == a.Indice {
 			marca = "› "
 		}
-		opciones := "aprobar | declinar | —"
-		if it.Obsoleta {
-			opciones = "obsoleta"
-		}
-		out = append(out, marca+it.Sesion+" | "+it.Descripcion+" | "+opciones)
+		out = append(out, marca+FilaDe(it))
 	}
 	return out
 }
@@ -144,6 +175,13 @@ func (a *Aprobaciones) Render() string {
 		}
 		b.WriteString(l + "\n")
 	}
-	b.WriteString(estiloSistema.Render("(a aprueba · d declina · esc cierra)"))
+	// El pie dice qué teclas valen ahora: con el foco en el panel, a/d deciden;
+	// sin foco, el teclado es del input y se decide con el ratón o pidiendo el
+	// foco con Ctrl+A.
+	pie := "(ctrl+a decide · clic en aprobar/declinar)"
+	if a.Enfocado {
+		pie = "(a aprueba · d declina · esc cierra)"
+	}
+	b.WriteString(estiloSistema.Render(pie))
 	return strings.TrimRight(b.String(), "\n")
 }

@@ -18,7 +18,7 @@ Harness de terminal en Go que planifica y ejecuta desarrollo de software con un 
 
 ## Alcance funcional aprobado
 
-Definido en 17 especificaciones funcionales bajo `ai/docs/specs/`.
+Definido en 19 especificaciones funcionales bajo `ai/docs/specs/`.
 
 ### Núcleo (P0)
 
@@ -28,6 +28,7 @@ Definido en 17 especificaciones funcionales bajo `ai/docs/specs/`.
 - [[specs/SPEC-OLLAMA-PERFIL]] — conexión a Ollama y perfil de hardware.
 - [[specs/SPEC-NODO-CONTEXTO]] — selección y recorte del contexto por etapa.
 - [[specs/SPEC-SESIONES]] — varias sesiones con contexto independiente.
+- [[specs/SPEC-HISTORIAL-CONVERSACION]] — memoria del chat y compactación del historial.
 - [[specs/SPEC-MOTOR-FLUJOS]] — motor de etapas y flujos oficiales.
 - [[specs/SPEC-COLA-TAREAS]] — cola por capa que se ejecuta sola.
 - [[specs/SPEC-CICLO-PLANIFICACION]] — ciclo de planificación desde cero.
@@ -70,9 +71,9 @@ Un solo proceso. Los módulos se comunican por canales de Go, no por red.
 cmd/localcli/      punto de entrada
 internal/
   tui/             chat, panel de datos, selector de sesiones, aprobaciones
-  session/         creación, cambio y ejecución en segundo plano de sesiones
+  session/         creación, cambio, memoria de conversación y ejecución en segundo plano de sesiones
   agent/           definiciones de plan y build, prompts, permisos y relevo
-  ollama/          cliente HTTP, streaming, razonamiento, perfil de hardware
+  ollama/          cliente HTTP, streaming, razonamiento, perfil de hardware y capacidades del modelo
   context/         grafo de frontmatter, selección, recorte y auditoría
   flow/            motor de etapas y encadenamiento
   queue/           cola por capa y orden por dependencias
@@ -119,6 +120,8 @@ Hay dos planos, y la separación es deliberada.
 | Historial de cambios aplicados | SQLite |
 
 La cola se deriva de los archivos de tarea y se reconstruye al arrancar en memoria; no hay tabla de cola en SQLite. Si los dos divergen, manda el archivo.
+
+**Preferencias del usuario: fuera del proyecto.** El mapa de teclas y las preferencias —último modelo y último agente usados— viven en `~/.config/localcli/` (`keys.json` y `config.json`). Son globales del usuario, no del proyecto: no se versionan con el contenido ni se guardan en SQLite. Ver [[backend/04-infrastructure/CONFIGURATION]] y [[frontend/FRONTEND]].
 
 ## Integraciones
 
@@ -193,7 +196,7 @@ relacionado:
 - `relacionado`: a qué otros documentos toca, sin que este necesite de ellos.
 
 **`depende_de` y `relacionado` no son sinónimos.** Un índice publica sus hijos
-y no depende de ellos: `PROJECT.md` lista diecisiete specs, y declararlas haría
+y no depende de ellos: `PROJECT.md` lista diecinueve specs, y declararlas haría
 que cargar la raíz arrastrara el proyecto entero. La dirección real va al revés,
 de la hoja a la raíz.
 

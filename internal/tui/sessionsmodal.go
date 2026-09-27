@@ -76,6 +76,19 @@ func (sm *SessionsModal) ActualizarEstado(sesionID, estado string) {
 	}
 }
 
+// ActualizarNombre refresca el título de una sesión en la lista abierta. El
+// título lo genera el modelo con la primera petición (`titulo_sesion`) y el id
+// de la sesión no cambia. Si la sesión no está en la lista, no toca nada.
+func (sm *SessionsModal) ActualizarNombre(sesionID, nombre string) {
+	for i := range sm.Sesiones {
+		if sm.Sesiones[i].ID == sesionID {
+			sm.Sesiones[i].Nombre = nombre
+			sm.repintar(sm.Indice)
+			return
+		}
+	}
+}
+
 // IndiceDe devuelve la posición de una sesión en la lista, o 0 si no está: al
 // abrir, el resaltado arranca en la sesión activa, que es la que se está
 // viendo (SPEC-INTERFAZ §Cambiar de sesión).

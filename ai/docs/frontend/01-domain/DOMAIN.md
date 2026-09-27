@@ -19,12 +19,12 @@ Cada componente tiene una responsabilidad y un límite. Ninguno contiene reglas 
 | Componente | Responsabilidad | Lo que no hace |
 |---|---|---|
 | `app` | Modelo raíz: reparte los eventos entre componentes, mantiene qué vista está activa (bienvenida o principal) y decide la transición | No conoce el detalle de cada componente; solo enruta |
-| `welcome` | Pantalla de bienvenida centrada: logotipo ASCII con nombre y versión, línea con el modelo en uso y una línea de entrada precedida del indicador de agente (`[plan]` / `[build]`). Los modelos se listan solo dentro del modal (`Ctrl+X m`) y las sesiones en el suyo (`Ctrl+X l`) | No crea sesiones ni valida nada: envía lo escrito como petición junto con el modelo elegido y la vista cambia a la principal |
-| `chat` | Muestra el historial de la sesión activa: razonamiento y respuesta de cada intercambio | No gestiona sesiones; pinta lo que le llega de la activa |
-| `input` | Una línea de texto precedida del indicador del agente activo (`[plan]` / `[build]`); compone y envía la petición hacia la sesión activa. `Tab` alterna el agente | No valida reglas de negocio |
+| `welcome` | Pantalla de bienvenida centrada: logotipo ASCII con nombre y versión, línea con el modelo en uso y una línea de entrada precedida del indicador de agente (`[plan]` / `[build]`). Su línea de entrada se edita en cualquier punto, como la principal. Los modelos se listan solo dentro del modal (`Ctrl+X m`) y las sesiones en el suyo (`Ctrl+X l`) | No valida nada: envía lo escrito como primera petición (que crea una sesión nueva, resuelto por `app` con el puerto) junto con el modelo elegido, y la vista cambia a la principal |
+| `chat` | Muestra el historial de la sesión activa: razonamiento y respuesta de cada intercambio. El historial se recorre con `↑`/`↓`, `pgup`/`pgdown` y la rueda del ratón; sin subir, sigue el final | No gestiona sesiones; pinta lo que le llega de la activa |
+| `input` | Una línea de texto precedida del indicador del agente activo (`[plan]` / `[build]`); compone y envía la petición hacia la sesión activa. El texto se edita en cualquier punto (flechas, `home`/`end`); bajo ella se muestra el modelo en uso y si tiene herramientas. `Tab` alterna el agente | No valida reglas de negocio |
 | `panel` | Los nueve datos del panel, plegable a la derecha | Es de lectura: nada se escribe desde él |
-| `modals` | Tres modales centrados con la misma mecánica (uno abierto a la vez, `↑`/`↓` navegan, `Enter` aplica y cierra, `Esc` descarta): `modelsmodal` (modelos de Ollama, `Ctrl+X m`), `sessionsmodal` (sesiones del proyecto con nombre y estado; al aplicar abre esa sesión, `Ctrl+X l`; `Ctrl+D` elimina la resaltada, con confirmación si está trabajando) y `keysmodal` (lista de atajos existentes, solo lectura, `Ctrl+P`) | No decide nada: entrega la elección al `app`; no mantiene listas permanentes |
-| `approvals` | Panel de aprobaciones pendientes de todas las sesiones, resolvibles una a una | No decide: envía la decisión del usuario |
+| `modals` | Tres modales centrados con la misma mecánica (uno abierto a la vez, `↑`/`↓` navegan, `Enter` aplica y cierra, `Esc` descarta): `modelsmodal` (modelos de Ollama, `Ctrl+X m`; resalta el modelo en uso y marca los que no declaran herramientas), `sessionsmodal` (sesiones del proyecto con nombre y estado; al aplicar abre esa sesión, `Ctrl+X l`; `Ctrl+D` elimina la resaltada, con confirmación si está trabajando; refleja el título generado por `titulo_sesion`) y `keysmodal` (lista de atajos existentes agrupada por categorías, solo lectura, `Ctrl+P`) | No decide nada: entrega la elección al `app`; no mantiene listas permanentes |
+| `approvals` | Panel de aprobaciones pendientes de todas las sesiones, resolvibles una a una. Se muestra solo (para que la decisión se vea) pero no roba el teclado: `Ctrl+A` le da el foco y entonces `a`/`d` deciden; sin foco se decide con un clic sobre «aprobar»/«declinar» | No decide: envía la decisión del usuario |
 | `notify` | Línea discreta con el número de aprobaciones pendientes, visible con el panel cerrado | Es el único dato que se muestra fuera del panel |
 | `keys` | Mapa de teclas con sus valores por defecto y su reasignación | Un atajo no cambia ninguna regla de permiso |
 
@@ -36,17 +36,26 @@ Cada componente tiene una responsabilidad y un límite. Ninguno contiene reglas 
 - Con el panel cerrado, el contador de aprobaciones pendientes sigue visible y se actualiza con cada evento.
 - Los estados que se pintan son los de [[database/01-schema/ENUMS]]; la TUI no inventa estados ni transiciones.
 - La estimación de tokens se marca como estimación cuando lo es. Ver [[specs/SPEC-PANEL-CONTEXTO]].
-- `Ctrl+X n` crea una sesión nueva desde la vista principal y la deja activa, sin detener las demás.
+- `Ctrl+X n` crea una sesión nueva desde la vista principal y la deja activa, sin detener las demás. Nace con el nombre provisional «Nueva sesión»; el modelo lo sustituye por un título con su primera petición (`titulo_sesion`).
+- El nombre de la sesión que se pinta (panel y modal) es su título; el identificador no cambia al renombrar.
+- Al borrar la última sesión del proyecto, la vista vuelve a la bienvenida de inmediato.
 - `Ctrl+D` con el modal de sesiones abierto elimina la sesión resaltada; si está trabajando, se pide confirmación antes de borrarla.
+- Una aprobación pendiente se muestra sin bloquear la escritura: el panel aparece con sus opciones y el input sigue escribiendo. `Ctrl+A` le da el foco (entonces `a`/`d` deciden) y, sin foco, un clic sobre «aprobar»/«declinar» decide. Sin pendientes, el panel se cierra solo.
 - Cambiar de sesión no interrumpe ninguna ejecución: solo cambia lo que se pinta.
+- El historial del chat se puede recorrer (`↑`/`↓`, `pgup`/`pgdown`) sin que la línea de entrada quede fuera de pantalla; mientras no se sube, la vista sigue el final y baja sola con cada respuesta nueva.
+- El último modelo y el último agente usados se recuerdan entre ejecuciones (`~/.config/localcli/config.json`). Al elegir un modelo que no declara capacidad de herramientas, la vista avisa sin bloquear y deja al usuario cambiar de modelo.
+- La rueda del ratón recorre el historial. Arrastrar con el botón izquierdo selecciona texto y, al soltar, se copia al portapapeles (herramientas del sistema u OSC 52); con el ratón capturado, la selección nativa queda disponible con `Shift`. Con el panel de aprobaciones abierto, un clic sobre «aprobar» o «declinar» de una línea resuelve esa aprobación.
+- Con la sesión activa trabajando, el primer `esc` pide confirmación («presiona esc otra vez para cancelar razonamiento») y el segundo cancela el trabajo.
+- Bajo la entrada se muestra el modelo en uso y si tiene acceso a herramientas.
 
 ## 3. Reglas de la bienvenida
 
 - Es la primera vista al ejecutar `localcli`. Hay logotipo, nombre con versión, una línea que muestra el modelo en uso y una línea de entrada con el indicador del agente a su izquierda (`[plan] > …`); el bloque completo va centrado en la terminal. Sin paneles ni aprobaciones y sin lista de modelos visible.
 - `Tab` alterna el agente (`plan` ↔ `build`) también en la bienvenida; el indicador junto al input se actualiza al instante.
+- La línea de entrada se edita en cualquier punto, como la de la vista principal: flechas, `home`/`end` y `ctrl+b`/`ctrl+e` mueven el cursor.
 - `Ctrl+X m` abre un modal con los modelos locales que reporta Ollama (se piden al abrir, no en el arranque); `↑`/`↓` cambian el resaltado, `Enter` aplica y cierra, `Esc` cierra sin cambios. Lo aplicado viaja con la primera petición y se ve en la línea de modelo. Si Ollama no responde, el modal muestra «sin modelos». La bienvenida nunca espera a nada externo y sin modal abierto no hay navegación de modelos: las flechas escriben/historial según su componente.
 - `Ctrl+X l` abre el modal de sesiones del proyecto; al elegir una con `Enter`, la vista pasa a la principal con el historial de esa sesión.
-- Lo escrito es la primera petición: se envía a la sesión activa (se retoma si existe, se crea si no) y la vista cambia a la principal, donde aparece como primer mensaje del chat. La transición no repite la petición ni pide confirmación. La vista principal es un chat: para arrancar un flujo hay que escribir su comando explícito.
+- Lo escrito es la primera petición: crea una sesión nueva (con nombre provisional; el título lo genera el modelo) y la vista cambia a la principal, donde aparece como primer mensaje del chat. La transición no repite la petición ni pide confirmación. La vista principal es un chat: para arrancar un flujo hay que escribir su comando explícito.
 - Se pinta sin esperar a Ollama ni a la base: no depende de nada externo. La única salida desde ella es `Ctrl+C`.
 - El logotipo es un arte ASCII fijo de la aplicación, no contenido de sesión: vive en el código de la TUI y no entra al contexto del modelo.
 

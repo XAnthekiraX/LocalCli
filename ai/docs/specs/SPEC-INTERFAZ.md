@@ -92,7 +92,7 @@ El logotipo es fijo y esta es su definición, que sirve de salida dorada para la
 - **Modal de modelos**: la secuencia líder `Ctrl+X` seguida de `m` abre un modal centrado con la lista de modelos locales que reporta Ollama, con uno resaltado. `↑`/`↓` mueven la selección, `Enter` aplica el elegido y cierra el modal, `Esc` cierra sin cambiar nada. La lista se pide a Ollama al abrir el modal (no en el arranque); si Ollama no responde, el modal muestra el aviso «sin modelos» y se puede cerrar con `Esc` sin bloquear nada. Mientras el modal está abierto, las teclas son solo del modal: la escritura de la bienvenida no las recibe. Lo elegido pasa al motor como modelo de la sesión y se refleja en la línea de modelo de la bienvenida. La elección del usuario prevalece sobre la autodetección del arranque ([[specs/SPEC-OLLAMA-PERFIL]]: el modelo lo elige el usuario). El mecanismo de la secuencia está en [[specs/SPEC-KEYBINDS]].
 - Lo que se escribe es la **primera petición de la sesión**: se envía tal cual, igual que se enviaría desde el chat.
 - Al enviarla, la vista cambia a la interfaz principal y la petición aparece como primer mensaje del chat. La transición no repite la petición ni pide confirmación.
-- La sesión que la recibe es la sesión activa del proyecto: se retoma si existe o se crea una nueva, con la misma regla que el resto de la aplicación. Ver [[specs/SPEC-SESIONES]].
+- No hay una sesión activa antes de usar la bienvenida: la primera petición **crea** una sesión nueva, con un nombre provisional que el modelo sustituye por un título generado a partir de esa misma petición. Ver [[specs/SPEC-SESIONES]].
 - Desde la bienvenida no se lanza ningún flujo ni se abre el panel de contexto: hay logotipo, línea de modelo y línea de entrada; con `Ctrl+X m` se abre el modal de modelos y con `Ctrl+X l` el de sesiones (al elegir una con `Enter`, la vista pasa a la principal con el historial de esa sesión). La salida es `Ctrl+C`.
 
 ## Zonas
@@ -104,11 +104,14 @@ El logotipo es fijo y esta es su definición, que sirve de salida dorada para la
 - Cada intercambio muestra el razonamiento del modelo y su respuesta.
 - Cada respuesta del modelo muestra cuánto tardó en llegar, atenuado junto a ella. Mientras se espera, el tiempo corre en pantalla para saber que el modelo sigue trabajando.
 - Muestra las propuestas pendientes de aprobación.
+- El historial se puede recorrer: `↑`/`↓` suben y bajan línea a línea y `pgup`/`pgdown` por páginas; la rueda del ratón también desplaza. Mientras no se sube, la vista sigue el final y baja sola con cada respuesta nueva; al subir se respeta la posición. Cuando queda historial fuera de la ventana se indica con una línea discreta («↑ N líneas arriba» / «↓ N líneas abajo»).
 
 ### 2. Entrada de texto
 
 - Una sola línea para escribir.
 - Escribe hacia la sesión activa.
+- El texto se edita en cualquier punto: las flechas mueven el cursor, `home`/`end` van al principio y al final y `ctrl+b`/`ctrl+e` son sus equivalentes. Los atajos que coincidan con una acción (por ejemplo `ctrl+a`) siguen resolviéndose como acción y no editan.
+- Bajo la línea de entrada se muestra el modelo en uso y si tiene acceso a herramientas (`modelo: X · herramientas: sí/no/?`). La línea de entrada de la bienvenida se edita igual que esta.
 - **Indicador de agente a la izquierda del input**: justo al lado izquierdo de la línea de entrada se muestra el agente activo, `plan` o `build` (p. ej. `[plan] > █`). Cambia al instante con `Tab`, que alterna entre los agentes disponibles. El indicador es visible tanto en la interfaz principal como en la bienvenida.
 - El agente activo responde con el catálogo derivado de sus permisos: `plan` solo lee y propone; `build` escribe con aprobación. Quién responde lo decide el indicador, no el texto escrito.
 
@@ -142,9 +145,9 @@ Tres modales centrados comparten el mismo comportamiento: uno abierto a la vez, 
 
 | Modal | Cómo se abre | Contenido | Al aplicar |
 |---|---|---|---|
-| **Modelos** | `Ctrl+X m` | Lista de modelos locales de Ollama, cargada al abrir; aviso «sin modelos» si no responde | El modelo elegido pasa a ser el de la sesión y se ve en la línea de modelo |
+| **Modelos** | `Ctrl+X m` | Lista de modelos locales de Ollama, cargada al abrir; el resaltado arranca en el modelo en uso; los que no declaran capacidad de herramientas se marcan; aviso «sin modelos» si no responde | El modelo elegido pasa a ser el de la sesión y se ve en la línea de modelo; si no puede usar herramientas, se avisa sin bloquear |
 | **Sesiones** | `Ctrl+X l` | Lista de las sesiones creadas anteriormente en el proyecto (nombre y estado, incluidas las de segundo plano) | Se abre esa sesión: el chat pasa a su historial sin detener lo que corre |
-| **Atajos** | `Ctrl+P` | Tabla de los atajos existentes: acción y tecla(s) de cada uno, incluidas las secuencias con líder | No aplica nada: es solo lectura; `Esc` lo cierra |
+| **Atajos** | `Ctrl+P` | Tabla de los atajos existentes agrupada por categorías (General, Chat, Vista, Modales, Aprobaciones, Entrada), con la tecla y su acción alineadas, incluidas las secuencias con líder | No aplica nada: es solo lectura; `Esc` lo cierra |
 
 No hay paleta de comandos ejecutables: `Ctrl+P` abre la lista de atajos. Ver [[specs/SPEC-SESIONES]] para el ciclo de vida de las sesiones.
 
@@ -157,6 +160,7 @@ No hay una lista de sesiones siempre visible. El chat es para la sesión activa.
 - Las sesiones en segundo plano se ven desde cualquier otra en el modal, con su estado.
 - Dentro del modal, `Ctrl+D` elimina la sesión resaltada. Si esa sesión está trabajando, se pide confirmación («seguro que deseas eliminar») antes de borrarla; al confirmar, su contenido se elimina en cascada.
 - `Ctrl+X n` crea una sesión nueva desde la vista principal y la deja activa.
+- Al borrar la última sesión del proyecto, la vista vuelve a la bienvenida de inmediato.
 
 El modal aparece y desaparece. No ocupa espacio permanente.
 
@@ -175,6 +179,13 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - El razonamiento nunca se mezcla visualmente con la respuesta final.
 - Cada respuesta muestra el tiempo que tardó el modelo en entregarla. Mientras el turno está en curso, ese tiempo corre en pantalla y se detiene al cerrarse el turno; el tiempo no se guarda en el historial, así que una sesión retomada no lo muestra.
 - No hay lista de sesiones permanente: se acceden con `Ctrl+X l`, que abre el modal de sesiones.
+- El historial del chat se recorre con `↑`/`↓` y `pgup`/`pgdown`; mientras no se sube, la vista sigue el final. La línea de entrada nunca queda fuera de pantalla.
+- Al abrir el modal de modelos, el resaltado arranca en el modelo en uso. Los modelos que no declaran capacidad de herramientas se marcan; elegirlos avisa sin bloquear y deja al usuario cambiar de modelo.
+- La rueda del ratón desplaza el historial. Arrastrar con el botón izquierdo selecciona texto y, al soltar, se copia al portapapeles; al capturar el ratón, la selección nativa de la terminal queda disponible con `Shift`. Con el panel de aprobaciones abierto, un clic sobre «aprobar» o «declinar» de una línea resuelve esa aprobación.
+- Con la sesión activa trabajando, el primer `esc` pide confirmación («presiona esc otra vez para cancelar razonamiento») y el segundo cancela el trabajo; cualquier otra tecla la descarta.
+- Bajo la entrada se muestra el modelo en uso y si tiene acceso a herramientas.
+- El marco de la vista nunca excede el alto de la terminal: el historial se recorta a lo disponible para que la entrada no quede fuera.
+- El modal de atajos agrupa las acciones por categorías y alinea la tecla con su descripción.
 - Hay exactamente tres modales (modelos, sesiones, atajos); solo uno puede estar abierto a la vez y `Esc` cierra cualquiera.
 - El agente activo (`plan` o `build`) se muestra siempre a la izquierda del input; `Tab` alterna entre los agentes disponibles, en bienvenida y en la vista principal. Con un modal abierto, `Tab` no cicla.
 - Cambiar de sesión no detiene lo que está corriendo.
@@ -182,9 +193,12 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - Con el modal de sesiones abierto, `Ctrl+D` elimina la sesión resaltada; si está trabajando, se confirma antes de borrarla.
 - `Ctrl+X n` crea una sesión nueva y la deja activa, sin detener las demás.
 - Con el panel cerrado, el número de aprobaciones pendientes siempre se ve.
+- Una aprobación pendiente se muestra sin robar el teclado: el panel aparece con sus opciones y el input sigue escribiendo. `Ctrl+A` le da el foco (entonces `a`/`d` deciden); sin foco se resuelve con un clic sobre «aprobar» o «declinar».
 - El nombre y la versión de LocalCli se ven siempre que el panel esté abierto.
 - La pantalla de bienvenida es la primera vista al ejecutar `localcli` y muestra logotipo, nombre con versión, la línea con el modelo en uso y una línea de entrada, todo centrado en la terminal. Los modelos solo se ven dentro del modal.
-- Lo escrito en la bienvenida es la primera petición: se envía a la sesión activa y la vista cambia a la principal sin repetir ni confirmar.
+- Lo escrito en la bienvenida es la primera petición: crea una sesión nueva y la envía, y la vista cambia a la principal sin repetir ni confirmar.
+- El nombre de la sesión es su título: el generado por el modelo a partir de su primera petición o, mientras no lo haya, el provisional «Nueva sesión».
+- Al borrar la última sesión del proyecto, la vista vuelve a la bienvenida.
 - Desde la bienvenida no hay panel de contexto ni aprobaciones: se abre el modal de modelos (`Ctrl+X m`) o el de sesiones (`Ctrl+X l`), se escribe, se envía y se sale.
 - La vista principal es un chat: cada petición se responde como conversación. Ningún texto arranca un flujo de trabajo por sí solo.
 - Un flujo solo arranca con un comando explícito escrito en la entrada: `/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`.
@@ -203,12 +217,22 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] Cada respuesta muestra el tiempo que tardó en llegar, y mientras se espera el tiempo corre en pantalla y se detiene al cerrarse el turno.
 - [ ] `Ctrl+X l` abre el modal de sesiones con nombre y estado de cada una; al seleccionar una con `Enter` se abre esa sesión y el chat muestra su historial.
 - [ ] `Ctrl+P` abre el modal con la lista de atajos existentes (acción + tecla); es de solo lectura.
+- [ ] El historial del chat se recorre con `↑`/`↓` y `pgup`/`pgdown`; mientras no se sube, la vista sigue el final.
+- [ ] El texto del input se edita en cualquier punto con las flechas y `home`/`end`.
+- [ ] Al abrir el modal de modelos, el resaltado está en el modelo en uso.
+- [ ] Elegir un modelo sin capacidad de herramientas avisa sin bloquear.
+- [ ] La rueda del ratón desplaza el historial y arrastrar con el ratón copia al portapapeles el texto seleccionado.
+- [ ] Con la sesión trabajando, `esc` pide confirmación y un segundo `esc` cancela; otra tecla la descarta.
+- [ ] Bajo la entrada se ve el modelo en uso y si tiene acceso a herramientas.
+- [ ] La línea de entrada de la bienvenida se edita en cualquier punto (flechas, `home`/`end`).
+- [ ] El modal de atajos agrupa las acciones por categorías y alinea tecla y descripción.
 - [ ] `Esc` cierra cualquier modal sin cambiar nada; con ninguno abierto no hace nada visible.
 - [ ] `Tab` alterna el agente entre `plan` y `build`; el indicador del agente aparece a la izquierda del input tanto en la bienvenida como en la vista principal y se actualiza al instante.
 - [ ] Elegir una sesión cambia el chat a esa sesión sin detener lo demás.
 - [ ] `Ctrl+D` en el modal de sesiones elimina la sesión resaltada; si está trabajando, pide confirmación antes.
 - [ ] `Ctrl+X n` crea una sesión nueva y la deja activa.
 - [ ] Con el panel cerrado se ve cuántas aprobaciones hay pendientes.
+- [ ] Una aprobación pendiente se ve sin bloquear el input; se resuelve con `Ctrl+A` + `a`/`d` o con un clic sobre «aprobar»/«declinar».
 - [ ] El nombre y la versión de LocalCli aparecen en el panel.
 - [ ] Cambiar de sesión no detiene ninguna ejecución.
 - [ ] Al ejecutar `localcli` se ve la pantalla de bienvenida con logotipo, nombre, la línea del modelo en uso y una línea de entrada, sin lista de modelos visible.
@@ -216,6 +240,8 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] `Ctrl+X m` abre el modal de modelos con la lista de Ollama; `↑`/`↓` navegan, `Enter` aplica el resaltado y `Esc` cierra sin cambios. El modelo aplicado se usa para la primera petición y aparece en la línea de modelo.
 - [ ] Sin Ollama disponible, la bienvenida se muestra igual (usa el modelo por defecto del arranque); al abrir el modal aparece el aviso «sin modelos» y se puede escribir y enviar sin él.
 - [ ] La primera petición escrita en la bienvenida aparece como primer mensaje del chat al cambiar de vista.
+- [ ] La primera petición desde la bienvenida crea una sesión nueva y su nombre pasa a ser un título generado por el modelo.
+- [ ] Al borrar la última sesión, la vista vuelve a la bienvenida.
 - [ ] La transición de bienvenida a interfaz principal no repite la petición ni pide confirmación.
 - [ ] Desde la bienvenida no hay panel de contexto ni aprobaciones; se abre el modal de modelos o el de sesiones, se escribe, se envía y se sale.
 - [ ] `Ctrl+X l` en la bienvenida abre el modal de sesiones; al elegir una con `Enter` la vista pasa a la principal con el historial de esa sesión.

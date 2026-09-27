@@ -45,6 +45,8 @@ internal/tui/
   approvals.go  panel de aprobaciones pendientes de todas las sesiones
   notify.go     línea de aviso de aprobaciones pendientes con el panel cerrado
   keys.go       mapa de teclas reasignable
+  config.go     preferencias del usuario: último modelo y último agente
+  selection.go  selección con el ratón y copia al portapapeles
   styles.go     estilos Lip Gloss y render de bloques
 ```
 
@@ -53,7 +55,7 @@ internal/tui/
 - **Entradas:** teclado y eventos del motor. Ver [[frontend/02-interfaces/INTERFACES]].
 - **Salidas:** peticiones a `session` (enviar mensaje, cambiar de sesión, aprobar, declinar, cancelar flujo).
 - **Lecturas:** solo las consultas definidas en [[database/03-operations/QUERIES]]. Nunca escribe en la base: el estado lo persiste el motor.
-- **Configuración propia:** el mapa de teclas vive en `~/.config/localcli/keys.json`, fuera del proyecto, porque es preferencia del usuario y no contenido del proyecto.
+- **Configuración propia:** el mapa de teclas vive en `~/.config/localcli/keys.json` y las preferencias del usuario —último modelo y último agente— en `~/.config/localcli/config.json`, fuera del proyecto, porque son preferencia del usuario y no contenido del proyecto.
 
 ## 4. Decisiones
 
@@ -62,6 +64,8 @@ internal/tui/
 | Presentación pura, sin lógica de negocio | Todo lo que la TUI decidiera habría que auditarlo dos veces: en el módulo y en la pantalla | Repartir decisiones entre pantalla y motor |
 | Estado de vista en memoria, nada persistido por la TUI | Lo que vale está en SQLite o en archivos; lo que muere con el proceso es solo vista (scroll, plegado, foco) | Persistir el estado de vista, que añadiría una cuarta fuente de verdad |
 | Mapa de teclas en `~/.config/localcli/keys.json` | El atajo es del usuario, no del proyecto; ubicación XDG estándar, editable a mano o desde la ayuda | Guardarlo dentro del proyecto, que mezclaría preferencia personal con contenido versionado |
+| Preferencias en `~/.config/localcli/config.json` | El último modelo y el último agente son preferencia del usuario, no estado del proyecto | Persistirlos en SQLite, que los ataría a un solo proyecto |
+| Ratón capturado en la TUI | Permite seleccionar y copiar texto con el ratón y desplazar con la rueda | No capturarlo, que deja a la app sin poder copiar al instante |
 
 ## Mapa de Navegación
 

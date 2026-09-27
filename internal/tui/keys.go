@@ -123,6 +123,14 @@ func nombreDeAccion(a Accion) string {
 		return "up"
 	case AccionBajar:
 		return "down"
+	case AccionChatSubir:
+		return "chat_scroll_up"
+	case AccionChatBajar:
+		return "chat_scroll_down"
+	case AccionChatPaginaArriba:
+		return "chat_page_up"
+	case AccionChatPaginaAbajo:
+		return "chat_page_down"
 	}
 	return ""
 }

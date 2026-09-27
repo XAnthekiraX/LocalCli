@@ -55,12 +55,15 @@ El panel de aprobaciones **no es** el panel de datos. El de datos es de lectura 
 
 - Trae atajos por defecto que se pueden cambiar sin reinstalar.
 - El teclado funciona con un keymap central: una acción puede tener varios atajos, y existe una tecla líder (`Ctrl+X`, por defecto) que combina con la siguiente tecla (`Ctrl+X m` abre el modal de modelos, `Ctrl+X l` el de sesiones). Mecanismo completo en [[specs/SPEC-KEYBINDS]].
+- El historial del chat se recorre con `↑`/`↓` (línea) y `pgup`/`pgdown` (página). La misma `↑`/`↓` navega la lista cuando hay un modal abierto: son ámbitos distintos.
 - Los tres modales de la interfaz son **modelos** (`Ctrl+X m`), **sesiones** (`Ctrl+X l`) y **atajos** (`Ctrl+P`). `Esc` cierra cualquiera de ellos sin cambiar nada.
 - `Tab` alterna el agente entre `plan` y `build`; el agente activo se ve a la izquierda del input.
 - Un atajo no puede quedar asignado a dos acciones.
 - El panel muestra las aprobaciones pendientes de cualquier sesión.
 - Resolver una aprobación solo afecta a la sesión de esa línea.
 - El panel se puede abrir y cerrar sin detener el trabajo de ninguna sesión.
+- Una aprobación pendiente **se muestra pero no secuestra el teclado**: el panel aparece con sus opciones para poder decidir, y el input sigue escribiendo. El foco —que da el teclado al panel para `a`/`d`— se pide con `Ctrl+A`; sin foco, se decide con el ratón.
+- Con el panel visible, un clic del ratón sobre «aprobar» o «declinar» de una línea resuelve esa aprobación; un clic fuera de esas palabras no decide nada.
 - Un atajo no cambia nunca la regla de permiso: solo la forma de invocarla.
 
 ## Criterios de aceptación
@@ -72,6 +75,8 @@ El panel de aprobaciones **no es** el panel de datos. El de datos es de lectura 
 - [ ] Se puede cambiar un atajo y el cambio queda guardado.
 - [ ] El panel muestra las aprobaciones pendientes de todas las sesiones.
 - [ ] Cada aprobación se resuelve de forma independiente.
+- [ ] Una aprobación pendiente se muestra sin bloquear la escritura; `Ctrl+A` le da el teclado (`a`/`d`) y sin foco se decide con el ratón.
+- [ ] Con el panel visible, un clic sobre «aprobar» o «declinar» resuelve esa aprobación.
 - [ ] El panel no interrumpe el trabajo de ninguna sesión.
 - [ ] Una aprobación que ya no aplica se marca como obsoleta.
 

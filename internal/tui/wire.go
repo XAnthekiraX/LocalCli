@@ -33,6 +33,7 @@ const (
 	EventoCambioAplicado     = "cambio_aplicado"
 	EventoColaActualizada    = "cola_actualizada"
 	EventoElementoBloqueado  = "elemento_bloqueado"
+	EventoTituloSesion       = "titulo_sesion"
 	EventoEtapaIniciada      = "etapa_iniciada"
 	EventoEtapaTerminada     = "etapa_terminada"
 	EventoEtapaFallida       = "etapa_fallida"
@@ -57,13 +58,19 @@ const (
 // igual que las sesiones llegan como `session.Sesion` y nada más.
 type ModeloLocal struct {
 	Nombre string
+	// SinHerramientas marca los modelos que Ollama no declara capaces de usar
+	// herramientas. El valor cero es «sí puede»: un fallo de detección no debe
+	// alarmar. La vista solo lo pinta y avisa; no decide nada (DOMAIN §4).
+	SinHerramientas bool
 }
 
 // Puerto es lo que la vista necesita de `session`. Todo lo que no esté aquí, la
 // vista no lo puede hacer.
 type Puerto interface {
-	// ResolverActiva devuelve la sesión activa del proyecto: la retoma si
-	// existe o crea una nueva (SPEC-INTERFAZ §Pantalla de bienvenida).
+	// ResolverActiva retoma la sesión más reciente del proyecto para volver a
+	// ella (por ejemplo tras borrar la activa). NO crea ninguna: devuelve nil
+	// sin error si el proyecto no tiene sesiones, y entonces la bienvenida crea
+	// una con la primera petición (SPEC-SESIONES).
 	ResolverActiva() (*session.Sesion, error)
 	// Modelos lista los modelos locales que reporta Ollama para el modal de
 	// modelos (SPEC-INTERFAZ §Modal de modelos). Se pide al abrir el modal, no
@@ -75,6 +82,15 @@ type Puerto interface {
 	// modelo de la bienvenida (SPEC-INTERFAZ §Línea de modelo), y lo lee la
 	// pantalla una vez al construirse, sin llamar a Ollama.
 	ModeloActual() string
+	// CapacidadesModelo dice si el modelo indicado declara capacidad de usar
+	// herramientas, para la línea de estado bajo el input (SPEC-OLLAMA-PERFIL).
+	// La vista no importa `ollama`: el booleano llega ya resuelto.
+	CapacidadesModelo(nombre string) (bool, error)
+	// AgenteRecordado devuelve el último agente con el que se trabajó, para que
+	// la vista arranque en él (SPEC-OLLAMA-PERFIL: la preferencia se recuerda).
+	// Vacío significa «sin preferencia»: la vista cae en `plan`. Lo lee el motor,
+	// que es quien conoce el archivo de preferencias del usuario.
+	AgenteRecordado() string
 	// FijarModelo elige el modelo con el que trabajará el motor a partir de
 	// ahora; lo elegido por el usuario prevalece sobre la autodetección del
 	// arranque (SPEC-OLLAMA-PERFIL: el modelo lo elige el usuario). Se llama al
@@ -131,6 +147,14 @@ type (
 	modelosMsg struct {
 		Modelos []ModeloLocal
 		Err     error
+	}
+	// capacidadesMsg trae si el modelo en uso declara capacidad de herramientas,
+	// para la línea de estado bajo el input. Un fallo deja el dato como
+	// desconocido («?»): no bloquea nada.
+	capacidadesMsg struct {
+		Nombre       string
+		Herramientas bool
+		Err          error
 	}
 	aprobacionesMsg struct{ Items []Aprobacion }
 	historialMsg    struct {
@@ -209,6 +233,15 @@ func (a *App) AplicarEvento(e Evento) {
 				a.cerrarTurnoDeVista(false)
 			}
 		}
+	case EventoTituloSesion:
+		// El modelo generó el título de la sesión a partir de su primera
+		// petición: se refleja en la lista del modal y, si es la activa, en el
+		// panel. El id no cambia (SPEC-SESIONES).
+		nombre := e.Datos["nombre"]
+		a.Sesiones.ActualizarNombre(e.Datos["sesion"], nombre)
+		if e.Datos["sesion"] == a.Panel.SesionID {
+			a.Panel.Sesion = nombre
+		}
 	case session.EventoNotificacion:
 		// Llega aunque no se esté viendo esa sesión (SPEC-SESIONES).
 		a.Chat.AñadirSistema(notificacionEnTexto(e.Datos))
@@ -279,6 +312,7 @@ func (a *App) AplicarEvento(e Evento) {
 // es lo que corresponde cuando la sesión terminó, no cuando quedó pausada.
 func (a *App) cerrarTurnoDeVista(obsoletas bool) {
 	a.enTurno = false
+	a.PidiendoCancelarEsc = false
 	a.Chat.CerrarTurno(a.Razon.Texto())
 	a.Razon.CerrarTurno()
 	if obsoletas {
