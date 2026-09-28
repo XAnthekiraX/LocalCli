@@ -51,6 +51,18 @@ func verifyEsquema(db *sql.DB) error {
 		return fmt.Errorf("%w: falta el índice único de auditoría de contexto; borra %s para que se regenere",
 			ErrEsquemaDesfasado, dbFileName)
 	}
+	// La tabla `todos` (migración 002) no tiene columna `id`, así que no entra
+	// en el bucle de `tablasEsperadas`; se comprueba aparte que existe.
+	var hayTodos int
+	if err := db.QueryRow(
+		"SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'todos'",
+	).Scan(&hayTodos); err != nil {
+		return traducirError(err)
+	}
+	if hayTodos == 0 {
+		return fmt.Errorf("%w: falta la tabla todos (la lista de pasos de la sesión); borra %s para que se regenere",
+			ErrEsquemaDesfasado, dbFileName)
+	}
 	return nil
 }
 

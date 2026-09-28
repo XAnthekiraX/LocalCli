@@ -82,11 +82,11 @@ func TestDBPathConVariable(t *testing.T) {
 	}
 }
 
-// --- T-B002-03: esquema coincide con SCHEMA.md (6 tablas + índices) ---
+// --- T-B002-03: esquema coincide con SCHEMA.md (7 tablas + índices) ---
 
-func TestEsquemaSeisTablasYIndices(t *testing.T) {
+func TestEsquemaTablasEIndices(t *testing.T) {
 	db := abrirBaseTemporal(t)
-	tablasWant := []string{"approvals", "change_history", "context_audit", "messages", "reasoning", "sessions"}
+	tablasWant := []string{"approvals", "change_history", "context_audit", "messages", "reasoning", "sessions", "todos"}
 	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
 	if err != nil {
 		t.Fatal(err)
@@ -223,12 +223,12 @@ func columnasDeIndice(t *testing.T, db *sql.DB, indice string) []string {
 func TestMigracionIdempotente(t *testing.T) {
 	proyecto := proyectoTemporal(t)
 
-	// El valor se compara contra el literal 1 que fija MIGRATIONS.md, no contra
-	// la constante de producción: si ambas suben a 2, este test debe seguir
+	// El valor se compara contra el literal 2 que fija MIGRATIONS.md, no contra
+	// la constante de producción: si ambas suben a 3, este test debe seguir
 	// avisando de que la documentación y el código han divergido.
-	const versionEsperada = 1
+	const versionEsperada = 2
 	if schemaVersion != versionEsperada {
-		t.Errorf("schemaVersion = %d; MIGRATIONS.md sigue fijando la v1 como esquema actual. Si el cambio es real, actualiza la nota de MIGRATIONS.md y este literal.", schemaVersion)
+		t.Errorf("schemaVersion = %d, queremos %d; MIGRATIONS.md fija la versión actual. Si el cambio es real, actualiza esa nota y este literal.", schemaVersion, versionEsperada)
 	}
 
 	db, err := Open(proyecto)
@@ -258,14 +258,14 @@ func TestMigracionIdempotente(t *testing.T) {
 	if v != versionEsperada {
 		t.Errorf("tras reabrir, user_version = %d, queremos %d", v, versionEsperada)
 	}
-	// Reabrir no debe duplicar el esquema: siguen siendo seis tablas.
+	// Reabrir no debe duplicar el esquema: siguen siendo siete tablas.
 	var n int
 	if err := db2.QueryRow(
 		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 6 {
-		t.Errorf("tablas tras reabrir = %d, queremos 6", n)
+	if n != 7 {
+		t.Errorf("tablas tras reabrir = %d, queremos 7", n)
 	}
 }
 

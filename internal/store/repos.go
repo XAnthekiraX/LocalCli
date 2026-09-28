@@ -72,3 +72,18 @@ func NuevasAuditorias(db *sql.DB) *Auditorias { return &Auditorias{db: db} }
 
 // Registrar anota la decisión del nodo de contexto sobre un documento.
 func (a *Auditorias) Registrar(x *ContextAudit) error { return RegistrarAuditoria(a.db, x) }
+
+// Todos es el repositorio de la lista de pasos de la sesión sobre una conexión
+// viva.
+type Todos struct{ db *sql.DB }
+
+// NuevosTodos envuelve la conexión para operar sobre la lista de pasos.
+func NuevosTodos(db *sql.DB) *Todos { return &Todos{db: db} }
+
+// Reemplazar sustituye la lista entera de una sesión.
+func (t *Todos) Reemplazar(sessionID string, items []Todo) error {
+	return ReemplazarTodos(t.db, sessionID, items)
+}
+
+// Leer devuelve la lista de pasos de una sesión, en orden.
+func (t *Todos) Leer(sessionID string) ([]Todo, error) { return LeerTodos(t.db, sessionID) }

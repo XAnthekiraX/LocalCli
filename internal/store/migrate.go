@@ -8,9 +8,9 @@ import (
 
 // schemaVersion es la versión del esquema que conoce este binario. La base se
 // crea ya en su versión 1 con las seis tablas (MIGRATIONS.md, "Nota sobre el
-// esquema actual"); user_version = 1 significa que la migración 001 está
-// aplicada.
-const schemaVersion = 1
+// esquema actual") y la 002 añade la lista de pasos; user_version = 2 significa
+// que las migraciones 001 y 002 están aplicadas.
+const schemaVersion = 2
 
 // migration es una migración numerada, en orden ascendente, cada una en su
 // propia transacción (MIGRATIONS.md §2). to es la versión resultante.
@@ -21,12 +21,13 @@ type migration struct {
 	ddl string // sentencias a ejecutar dentro de la transacción
 }
 
-// migrations lista las migraciones pendientes de aplicar sobre una base en
-// versión 0. Hoy solo existe 001-crear-schema: crear el archivo y su esquema
-// inicial ocurren en el mismo paso (MIGRATIONS.md, nota final). Los índices se
-// aplican junto con la creación, no después.
+// migrations lista las migraciones pendientes de aplicar. La 001 crea el
+// archivo y su esquema inicial; la 002 añade la tabla `todos` (la lista de pasos
+// de la sesión). Los índices se aplican junto con la creación, no después
+// (MIGRATIONS.md, nota final).
 var migrations = []migration{
 	{num: 1, nom: "001-crear-schema", to: 1, ddl: schemaSQL},
+	{num: 2, nom: "002-crear-todo", to: 2, ddl: todoSQL},
 }
 
 // userVersion lee PRAGMA user_version de la conexión.

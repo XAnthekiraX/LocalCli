@@ -6,7 +6,8 @@
         { "accion": "leer", "efecto": "permitir" },
         { "accion": "editar", "efecto": "permitir" },
         { "accion": "ejecutar", "efecto": "permitir" },
-        { "accion": "internet", "efecto": "permitir" }
+        { "accion": "internet", "efecto": "permitir" },
+        { "accion": "tareas", "efecto": "permitir" }
     ],
     "skills": []
 }
