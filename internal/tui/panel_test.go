@@ -102,3 +102,54 @@ func TestElEstadoDeOtraSesiónNoCambiaElPanel(t *testing.T) {
 		t.Errorf("el panel refleja la sesión activa, no otra: %s", a.Panel.Estado)
 	}
 }
+
+// --- T-F006-07: la lista de pasos del agente (SPEC-TOOLS) ---------------------
+
+func TestElPanelPintaLaListaDePasosDelAgente(t *testing.T) {
+	a := Nuevo(&puertoStub{})
+	a.Vista = VistaPrincipal
+	a.Panel.Abierto = true
+	a.Panel.SesionID = "s1"
+	pulsa(t, a, eventoMsg{Evento: Evento{
+		Nombre: EventoTodoActualizada,
+		Datos: map[string]string{
+			"sesion":    "s1",
+			"elementos": `[{"contenido":"leer el esquema","estado":"completada"},{"contenido":"migrar la tabla","estado":"en_progreso"},{"contenido":"escribir la doc","estado":"pendiente"}]`,
+		},
+	}})
+	v := sinEstilo(a.View())
+	for _, esperado := range []string{
+		"TODO DEL AGENTE",
+		"[✓] leer el esquema",
+		"[•] migrar la tabla",
+		"[ ] escribir la doc",
+	} {
+		if !strings.Contains(v, esperado) {
+			t.Errorf("el panel no muestra %q:\n%s", esperado, v)
+		}
+	}
+}
+
+func TestLaListaDePasosSeOcultaCuandoTodoEstaHecho(t *testing.T) {
+	p := Panel{Tareas: []TareaPanel{{Contenido: "a", Estado: "completada"}, {Contenido: "b", Estado: "cancelada"}}}
+	if strings.Contains(sinEstilo(p.Render(30)), "TODO DEL AGENTE") {
+		t.Error("un checklist sin nada accionable no se pinta")
+	}
+	p.Tareas = append(p.Tareas, TareaPanel{Contenido: "c", Estado: "pendiente"})
+	if !strings.Contains(sinEstilo(p.Render(30)), "TODO DEL AGENTE") {
+		t.Error("con un paso pendiente, la sección se pinta")
+	}
+}
+
+func TestLaListaDePasosDeOtraSesiónNoEntraAlPanel(t *testing.T) {
+	a := Nuevo(&puertoStub{})
+	a.Vista = VistaPrincipal
+	a.Panel.SesionID = "s1"
+	pulsa(t, a, eventoMsg{Evento: Evento{
+		Nombre: EventoTodoActualizada,
+		Datos:  map[string]string{"sesion": "s2", "elementos": `[{"contenido":"x","estado":"pendiente"}]`},
+	}})
+	if len(a.Panel.Tareas) != 0 {
+		t.Errorf("el panel refleja la sesión activa, no otra: %+v", a.Panel.Tareas)
+	}
+}

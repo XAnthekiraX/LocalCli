@@ -41,6 +41,9 @@ type Panel struct {
 	Capa               string
 	TareasGrandes      int
 
+	// TODO del agente (SPEC-TOOLS): la lista de pasos de la sesión activa.
+	Tareas []TareaPanel
+
 	// Ruta y git
 	Ruta      string
 	GitRama   string
@@ -140,10 +143,50 @@ func (p Panel) Render(ancho int) string {
 		b.WriteString(estiloEtiqueta.Render(f[0]) + "\n")
 		b.WriteString("  " + recortar(f[1], ancho-2) + "\n")
 	}
+	if t := p.RenderTareas(ancho); t != "" {
+		b.WriteString("\n" + t + "\n")
+	}
 	if p.ContextoApretado() {
 		b.WriteString("\n" + estiloAviso.Render("el contexto se está acercando a su límite"))
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// RenderTareas pinta la lista de pasos de la sesión: `[•]` en curso, `[✓]`
+// hecha, `[x]` cancelada y `[ ]` pendiente. Se oculta cuando no queda nada
+// accionable —sin pasos, o todos completados o cancelados—, como el panel de
+// opencode: un checklist terminado solo estorba (SPEC-TOOLS).
+func (p Panel) RenderTareas(ancho int) string {
+	accionable := false
+	for _, t := range p.Tareas {
+		if t.Estado == "pendiente" || t.Estado == "en_progreso" {
+			accionable = true
+			break
+		}
+	}
+	if !accionable {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(estiloTitulo.Render("TODO DEL AGENTE") + "\n")
+	for _, t := range p.Tareas {
+		b.WriteString("  " + glifoDeTarea(t.Estado) + " " + recortar(t.Contenido, ancho-4) + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// glifoDeTarea es la marca de cada estado en el panel.
+func glifoDeTarea(estado string) string {
+	switch estado {
+	case "en_progreso":
+		return "[•]"
+	case "completada":
+		return "[✓]"
+	case "cancelada":
+		return "[x]"
+	default:
+		return "[ ]"
+	}
 }
 
 // AvisoAprobaciones pinta la línea de aviso con el formato de notify.go. La
