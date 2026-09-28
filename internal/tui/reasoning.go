@@ -1,27 +1,33 @@
 // reasoning.go — T-B014-03: el razonamiento en vivo.
 //
-// Fuente de verdad: SPEC-INTERFAZ §Razonamiento del modelo ("Se muestra en vivo,
-// arriba de la respuesta, mientras el modelo genera… Se puede ocultar para leer
-// solo la respuesta. Ocultarlo no detiene la generación") y SPEC-PANEL-CONTEXTO
-// ("El razonamiento se muestra tal como lo devuelve el modelo, sin editarlo",
-// "Si el modelo no expone razonamiento: se indica que no está disponible").
+// Fuente de verdad: SPEC-INTERFAZ §Razonamiento del modelo ("Mientras el modelo
+// genera se muestra un indicador en vivo ([⠋ Pensando]); el texto del
+// razonamiento se revela con `Ctrl+R` para leerlo. Revelarlo no detiene la
+// generación") y SPEC-PANEL-CONTEXTO ("El razonamiento se revela tal como lo
+// devuelve el modelo, sin editarlo", "Si el modelo no expone razonamiento: se
+// indica que no está disponible").
 //
-// Ocultar no borra: el texto se sigue acumulando igual y solo cambia lo que se
-// pinta. Si ocultar parase la acumulación, volver a mostrarlo dejaría un hueco y
-// la vista mentiría sobre lo que dijo el modelo.
+// El texto crudo no se vuelca por defecto: la vista pinta el indicador. Ocultar
+// no borra: el texto se sigue acumulando igual y solo cambia lo que se pinta. Si
+// ocultar parase la acumulación, volver a mostrarlo dejaría un hueco y la vista
+// mentiría sobre lo que dijo el modelo.
 package tui
 
 import "strings"
 
 // Razonamiento es el bloque de razonamiento de la petición actual.
 type Razonamiento struct {
+	// Visible es si el texto crudo del razonamiento está revelado. Por defecto
+	// no lo está: en su lugar se pinta el indicador en vivo ([⠋ Pensando]). El
+	// indicador no depende de esta bandera.
 	Visible      bool
 	NoDisponible bool
 	buffer       strings.Builder
 }
 
-// NuevoRazonamiento crea el bloque visible, que es el estado por defecto.
-func NuevoRazonamiento() Razonamiento { return Razonamiento{Visible: true} }
+// NuevoRazonamiento crea el bloque con el texto oculto, que es el estado por
+// defecto: la vista vuelca el indicador y el texto queda tras `Ctrl+R`.
+func NuevoRazonamiento() Razonamiento { return Razonamiento{Visible: false} }
 
 // Añadir acumula un fragmento de razonamiento.
 func (r *Razonamiento) Añadir(texto string) {

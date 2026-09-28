@@ -79,8 +79,8 @@ func TestLaRespuestaCerradaLlevaSuTiempo(t *testing.T) {
 
 func TestElContadorEnVivoCorreMientrasElTurnoEstáVivo(t *testing.T) {
 	a, _ := appConTurnoEnviado(t)
-	if !strings.Contains(sinEstilo(a.View()), "generando…") {
-		t.Fatalf("mientras se espera la respuesta se ve el contador en vivo:\n%s", sinEstilo(a.View()))
+	if !strings.Contains(sinEstilo(a.View()), "Pensando") {
+		t.Fatalf("mientras se espera la respuesta se ve el indicador en vivo:\n%s", sinEstilo(a.View()))
 	}
 }
 
@@ -96,8 +96,8 @@ func TestElContadorSeDetieneAlTerminarElTurno(t *testing.T) {
 	if a.Chat.HayTurno() {
 		t.Error("terminado el turno, el contador se detiene")
 	}
-	if strings.Contains(sinEstilo(a.View()), "generando…") {
-		t.Errorf("el contador en vivo desaparece al cerrarse el turno:\n%s", sinEstilo(a.View()))
+	if strings.Contains(sinEstilo(a.View()), "Pensando") {
+		t.Errorf("el indicador en vivo desaparece al cerrarse el turno:\n%s", sinEstilo(a.View()))
 	}
 	msgs := a.Chat.Mensajes()
 	ultimo := msgs[len(msgs)-1]

@@ -35,6 +35,7 @@ type puertoStub struct {
 	activa           *session.Sesion
 	sesiones         []session.Sesion
 	historial        []MensajeHistorial
+	tareas           []TareaPanel
 	enviados         []string
 	resueltas        []string
 	pausadas         []string
@@ -147,6 +148,14 @@ func (p *puertoStub) Historial(sesionID string) ([]MensajeHistorial, error) {
 		return nil, p.err
 	}
 	return p.historial, nil
+}
+
+// Tareas simula la lectura de la lista de pasos de una sesión.
+func (p *puertoStub) Tareas(sesionID string) ([]TareaPanel, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	return p.tareas, nil
 }
 
 // Enviar registra también el agente: lo que se pide con `build` sale con
@@ -379,30 +388,35 @@ func TestElChatMuestraLosMensajesEnOrden(t *testing.T) {
 
 // --- T-B014-03: razonamiento en vivo --------------------------------------
 
-func TestElRazonamientoApareceProgresivamenteYSePuedeOcultar(t *testing.T) {
+func TestElTextoDelRazonamientoSeRevelaConElAtajoYElIndicadorVaAparte(t *testing.T) {
 	a := Nuevo(&puertoStub{})
 	a.Vista = VistaPrincipal
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 	pulsa(t, a, eventoMsg{Evento: Evento{Nombre: EventoToken, Datos: map[string]string{"texto": "primero ", "razonamiento": "true"}}})
+	v := sinEstilo(a.View())
+	if strings.Contains(v, "primero") {
+		t.Fatalf("por defecto no se vuelca el razonamiento:\n%s", v)
+	}
+	if !strings.Contains(v, "Pensando") {
+		t.Fatalf("mientras piensa se ve el indicador:\n%s", v)
+	}
+	// Ctrl+R revela el texto acumulado.
+	tecla(t, a, tea.KeyCtrlR)
 	if !strings.Contains(sinEstilo(a.View()), "primero") {
-		t.Fatalf("el primer token debe verse:\n%s", sinEstilo(a.View()))
+		t.Fatalf("revelar muestra el razonamiento:\n%s", sinEstilo(a.View()))
 	}
 	pulsa(t, a, eventoMsg{Evento: Evento{Nombre: EventoToken, Datos: map[string]string{"texto": "segundo", "razonamiento": "true"}}})
 	if !strings.Contains(sinEstilo(a.View()), "primero segundo") {
 		t.Fatalf("los tokens se acumulan en orden:\n%s", sinEstilo(a.View()))
 	}
 
-	// Ocultarlo lo quita de la vista sin borrar lo acumulado.
+	// Volver a ocultarlo lo quita de la vista sin borrar lo acumulado.
 	tecla(t, a, tea.KeyCtrlR)
 	if strings.Contains(sinEstilo(a.View()), "primero segundo") {
 		t.Error("oculto no debe pintarse")
 	}
 	if a.Razon.Texto() != "primero segundo" {
 		t.Errorf("ocultar no puede borrar el razonamiento: %q", a.Razon.Texto())
-	}
-	tecla(t, a, tea.KeyCtrlR)
-	if !strings.Contains(sinEstilo(a.View()), "primero segundo") {
-		t.Error("volver a mostrarlo debe recuperarlo entero")
 	}
 }
 
@@ -411,6 +425,7 @@ func TestLaRespuestaNoSeMezclaConElRazonamiento(t *testing.T) {
 	a.Vista = VistaPrincipal
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 	pulsa(t, a, eventoMsg{Evento: Evento{Nombre: EventoToken, Datos: map[string]string{"texto": "estoy pensando", "razonamiento": "true"}}})
+	tecla(t, a, tea.KeyCtrlR) // revelar el texto para comprobar que no se mezcla
 	pulsa(t, a, eventoMsg{Evento: Evento{Nombre: EventoToken, Datos: map[string]string{"texto": "la respuesta es 4"}}})
 	v := sinEstilo(a.View())
 	if !strings.Contains(v, "estoy pensando") || !strings.Contains(v, "la respuesta es 4") {

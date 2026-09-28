@@ -87,8 +87,10 @@ func TestEnLaBienvenidaLosAtajosDeLaPrincipalNoExisten(t *testing.T) {
 		t.Error("en la bienvenida no hay panel de datos")
 	}
 	tecla(t, a, tea.KeyCtrlR)
-	if !a.Razon.Visible {
-		t.Error("en la bienvenida no hay razonamiento que ocultar")
+	// El razonamiento arranca con el texto no revelado; en la bienvenida el
+	// atajo no existe y no lo cambia.
+	if a.Razon.Visible {
+		t.Error("en la bienvenida no hay razonamiento que revelar")
 	}
 	if len(p.enviados) != 0 || p.activasResueltas != 0 {
 		t.Errorf("esas teclas no pueden lanzar nada: %v", p.enviados)

@@ -14,6 +14,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -40,6 +41,16 @@ const (
 	EventoFlujoPausado       = "flujo_pausado"
 	EventoFlujoReanudado     = "flujo_reanudado"
 	EventoFlujoCancelado     = "flujo_cancelado"
+	// Eventos de herramienta (EVENTS.md §3). Los emite `tools` desde la capa
+	// universal; la vista los pinta sin importar el módulo y sin volcar la
+	// salida cruda: basta el nombre, el agente y el estado.
+	EventoHerramientaInvocada  = "herramienta_invocada"
+	EventoHerramientaResultado = "herramienta_resultado"
+	// EventoTokensTurno lleva el consumo del turno para el panel de datos.
+	EventoTokensTurno = "tokens_turno"
+	// EventoTodoActualizada lleva la lista de pasos de la sesión (SPEC-TOOLS):
+	// el panel la repinta sin preguntar nada.
+	EventoTodoActualizada = "todo_actualizada"
 )
 
 // Agentes base que conoce la vista de fábrica. El puerto ofrece la lista real
@@ -72,6 +83,14 @@ type ModeloLocal struct {
 type Capacidades struct {
 	Herramientas bool
 	Vision       bool
+}
+
+// TareaPanel es un paso de la lista de la sesión tal como lo pinta el panel
+// (SPEC-TOOLS). Lleva etiqueta json porque el evento lo entrega serializado y la
+// vista lo decodifica sin importar el motor.
+type TareaPanel struct {
+	Contenido string `json:"contenido"`
+	Estado    string `json:"estado"`
 }
 
 // Puerto es lo que la vista necesita de `session`. Todo lo que no esté aquí, la
@@ -132,6 +151,10 @@ type Puerto interface {
 	// cerrado, para pintarla al cambiar de sesión (INTERFACES §3). Es una
 	// lectura que llega como dato; la vista nunca consulta la base.
 	Historial(sesionID string) ([]MensajeHistorial, error)
+	// Tareas devuelve la lista de pasos de una sesión, para pintarla al cargarla
+	// (SPEC-TOOLS). Igual que el historial, es una lectura que llega como dato;
+	// la vista nunca consulta la base.
+	Tareas(sesionID string) ([]TareaPanel, error)
 	// Enviar manda un mensaje a una sesión indicando con qué agente se pide: el
 	// que el usuario tiene elegido en el indicador, no el que la vista adivine.
 	// `agente` es `AgentePlan` o `AgenteBuild`; la vista nunca envía otro
@@ -184,6 +207,9 @@ type (
 	historialMsg    struct {
 		Sesion   string
 		Mensajes []MensajeHistorial
+		// Tareas es la lista de pasos de la sesión, que llega en la misma carga
+		// que el historial (SPEC-TOOLS).
+		Tareas []TareaPanel
 	}
 	enviadoMsg struct{ Sesion, Texto string }
 	errorMsg   struct{ err error }
@@ -224,6 +250,14 @@ func (a *App) AplicarEvento(e Evento) {
 		texto := e.Datos["texto"]
 		if texto == "" {
 			texto = e.Datos["content"]
+		}
+		// Cada fragmento con contenido que emite el modelo —de razonamiento o de
+		// respuesta— cuenta para el consumo vivo del turno. Es una aproximación
+		// que el valor exacto de `tokens_turno` corrige al cerrarse
+		// (SPEC-PANEL-CONTEXTO).
+		if texto != "" {
+			a.Panel.Tokens++
+			a.Panel.TokensEstimados = false
 		}
 		if e.Datos["razonamiento"] == "true" {
 			a.Razon.Añadir(texto)
@@ -268,6 +302,7 @@ func (a *App) AplicarEvento(e Evento) {
 		}
 	case session.EventoNotificacion:
 		// Llega aunque no se esté viendo esa sesión (SPEC-SESIONES).
+		a.cerrarSegmentoEnVivo()
 		a.Chat.AñadirSistema(notificacionEnTexto(e.Datos))
 	case EventoPeticionAprobacion:
 		a.Aprobs.Fijar(append(a.Aprobs.Items, Aprobacion{
@@ -297,20 +332,63 @@ func (a *App) AplicarEvento(e Evento) {
 		a.Chat.RetirarPropuesta(id)
 		a.Panel.Aprobaciones = a.Aprobs.Pendientes()
 	case EventoEtapaIniciada:
-		a.Chat.AñadirSistema("etapa iniciada: " + e.Datos["etapa"])
+		// Cada etapa de un flujo corre como un sub-proceso: la vista solo anuncia
+		// su nombre. El texto de un paso intermedio no llega al chat (el motor lo
+		// corre en silencio); la entrega final sí.
+		a.cerrarSegmentoEnVivo()
+		a.Chat.AñadirSistema("[Sub Proceso] " + nombreDeEtapa(e.Datos))
 	case EventoEtapaTerminada:
-		a.Chat.AñadirSistema("etapa terminada: " + e.Datos["etapa"])
+		// Sin línea: el último paso del flujo escribe la entrega final, y los
+		// intermedios no se muestran.
 	case EventoEtapaFallida:
-		a.Chat.AñadirSistema("etapa fallida: " + e.Datos["etapa"])
+		a.cerrarSegmentoEnVivo()
+		a.Chat.AñadirSistema("[Sub Proceso] " + nombreDeEtapa(e.Datos) + ": falló")
 	case EventoFlujoPausado, EventoFlujoReanudado, EventoFlujoCancelado:
 		// El estado del flujo se refleja en el hilo (EVENTS.md §2, T-F010-05).
+		a.cerrarSegmentoEnVivo()
 		a.Chat.AñadirSistema(textoDeFlujo(e.Nombre))
+	case EventoHerramientaInvocada:
+		// Mientras una herramienta se ejecuta, se ve cuál es y con qué agente
+		// (SPEC-TOOLS: "Mientras una herramienta se ejecuta, se ve en pantalla
+		// cuál es"). El indicador en vivo dice «Usando herramienta: X» y en el
+		// hilo queda una línea compacta que se completa al terminar: el verbo y
+		// el objetivo —la ruta, el patrón o el comando—, nunca el resto de
+		// argumentos.
+		a.herramientaEnCurso = e.Datos["herramienta"]
+		// La herramienta se interpone en el turno: lo que el modelo haya dicho
+		// hasta aquí se cierra como un intercambio para que la línea quede debajo,
+		// en el orden en que ocurrió. Lo que diga después abre un globo nuevo.
+		if e.Datos["verbo"] != "" {
+			a.cerrarSegmentoEnVivo()
+		}
+		a.Chat.AnotarInvocacion(e.Datos["verbo"], e.Datos["tema"])
+	case EventoHerramientaResultado:
+		// El resultado no lleva la salida: solo si terminó bien, la medida y si
+		// se recortó. Al cerrar, el indicador vuelve a «Pensando» o «Generando».
+		a.herramientaEnCurso = ""
+		a.Chat.CerrarHerramienta(e.Datos["herramienta"], e.Datos["ok"] == "true",
+			e.Datos["truncado"] == "true", e.Datos["medida"], e.Datos["error"])
+	case EventoTokensTurno:
+		// El consumo del turno alimenta el panel de contexto (SPEC-PANEL-CONTEXTO).
+		if n, err := enteroDe(e.Datos["salida"]); err == nil {
+			a.Panel.Tokens = n
+			a.Panel.TokensEstimados = false
+		}
+	case EventoTodoActualizada:
+		// La lista de pasos es de la sesión activa: la de otra no entra al panel
+		// (el panel refleja la sesión activa, y solo esa).
+		if e.Datos["sesion"] != a.Panel.SesionID {
+			return
+		}
+		a.Panel.Tareas = decodificarTareas(e.Datos["elementos"])
 	case EventoCambioAplicado:
+		a.cerrarSegmentoEnVivo()
 		a.Chat.AñadirSistema("cambio aplicado en " + e.Datos["archivo"])
 		// El cambio ya está en change_history (EVENTS.md §4): el dato de git del
 		// panel pasa a mostrar el árbol con cambios.
 		a.Panel.GitLimpio = false
 	case EventoElementoBloqueado:
+		a.cerrarSegmentoEnVivo()
 		a.Chat.AñadirSistema("elemento bloqueado: " + e.Datos["elemento"])
 	case EventoColaActualizada:
 		// La cola es del proyecto, no de una sesión: se ve desde cualquiera
@@ -330,6 +408,19 @@ func (a *App) AplicarEvento(e Evento) {
 	}
 }
 
+// cerrarSegmentoEnVivo cierra el intercambio en curso —texto y razonamiento—
+// antes de escribir en el chat una línea que se interpone: una herramienta, un
+// aviso, una etapa. Así el hilo queda en el orden en que ocurrió: el texto que
+// precedió a la línea queda arriba de ella y el que venga después abre un globo
+// nuevo. Sin nada acumulado no hace nada.
+func (a *App) cerrarSegmentoEnVivo() {
+	if a.Chat.EnCurso() == "" && !a.Razon.Hay() {
+		return
+	}
+	a.Chat.CerrarSegmento(a.Razon.Texto())
+	a.Razon.CerrarTurno()
+}
+
 // cerrarTurnoDeVista cierra el turno de la sesión activa: pasa la respuesta en
 // curso al historial (con el tiempo que tardó), limpia el razonamiento y apaga
 // el contador. Con `obsoletas` marca las aprobaciones pendientes como tales, que
@@ -337,6 +428,7 @@ func (a *App) AplicarEvento(e Evento) {
 func (a *App) cerrarTurnoDeVista(obsoletas bool) {
 	a.enTurno = false
 	a.PidiendoCancelarEsc = false
+	a.herramientaEnCurso = ""
 	a.Chat.CerrarTurno(a.Razon.Texto())
 	a.Razon.CerrarTurno()
 	if obsoletas {
@@ -352,6 +444,15 @@ func notificacionEnTexto(datos map[string]string) string {
 		texto += " — " + s
 	}
 	return texto
+}
+
+// nombreDeEtapa saca el nombre visible de una etapa del payload del evento. Si
+// no viene `nombre`, cae al `etapa` (el id), para no pintar una línea vacía.
+func nombreDeEtapa(datos map[string]string) string {
+	if n := datos["nombre"]; n != "" {
+		return n
+	}
+	return datos["etapa"]
 }
 
 // textoDeFlujo traduce el nombre del evento de flujo a la línea que se ve.
@@ -373,4 +474,17 @@ func enteroDe(s string) (int, error) {
 	}
 	_, err := fmt.Sscanf(s, "%d", &n)
 	return n, err
+}
+
+// decodificarTareas lee la lista de pasos que viene en el evento. Un payload
+// ilegible deja la lista vacía: es una notificación, no puede tumbar la vista.
+func decodificarTareas(datos string) []TareaPanel {
+	if datos == "" {
+		return nil
+	}
+	var vista []TareaPanel
+	if err := json.Unmarshal([]byte(datos), &vista); err != nil {
+		return nil
+	}
+	return vista
 }

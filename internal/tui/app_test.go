@@ -53,8 +53,11 @@ func TestLaEscuchaSeArmaUnaVezYSeRearmaTrasCadaEvento(t *testing.T) {
 		t.Errorf("no se re-suscribe en cada evento: %d", p.suscripciones)
 	}
 	v := sinEstilo(a.View())
-	if !strings.Contains(v, "etapa iniciada: plan") || !strings.Contains(v, "etapa terminada: plan") {
-		t.Errorf("los dos eventos llegaron a la vista: %s", v)
+	if !strings.Contains(v, "[Sub Proceso] plan") {
+		t.Errorf("los eventos de etapa llegaron a la vista: %s", v)
+	}
+	if strings.Contains(v, "etapa terminada") {
+		t.Errorf("la etapa terminada no deja línea propia: %s", v)
 	}
 }
 
@@ -226,18 +229,24 @@ func TestRecorridoRazonamientoOcultable(t *testing.T) {
 	h := nuevoArnes(t)
 	h.evento(EventoToken, map[string]string{"texto": "pienso ", "razonamiento": "true"})
 	h.evento(EventoToken, map[string]string{"texto": "respondo"})
+	// Por defecto el razonamiento no se vuelca: se ve la respuesta y el indicador.
+	h.veSiContiene("respondo")
+	if strings.Contains(h.ve(), "pienso") {
+		t.Error("el razonamiento no se vuelca sin revelarlo")
+	}
+
+	// Ctrl+R revela el texto y sigue acumulando sin perder nada.
+	h.tecla("ctrl+r")
 	h.veSiContiene("pienso")
+	h.evento(EventoToken, map[string]string{"texto": "y sigo", "razonamiento": "true"})
+	h.veSiContiene("pienso y sigo")
 	h.veSiContiene("respondo")
 
+	// Ocultarlo de nuevo lo retira sin borrarlo.
 	h.tecla("ctrl+r")
 	if strings.Contains(h.ve(), "pienso") {
 		t.Error("oculto no se pinta")
 	}
-	// Mientras está oculto sigue llegando y la vista no pierde nada.
-	h.evento(EventoToken, map[string]string{"texto": "y sigo", "razonamiento": "true"})
-	h.tecla("ctrl+r")
-	h.veSiContiene("pienso y sigo")
-	h.veSiContiene("respondo")
 }
 
 func TestRecorridoPanelPlegable(t *testing.T) {

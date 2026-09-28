@@ -195,3 +195,62 @@ func TestLosEstilosDelBloqueEstanDefinidos(t *testing.T) {
 		}
 	}
 }
+
+// --- T-F035: la envoltura de la línea de la bienvenida ----------------------
+
+func TestEnvolverConCursorReparteElTextoYUbicaElCursor(t *testing.T) {
+	lineas, fila, col := envolverConCursor("abcdefgh", 3, 3)
+	if len(lineas) != 3 || lineas[0] != "abc" || lineas[1] != "def" || lineas[2] != "gh" {
+		t.Fatalf("reparto por runas en líneas de 3: %q", lineas)
+	}
+	if fila != 1 || col != 0 {
+		t.Errorf("el cursor en la posición 3 va al principio de la 2ª línea, dio (%d,%d)", fila, col)
+	}
+
+	// Cursor al final del texto: cae al final de la última línea.
+	lineas, fila, col = envolverConCursor("abcdefg", 7, 3)
+	if len(lineas) != 3 || fila != 2 || col != 1 {
+		t.Errorf("cursor final = (%d,%d), líneas %q", fila, col, lineas)
+	}
+
+	// Sin ancho conocido no se parte nada: mejor una línea larga que texto roto.
+	lineas, fila, col = envolverConCursor("largo", 2, 0)
+	if len(lineas) != 1 || fila != 0 || col != 2 {
+		t.Errorf("ancho 0 no parte: %q (%d,%d)", lineas, fila, col)
+	}
+}
+
+// --- T-F036: los globos del chat --------------------------------------------
+
+func TestLosGlobosDistinguenAlUsuarioDelAgente(t *testing.T) {
+	u := burbuja(RolUsuario, "hola")
+	g := burbuja(RolAgente, "hola")
+	if u == "" || g == "" {
+		t.Fatal("los dos globos deben pintarse")
+	}
+	if u == g {
+		t.Error("el globo del usuario y el del agente no pueden verse iguales")
+	}
+	for nombre, b := range map[string]string{"usuario": u, "agente": g} {
+		plano := sinEstilo(b)
+		if !strings.Contains(plano, "hola") {
+			t.Errorf("el globo %s contiene su texto: %q", nombre, plano)
+		}
+		if !strings.ContainsAny(plano, "╭╰│") {
+			t.Errorf("el globo %s lleva borde redondeado: %q", nombre, plano)
+		}
+	}
+	// Un contenido vacío no deja globo vacío.
+	if got := burbuja(RolUsuario, "   "); got != "" {
+		t.Errorf("un globo sin contenido no se pinta: %q", got)
+	}
+}
+
+func TestElAnchoDelGloboReservaBordeYRelleno(t *testing.T) {
+	if got := anchoGlobo(40); got != 36 {
+		t.Errorf("el contenido dispone de ancho-4 columnas: %d", got)
+	}
+	if got := anchoGlobo(2); got != 1 {
+		t.Errorf("el globo no se queda sin ancho interior: %d", got)
+	}
+}

@@ -48,6 +48,11 @@ type Chat struct {
 	enCurso    strings.Builder
 	hayCurso   bool
 	propuestas []Propuesta
+	// MostrarRazonamiento decide si el razonamiento cerrado del historial se
+	// vuelca. Por defecto no: es la misma bandera que revela el texto en vivo
+	// (`Ctrl+R`) y la sincroniza el `app`. El indicador en vivo no depende de
+	// ella.
+	MostrarRazonamiento bool
 	// inicio marca cuándo se envió el turno en curso; cero = no hay turno vivo.
 	inicio time.Time
 
@@ -60,6 +65,17 @@ type Chat struct {
 	maxOffset  int
 	scrolleado bool
 	altoUltimo int
+
+	// pendientes son los índices de las líneas de herramienta abiertas, en
+	// orden de invocación. Al llegar el resultado se cierra la primera (FIFO),
+	// así la misma línea pasa de «LEER [ruta]» a «✓ LEER [ruta] · 70 líneas».
+	pendientes []int
+
+	// ultimoAgente es el índice+1 del último segmento del agente cerrado en el
+	// turno (0 = ninguno). Sirve para colgar la duración del turno del último
+	// segmento cuando la respuesta termina justo después de una herramienta y no
+	// queda texto final al que colgarla.
+	ultimoAgente int
 }
 
 // AñadirUsuario añade lo que escribió el usuario y arranca el contador del
@@ -73,6 +89,9 @@ func (c *Chat) AñadirUsuario(texto string) {
 // Es lo que se usa cuando lo escrito no va al modelo —por ejemplo un comando de
 // flujo—: no hay respuesta en camino que medir.
 func (c *Chat) AñadirEntrada(texto string) {
+	// Una línea del usuario cierra lo que hubiera del turno anterior: el
+	// segmento de este turno todavía no existe.
+	c.ultimoAgente = 0
 	c.mensajes = append(c.mensajes, Mensaje{Rol: RolUsuario, Texto: texto})
 }
 
@@ -98,6 +117,78 @@ func (c *Chat) AñadirSistema(texto string) {
 	c.mensajes = append(c.mensajes, Mensaje{Rol: RolSistema, Texto: texto})
 }
 
+// AnotarInvocacion abre la línea de una herramienta en una forma compacta: su
+// verbo de pantalla y su objetivo —«LEER [ruta]»—. No cierra nada todavía: la
+// línea se completa con CerrarHerramienta cuando llega el resultado. Mientras
+// corre, el indicador en vivo de la vista dice «Usando herramienta: <nombre>».
+func (c *Chat) AnotarInvocacion(verbo, tema string) {
+	if verbo == "" {
+		return
+	}
+	linea := verbo
+	if tema != "" {
+		linea += " [" + tema + "]"
+	}
+	c.mensajes = append(c.mensajes, Mensaje{Rol: RolSistema, Texto: linea})
+	c.pendientes = append(c.pendientes, len(c.mensajes)-1)
+}
+
+// CerrarHerramienta cierra la línea abierta por AnotarInvocacion con su marca
+// compacta: «✓» si terminó bien, «✗» si falló, más la medida del resultado
+// («70 líneas») y, si se recortó, el aviso. La salida cruda no se pinta: va al
+// modelo, no a la pantalla (EVENTS.md §3). Sin invocación pendiente —un
+// resultado suelto— se añade una línea nueva con el nombre de la herramienta.
+func (c *Chat) CerrarHerramienta(nombre string, ok, truncado bool, medida, err string) {
+	marca := "✓ "
+	if !ok {
+		marca = "✗ "
+	}
+	idx := c.siguientePendiente()
+	linea := nombre
+	if idx >= 0 {
+		linea = c.mensajes[idx].Texto
+	}
+	linea = marca + linea
+	if medida != "" {
+		linea += " · " + medida
+	}
+	if truncado {
+		linea += " · recortado"
+	}
+	if !ok && err != "" {
+		linea += " · " + recortarError(err)
+	}
+	if idx >= 0 {
+		c.mensajes[idx].Texto = linea
+		return
+	}
+	c.AñadirSistema(linea)
+}
+
+// siguientePendiente saca la línea abierta más antigua y la deja fuera de la
+// cola. Devuelve -1 si no hay ninguna.
+func (c *Chat) siguientePendiente() int {
+	if len(c.pendientes) == 0 {
+		return -1
+	}
+	idx := c.pendientes[0]
+	c.pendientes = c.pendientes[1:]
+	if idx < 0 || idx >= len(c.mensajes) {
+		return -1
+	}
+	return idx
+}
+
+// recortarError abrevia el motivo de un fallo para la línea: una sola línea.
+func recortarError(err string) string {
+	err = strings.Join(strings.Fields(err), " ")
+	r := []rune(err)
+	if len(r) <= 60 {
+		return err
+	}
+	return string(r[:60]) + "…"
+}
+
 // AñadirAgente añade una respuesta ya completa.
 func (c *Chat) AñadirAgente(texto string) {
 	c.mensajes = append(c.mensajes, Mensaje{Rol: RolAgente, Texto: texto})
@@ -113,27 +204,47 @@ func (c *Chat) Token(texto string) {
 // EnCurso devuelve la respuesta que se está generando ("" si no hay ninguna).
 func (c *Chat) EnCurso() string { return c.enCurso.String() }
 
-// CerrarTurno pasa la respuesta en curso al historial, con el tiempo que tardó
-// el turno. Con `razonamiento` vacío se marca que el modelo no lo entregó, para
-// que la vista lo pueda decir. El contador se detiene siempre, aunque no haya
-// nada que cerrar (turno terminado sin emitir un token).
-func (c *Chat) CerrarTurno(razonamiento string) {
-	duracion := c.Transcurrido()
-	c.inicio = time.Time{}
-	if !c.hayCurso && !c.tieneUltimoAgente() {
+// CerrarSegmento cierra el texto en curso como un intercambio del agente, sin dar
+// el turno por terminado. Se usa cuando algo se interpone en el hilo —una línea de
+// herramienta, un aviso—: lo dicho hasta ahí queda en el historial, arriba de esa
+// línea, y lo que el modelo diga después abre un globo nuevo. Así el chat respeta
+// el orden en que ocurrió y no funde en un solo globo el texto anterior y el
+// posterior a la herramienta. Sin nada acumulado no añade nada (una invocación
+// directa no deja globo vacío).
+func (c *Chat) CerrarSegmento(razonamiento string) {
+	if c.enCurso.Len() == 0 && strings.TrimSpace(razonamiento) == "" {
 		return
 	}
-	m := Mensaje{Rol: RolAgente, Texto: c.enCurso.String(), Razonamiento: razonamiento, Duracion: duracion}
+	m := Mensaje{Rol: RolAgente, Texto: c.enCurso.String(), Razonamiento: razonamiento}
 	m.SinRazonami = razonamiento == ""
 	c.mensajes = append(c.mensajes, m)
+	c.ultimoAgente = len(c.mensajes) // índice+1
 	c.enCurso.Reset()
 	c.hayCurso = false
 }
 
-// tieneUltimoAgente dice si el último mensaje del historial es del agente (caso
-// de un turno que terminó sin emitir ni un token).
-func (c *Chat) tieneUltimoAgente() bool {
-	return len(c.mensajes) > 0 && c.mensajes[len(c.mensajes)-1].Rol == RolAgente
+// CerrarTurno pasa el texto en curso al historial, con el tiempo que tardó el
+// turno. Con `razonamiento` vacío se marca que el modelo no lo entregó, para que
+// la vista lo pueda decir. El contador se detiene siempre, aunque no haya nada que
+// cerrar (turno terminado sin emitir un token). Si el turno terminó justo después
+// de un segmento ya cerrado —por ejemplo tras una herramienta—, la duración se
+// cuelga de ese último segmento para no perderla.
+func (c *Chat) CerrarTurno(razonamiento string) {
+	duracion := c.Transcurrido()
+	c.inicio = time.Time{}
+	if c.hayCurso {
+		m := Mensaje{Rol: RolAgente, Texto: c.enCurso.String(), Razonamiento: razonamiento, Duracion: duracion}
+		m.SinRazonami = razonamiento == ""
+		c.mensajes = append(c.mensajes, m)
+		c.enCurso.Reset()
+		c.hayCurso = false
+		c.ultimoAgente = 0
+		return
+	}
+	if c.ultimoAgente > 0 {
+		c.mensajes[c.ultimoAgente-1].Duracion = duracion
+		c.ultimoAgente = 0
+	}
 }
 
 // Mensajes devuelve el historial cerrado.
@@ -154,6 +265,8 @@ func (c *Chat) Vaciar() {
 	c.maxOffset = 0
 	c.scrolleado = false
 	c.altoUltimo = 0
+	c.pendientes = nil
+	c.ultimoAgente = 0
 }
 
 // MensajeHistorial es un turno cargado de la sesión activa, ya con su
@@ -179,24 +292,37 @@ func (c *Chat) Cargar(ms []MensajeHistorial) {
 	}
 }
 
-// Render pinta solo el historial cerrado. Cada intercambio de agente se pinta
-// con renderIntercambio (styles.go): razonamiento arriba de la respuesta y
-// separado de ella, igual que en vivo (T-F005-03); el razonamiento nunca se
-// mezcla visualmente con la respuesta final (SPEC-INTERFAZ §Reglas).
+// Render pinta solo el historial cerrado. Lo escrito por el usuario y lo que
+// responde el agente van cada uno en su globo de color (burbuja, styles.go):
+// azul lo tuyo, verde lo del agente/terminal (T-F036). Cada intercambio de
+// agente se compone con renderIntercambio: razonamiento arriba de la respuesta
+// y separado de ella, igual que en vivo (T-F005-03); el razonamiento nunca se
+// mezcla visualmente con la respuesta final (SPEC-INTERFAZ §Reglas). Las líneas
+// del sistema (herramientas, avisos) no son un turno: se pintan sueltas.
 func (c *Chat) Render(ancho int) string {
+	interno := anchoGlobo(ancho)
 	var b strings.Builder
 	for _, m := range c.mensajes {
-		b.WriteString(prefijoDe(m.Rol))
-		if m.Rol == RolAgente {
-			b.WriteString(renderIntercambio(m.Razonamiento, m.Texto, true, false, ancho))
-			// El tiempo de la respuesta se cuelga al final, atenuado, para no
-			// confundirse con lo que dijo el modelo. Sin medición no se pinta.
-			if s := sufijoDuracion(m.Duracion); s != "" {
-				b.WriteString(" " + s)
+		var bloque string
+		switch m.Rol {
+		case RolAgente:
+			if contenido := renderIntercambio(m.Razonamiento, m.Texto, c.MostrarRazonamiento, false, interno); contenido != "" {
+				bloque = burbuja(RolAgente, contenido)
+				// El tiempo de la respuesta se cuelga al final, atenuado, para no
+				// confundirse con lo que dijo el modelo. Sin medición no se pinta.
+				if s := sufijoDuracion(m.Duracion); s != "" {
+					bloque += " " + s
+				}
 			}
-		} else {
-			b.WriteString(m.Texto)
+		case RolUsuario:
+			bloque = burbuja(RolUsuario, recortar(m.Texto, interno))
+		default:
+			bloque = estiloSistema.Render("· ") + m.Texto
 		}
+		if bloque == "" {
+			continue
+		}
+		b.WriteString(bloque)
 		b.WriteString("\n\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -325,17 +451,3 @@ func (c *Chat) HayAbajo() bool  { return c.scrolleado && c.offset < c.maxOffset 
 // lado.
 func (c *Chat) OcultasArriba() int { return c.offset }
 func (c *Chat) OcultasAbajo() int  { return c.maxOffset - c.offset }
-
-// prefijoDe distingue visualmente quién habla. La spec pide que el razonamiento
-// y la respuesta nunca se confundan; el prefijo es la parte más barata de esa
-// separación.
-func prefijoDe(r Rol) string {
-	switch r {
-	case RolUsuario:
-		return estiloUsuario.Render("› ")
-	case RolAgente:
-		return estiloAgente.Render("· ")
-	default:
-		return estiloSistema.Render("· ")
-	}
-}

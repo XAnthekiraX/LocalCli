@@ -299,6 +299,7 @@ func (a *App) enviarDesdeBienvenida() tea.Cmd {
 	// el modelo que el usuario eligió y no con el de la autodetección.
 	a.fijarModeloEnPuerto()
 	a.Chat.AñadirUsuario(texto)
+	a.iniciarTurno()
 	a.Vista = VistaPrincipal
 	imagenes := a.prepararAdjuntos(texto)
 	return a.enviarCmd(a.Panel.SesionID, texto, imagenes)
@@ -314,6 +315,10 @@ func (a *App) fijarModeloEnPuerto() {
 		a.Puerto.FijarModelo(a.Modelo)
 	}
 }
+
+// etiquetaBienvenida es el rótulo que precede al texto que se escribe en la
+// bienvenida, entre el indicador del agente y la línea de entrada.
+const etiquetaBienvenida = "En qué te ayudo hoy: "
 
 // viewBienvenida compone la pantalla completa: el bloque «logotipo + nombre con
 // versión + línea de modelo + línea de entrada» se centra en la ventana. El
@@ -338,21 +343,33 @@ func (a *App) viewBienvenida() string {
 	// El indicador del agente precede a la línea de entrada, igual que en la
 	// interfaz principal: el render canónico de SPEC-INTERFAZ §Pantalla de
 	// bienvenida es `[plan] > En qué te ayudo hoy: █╚` (T-F015-02).
-	// El cursor se pinta en su posición (no siempre al final), como en
-	// cualquier editor de una línea.
-	b.WriteString(IndicadorAgente(a.Agente) + "En qué te ayudo hoy: ")
-	r := []rune(a.Bienvenida.Texto)
-	pos := a.Bienvenida.Pos
-	if pos < 0 {
-		pos = 0
+	// El texto salta de renglón al desbordar el ancho en vez de recortarse
+	// (T-F035): las filas de continuación se sangran al ancho del prefijo y el
+	// cursor se pinta en su sitio dentro de la línea envuelta, como en cualquier
+	// editor de una línea.
+	prefijo := IndicadorAgente(a.Agente) + etiquetaBienvenida
+	anchoPrefijo := anchoIndicador(a.Agente) + len([]rune(etiquetaBienvenida))
+	anchoTexto := a.Ancho - anchoPrefijo
+	if a.Ancho <= 0 {
+		anchoTexto = anchoEntradaPorDefecto
 	}
-	if pos > len(r) {
-		pos = len(r)
+	if anchoTexto < 1 {
+		anchoTexto = 1
 	}
-	if a.Bienvenida.Foco {
-		b.WriteString(a.Bienvenida.Resaltar(string(r[:pos])) + "▌" + a.Bienvenida.Resaltar(string(r[pos:])))
-	} else {
-		b.WriteString(a.Bienvenida.Resaltar(a.Bienvenida.Texto))
+	lineas, fila, col := envolverConCursor(a.Bienvenida.Texto, a.Bienvenida.Pos, anchoTexto)
+	for i, l := range lineas {
+		if i > 0 {
+			b.WriteString("\n")
+			b.WriteString(strings.Repeat(" ", anchoPrefijo))
+		} else {
+			b.WriteString(prefijo)
+		}
+		if a.Bienvenida.Foco && i == fila {
+			rr := []rune(l)
+			b.WriteString(a.Bienvenida.Resaltar(string(rr[:col])) + "▌" + a.Bienvenida.Resaltar(string(rr[col:])))
+		} else {
+			b.WriteString(a.Bienvenida.Resaltar(l))
+		}
 	}
 	// El aviso transitorio (p. ej. el modelo sin herramientas) también se ve
 	// aquí: la bienvenida es donde primero se elige modelo.

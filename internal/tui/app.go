@@ -149,6 +149,13 @@ type App struct {
 	// ticks vigente. Al enviar se incrementa, y una cadena de una generación
 	// anterior se detiene en su siguiente tick, así que nunca se acumulan.
 	latido uint64
+	// frame es el frame del indicador en vivo ([⠋ Pensando]): avanza un paso
+	// por latido mientras hay turno. El glifo lo elige glifoActividad.
+	frame int
+	// herramientaEnCurso es la herramienta que se está ejecutando, si la hay.
+	// Mientras no esté vacía, el indicador en vivo dice «Usando herramienta: X»
+	// en lugar de «Pensando». Se pone al invocarse y se limpia al terminar.
+	herramientaEnCurso string
 
 	// eventos es el canal del motor, suscrito UNA vez en Init: cada evento
 	// re-arma el comando sobre el MISMO canal, sin abrir suscripciones nuevas
@@ -240,16 +247,22 @@ func (a *App) cmdCapacidades() tea.Cmd {
 	}
 }
 
-// tickMsg es el latido del contador en vivo: cada segundo mientras hay una
-// respuesta en camino, para que el tiempo corra en pantalla aunque el modelo
-// todavía no haya emitido un token. `gen` es la generación del contador a la que
-// pertenece el latido: solo la cadena vigente se re-arma.
+// intervaloLatido es la cadencia del latido en vivo. Es rápida para que el
+// indicador ([⠋ Pensando]) gire con fluidez mientras el modelo trabaja; el
+// contador de tiempo se lee de `time.Since`, así que no depende del intervalo.
+const intervaloLatido = 120 * time.Millisecond
+
+// tickMsg es el latido del contador en vivo: cada `intervaloLatido` mientras
+// hay una respuesta en camino, para que el tiempo corra y el indicador gire en
+// pantalla aunque el modelo todavía no haya emitido un token. `gen` es la
+// generación del contador a la que pertenece el latido: solo la cadena vigente
+// se re-arma.
 type tickMsg struct{ gen uint64 }
 
 // tickCmd programa el siguiente latido de la generación dada. El comando se
-// re-arma a sí mismo mientras el turno siga vivo (uno por segundo, no más).
+// re-arma a sí mismo mientras el turno siga vivo.
 func tickCmd(gen uint64) tea.Cmd {
-	return tea.Tick(time.Second, func(time.Time) tea.Msg { return tickMsg{gen: gen} })
+	return tea.Tick(intervaloLatido, func(time.Time) tea.Msg { return tickMsg{gen: gen} })
 }
 
 // Update maneja las teclas, el tamaño y los mensajes que llegan por eventos.
@@ -328,9 +341,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case historialMsg:
 		// La carga llega cuando la sesión pedida sigue siendo la activa; si el
 		// usuario cambió de sesión mientras volaba, se descarta: el chat nunca
-		// muestra el historial de otra sesión (T-F005-05).
+		// muestra el historial de otra sesión (T-F005-05), ni la lista de pasos
+		// de otra sesión.
 		if m.Sesion == a.Panel.SesionID {
 			a.Chat.Cargar(m.Mensajes)
+			a.Panel.Tareas = m.Tareas
 		}
 		return a, nil
 	case enviadoMsg:
@@ -342,8 +357,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		// El contador late solo mientras hay un turno vivo y la cadena sea la
 		// vigente; al cerrarse el turno (o quedar obsoleta la generación), el
-		// siguiente latido ya no se re-arma y el contador se detiene solo.
+		// siguiente latido ya no se re-arma y el contador se detiene solo. Cada
+		// latido avanza un frame del indicador en vivo.
 		if a.Chat.HayTurno() && m.gen == a.latido {
+			a.frame++
 			return a, tickCmd(m.gen)
 		}
 		return a, nil
@@ -353,6 +370,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !a.enTurno {
 			a.Chat.CancelarTurno()
 		}
+		// El aviso no puede adelantarse al texto en vuelo: se cierra el segmento
+		// para que la línea de error quede debajo de lo ya dicho.
+		a.cerrarSegmentoEnVivo()
 		a.Chat.AñadirSistema(m.Error())
 		return a, nil
 	}
@@ -467,8 +487,11 @@ func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, a.abrirModalSesiones()
 	case AccionRazonamiento:
-		// Ocultar no detiene la generación: solo deja de pintarse.
+		// Revelar u ocultar el texto crudo del razonamiento no detiene la
+		// generación: solo cambia lo que se pinta. El historial cerrado usa la
+		// misma bandera, para que el toggle valga en toda la pantalla.
 		a.Razon.Alternar()
+		a.Chat.MostrarRazonamiento = a.Razon.Visible
 		return a, nil
 	case AccionSesionNueva:
 		// `Ctrl+X n` crea una sesión nueva y la deja activa; solo desde la
@@ -691,10 +714,13 @@ func (a *App) volverABienvenida() {
 	a.Panel.Sesion = ""
 	a.Panel.Estado = ""
 	a.Panel.Capa = ""
+	a.Panel.Tareas = nil
 	a.Chat.Vaciar()
+	a.Chat.MostrarRazonamiento = false
 	a.Razon = NuevoRazonamiento()
 	a.enTurno = false
 	a.PidiendoCancelarEsc = false
+	a.iniciarTurno()
 	a.Bienvenida = NuevaBienvenida()
 	a.Paleta.Filtrar("")
 }
@@ -748,6 +774,7 @@ func (a *App) enviar() tea.Cmd {
 	a.Entrada.Limpiar()
 	a.Paleta.Filtrar("")
 	a.Chat.AñadirUsuario(texto)
+	a.iniciarTurno()
 	a.Vista = VistaPrincipal
 	imagenes := a.prepararAdjuntos(texto)
 	return a.enviarCmd(id, texto, imagenes)
@@ -851,6 +878,7 @@ func (a *App) ejecutarComando(c ComandoFlujo, escrito string) tea.Cmd {
 	a.Paleta.Filtrar("")
 	a.fijarModeloEnPuerto()
 	a.Chat.AñadirUsuario(texto)
+	a.iniciarTurno()
 	a.Vista = VistaPrincipal
 	return a.enviarCmd(id, texto, nil)
 }
@@ -909,22 +937,29 @@ func (a *App) activar(ses *session.Sesion) {
 		a.Panel.Sesion = ses.ID
 	}
 	a.Chat.Vaciar()
+	a.Chat.MostrarRazonamiento = false
 	a.Razon = NuevoRazonamiento()
+	a.Panel.Tareas = nil
 	// El turno que se seguía era de la sesión anterior: al cambiar de sesión no
 	// se sigue midiendo, para que un evento suyo no cierre el turno de esta.
 	a.enTurno = false
 	a.PidiendoCancelarEsc = false
+	a.iniciarTurno()
 }
 
-// cmdHistorial pide la conversación de la sesión activa. La lectura llega como
-// mensaje: la vista no consulta la base (INTERFACES §3).
+// cmdHistorial pide la conversación y la lista de pasos de la sesión activa. Las
+// dos lecturas llegan en un solo mensaje: la vista no consulta la base
+// (INTERFACES §3).
 func (a *App) cmdHistorial(sesionID string) tea.Cmd {
 	return func() tea.Msg {
 		ms, err := a.Puerto.Historial(sesionID)
 		if err != nil {
 			return errorMsg{err: err}
 		}
-		return historialMsg{Sesion: sesionID, Mensajes: ms}
+		// La lista de pasos es secundaria: si falla su lectura, el chat se pinta
+		// igual y el panel queda sin checklist.
+		ts, _ := a.Puerto.Tareas(sesionID)
+		return historialMsg{Sesion: sesionID, Mensajes: ms, Tareas: ts}
 	}
 }
 
@@ -1158,13 +1193,15 @@ func (a *App) bloqueInferior(anchoChat int) string {
 	// de ella (SPEC-INTERFAZ §Razonamiento del modelo). El dibujo vive en
 	// styles.go (T-F002).
 	var partes []string
-	if x := renderIntercambio(a.Razon.Texto(), a.Chat.EnCurso(), a.Razon.Visible, a.Razon.NoDisponible, anchoChat); x != "" {
-		partes = append(partes, x)
+	if x := renderIntercambio(a.Razon.Texto(), a.Chat.EnCurso(), a.Razon.Visible, a.Razon.NoDisponible, anchoGlobo(anchoChat)); x != "" {
+		partes = append(partes, burbuja(RolAgente, x))
 	}
-	// El contador en vivo: mientras hay un turno en camino corre el tiempo, que
-	// es lo que dice que el modelo sigue trabajando aunque aún no emita nada.
-	if a.Chat.HayTurno() {
-		partes = append(partes, estiloSistema.Render("generando… "+formatearDuracion(a.Chat.Transcurrido())))
+	// El indicador en vivo: mientras hay un turno en camino gira el glifo y
+	// corre el tiempo —[⠋ Pensando], [⠋ Usando herramienta: X]—, que es lo que
+	// dice que el modelo sigue trabajando aunque aún no emita nada. Sustituye al
+	// vuelco crudo del razonamiento.
+	if act := a.lineaDeActividad(); act != "" {
+		partes = append(partes, act)
 	}
 	// Las propuestas pendientes de esta sesión se ven dentro del chat
 	// (SPEC-INTERFAZ §Zonas 1, T-F005-06).
@@ -1193,6 +1230,10 @@ func (a *App) bloqueInferior(anchoChat int) string {
 	if estado := a.lineaDeEstadoModelo(); estado != "" {
 		lineas = append(lineas, estado)
 	}
+	// El consumo de tokens del turno, junto al estado del modelo.
+	if tokens := a.lineaDeTokens(); tokens != "" {
+		lineas = append(lineas, tokens)
+	}
 	// Cancelar con ctrl+f se pregunta en línea; lo escrito queda a salvo.
 	if a.PidiendoCancelar {
 		lineas = append(lineas, estiloAviso.Render("¿cancelar el trabajo en curso? (s/n)"))
@@ -1216,6 +1257,53 @@ func (a *App) bloqueInferior(anchoChat int) string {
 		return pie
 	}
 	return inferior + "\n\n" + pie
+}
+
+// lineaDeActividad pinta el indicador en vivo mientras hay un turno en camino:
+// un glifo que gira y la etiqueta de lo que está pasando —«Usando herramienta:
+// X» si corre una herramienta, «Generando» si ya llega respuesta, «Pensando» si
+// el modelo aún no ha emitido nada—, más el tiempo transcurrido. Solo se pinta
+// mientras hay algo en marcha (enActividad): no sobrevive al turno.
+func (a *App) lineaDeActividad() string {
+	if !a.enActividad() {
+		return ""
+	}
+	etiqueta := "Pensando"
+	switch {
+	case a.herramientaEnCurso != "":
+		etiqueta = "Usando herramienta: " + a.herramientaEnCurso
+	case a.Chat.EnCurso() != "":
+		etiqueta = "Generando"
+	}
+	return estiloActividad.Render(renderActividad(a.frame, etiqueta)) +
+		" " + estiloSistema.Render(formatearDuracion(a.Chat.Transcurrido()))
+}
+
+// enActividad dice si hay algo en marcha que justifique el indicador: un turno
+// vivo, texto en curso, razonamiento acumulado o una herramienta corriendo. Basta
+// que haya llegado cualquier fragmento, aunque el turno no se haya marcado como
+// vivo (p. ej. un evento aislado), para no dejar mudo el indicador.
+func (a *App) enActividad() bool {
+	return a.Chat.HayTurno() || a.Chat.EnCurso() != "" || a.Razon.Hay() || a.herramientaEnCurso != ""
+}
+
+// lineaDeTokens muestra el consumo de tokens del turno bajo el input, en la
+// unidad que se lee de un vistazo (54000 → «54k»). Sin consumo no pinta nada:
+// un «0 tokens» de adorno solo estorba.
+func (a *App) lineaDeTokens() string {
+	if a.Panel.Tokens <= 0 {
+		return ""
+	}
+	return estiloSistema.Render("tokens: " + formatearTokens(a.Panel.Tokens))
+}
+
+// iniciarTurno deja a cero lo que se acumula por turno: el consumo de tokens y
+// la herramienta en curso. El razonamiento y la respuesta en curso los limpia el
+// cierre del turno anterior; esto es lo que se cuenta de nuevo al enviar.
+func (a *App) iniciarTurno() {
+	a.Panel.Tokens = 0
+	a.Panel.TokensEstimados = false
+	a.herramientaEnCurso = ""
 }
 
 // lineaDeEstadoModelo muestra, bajo la entrada, el modelo en uso y si tiene

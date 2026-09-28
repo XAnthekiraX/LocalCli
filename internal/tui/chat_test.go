@@ -24,6 +24,8 @@ import (
 
 func TestElHistorialCierraElIntercambioRazonamientoArribaDeLaRespuesta(t *testing.T) {
 	c := Chat{}
+	// El razonamiento cerrado solo se vuelca cuando está revelado (`Ctrl+R`).
+	c.MostrarRazonamiento = true
 	c.Token("la respuesta es 4")
 	c.CerrarTurno("estuve pensando")
 
@@ -38,8 +40,26 @@ func TestElHistorialCierraElIntercambioRazonamientoArribaDeLaRespuesta(t *testin
 	if strings.Index(plano, "estuve pensando") >= strings.Index(plano, "la respuesta es 4") {
 		t.Error("en el historial también va el razonamiento arriba de la respuesta")
 	}
-	if !strings.Contains(plano, "estuve pensando\n\nla respuesta es 4") {
-		t.Error("razonamiento y respuesta cerrados van separados, sin mezclarse")
+	// Dentro del globo del agente, razonamiento y respuesta van separados por una
+	// línea en blanco: no se mezclan visualmente (SPEC-INTERFAZ §Razonamiento).
+	iRaz, iResp := -1, -1
+	lineas := strings.Split(plano, "\n")
+	for i, l := range lineas {
+		if strings.Contains(l, "estuve pensando") {
+			iRaz = i
+		}
+		if strings.Contains(l, "la respuesta es 4") {
+			iResp = i
+		}
+	}
+	separados := false
+	for i := iRaz + 1; i < iResp; i++ {
+		if strings.Contains(lineas[i], "│") && strings.Trim(lineas[i], "│ ") == "" {
+			separados = true
+		}
+	}
+	if !separados {
+		t.Errorf("razonamiento y respuesta cerrados van separados, sin mezclarse:\n%s", plano)
 	}
 }
 
@@ -69,23 +89,30 @@ func TestOcultarElRazonamientoNoBorraNiDetieneLaAcumulación(t *testing.T) {
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 
 	pulsa(t, a, eventoMsg{Evento: Evento{Nombre: EventoToken, Datos: map[string]string{"texto": "parte uno ", "razonamiento": "true"}}})
-	tecla(t, a, tea.KeyCtrlR) // ocultar
+	// Por defecto el texto no se vuelca; el razonamiento sigue acumulándose.
 	if strings.Contains(sinEstilo(a.View()), "parte uno") {
-		t.Error("oculto no debe verse")
+		t.Error("sin revelar no debe verse el texto")
 	}
-	// Mientras está oculto sigue llegando razonamiento...
 	pulsa(t, a, eventoMsg{Evento: Evento{Nombre: EventoToken, Datos: map[string]string{"texto": "y parte dos", "razonamiento": "true"}}})
 	if a.Razon.Texto() != "parte uno y parte dos" {
-		t.Errorf("ocultar no detiene la acumulación: %q", a.Razon.Texto())
+		t.Errorf("no revelar no detiene la acumulación: %q", a.Razon.Texto())
 	}
-	tecla(t, a, tea.KeyCtrlR) // mostrar de nuevo
+	tecla(t, a, tea.KeyCtrlR) // revelar
 	if !strings.Contains(sinEstilo(a.View()), "parte uno y parte dos") {
-		t.Error("al mostrar aparece todo lo acumulado, también lo llegado oculto")
+		t.Error("al revelar aparece todo lo acumulado, también lo llegado oculto")
 	}
 	// ...y la respuesta sigue creciendo mientras tanto.
 	pulsa(t, a, eventoMsg{Evento: Evento{Nombre: EventoToken, Datos: map[string]string{"texto": "resp"}}})
 	if a.Chat.EnCurso() != "resp" {
 		t.Errorf("la generación sigue su curso: %q", a.Chat.EnCurso())
+	}
+	// Ocultarlo de nuevo lo retira sin borrar lo acumulado.
+	tecla(t, a, tea.KeyCtrlR)
+	if strings.Contains(sinEstilo(a.View()), "parte uno y parte dos") {
+		t.Error("oculto no debe verse")
+	}
+	if a.Razon.Texto() != "parte uno y parte dos" {
+		t.Errorf("ocultar no puede borrar el razonamiento: %q", a.Razon.Texto())
 	}
 }
 
@@ -121,12 +148,13 @@ func TestAlCambiarDeSesiónLlegaElHistorialDeEsaSesión(t *testing.T) {
 	if len(a.Chat.Mensajes()) != 2 {
 		t.Fatalf("el historial de la sesión elegida se pinta: %+v", a.Chat.Mensajes())
 	}
+	tecla(t, a, tea.KeyCtrlR) // revelar el razonamiento del historial
 	v := sinEstilo(a.View())
 	if !strings.Contains(v, "pregunta vieja") || !strings.Contains(v, "respuesta vieja") {
 		t.Fatalf("el historial se ve:\n%s", v)
 	}
 	if !strings.Contains(v, "razonamiento viejo") {
-		t.Error("el razonamiento cerrado del historial también se ve")
+		t.Error("el razonamiento cerrado del historial se ve al revelarlo")
 	}
 	// Lo nuevo de esta sesión convive con su historial cargado.
 	pulsa(t, a, eventoMsg{Evento: Evento{Nombre: EventoToken, Datos: map[string]string{"texto": "nuevo"}}})
@@ -318,5 +346,125 @@ func TestLasFlechasRecorrenElHistorialDelChat(t *testing.T) {
 	}
 	if a.Chat.OcultasAbajo() != 0 {
 		t.Errorf("bajar al final retoma el seguimiento, quedan %d", a.Chat.OcultasAbajo())
+	}
+}
+
+// --- T-F036: los globos del chat --------------------------------------------
+
+func TestElChatPintaCadaMensajeEnSuGlobo(t *testing.T) {
+	c := Chat{}
+	c.AñadirEntrada("lo que escribo")
+	c.Token("lo que responde")
+	c.CerrarTurno("")
+
+	lineas := strings.Split(sinEstilo(c.Render(60)), "\n")
+	inicioUsuario, inicioAgente := -1, -1
+	for i, l := range lineas {
+		if !strings.HasPrefix(l, "╭") {
+			continue
+		}
+		if inicioUsuario < 0 {
+			inicioUsuario = i
+		} else if inicioAgente < 0 {
+			inicioAgente = i
+		}
+	}
+	if inicioUsuario < 0 || inicioAgente < 0 {
+		t.Fatalf("cada mensaje va dentro de su globo:\n%s", strings.Join(lineas, "\n"))
+	}
+	if bloque := strings.Join(lineas[inicioUsuario:inicioAgente], "\n"); !strings.Contains(bloque, "lo que escribo") {
+		t.Errorf("lo escrito va en el globo del usuario:\n%s", bloque)
+	}
+	if bloque := strings.Join(lineas[inicioAgente:], "\n"); !strings.Contains(bloque, "lo que responde") {
+		t.Errorf("la respuesta va en el globo del agente:\n%s", bloque)
+	}
+}
+
+// --- T-F039: el orden del texto y las líneas de herramienta -------------------
+
+func TestElTextoAntesYDespuésDeLaHerramientaVanEnSuOrden(t *testing.T) {
+	c := Chat{}
+	c.AñadirUsuario("lee el archivo")
+	c.Token("voy a leerlo")
+	// La herramienta se interpone: lo dicho se cierra y su línea va debajo.
+	c.CerrarSegmento("")
+	c.AnotarInvocacion("LEER", "internal/tui/chat.go")
+	c.CerrarHerramienta("leer_archivo", true, false, "70 líneas", "")
+	// El modelo sigue tras el resultado: abre un globo nuevo.
+	c.Token("ya lo leí")
+	c.CerrarTurno("")
+
+	msgs := c.Mensajes()
+	if len(msgs) != 4 {
+		t.Fatalf("usuario + dos globos del agente + una línea de herramienta: %+v", msgs)
+	}
+	if msgs[0].Rol != RolUsuario || msgs[0].Texto != "lee el archivo" {
+		t.Errorf("primero lo del usuario: %+v", msgs[0])
+	}
+	if msgs[1].Rol != RolAgente || msgs[1].Texto != "voy a leerlo" {
+		t.Errorf("el texto previo a la herramienta va antes de su línea: %+v", msgs[1])
+	}
+	if msgs[2].Rol != RolSistema || !strings.Contains(msgs[2].Texto, "LEER") {
+		t.Errorf("la línea de herramienta va entre los dos globos: %+v", msgs[2])
+	}
+	if msgs[3].Rol != RolAgente || msgs[3].Texto != "ya lo leí" {
+		t.Errorf("el texto posterior abre un globo nuevo: %+v", msgs[3])
+	}
+
+	plano := sinEstilo(c.Render(80))
+	ip, il, is := strings.Index(plano, "voy a leerlo"), strings.Index(plano, "LEER ["), strings.Index(plano, "ya lo leí")
+	if ip < 0 || il < 0 || is < 0 || !(ip < il && il < is) {
+		t.Errorf("el render respeta el orden de ejecución (texto %d, herramienta %d, texto %d):\n%s", ip, il, is, plano)
+	}
+}
+
+func TestCerrarSegmentoSinNadaNoDejaGloboVacio(t *testing.T) {
+	c := Chat{}
+	c.CerrarSegmento("")
+	if len(c.Mensajes()) != 0 {
+		t.Errorf("una invocación directa no deja globo vacío: %+v", c.Mensajes())
+	}
+}
+
+func TestElRazonamientoSeCierraConSuSegmentoDeTexto(t *testing.T) {
+	c := Chat{}
+	c.MostrarRazonamiento = true
+	c.AñadirUsuario("lee")
+	c.Token("voy a leer")
+	c.CerrarSegmento("pienso leerlo")
+	c.AnotarInvocacion("LEER", "x")
+	c.Token("listo")
+	c.CerrarTurno("pienso responder")
+
+	msgs := c.Mensajes()
+	if len(msgs) != 4 {
+		t.Fatalf("usuario + dos globos + línea: %+v", msgs)
+	}
+	if msgs[1].Razonamiento != "pienso leerlo" {
+		t.Errorf("cada globo conserva su razonamiento: %+v", msgs[1])
+	}
+	if msgs[3].Razonamiento != "pienso responder" {
+		t.Errorf("el globo final lleva el suyo: %+v", msgs[3])
+	}
+}
+
+func TestLaDuraciónDelTurnoQueTerminaEnHerramientaNoSePierde(t *testing.T) {
+	c := Chat{}
+	c.AñadirUsuario("lee")
+	c.Token("voy")
+	c.CerrarSegmento("")
+	c.AnotarInvocacion("LEER", "x")
+	c.CerrarHerramienta("leer_archivo", true, false, "", "")
+	c.CerrarTurno("") // termina sin texto final
+
+	msgs := c.Mensajes()
+	if len(msgs) != 3 {
+		t.Fatalf("usuario + globo + línea: %+v", msgs)
+	}
+	if msgs[1].Duracion <= 0 {
+		t.Errorf("la duración se cuelga del último segmento del agente: %+v", msgs[1])
+	}
+	if msgs[2].Duracion != 0 {
+		t.Errorf("la línea de herramienta no lleva duración: %+v", msgs[2])
 	}
 }

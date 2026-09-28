@@ -104,7 +104,7 @@ func TestElArnesInyectaYLee(t *testing.T) {
 	h.veSiContiene("hola arnés")
 
 	h.evento(EventoEtapaIniciada, map[string]string{"etapa": "prueba"})
-	h.veSiContiene("etapa iniciada: prueba")
+	h.veSiContiene("[Sub Proceso] prueba")
 
 	h.tecla("ctrl+d")
 	if !h.app.Panel.Abierto {
