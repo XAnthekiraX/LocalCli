@@ -65,9 +65,13 @@ type GenerarRequest struct {
 }
 
 // Mensaje es un turno de /api/chat (se reutiliza en el contrato de agent).
+// Images lleva imágenes ya codificadas en base64 (sin prefijo `data:`), que es
+// la forma que espera /api/chat para los modelos multimodales. El harness no
+// interpreta el contenido: es un []string opaco que solo este módulo entiende.
 type Mensaje struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string   `json:"role"`
+	Content string   `json:"content"`
+	Images  []string `json:"images,omitempty"`
 }
 
 // RespuestaFinal resume lo que queda al terminar un stream: texto completo,

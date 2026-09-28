@@ -6,6 +6,8 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -48,5 +50,40 @@ func TestElegirModeloIgnoraUnPreferidoDesinstalado(t *testing.T) {
 	}
 	if got != "llama3.2" {
 		t.Errorf("si el preferido no está, se autodetecta: %q", got)
+	}
+}
+
+// agenteBase carga los agentes base y cualquier agente propio de
+// `ai/agents/*.json`; un archivo roto se ignora sin tumbar el arranque, y los
+// base siguen disponibles aunque falte su JSON.
+func TestAgenteBaseCargaAgentesPropios(t *testing.T) {
+	raiz := t.TempDir()
+	dir := filepath.Join(raiz, "ai", "agents")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	escribir := func(nombre, contenido string) {
+		if err := os.WriteFile(filepath.Join(dir, nombre), []byte(contenido), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	escribir("plan.json", `{"nombre":"plan","prompt":"soy plan","permisos":[{"accion":"leer","efecto":"permitir"}]}`)
+	escribir("revisor.json", `{"nombre":"revisor","prompt":"soy revisor","permisos":[{"accion":"leer","efecto":"permitir"}]}`)
+	escribir("roto.json", `{no es json`)
+
+	agentes := agenteBase(raiz)
+	if _, ok := agentes["plan"]; !ok {
+		t.Error("plan debe estar")
+	}
+	if _, ok := agentes["revisor"]; !ok {
+		t.Error("el agente propio de ai/agents se carga")
+	}
+	if _, ok := agentes["roto"]; ok {
+		t.Error("un JSON de agente roto se ignora")
+	}
+	// build no tiene archivo: queda el de respaldo, para que los flujos
+	// oficiales sigan teniendo a quién referirse.
+	if _, ok := agentes["build"]; !ok {
+		t.Error("build debe existir aunque falte su JSON")
 	}
 }

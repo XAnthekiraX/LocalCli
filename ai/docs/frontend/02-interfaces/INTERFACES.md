@@ -60,7 +60,7 @@ Atajos por defecto, reasignables desde la ayuda y guardados en `~/.config/localc
 | `Ctrl+X n` | Crear una sesión nueva y dejarla activa (`session_new`) | vista principal |
 | `Ctrl+D` | Eliminar la sesión resaltada en el modal; si trabaja, pide confirmación (`session_delete`) | modal de sesiones |
 | `Ctrl+P` | Abrir el modal con la lista de atajos existentes (`command_palette`) | global |
-| `Tab` | Cambiar de agente: `plan` ↔ `build` (`agent_cycle`); el agente activo se pinta a la izquierda del input | vista y bienvenida (no con modal abierto) |
+| `Tab` | Cambiar de agente: recorre los disponibles (`agent_cycle`); el agente activo se pinta a la izquierda del input | vista y bienvenida (no con modal abierto) |
 | `Esc` | Cerrar cualquier modal (`dismiss`) | modal |
 | `Esc` | Cancelar el trabajo en curso: el primero pide confirmación, el segundo cancela (doble `esc`) | vista, sesión trabajando |
 | `↑` / `↓` | Navegar la lista del modal abierto | modal |

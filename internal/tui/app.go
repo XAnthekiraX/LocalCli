@@ -77,11 +77,15 @@ type App struct {
 	// Solo lo escribe quien lo elige —el modal— y `fijarModeloEnPuerto` lo
 	// entrega al motor.
 	Modelo string
-	// Agente es el agente activo —`AgentePlan` o `AgenteBuild`—, el que pinta el
-	// indicador a la izquierda del input y el que viaja con cada petición
-	// (SPEC-INTERFAZ §Zonas 2, T-F015). Lo alterna `Tab`; con un modal abierto
-	// la acción no llega a cambiarlo.
+	// Agente es el agente activo —uno de `Agentes`—, el que pinta el indicador a
+	// la izquierda del input y el que viaja con cada petición (SPEC-INTERFAZ
+	// §Zonas 2, T-F015). Lo recorre `Tab`; con un modal abierto la acción no
+	// llega a cambiarlo.
 	Agente string
+	// Agentes es la lista de agentes disponibles, en orden, que ofrece el motor
+	// (cargados de `ai/agents/*.json`). `Tab` recorre esta lista; con una lista
+	// vacía la vista cae en los base (`plan`, `build`).
+	Agentes []string
 	// Aviso es la línea transitoria de la vista (por ahora, el modelo elegido
 	// que no puede usar herramientas). Se pinta al pie de la bienvenida y de la
 	// principal; se limpia al cambiar a un modelo capaz o al enviar.
@@ -92,6 +96,11 @@ type App struct {
 	// línea de estado muestra «?».
 	ModeloHerramientas      bool
 	CapHerramientasConocida bool
+	// ModeloVision y CapVisionConocida hacen lo mismo para la capacidad de
+	// interpretar imágenes. No bloquean nada: alimentan la línea de estado y el
+	// aviso al enviar una imagen con un modelo que no la declara.
+	ModeloVision      bool
+	CapVisionConocida bool
 
 	// PidiendoCancelarEsc es la confirmación de doble `esc` cuando la sesión
 	// está trabajando: el primer esc pregunta, el segundo cancela.
@@ -113,6 +122,11 @@ type App struct {
 
 	// Entrada es la línea de texto de la interfaz principal (input.go, T-F004).
 	Entrada Entrada
+
+	// Comandos es el catálogo de comandos de flujo disponibles: los del proyecto
+	// —oficiales más los de `ai/flows/*.json`— que entrega el puerto. La paleta
+	// lo lista y la entrada reconoce contra él (comandos.go).
+	Comandos []ComandoFlujo
 
 	// Paleta es la lista de comandos de flujo que se despliega encima del input
 	// mientras se escribe un comando (comandos.go). La alimenta el texto de la
@@ -156,7 +170,20 @@ func Nuevo(p Puerto) *App {
 	if err != nil || ValidarAtajos(mapa.Entradas()) != nil {
 		mapa = KeymapPorDefecto()
 	}
-	return &App{
+	// El catálogo de comandos sale del puerto (flujos oficiales + propios); sin
+	// él queda el respaldo oficial de la vista (comandos.go).
+	comandos := p.Comandos()
+	if len(comandos) == 0 {
+		comandos = comandosDeFlujo()
+	}
+	// La lista de agentes sale del puerto (los base + los propios de
+	// `ai/agents/*.json`); sin lista, quedan los base. El agente activo arranca
+	// en el último recordado si sigue disponible, o en el primero.
+	agentes := p.Agentes()
+	if len(agentes) == 0 {
+		agentes = []string{AgentePlan, AgenteBuild}
+	}
+	a := &App{
 		Puerto:   p,
 		Mapa:     mapa,
 		TeclaRes: NuevoKeyResolver(mapa),
@@ -174,12 +201,16 @@ func Nuevo(p Puerto) *App {
 		Aprobs:     Aprobaciones{},
 		Bienvenida: NuevaBienvenida(),
 		Entrada:    NuevaEntrada(),
-		// El agente arranca en el último recordado —`plan` si no hay ninguno—,
-		// el que solo analiza y propone (SPEC-INTERFAZ §Zonas 2: el indicador
+		// El agente arranca en el último recordado si sigue disponible; si no,
+		// en el primero de la lista (SPEC-INTERFAZ §Zonas 2: el indicador
 		// muestra el agente activo, y el reparto de etapas lo hace el motor).
-		Agente: ValidarAgente(p.AgenteRecordado()),
-		ctx:    context.Background(),
+		Agente:   ValidarAgente(p.AgenteRecordado(), agentes),
+		Agentes:  agentes,
+		Comandos: comandos,
+		ctx:      context.Background(),
 	}
+	a.Paleta.FijarComandos(comandos)
+	return a
 }
 
 // Init arma la escucha del canal del motor (T-F010-06): el comando espera el
@@ -195,17 +226,17 @@ func (a *App) Init() tea.Cmd {
 	return tea.Batch(a.escucharCmd(), a.cmdCapacidades())
 }
 
-// cmdCapacidades pregunta al motor si el modelo en uso declara capacidad de
-// herramientas. Llega como `capacidadesMsg`; un fallo deja el dato como
-// desconocido y no bloquea nada.
+// cmdCapacidades pregunta al motor qué declara capaz de hacer el modelo en uso.
+// Llega como `capacidadesMsg`; un fallo deja el dato como desconocido y no
+// bloquea nada.
 func (a *App) cmdCapacidades() tea.Cmd {
 	if a.Modelo == "" {
 		return nil
 	}
 	nombre := a.Modelo
 	return func() tea.Msg {
-		ok, err := a.Puerto.CapacidadesModelo(nombre)
-		return capacidadesMsg{Nombre: nombre, Herramientas: ok, Err: err}
+		caps, err := a.Puerto.CapacidadesModelo(nombre)
+		return capacidadesMsg{Nombre: nombre, Herramientas: caps.Herramientas, Vision: caps.Vision, Err: err}
 	}
 }
 
@@ -285,6 +316,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.Nombre == a.Modelo {
 			a.CapHerramientasConocida = m.Err == nil
 			a.ModeloHerramientas = m.Herramientas
+			a.CapVisionConocida = m.Err == nil
+			a.ModeloVision = m.Vision
 		}
 		return a, nil
 	case aprobacionesMsg:
@@ -526,10 +559,11 @@ func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case AccionCiclarAgente:
-		// plan ↔ build (SPEC-KEYBINDS §Acción `agent_cycle`; SPEC-INTERFAZ
-		// §Zonas 2: "Cambia al instante con Tab"). La acción es de contexto de
-		// vista, así que con un modal abierto no llega hasta aquí: el indicador
-		// y lo que se envía son los del último `Tab` pulsado.
+		// Recorre la lista de agentes disponibles (SPEC-KEYBINDS §Acción
+		// `agent_cycle`; SPEC-INTERFAZ §Zonas 2: "Cambia al instante con Tab").
+		// La acción es de contexto de vista, así que con un modal abierto no
+		// llega hasta aquí: el indicador y lo que se envía son los del último
+		// `Tab` pulsado.
 		//
 		// Con la paleta de comandos desplegada, Tab no cambia de agente:
 		// autocompleta el comando resaltado para poder escribir la petición
@@ -715,16 +749,31 @@ func (a *App) enviar() tea.Cmd {
 	a.Paleta.Filtrar("")
 	a.Chat.AñadirUsuario(texto)
 	a.Vista = VistaPrincipal
-	return a.enviarCmd(id, texto)
+	imagenes := a.prepararAdjuntos(texto)
+	return a.enviarCmd(id, texto, imagenes)
+}
+
+// prepararAdjuntos detecta imágenes en el texto del turno, deja en el chat los
+// avisos de lo que no se pudo leer y, si el modelo en uso no declara visión,
+// avisa sin bloquear. Devuelve las imágenes (base64) que viajarán con el turno.
+func (a *App) prepararAdjuntos(texto string) []string {
+	imagenes, avisos := AdjuntosDe(texto)
+	for _, av := range avisos {
+		a.Chat.AñadirSistema(av)
+	}
+	if len(imagenes) > 0 && a.CapVisionConocida && !a.ModeloVision {
+		a.Chat.AñadirSistema("el modelo «" + a.Modelo + "» no declara visión; la imagen puede no interpretarse")
+	}
+	return imagenes
 }
 
 // enviarCmd entrega la petición al puerto con el agente que está activo. El
 // indicador no es decorativo: es lo que el motor recibe, así que la petición
 // sale con el agente elegido y no con el que la vista suponga (T-F015-04,
 // SPEC-INTERFAZ §Zonas 2: "Cambia de comportamiento según el agente activo").
-func (a *App) enviarCmd(sesionID, texto string) tea.Cmd {
+func (a *App) enviarCmd(sesionID, texto string, imagenes []string) tea.Cmd {
 	return func() tea.Msg {
-		if err := a.Puerto.Enviar(a.ctx, sesionID, a.Agente, texto); err != nil {
+		if err := a.Puerto.Enviar(a.ctx, sesionID, a.Agente, texto, imagenes); err != nil {
 			return errorMsg{err: err}
 		}
 		return enviadoMsg{Sesion: sesionID, Texto: texto}
@@ -734,7 +783,15 @@ func (a *App) enviarCmd(sesionID, texto string) tea.Cmd {
 // actualizarEntrada entrega la pulsación al editor y refresca la paleta de
 // comandos con lo que quedó escrito. Es el único punto por el que cambia el
 // texto de la línea principal, así que la paleta nunca queda desincronizada.
+//
+// Un pegado o arrastre llega como una sola pulsación con `Paste`: sus rutas de
+// imagen se convierten en tokens visibles ([foto.png]) antes de insertarlas, y
+// la ruta real se recupera al enviar (Entrada.Texto).
 func (a *App) actualizarEntrada(m tea.Msg) tea.Cmd {
+	if k, ok := m.(tea.KeyMsg); ok && k.Paste {
+		k.Runes = []rune(a.Entrada.AnotarPegado(string(k.Runes)))
+		m = k
+	}
 	_, cmd := a.Entrada.Update(m)
 	a.Paleta.Filtrar(a.Entrada.Texto())
 	return cmd
@@ -749,7 +806,7 @@ func (a *App) comandoAplicable(texto string) (ComandoFlujo, bool) {
 			return c, true
 		}
 	}
-	return ComandoFlujoDe(texto)
+	return ComandoFlujoDe(a.Comandos, texto)
 }
 
 // autocompletarComando deja en la línea el comando resaltado seguido de un
@@ -765,33 +822,64 @@ func (a *App) autocompletarComando() tea.Cmd {
 	return nil
 }
 
-// ejecutarComando responde un comando de flujo en el chat, sin mandarlo al
-// modelo. De momento los flujos no están implementados: la vista reconoce el
-// comando y dice para qué es. Limpia la línea de las dos vistas y la paleta, y
-// deja la interfaz principal a la vista para que el eco y el aviso se vean.
+// ejecutarComando arranca el flujo del comando. El comando va por el mismo
+// camino que una petición —el puerto lo reconoce y el motor lo ejecuta
+// (SPEC-MOTOR-FLUJOS: "un flujo no arranca solo: lo solicita el usuario con un
+// comando explícito")—, así que la vista no corre etapas: el eco del comando y
+// las etapas se ven en el chat, y las aprobaciones llegan por eventos.
+//
+// Desde la bienvenida no hay sesión todavía: se crea una, como con cualquier
+// primera petición (SPEC-SESIONES). El modelo elegido en el modal viaja con el
+// flujo, igual que con un mensaje de chat.
 func (a *App) ejecutarComando(c ComandoFlujo, escrito string) tea.Cmd {
+	texto := strings.TrimSpace(lineaDeComando(c, escrito))
+	if texto == "" {
+		return nil
+	}
+	id := a.Panel.SesionID
+	if id == "" {
+		ses, err := a.Puerto.Crear()
+		if err != nil {
+			a.Chat.AñadirSistema("no se pudo crear la sesión: " + err.Error())
+			return nil
+		}
+		a.activar(ses)
+		id = ses.ID
+	}
 	a.Entrada.Limpiar()
 	a.Bienvenida.Limpiar()
 	a.Paleta.Filtrar("")
-	a.Chat.AñadirEntrada(lineaDeComando(c, escrito))
-	a.Chat.AñadirSistema(c.Aviso())
+	a.fijarModeloEnPuerto()
+	a.Chat.AñadirUsuario(texto)
 	a.Vista = VistaPrincipal
-	return nil
+	return a.enviarCmd(id, texto, nil)
 }
 
-// ciclarAgente alterna `plan` ↔ `build` y lo propaga a lo único que lo pinta y
-// a lo único que lo consume: el indicador de las dos vistas y la fila del
-// panel. No toca el motor: qué hace cada agente lo decide él (DOMAIN §2, el
-// input no valida reglas de negocio).
+// ciclarAgente avanza al siguiente agente de la lista disponible y lo propaga
+// a lo único que lo pinta y a lo único que lo consume: el indicador de las dos
+// vistas y la fila del panel. No toca el motor: qué hace cada agente lo decide
+// él (DOMAIN §2, el input no valida reglas de negocio). La lista la ofrece el
+// puerto (los agentes de `ai/agents/*.json`).
 func (a *App) ciclarAgente() {
-	if a.Agente == AgenteBuild {
-		a.Agente = AgentePlan
-	} else {
-		a.Agente = AgenteBuild
-	}
+	a.Agente = siguienteAgente(a.Agentes, a.Agente)
 	a.Entrada.FijarAgente(a.Agente)
 	a.Panel.Agente = a.Agente
 	a.guardarPreferencias()
+}
+
+// siguienteAgente devuelve el siguiente de la lista en ciclo. Si el activo no
+// está en la lista —o la lista está vacía— devuelve el primero; sin lista,
+// `plan`.
+func siguienteAgente(agentes []string, actual string) string {
+	if len(agentes) == 0 {
+		return AgentePlan
+	}
+	for i, n := range agentes {
+		if n == actual {
+			return agentes[(i+1)%len(agentes)]
+		}
+	}
+	return agentes[0]
 }
 
 // guardarPreferencias recuerda el último modelo y el último agente en
@@ -923,6 +1011,8 @@ func (a *App) aplicarModelo() tea.Cmd {
 	// lo eligió el usuario desde la lista, que trae esa marca.
 	a.CapHerramientasConocida = true
 	a.ModeloHerramientas = !m.SinHerramientas
+	a.CapVisionConocida = true
+	a.ModeloVision = !m.SinVision
 	// El modelo elegido que no declara herramientas avisa sin bloquear: el
 	// usuario decide si cambia (SPEC-OLLAMA-PERFIL). Al elegir uno capaz, el
 	// aviso se retira.
@@ -1129,20 +1219,27 @@ func (a *App) bloqueInferior(anchoChat int) string {
 }
 
 // lineaDeEstadoModelo muestra, bajo la entrada, el modelo en uso y si tiene
-// acceso a herramientas. Sin modelo no pinta nada; sin dato conocido marca «?».
+// acceso a herramientas y a la visión. Sin modelo no pinta nada; sin dato
+// conocido marca «?».
 func (a *App) lineaDeEstadoModelo() string {
 	if a.Modelo == "" {
 		return ""
 	}
-	herramientas := "?"
-	if a.CapHerramientasConocida {
-		if a.ModeloHerramientas {
-			herramientas = "sí"
-		} else {
-			herramientas = "no"
-		}
+	return estiloSistema.Render("modelo: " + a.Modelo +
+		" · herramientas: " + siNoConocido(a.CapHerramientasConocida, a.ModeloHerramientas) +
+		" · visión: " + siNoConocido(a.CapVisionConocida, a.ModeloVision))
+}
+
+// siNoConocido traduce una capacidad a la marca de la línea de estado: «?» si no
+// se sabe, «sí» o «no» si se conoce.
+func siNoConocido(conocida, valor bool) string {
+	if !conocida {
+		return "?"
 	}
-	return estiloSistema.Render("modelo: " + a.Modelo + " · herramientas: " + herramientas)
+	if valor {
+		return "sí"
+	}
+	return "no"
 }
 
 // viewPrincipal pinta chat, razonamiento, respuesta en curso, aprobaciones y

@@ -60,7 +60,11 @@ type Ejecutor struct {
 // `historial` es la conversación anterior (turnos ya cerrados); `contexto` es el
 // contexto de ESTE turno y viaja como último mensaje de usuario. Un historial
 // vacío deja el comportamiento igual que antes de la memoria de conversación.
-func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto string, historial []ollama.Mensaje, sink Sink) (Resultado, error) {
+//
+// `imagenes` son las imágenes codificadas en base64 que acompañan a ESTE turno:
+// van solo en el mensaje de usuario del turno actual, nunca en el historial (en
+// la v1 las imágenes no se persisten). Un slice vacío deja el turno como antes.
+func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto string, historial []ollama.Mensaje, imagenes []string, sink Sink) (Resultado, error) {
 	max := e.MaxPasadas
 	if max <= 0 {
 		max = pasadasPorDefecto
@@ -68,7 +72,7 @@ func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto stri
 
 	mensajes := make([]ollama.Mensaje, 0, len(historial)+1)
 	mensajes = append(mensajes, historial...)
-	mensajes = append(mensajes, ollama.Mensaje{Role: "user", Content: contexto})
+	mensajes = append(mensajes, ollama.Mensaje{Role: "user", Content: contexto, Images: imagenes})
 	var texto, razon strings.Builder
 	for pasada := 0; pasada < max; pasada++ {
 		ch, err := e.Runner.Generar(ctx, a, modelo, mensajes)

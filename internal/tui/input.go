@@ -12,6 +12,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,6 +28,9 @@ type Entrada struct {
 	// Agente es el que está activo, `AgentePlan` o `AgenteBuild`: solo lo pinta,
 	// no decide nada. Lo escribe la acción `agent_cycle`.
 	Agente string
+	// adjuntos recuerda las imágenes pegadas o arrastradas en la línea: se
+	// muestran como [nombre.ext] y se expanden a su ruta al enviar.
+	adjuntos adjuntos
 }
 
 // NuevaEntrada crea la línea enfocada, con su placeholder y de una sola fila.
@@ -44,11 +49,12 @@ func NuevaEntrada() Entrada {
 	return e
 }
 
-// FijarAgente deja el agente activo que se pinta en el indicador. Un valor
-// inesperado se trata como `plan`: el indicador nunca sale vacío ni inventa un
-// tercer agente (SPEC-INTERFAZ §Zonas 2).
+// FijarAgente deja el agente activo que se pinta en el indicador. Vale
+// cualquier nombre de la lista de agentes disponibles (p. ej. uno propio); solo
+// un valor vacío cae en `plan`, para que el indicador nunca salga sin nombre
+// (SPEC-INTERFAZ §Zonas 2).
 func (e *Entrada) FijarAgente(agente string) {
-	if agente != AgenteBuild {
+	if strings.TrimSpace(agente) == "" {
 		agente = AgentePlan
 	}
 	e.Agente = agente
@@ -64,18 +70,28 @@ func (e *Entrada) Foco() tea.Cmd {
 // Desenfocar la apaga, por ejemplo mientras un modal se lleva el teclado.
 func (e *Entrada) Desenfocar() { e.campo.Blur() }
 
-// Texto devuelve lo escrito hasta ahora, tal cual.
-func (e *Entrada) Texto() string { return e.campo.Value() }
+// Texto devuelve lo escrito, con los tokens de imagen expandidos a su ruta
+// real: es el texto que se envía y con el que trabaja el resto del harness.
+func (e *Entrada) Texto() string { return e.adjuntos.Expandir(e.campo.Value()) }
+
+// AnotarPegado convierte en tokens las rutas de imagen de un texto pegado o
+// arrastrado y devuelve lo que hay que insertar en la línea.
+func (e *Entrada) AnotarPegado(texto string) string { return e.adjuntos.Anotar(texto) }
 
 // Limpiar vacía la línea. Va aparte para que quien envía decida cuándo
 // borrarla: un fallo al abrir la sesión no puede perder lo escrito.
-func (e *Entrada) Limpiar() { e.campo.Reset() }
+func (e *Entrada) Limpiar() {
+	e.campo.Reset()
+	e.adjuntos.Olvidar()
+}
 
 // FijarTexto reemplaza el contenido de la línea y deja el cursor al final. Lo
-// usa la paleta de comandos para autocompletar el comando resaltado.
+// usa la paleta de comandos para autocompletar el comando resaltado; al
+// reemplazar todo, se olvidan los adjuntos previos.
 func (e *Entrada) FijarTexto(texto string) {
 	e.campo.SetValue(texto)
 	e.campo.CursorEnd()
+	e.adjuntos.Olvidar()
 }
 
 // FijarAncho adapta la línea al ancho del layout recibido. Un ancho no
@@ -121,8 +137,10 @@ func (e *Entrada) AjustarTeclasPropias() {
 // View pinta la línea con su indicador de agente a la izquierda y, detrás, el
 // campo: el placeholder cuando está vacía, el texto y su cursor cuando no
 // (SPEC-INTERFAZ §Zonas 2, "Indicador de agente a la izquierda del input",
-// p. ej. `[plan] > █`).
-func (e *Entrada) View() string { return IndicadorAgente(e.Agente) + e.campo.View() }
+// p. ej. `[plan] > █`). Los tokens de imagen pegada se resaltan.
+func (e *Entrada) View() string {
+	return IndicadorAgente(e.Agente) + e.adjuntos.Resaltar(e.campo.View())
+}
 
 // IndicadorAgente compone el indicador del agente activo: `[plan] > ` o
 // `[build] > `. Vive aquí porque las dos vistas lo pintan —la principal a

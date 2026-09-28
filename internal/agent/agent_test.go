@@ -150,3 +150,27 @@ func TestAgentesBaseDocumentados(t *testing.T) {
 		t.Error("build debe tener herramientas de escritura")
 	}
 }
+
+// TestOrdenarNombresPoneLosBasePrimero — el orden de presentación es estable:
+// `plan` y `build` primero, el resto alfabético.
+func TestOrdenarNombresPoneLosBasePrimero(t *testing.T) {
+	agentes := map[string]Agente{
+		"zeta":  {Nombre: "zeta"},
+		"build": {Nombre: "build"},
+		"alfa":  {Nombre: "alfa"},
+		"plan":  {Nombre: "plan"},
+	}
+	quiere := []string{"plan", "build", "alfa", "zeta"}
+	got := OrdenarNombres(agentes)
+	if len(got) != len(quiere) {
+		t.Fatalf("orden = %v, quiero %v", got, quiere)
+	}
+	for i := range quiere {
+		if got[i] != quiere[i] {
+			t.Fatalf("orden = %v, quiero %v", got, quiere)
+		}
+	}
+	if len(OrdenarNombres(nil)) != 0 {
+		t.Error("un catálogo vacío da una lista vacía")
+	}
+}

@@ -49,7 +49,7 @@ Un cambio incompatible en el esquema o en el contrato de las herramientas se res
 Sin respuestas JSON ni códigos HTTP. Las convenciones son:
 
 - **Toda la comunicación interna es por canales de Go.** Un solo proceso, sin red entre módulos. Un módulo no llama directamente a otro que no sea su dependencia declarada; la excepción es `tui`, que escribe donde el usuario manda.
-- **Los datos hacia el modelo son texto plano** en un prompt. No hay serialización especial: el modelo recibe contexto y responde texto. Ver [[backend/01-domain/DOMAIN]].
+- **Los datos hacia el modelo son texto plano** en un prompt. No hay serialización especial: el modelo recibe contexto y responde texto. La excepción son las imágenes de un turno de chat, que viajan codificadas en base64 en el campo `images` de `/api/chat` (y solo `ollama` conoce ese formato). Ver [[backend/01-domain/DOMAIN]].
 - **Los datos hacia la TUI son eventos.** La TUI no pregunta: se le notifica. Ver [[backend/04-infrastructure/EVENTS]].
 - **Los errores se propagan como valores**, no como excepciones, y suben por el canal que corresponde. Ver [[backend/05-quality/ERRORS]].
 - **El streaming de tokens es la excepción al patrón por etapas:** no espera al final, va token a token desde `ollama` hasta la pantalla. Ver [[specs/SPEC-INTERFAZ]].
@@ -68,11 +68,11 @@ Lo que cada módulo expone a los que dependen de él. El detalle de payloads est
 
 | Módulo | Expone | A quién |
 |---|---|---|
-| `session` | Crear, cambiar, retomar, cerrar sesión; mandar mensaje; decidir si es chat o comando de flujo; aprobar o declinar | `tui` |
+| `session` | Crear, cambiar, retomar, cerrar sesión; mandar mensaje (con las imágenes del turno); decidir si es chat o comando de flujo; aprobar o declinar | `tui` |
 | `flow` | Lanzar un flujo oficial pedido por el usuario; detectar trabajo ordenado y proponer el TODO; pausar, cancelar, reanudar | `session`, `queue` |
 | `context` | Pedir contexto para una etapa y un objetivo; devolver documentos seleccionados y auditados (la etapa viaja con la petición para que `context_audit` distinga una de otra) | `flow` |
-| `agent` | Construir la llamada de un agente (`plan`/`build`) y despachar sus herramientas | `flow` |
-| `ollama` | Enviar una petición en streaming; devolver tokens y razonamiento | `agent`, `context` |
+| `agent` | Cargar y validar los agentes de `ai/agents/*.json` (los base y los propios); construir la llamada de uno y despachar sus herramientas | `flow`, `arranque` |
+| `ollama` | Enviar una petición en streaming (las imágenes del chat viajan en base64, solo aquí se conoce ese formato); devolver tokens y razonamiento | `agent`, `context` |
 | `tools` | Registrar y enrutar una herramienta; comprobar permiso | `agent` |
 | `fileops` | Aplicar una operación de archivo o carpeta; registrar el cambio | `tools` |
 | `exec` | Ejecutar un comando de la lista blanca o aprobado | `tools` |

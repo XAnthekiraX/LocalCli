@@ -16,9 +16,9 @@ package flow
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"localcli/internal/task"
-	"localcli/internal/tools"
 )
 
 // Nombres de los eventos que emite el motor (EVENTS.md §1). No se inventa
@@ -92,7 +92,7 @@ const EtapaChat = "chat"
 // `agent` (T-B006). No ejecuta herramientas aquí: eso es cosa de `agent` →
 // `tools`.
 type Agente interface {
-	Ejecutar(ctx context.Context, agente, contexto string, historial []Mensaje) (Resultado, error)
+	Ejecutar(ctx context.Context, agente, contexto string, historial []Mensaje, imagenes []string) (Resultado, error)
 }
 
 // Aprobador pide la decisión del usuario para una etapa que la requiere.
@@ -149,7 +149,8 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 			m.emitir(EventoEtapaFallida, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 			return EstadoConError, fmt.Errorf("%w: %s: %v", ErrEtapaFallida, etapa.ID, cErr)
 		}
-		res, aErr := m.Agente.Ejecutar(ctx, etapa.Agente, contexto, nil)
+		contexto = componerBrief(f.Reglas, etapa.Instruccion, contexto)
+		res, aErr := m.Agente.Ejecutar(ctx, etapa.Agente, contexto, nil, nil)
 		if aErr != nil {
 			m.emitir(EventoEtapaFallida, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 			return EstadoConError, fmt.Errorf("%w: %s: %v", ErrEtapaFallida, etapa.ID, aErr)
@@ -205,10 +206,14 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 //
 // `historial` es la conversación anterior de la sesión, tal como la arma
 // `session` (completa o compactada). El motor no la interpreta: la pasa al
-// agente junto con el contexto del turno.
-func (m *Motor) Conversar(ctx context.Context, agente, objetivo string, historial []Mensaje) (Resultado, error) {
-	if agente != tools.AgentePlan && agente != tools.AgenteBuild {
-		return Resultado{}, fmt.Errorf("flow: agente inválido %q", agente)
+// agente junto con el contexto del turno. `imagenes` son las imágenes (base64)
+// de ESTE turno; solo el chat las lleva —las etapas van sin imágenes—.
+func (m *Motor) Conversar(ctx context.Context, agente, objetivo string, historial []Mensaje, imagenes []string) (Resultado, error) {
+	// El motor no decide qué agentes existen: los carga el arranque de
+	// `ai/agents/*.json`. Solo exige que la petición nombre uno; el ejecutor
+	// rechaza un nombre desconocido al correr el turno.
+	if strings.TrimSpace(agente) == "" {
+		return Resultado{}, fmt.Errorf("flow: el chat necesita un agente")
 	}
 	if m.Contexto == nil || m.Agente == nil {
 		return Resultado{}, fmt.Errorf("flow: el motor no tiene contexto y agente conectados")
@@ -217,7 +222,7 @@ func (m *Motor) Conversar(ctx context.Context, agente, objetivo string, historia
 	if err != nil {
 		return Resultado{}, err
 	}
-	return m.Agente.Ejecutar(ctx, agente, contexto, historial)
+	return m.Agente.Ejecutar(ctx, agente, contexto, historial, imagenes)
 }
 
 // ElementoCola es un elemento del TODO listo para ejecutarse.
@@ -276,4 +281,26 @@ func (m *Motor) ConsumirCola(ctx context.Context, cola Cola, f Flujo) error {
 		}
 		enProgreso = ""
 	}
+}
+
+// componerBrief antepone las reglas del flujo y la instrucción de la etapa al
+// contexto que recibe el agente. Es cómo un flujo declara sus reglas —por
+// ejemplo, cómo descubrir la documentación— sin tocar el código: el brief viaja
+// dentro del texto que ya recibe la etapa, sin cambiar las interfaces.
+func componerBrief(reglas []string, instruccion, contexto string) string {
+	var partes []string
+	if len(reglas) > 0 {
+		partes = append(partes, "Reglas del flujo:\n- "+strings.Join(reglas, "\n- "))
+	}
+	if instruccion != "" {
+		partes = append(partes, instruccion)
+	}
+	if len(partes) == 0 {
+		return contexto
+	}
+	brief := strings.Join(partes, "\n\n")
+	if contexto == "" {
+		return brief
+	}
+	return brief + "\n\n" + contexto
 }

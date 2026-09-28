@@ -99,6 +99,22 @@ func TestElModalMarcaLosModelosSinHerramientas(t *testing.T) {
 	}
 }
 
+func TestElModalMarcaLosModelosSinVision(t *testing.T) {
+	mm := &ModelsModal{}
+	mm.AbrirModelos("")
+	mm.FijarModelos([]ModeloLocal{
+		{Nombre: "llava"},
+		{Nombre: "llama3.2", SinVision: true},
+	}, nil)
+	v := sinEstilo(mm.Render(80, 24))
+	if !strings.Contains(v, "llama3.2  (sin visión)") {
+		t.Errorf("el modelo sin visión se marca:\n%s", v)
+	}
+	if strings.Contains(v, "llava  (sin visión)") {
+		t.Errorf("el que sí ve no se marca:\n%s", v)
+	}
+}
+
 func TestSinOllamaElModalAvisaYSeCierraSinBloquear(t *testing.T) {
 	mm := &ModelsModal{}
 	mm.AbrirModelos("")

@@ -74,7 +74,7 @@ func TestLaPrimeraPeticionGeneraElTituloDeLaSesion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Crear: %v", err)
 	}
-	if err := g.Conversar(context.Background(), ses.ID, "plan", "documenta las sesiones"); err != nil {
+	if err := g.Conversar(context.Background(), ses.ID, "plan", "documenta las sesiones", nil); err != nil {
 		t.Fatalf("Conversar: %v", err)
 	}
 	esperarEstado(t, g, ses.ID, EstadoTerminada)
@@ -89,7 +89,7 @@ func TestLaPrimeraPeticionGeneraElTituloDeLaSesion(t *testing.T) {
 	}
 
 	// Segunda petición: ya titulada, no se vuelve a pedir.
-	if err := g.Conversar(context.Background(), ses.ID, "plan", "y ahora otra cosa"); err != nil {
+	if err := g.Conversar(context.Background(), ses.ID, "plan", "y ahora otra cosa", nil); err != nil {
 		t.Fatalf("Conversar: %v", err)
 	}
 	esperarEstado(t, g, ses.ID, EstadoTerminada)
@@ -108,7 +108,7 @@ func TestUnFalloDelTituloConservaElProvisionalYReintenta(t *testing.T) {
 		t.Fatalf("Crear: %v", err)
 	}
 
-	if err := g.Conversar(context.Background(), ses.ID, "plan", "hola"); err != nil {
+	if err := g.Conversar(context.Background(), ses.ID, "plan", "hola", nil); err != nil {
 		t.Fatalf("Conversar: %v", err)
 	}
 	esperarEstado(t, g, ses.ID, EstadoTerminada)
@@ -119,7 +119,7 @@ func TestUnFalloDelTituloConservaElProvisionalYReintenta(t *testing.T) {
 
 	// El modelo ya responde: la siguiente petición reintenta y lo aplica.
 	tit.fijar("Conversación de prueba", nil)
-	if err := g.Conversar(context.Background(), ses.ID, "plan", "sigue"); err != nil {
+	if err := g.Conversar(context.Background(), ses.ID, "plan", "sigue", nil); err != nil {
 		t.Fatalf("Conversar: %v", err)
 	}
 	esperarNombre(t, g, ses.ID, "Conversación de prueba")
@@ -135,7 +135,7 @@ func TestSinTituladorLaSesionConservaElProvisional(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Crear: %v", err)
 	}
-	if err := g.Conversar(context.Background(), ses.ID, "plan", "hola"); err != nil {
+	if err := g.Conversar(context.Background(), ses.ID, "plan", "hola", nil); err != nil {
 		t.Fatalf("Conversar: %v", err)
 	}
 	esperarEstado(t, g, ses.ID, EstadoTerminada)

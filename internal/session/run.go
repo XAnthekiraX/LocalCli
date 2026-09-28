@@ -26,7 +26,7 @@ import (
 // Motor es lo que `session` necesita de `flow`: responder como chat, arrancar
 // un flujo explícito y consumir una cola. Lo implementa `flow.Motor`.
 type Motor interface {
-	Conversar(ctx context.Context, agente, objetivo string, historial []flow.Mensaje) (flow.Resultado, error)
+	Conversar(ctx context.Context, agente, objetivo string, historial []flow.Mensaje, imagenes []string) (flow.Resultado, error)
 	EjecutarFlujo(ctx context.Context, f flow.Flujo, objetivo string) (flow.EstadoFlujo, error)
 	ConsumirCola(ctx context.Context, cola flow.Cola, f flow.Flujo) error
 }
@@ -94,7 +94,11 @@ func (g *Gestor) Enviar(ctx context.Context, sesionID, texto string) error {
 // `len(previos) == 0` marca la primera petición de la sesión. Con esa primera
 // petición —y mientras el nombre siga siendo el provisional— se pide al modelo
 // un título para la sesión, sin bloquear la respuesta ([[specs/SPEC-SESIONES]]).
-func (g *Gestor) Conversar(ctx context.Context, sesionID, agente, texto string) error {
+//
+// `imagenes` son las imágenes (base64) que la vista detectó en el texto de este
+// turno. Son EFÍMERAS: viajan al modelo con este turno pero no se guardan en el
+// mensaje, así que el historial no las conserva (decisión de alcance de la v1).
+func (g *Gestor) Conversar(ctx context.Context, sesionID, agente, texto string, imagenes []string) error {
 	if strings.TrimSpace(texto) == "" {
 		return fmt.Errorf("session: mensaje vacío")
 	}
@@ -134,7 +138,7 @@ func (g *Gestor) Conversar(ctx context.Context, sesionID, agente, texto string) 
 		return err
 	}
 	g.lanzar(ctx, sesionID, &trabajo{}, func(c context.Context) error {
-		_, cErr := g.Motor.Conversar(c, agente, ObjetivoDeMensaje(texto), previos)
+		_, cErr := g.Motor.Conversar(c, agente, ObjetivoDeMensaje(texto), previos, imagenes)
 		if cErr := g.cerrarChat(sesionID, cErr); cErr != nil {
 			return cErr
 		}

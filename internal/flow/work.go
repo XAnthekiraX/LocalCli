@@ -24,7 +24,10 @@ import (
 // FlujoTrabajo devuelve el ciclo oficial de trabajo para una acción.
 func FlujoTrabajo(accion task.Accion) Flujo {
 	return Flujo{
-		Nombre: "trabajo/" + string(accion),
+		Nombre:      "trabajo/" + string(accion),
+		Comando:     "/" + string(accion),
+		Descripcion: descripcionDeAccion(accion),
+		Peticion:    descripcionDeAccion(accion),
 		Etapas: []Etapa{
 			// 1-2. Impacto: qué funcionalidades, entidades y datos se ven afectados.
 			{ID: "impacto", Nombre: "Analizar el impacto", Agente: tools.AgentePlan},
@@ -38,4 +41,18 @@ func FlujoTrabajo(accion task.Accion) Flujo {
 			{ID: "ejecutar", Nombre: "Ejecutar el elemento", Agente: tools.AgenteBuild, Aprobacion: true},
 		},
 	}
+}
+
+// descripcionDeAccion da la descripción corta de cada entrada del ciclo de
+// trabajo, la misma que usa la paleta de la vista.
+func descripcionDeAccion(accion task.Accion) string {
+	switch accion {
+	case task.AccionCrear:
+		return "crear una funcionalidad nueva"
+	case task.AccionActualizar:
+		return "actualizar una funcionalidad existente"
+	case task.AccionEliminar:
+		return "eliminar una funcionalidad"
+	}
+	return string(accion)
 }

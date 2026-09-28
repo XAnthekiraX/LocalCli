@@ -33,6 +33,9 @@ var (
 	estiloEtiqueta     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
 	estiloAviso        = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true)
 	estiloMarca        = lipgloss.NewStyle().Bold(true)
+	// estiloAdjunto pinta el token de una imagen pegada o arrastrada en la línea
+	// de entrada ([foto.png]), para distinguirla del texto escrito a mano.
+	estiloAdjunto = lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true)
 )
 
 // centrar coloca un bloque en el centro de la ventana, en horizontal y en

@@ -64,7 +64,7 @@ Se arranca con el comando explícito `/ejecutar`. Encadena las tareas grandes di
 - Si una etapa falla, el flujo se detiene. El usuario elige reintentar, saltar esa etapa o cancelar.
 - Un flujo pausado por un permiso se retoma desde la misma etapa, sin repetir lo ya hecho.
 - Todo lo que hace cada etapa queda registrado: qué recibió, qué hizo y qué produjo.
-- Los flujos oficiales vienen con la herramienta y funcionan sin configuración.
+- Los flujos oficiales vienen con la herramienta y funcionan sin configuración. Los flujos propios y las personalizaciones de los oficiales se declaran en `ai/flows/*.json` y se cargan al arrancar: un JSON con el mismo `comando` reemplaza al oficial y uno con un `comando` nuevo añade un flujo ([[specs/SPEC-FLUJO-PERSONALIZADO]]).
 - Un flujo que se cancela no deja etapas ejecutándose.
 - Un flujo no arranca solo: lo solicita el usuario con un comando explícito (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`).
 - Una petición que no es un comando de flujo se responde en el chat, no arranca etapas.

@@ -4,8 +4,9 @@
 // herramienta informa y avisa). Ollama declara en /api/show qué sabe hacer cada
 // modelo ("completion", "tools", "vision"…). LocalCli no usa function-calling
 // nativo —las herramientas viajan como texto en el prompt—, así que esta
-// capacidad no bloquea nada: sirve para avisar al usuario de que el modelo que
-// eligió probablemente no sabrá pedir herramientas.
+// capacidad no bloquea nada: sirve para avisar al usuario. Con "vision" pasa lo
+// mismo: saber si el modelo interpreta imágenes solo alimenta el aviso; las
+// imágenes se adjuntan igual y Ollama decide si las aprovecha.
 package ollama
 
 import (
@@ -16,6 +17,11 @@ import (
 // CapacidadHerramientas es el nombre de la capacidad que declara un modelo que
 // sabe usar herramientas.
 const CapacidadHerramientas = "tools"
+
+// CapacidadVision es el nombre de la capacidad que declara un modelo multimodal
+// (sabe interpretar imágenes). El harness la usa solo para avisar: las imágenes
+// se adjuntan igual, y es Ollama quien decide si el modelo las aprovecha.
+const CapacidadVision = "vision"
 
 // FichaModelo es la parte de la respuesta de /api/show que nos interesa.
 type FichaModelo struct {
@@ -50,8 +56,18 @@ func (c *Client) Capacidades(ctx context.Context, nombre string) ([]string, erro
 // modelo sin ficha clara (lista vacía) no la declara: quien decide avisar es el
 // llamante, que ante un error prefiere no alarmar.
 func PuedeUsarHerramientas(capacidades []string) bool {
+	return tieneCapacidad(capacidades, CapacidadHerramientas)
+}
+
+// PuedeVer dice si el modelo declara la capacidad "vision". Igual que con las
+// herramientas, una ficha vacía no la declara y el aviso lo decide el llamante.
+func PuedeVer(capacidades []string) bool {
+	return tieneCapacidad(capacidades, CapacidadVision)
+}
+
+func tieneCapacidad(capacidades []string, buscada string) bool {
 	for _, c := range capacidades {
-		if c == CapacidadHerramientas {
+		if c == buscada {
 			return true
 		}
 	}

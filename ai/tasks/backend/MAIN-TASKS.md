@@ -26,6 +26,8 @@ Fuente de verdad del progreso del backend. Derivada exclusivamente de `ai/docs/`
 | T-B019 | actualizar | preferencias de usuario: el arranque reutiliza el último modelo y expone el último agente por el puerto | T-B005 | completada | `019-task-preferencias-usuario.md` |
 | T-B020 | actualizar | sesiones sin «principal»: nombre provisional y título generado por el modelo; `ResolverActiva` solo retoma | T-B002, T-B013 | completada | `020-task-sesiones-titulos.md` |
 | T-B021 | actualizar | historial de conversación al modelo con compactación por presupuesto | T-B006, T-B010, T-B013 | completada | `021-task-historial-conversacion.md` |
+| T-B022 | actualizar | imágenes por turno de chat: `ollama.Mensaje.Images` (base64 en `/api/chat`), `PuedeVer` y el transporte efímero por `agent`/`flow`/`session` | T-B005, T-B018, T-B021 | completada | `022-task-imagenes-ollama.md` |
+| T-B023 | actualizar | agentes configurables: cargar todos los `ai/agents/*.json` (base + propios), orden estable de nombres y validación relajada en `flow` | T-B006, T-B010, T-B018 | completada | `023-task-agentes-configurables.md` |
 
 ## Referencias
 

@@ -10,31 +10,29 @@ package tui
 //
 // Escribir `/` despliega la lista encima del input; las flechas la recorren, Tab
 // autocompleta el comando resaltado —dejando la línea lista para escribir la
-// petición detrás— y Enter lo ejecuta. De momento los flujos no están
-// implementados: la vista reconoce el comando y responde para qué es, sin
-// llamar al modelo.
+// petición detrás— y Enter lo ejecuta. El catálogo que se ofrece sale del puerto
+// (los flujos oficiales más los que declara `ai/flows/*.json`, [[specs/SPEC-FLUJO-PERSONALIZADO]]);
+// sin lista, cae al respaldo oficial de este paquete.
 //
-// El catálogo se repite aquí a propósito: `tui` no puede importar `flow`
-// (tests/arquitectura_test.go §TestLimitesDeImporteEntreModulos), que reconoce
-// los mismos seis nombres (flow.ComandoDe).
+// El respaldo se repite aquí a propósito: `tui` no puede importar `flow`
+// (tests/arquitectura_test.go §TestLimitesDeImporteEntreModulos), que es quien
+// arma el catálogo real.
 
 import "strings"
 
-// ComandoFlujo es un flujo oficial que se arranca escribiendo su comando.
+// ComandoFlujo es un flujo —oficial o propio— que se arranca escribiendo su
+// comando.
 type ComandoFlujo struct {
 	// Nombre es el comando, con su barra inicial (por ejemplo "/resolver").
 	Nombre string
-	// Descripcion dice, en minúscula, para qué es el flujo; compone el aviso
-	// que la vista responde al ejecutarlo.
+	// Descripcion dice, en minúscula, para qué es el flujo; se pinta junto al
+	// comando en la paleta.
 	Descripcion string
 }
 
-// Aviso es lo que la vista responde al ejecutar el comando. Mientras el flujo
-// no esté implementado, es el único efecto.
-func (c ComandoFlujo) Aviso() string { return "este flujo es para " + c.Descripcion }
-
-// comandosDeFlujo es el catálogo de los flujos oficiales, en su orden. Son los
-// seis comandos que fija SPEC-INTERFAZ §Reglas de negocio.
+// comandosDeFlujo es el catálogo OFICIAL de respaldo: los seis comandos que fija
+// SPEC-INTERFAZ §Reglas de negocio. Lo usa la vista cuando el puerto no ofrece
+// un catálogo del proyecto.
 func comandosDeFlujo() []ComandoFlujo {
 	return []ComandoFlujo{
 		{Nombre: "/planificar", Descripcion: "planificar el proyecto desde cero"},
@@ -46,15 +44,15 @@ func comandosDeFlujo() []ComandoFlujo {
 	}
 }
 
-// ComandoFlujoDe reconoce un comando de flujo al inicio de la línea. Devuelve
-// el comando y true solo para los seis nombres; cualquier otro texto —incluido
-// otro `/…`— es chat (mismo criterio que flow.ComandoDe).
-func ComandoFlujoDe(texto string) (ComandoFlujo, bool) {
+// ComandoFlujoDe reconoce un comando de flujo al inicio de la línea dentro de la
+// lista dada. Devuelve el comando y true solo si su nombre está en la lista;
+// cualquier otro texto —incluido otro `/…`— es chat.
+func ComandoFlujoDe(comandos []ComandoFlujo, texto string) (ComandoFlujo, bool) {
 	campos := strings.Fields(strings.TrimSpace(texto))
 	if len(campos) == 0 {
 		return ComandoFlujo{}, false
 	}
-	for _, c := range comandosDeFlujo() {
+	for _, c := range comandos {
 		if campos[0] == c.Nombre {
 			return c, true
 		}
@@ -88,6 +86,18 @@ type Paleta struct {
 	visibles []ComandoFlujo
 	indice   int
 	texto    string
+	// comandos es el catálogo que se ofrece: los flujos del proyecto más
+	// `/ejecutar`. Lo fija la vista al construirse; el filtro solo lo recorre.
+	comandos []ComandoFlujo
+}
+
+// FijarComandos da a la paleta el catálogo que ofrece. Una lista vacía deja el
+// respaldo oficial: la paleta nunca se queda sin comandos que ofrecer.
+func (p *Paleta) FijarComandos(comandos []ComandoFlujo) {
+	if len(comandos) == 0 {
+		comandos = comandosDeFlujo()
+	}
+	p.comandos = comandos
 }
 
 // Filtrar recalcula la lista a partir de lo escrito y reinicia el resaltado
@@ -99,7 +109,7 @@ func (p *Paleta) Filtrar(texto string) {
 		return
 	}
 	p.texto = texto
-	p.visibles = comandosQueEmpiezanPor(texto)
+	p.visibles = comandosQueEmpiezanPor(texto, p.comandos)
 	p.indice = 0
 	p.Abierto = len(p.visibles) > 0
 }
@@ -107,12 +117,15 @@ func (p *Paleta) Filtrar(texto string) {
 // comandosQueEmpiezanPor devuelve los comandos cuyo nombre empieza por la línea
 // escrita. Sin barra inicial o con espacios no hay comandos que ofrecer: en
 // cuanto aparece un espacio empieza la petición y el comando ya está elegido.
-func comandosQueEmpiezanPor(texto string) []ComandoFlujo {
+func comandosQueEmpiezanPor(texto string, comandos []ComandoFlujo) []ComandoFlujo {
+	if len(comandos) == 0 {
+		comandos = comandosDeFlujo()
+	}
 	if !strings.HasPrefix(texto, "/") || strings.ContainsAny(texto, " \t\n") {
 		return nil
 	}
 	var out []ComandoFlujo
-	for _, c := range comandosDeFlujo() {
+	for _, c := range comandos {
 		if strings.HasPrefix(c.Nombre, texto) {
 			out = append(out, c)
 		}

@@ -18,7 +18,10 @@ import "localcli/internal/tools"
 // FlujoPlanificacion devuelve el ciclo oficial de planificación.
 func FlujoPlanificacion() Flujo {
 	return Flujo{
-		Nombre: "planificacion",
+		Nombre:      "planificacion",
+		Comando:     "/planificar",
+		Descripcion: "planificar el proyecto desde cero",
+		Peticion:    "planificar el proyecto desde cero",
 		Etapas: []Etapa{
 			{ID: "tipo_proyecto", Nombre: "Tipo de proyecto", Agente: tools.AgentePlan},
 			{ID: "vision", Nombre: "Visión", Agente: tools.AgentePlan, Aprobacion: true},

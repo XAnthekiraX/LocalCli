@@ -1,0 +1,80 @@
+{
+    "comando": "/resolver",
+    "nombre": "resolver",
+    "descripcion": "resolver un problema",
+    "peticion": "diagnosticar un problema y entregar un plan de solución",
+    "reglas": [
+        "AGENTS.md es la puerta de entrada: identifica las capas y el flujo aplicable antes de nada.",
+        "ai/docs/PROJECT.md es el índice: úsalo para orientarte.",
+        "No cargues todo ai/docs: pide solo los documentos relevantes siguiendo las dependencias declaradas en el frontmatter.",
+        "No afirmes nada sin evidencia: cita el archivo y la línea.",
+        "El resolver NO implementa: investiga, diagnostica y entrega un plan de solución.",
+        "Antes de terminar debes poder responder estas seis preguntas: qué está pasando, qué debería pasar, dónde está el problema, por qué ocurre, qué archivos están involucrados y qué hay que hacer para solucionarlo.",
+        "Cierra siempre con la salida estándar: Diagnóstico; Archivos involucrados (Modificar, Consultar, No modificar); Solución; Plan; Resultado esperado."
+    ],
+    "etapas": [
+        {
+            "id": "recibir_tarea",
+            "nombre": "Recibir la tarea",
+            "agente": "plan",
+            "aprobacion": false,
+            "instruccion": "Toma la petición del usuario como la tarea a resolver."
+        },
+        {
+            "id": "entender_problema",
+            "nombre": "Entender el problema",
+            "agente": "plan",
+            "aprobacion": false,
+            "instruccion": "Aclara qué se pidió y qué comportamiento se espera."
+        },
+        {
+            "id": "buscar_contexto",
+            "nombre": "Buscar contexto",
+            "agente": "plan",
+            "aprobacion": false,
+            "instruccion": "Reúne la documentación, la estructura del código, los archivos relacionados, los tests y la configuración relevantes; solo lo necesario."
+        },
+        {
+            "id": "investigar",
+            "nombre": "Investigar el problema",
+            "agente": "plan",
+            "aprobacion": false,
+            "instruccion": "Sigue el flujo real, localiza dónde ocurre, verifica hipótesis y ejecuta pruebas si hace falta."
+        },
+        {
+            "id": "diagnosticar",
+            "nombre": "Diagnosticar",
+            "agente": "plan",
+            "aprobacion": false,
+            "instruccion": "Determina la causa, el comportamiento actual y el comportamiento esperado."
+        },
+        {
+            "id": "archivos_afectados",
+            "nombre": "Identificar los archivos afectados",
+            "agente": "plan",
+            "aprobacion": false,
+            "instruccion": "Clasifica los archivos en MODIFICAR, CONSULTAR y NO TOCAR, con el motivo de cada uno."
+        },
+        {
+            "id": "diseno",
+            "nombre": "Diseñar la solución",
+            "agente": "plan",
+            "aprobacion": false,
+            "instruccion": "Define qué cambiar, dónde cambiarlo y cómo se relacionan los cambios."
+        },
+        {
+            "id": "plan_ejecucion",
+            "nombre": "Crear el plan de ejecución",
+            "agente": "plan",
+            "aprobacion": false,
+            "instruccion": "Escribe los pasos concretos, en orden, con su validación."
+        },
+        {
+            "id": "entregar_plan",
+            "nombre": "Entregar el PLAN",
+            "agente": "plan",
+            "aprobacion": false,
+            "instruccion": "Entrega el PLAN con la salida estándar. No implementes nada."
+        }
+    ]
+}

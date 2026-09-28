@@ -47,7 +47,7 @@ Cada acción tiene un identificador estable, usado como clave en la configuraci�
 | `session_new` | Crear una sesión nueva y dejarla activa | `<leader>n` | vista principal |
 | `session_delete` | Eliminar la sesión resaltada en el modal | `ctrl+d` | modal de sesiones |
 | `command_palette` | Abrir el modal de atajos de teclado | `ctrl+p` | global |
-| `agent_cycle` | Cambiar de agente (`plan` ↔ `build`) | `tab` | vista principal y bienvenida (nunca dentro de un modal) |
+| `agent_cycle` | Cambiar de agente (recorre los agentes disponibles) | `tab` | vista principal y bienvenida (nunca dentro de un modal) |
 | `panel_toggle` | Abrir o cerrar el panel de datos | `ctrl+d` | vista |
 | `reasoning_toggle` | Mostrar u ocultar el razonamiento | `ctrl+r` | vista |
 | `approvals_toggle` | Abrir o cerrar el panel de aprobaciones | `ctrl+a` | vista |

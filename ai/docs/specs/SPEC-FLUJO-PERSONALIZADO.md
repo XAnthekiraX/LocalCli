@@ -66,7 +66,10 @@ No incluye los flujos oficiales, que están en [[specs/SPEC-MOTOR-FLUJOS]], ni l
 
 ## Supuestos
 
-- El formato de definición y dónde se guardan los flujos quedan en FASE 2 y FASE 3.
+- El formato de definición está fijado: un JSON por flujo en `ai/flows/`, con `comando`, `nombre`, `descripcion`, `peticion`, `reglas` y `etapas`. Cada etapa lleva `id`, `nombre`, `agente` (`plan` o `build`), `aprobacion` e `instruccion`.
+- Los flujos oficiales vienen con la herramienta y funcionan sin configuración. Un JSON del proyecto con el mismo `comando` personaliza el oficial; con un `comando` nuevo añade un flujo propio.
+- Las `reglas` del flujo y la `instruccion` de cada etapa viajan con el contexto de la etapa: es donde se declara, por ejemplo, cómo descubrir la documentación.
+- Los flujos se cargan al arrancar. Un JSON roto no tumba el arranque: se usan los oficiales y se avisa.
 
 ## Referencias
 

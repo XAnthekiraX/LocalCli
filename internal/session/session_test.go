@@ -220,7 +220,7 @@ func (m *motorStub) EjecutarFlujo(ctx context.Context, f flow.Flujo, objetivo st
 	return m.estado, nil
 }
 
-func (m *motorStub) Conversar(ctx context.Context, agente, objetivo string, historial []flow.Mensaje) (flow.Resultado, error) {
+func (m *motorStub) Conversar(ctx context.Context, agente, objetivo string, historial []flow.Mensaje, imagenes []string) (flow.Resultado, error) {
 	m.mu.Lock()
 	m.conversaciones = append(m.conversaciones, agente+":"+objetivo)
 	m.historiales = append(m.historiales, historial)

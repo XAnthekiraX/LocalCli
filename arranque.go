@@ -77,6 +77,10 @@ type Adaptador struct {
 	auditar *store.Auditorias
 	bus     *session.Bus
 	dir     string
+	// catalogo son los flujos del proyecto: los oficiales más los que declara
+	// `ai/flows/*.json`. Lo arma el arranque; `Enviar` reconoce los comandos
+	// contra él.
+	catalogo *flow.Catalogo
 
 	// cliente es Ollama: solo se usa para la lista del selector de modelos de
 	// la bienvenida (SPEC-INTERFAZ §Reglas); el arranque no le escribe nada.
@@ -89,6 +93,10 @@ type Adaptador struct {
 	// agenteRecordado es el último agente usado, leído de las preferencias del
 	// usuario al arrancar: la vista empieza en él (SPEC-OLLAMA-PERFIL).
 	agenteRecordado string
+	// agentes son los nombres de los agentes disponibles, en orden estable
+	// (`plan`, `build` y el resto alfabético). Los carga `agenteBase` de
+	// `ai/agents/*.json`; la vista cicla por esta lista.
+	agentes []string
 
 	mu         sync.Mutex
 	sesionID   string
@@ -163,6 +171,15 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 		fmt.Fprintln(os.Stderr, "aviso: sin grafo de documentos:", gErr)
 	}
 
+	// Los flujos del proyecto: oficiales + los de `ai/flows/*.json`. Un JSON
+	// roto no tumba el arranque; se cae a los oficiales y se avisa.
+	catalogo, catErr := flow.CargarFlujos(carpeta)
+	if catErr != nil {
+		fmt.Fprintln(os.Stderr, "aviso: no se pudieron cargar los flujos de ai/flows:", catErr)
+		catalogo = flow.CatalogoPorDefecto()
+	}
+	ad.catalogo = catalogo
+
 	motorFlows := &flow.Motor{Eventos: bus}
 
 	alcance, err := session.NuevoAlcance(carpeta, store.Sesiones{DB: conexion})
@@ -198,7 +215,9 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	// El bucle conversacional (agente → modelo → herramientas → modelo) vive en
 	// `agent`; aquí solo se le dan sus dependencias reales y el mapa de agentes.
 	ejecutor := &agent.Ejecutor{Runner: agenteRunner, Despachar: despachador, MaxPasadas: 3}
-	motorFlows.Agente = &ejecutorPorTurno{ad: ad, ejecutor: ejecutor, infer: infer, agente: agenteBase(carpeta)}
+	agentes := agenteBase(carpeta)
+	ad.agentes = agent.OrdenarNombres(agentes)
+	motorFlows.Agente = &ejecutorPorTurno{ad: ad, ejecutor: ejecutor, infer: infer, agente: agentes}
 	motorFlows.Aprobador = &aprobadorPorTurno{ad: ad}
 
 	// Arranque de sesión: NO se crea ninguna. La sesión nace con la primera
@@ -305,21 +324,27 @@ func (ad *Adaptador) Modelos() ([]tui.ModeloLocal, error) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			out[i] = tui.ModeloLocal{Nombre: nombre, SinHerramientas: ad.sinHerramientas(ctx, nombre)}
+			caps := ad.capacidadesDe(ctx, nombre)
+			out[i] = tui.ModeloLocal{
+				Nombre:          nombre,
+				SinHerramientas: !ollama.PuedeUsarHerramientas(caps),
+				SinVision:       !ollama.PuedeVer(caps),
+			}
 		}(i, m.Nombre)
 	}
 	wg.Wait()
 	return out, nil
 }
 
-// sinHerramientas dice si el modelo no declara capacidad de herramientas. Ante
-// un fallo de detección devuelve false: mejor no avisar de más.
-func (ad *Adaptador) sinHerramientas(ctx context.Context, nombre string) bool {
+// capacidadesDe pide la ficha del modelo (/api/show). Ante un fallo devuelve
+// nil: sin ficha no se declara ninguna capacidad, así que la vista no avisa de
+// más (mejor callar que alarmar).
+func (ad *Adaptador) capacidadesDe(ctx context.Context, nombre string) []string {
 	caps, err := ad.cliente.Capacidades(ctx, nombre)
 	if err != nil {
-		return false
+		return nil
 	}
-	return !ollama.PuedeUsarHerramientas(caps)
+	return caps
 }
 
 // ModeloActual devuelve el modelo con el que trabaja el motor ahora mismo: el
@@ -329,23 +354,33 @@ func (ad *Adaptador) sinHerramientas(ctx context.Context, nombre string) bool {
 // Ollama, así que la pantalla se pinta sin esperar a nada externo.
 func (ad *Adaptador) ModeloActual() string { return ad.modeloElegido() }
 
-// CapacidadesModelo dice si el modelo indicado declara capacidad de usar
-// herramientas, para la línea de estado bajo el input (SPEC-OLLAMA-PERFIL). Un
-// fallo sube tal cual; la vista lo trata como dato desconocido y no bloquea.
-func (ad *Adaptador) CapacidadesModelo(nombre string) (bool, error) {
+// CapacidadesModelo dice qué declara capaz de hacer el modelo indicado (usar
+// herramientas e interpretar imágenes), para la línea de estado bajo el input
+// (SPEC-OLLAMA-PERFIL). Un fallo sube tal cual; la vista lo trata como dato
+// desconocido y no bloquea.
+func (ad *Adaptador) CapacidadesModelo(nombre string) (tui.Capacidades, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
 	defer cancel()
 	caps, err := ad.cliente.Capacidades(ctx, nombre)
 	if err != nil {
-		return false, err
+		return tui.Capacidades{}, err
 	}
-	return ollama.PuedeUsarHerramientas(caps), nil
+	return tui.Capacidades{
+		Herramientas: ollama.PuedeUsarHerramientas(caps),
+		Vision:       ollama.PuedeVer(caps),
+	}, nil
 }
 
 // AgenteRecordado devuelve el último agente con el que trabajó el usuario,
 // leído de sus preferencias al arrancar: la vista empieza en él
 // (SPEC-OLLAMA-PERFIL). Vacío significa «sin preferencia».
 func (ad *Adaptador) AgenteRecordado() string { return ad.agenteRecordado }
+
+// Agentes devuelve los nombres de los agentes disponibles, en orden estable
+// (`plan`, `build` y el resto alfabético). Los carga el arranque de
+// `ai/agents/*.json`; la vista cicla por esta lista y el motor rechaza cualquier
+// nombre que no esté en ella.
+func (ad *Adaptador) Agentes() []string { return ad.agentes }
 
 // FijarModelo guarda la elección del usuario: a partir de ahora cada turno del
 // motor usa este modelo, aunque la autodetección del arranque hubiera tomado
@@ -378,15 +413,34 @@ func (ad *Adaptador) Historial(sesionID string) ([]tui.MensajeHistorial, error) 
 // El agente viaja con la petición (T-F015-04): lo elige el usuario con el
 // indicador y con él responde el chat. La detección de trabajo ordenado ya no
 // arranca nada: se propone en `session` (SPEC-COLA-TAREAS).
-func (ad *Adaptador) Enviar(ctx context.Context, sesionID, agente, texto string) error {
+//
+// `imagenes` son las imágenes (base64) que la vista detectó en el texto: solo
+// acompañan al chat; un comando de flujo las ignora (los flujos no adjuntan).
+func (ad *Adaptador) Enviar(ctx context.Context, sesionID, agente, texto string, imagenes []string) error {
 	ad.fijarSesion(sesionID)
-	if cmd, ok := flow.ComandoDe(texto); ok {
+	if cmd, ok := ad.catalogo.De(texto); ok {
 		if cmd.Consumir {
 			return ad.ejecutarCola(sesionID, texto)
 		}
-		return ad.gest.ArrancarFlujo(ctx, sesionID, cmd.Flujo, flow.ObjetivoDe(texto))
+		return ad.gest.ArrancarFlujo(ctx, sesionID, cmd.Flujo, cmd.Objetivo(texto))
 	}
-	return ad.gest.Conversar(ctx, sesionID, agente, texto)
+	return ad.gest.Conversar(ctx, sesionID, agente, texto, imagenes)
+}
+
+// Comandos devuelve los comandos de flujo del proyecto para la paleta de la
+// vista: los oficiales más los que declara `ai/flows/*.json`, y `/ejecutar` al
+// final (que no es un flujo: consume la cola). La vista no importa `flow`; el
+// catálogo llega ya traducido a su tipo.
+func (ad *Adaptador) Comandos() []tui.ComandoFlujo {
+	if ad.catalogo == nil {
+		return nil
+	}
+	flujos := ad.catalogo.Flujos()
+	out := make([]tui.ComandoFlujo, 0, len(flujos)+1)
+	for _, f := range flujos {
+		out = append(out, tui.ComandoFlujo{Nombre: f.Comando, Descripcion: f.Descripcion})
+	}
+	return append(out, tui.ComandoFlujo{Nombre: "/ejecutar", Descripcion: "ejecutar la cola de tareas"})
 }
 
 // ejecutarCola atiende `/ejecutar`: deja constancia del comando en el historial
@@ -909,7 +963,7 @@ type ejecutorPorTurno struct {
 	agente   map[string]agent.Agente
 }
 
-func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, nombreAgente, contexto string, historial []flow.Mensaje) (flow.Resultado, error) {
+func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, nombreAgente, contexto string, historial []flow.Mensaje, imagenes []string) (flow.Resultado, error) {
 	// El modelo se lee en cada turno: si el usuario lo cambió desde el selector
 	// de la bienvenida, esa elección es la que corre (SPEC-OLLAMA-PERFIL).
 	modelo := e.ad.modeloElegido()
@@ -924,7 +978,7 @@ func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, nombreAgente, contexto 
 
 	var salida agent.Resultado
 	err := e.infer.Encolar(ctx, ollama.OpcionesEncolar{IdSesion: sesionID}, func(c context.Context) error {
-		res, err := e.ejecutor.Ejecutar(c, agente, modelo, contexto, mensajesDeOllama(historial), sinkBus{ad: e.ad, sesionID: sesionID})
+		res, err := e.ejecutor.Ejecutar(c, agente, modelo, contexto, mensajesDeOllama(historial), imagenes, sinkBus{ad: e.ad, sesionID: sesionID})
 		if err != nil {
 			return err
 		}
@@ -995,24 +1049,47 @@ func (p *aprobadorPorTurno) Aprobar(ctx context.Context, descripcion string) (bo
 	return estado == store.ApprovalAprobada, nil
 }
 
-// agenteBase carga los agentes base del proyecto (ai/agents/*.json) con
-// fallback a un prompt mínimo si falta el archivo: el arranque no puede morir
-// por un JSON ausente (CONFIGURATION.md §5: la vista sigue viva).
+// agenteBase carga los agentes del proyecto desde `ai/agents/*.json`: los dos
+// base (`plan`, `build`) y cualquier agente propio que el usuario deje ahí. El
+// nombre de cada archivo no decide nada: manda el campo `nombre` del JSON.
+//
+// Un archivo inválido se ignora con un aviso por stderr, no tumba el arranque
+// (CONFIGURATION.md §5: la vista sigue viva), y `plan` y `build` siempre quedan
+// disponibles aunque su JSON falte o esté roto: son los que arrancan los flujos
+// oficiales.
 func agenteBase(raiz string) map[string]agent.Agente {
+	dir := filepath.Join(raiz, "ai", "agents")
 	out := map[string]agent.Agente{}
-	for _, nombre := range []string{tools.AgentePlan, tools.AgenteBuild} {
-		ruta := filepath.Join(raiz, "ai", "agents", nombre+".json")
-		a, err := agent.Cargar(ruta)
-		if err != nil {
-			a = agent.Agente{
-				Nombre: nombre,
-				Prompt: "Eres el agente `" + nombre + "` de LocalCli. Responde en español, concreto y breve.",
-				Skills: []string{},
+	if entradas, err := os.ReadDir(dir); err == nil {
+		for _, e := range entradas {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+				continue
 			}
+			a, err := agent.Cargar(filepath.Join(dir, e.Name()))
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "aviso: agente ignorado:", err)
+				continue
+			}
+			out[a.Nombre] = a
 		}
-		out[nombre] = a
+	}
+	for _, nombre := range []string{tools.AgentePlan, tools.AgenteBuild} {
+		if _, ok := out[nombre]; !ok {
+			out[nombre] = agenteDeRespaldo(nombre)
+		}
 	}
 	return out
+}
+
+// agenteDeRespaldo es el agente mínimo que se usa cuando falta o no carga su
+// JSON: prompt de identidad y sin permisos (solo conversación). No inventa
+// herramientas; si el usuario quiere que las tenga, escribe su `ai/agents`.
+func agenteDeRespaldo(nombre string) agent.Agente {
+	return agent.Agente{
+		Nombre: nombre,
+		Prompt: "Eres el agente `" + nombre + "` de LocalCli. Responde en español, concreto y breve.",
+		Skills: []string{},
+	}
 }
 
 // mensajesDeOllama traduce el historial neutro de `flow` al formato del cliente

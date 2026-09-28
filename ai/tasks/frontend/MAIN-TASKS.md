@@ -33,6 +33,9 @@ Fuente de verdad del progreso del frontend. Derivada exclusivamente de `ai/docs/
 | T-F026 | actualizar | doble `esc` para cancelar el trabajo en curso, con confirmación | T-F010 | completada | `026-task-doble-esc-cancelar.md` |
 | T-F027 | actualizar | la bienvenida crea la sesión; borrar la última vuelve a la bienvenida; evento `titulo_sesion` | T-F003, T-F014, T-F017 | completada | `027-task-sesiones-bienvenida-titulo.md` |
 | T-F028 | actualizar | aprobaciones: el panel se muestra sin robar el teclado; `Ctrl+A` enfoca (`a`/`d`) y un clic sobre «aprobar»/«declinar» decide | T-F008 | completada | `028-task-aprobaciones-input-raton.md` |
+| T-F029 | actualizar | input: adjunta al turno las imágenes cuyas rutas aparecen en el mensaje; avisa si el modelo no declara visión | T-F004, T-F025 | completada | `029-task-imagenes-input.md` |
+| T-F030 | actualizar | input: al pegar o arrastrar una imagen muestra `[nombre.ext]` resaltado y expande a la ruta real al enviar | T-F004, T-F029 | completada | `030-task-token-imagen.md` |
+| T-F031 | actualizar | agentes: `Tab` recorre todos los agentes disponibles que ofrece el puerto, no solo `plan` y `build` | T-F015 | completada | `031-task-agentes-lista.md` |
 
 ## Referencias
 

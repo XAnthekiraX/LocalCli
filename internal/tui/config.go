@@ -22,7 +22,8 @@ import (
 type Preferencias struct {
 	// Modelo es el último modelo elegido; al arrancar se usa si sigue instalado.
 	Modelo string `json:"ultimo_modelo,omitempty"`
-	// Agente es el último agente activo (`plan` o `build`).
+	// Agente es el último agente activo. Se guarda tal cual; la vista lo
+	// valida contra su lista de agentes disponibles al arrancar.
 	Agente string `json:"ultimo_agente,omitempty"`
 	// HistorialTokens es el presupuesto de tokens del historial de conversación
 	// que se le envía al modelo (SPEC-HISTORIAL-CONVERSACION). 0 = el arranque
@@ -52,7 +53,8 @@ func CargarPreferencias() (Preferencias, error) {
 }
 
 // CargarPreferenciasDesde lee las preferencias desde un directorio. El agente
-// se normaliza: un valor raro cae en `plan`.
+// se devuelve tal cual: la vista lo normaliza contra su lista de agentes
+// disponibles al construirse (ValidarAgente), que es quien la conoce.
 func CargarPreferenciasDesde(dir string) (Preferencias, error) {
 	bruto, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if os.IsNotExist(err) {
@@ -65,7 +67,6 @@ func CargarPreferenciasDesde(dir string) (Preferencias, error) {
 	if err := json.Unmarshal(bruto, &p); err != nil {
 		return Preferencias{}, nil
 	}
-	p.Agente = ValidarAgente(p.Agente)
 	return p, nil
 }
 
@@ -92,11 +93,17 @@ func GuardarPreferenciasEn(dir string, p Preferencias) error {
 	return os.WriteFile(filepath.Join(dir, "config.json"), bruto, 0o644)
 }
 
-// ValidarAgente normaliza el agente recordado: solo `plan` o `build`; cualquier
-// otro valor (o vacío) cae en `plan`, el de fábrica.
-func ValidarAgente(agente string) string {
-	if agente == AgenteBuild {
-		return AgenteBuild
+// ValidarAgente devuelve `agente` si está entre los disponibles; si no (o si
+// viene vacío), el primero de la lista. Sin lista, `plan`. Así la vista siempre
+// arranca con un agente activo que existe de verdad.
+func ValidarAgente(agente string, disponibles []string) string {
+	for _, n := range disponibles {
+		if n == agente {
+			return agente
+		}
+	}
+	if len(disponibles) > 0 {
+		return disponibles[0]
 	}
 	return AgentePlan
 }

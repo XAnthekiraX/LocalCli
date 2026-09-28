@@ -18,7 +18,7 @@ func TestConversarRespondeComoChatYNoArrancaFlujo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := g.Conversar(context.Background(), s.ID, "plan", "  dime de qué va el proyecto  "); err != nil {
+	if err := g.Conversar(context.Background(), s.ID, "plan", "  dime de qué va el proyecto  ", nil); err != nil {
 		t.Fatal(err)
 	}
 	esperarEstado(t, g, s.ID, EstadoTerminada)
@@ -47,7 +47,7 @@ func TestElChatCierraSinAnunciarTrabajoTerminado(t *testing.T) {
 	defer baja()
 
 	s, _ := g.Crear("sesión", "")
-	if err := g.Conversar(context.Background(), s.ID, "plan", "hola"); err != nil {
+	if err := g.Conversar(context.Background(), s.ID, "plan", "hola", nil); err != nil {
 		t.Fatal(err)
 	}
 	esperarEstado(t, g, s.ID, EstadoTerminada)
@@ -87,7 +87,7 @@ func TestUnaSesionAtascadaEnTrabajandoAceptaPeticion(t *testing.T) {
 	if err := alm.CambiarEstado(s.ID, EstadoTrabajando); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.Conversar(context.Background(), s.ID, "plan", "hola"); err != nil {
+	if err := g.Conversar(context.Background(), s.ID, "plan", "hola", nil); err != nil {
 		t.Fatalf("una sesión obsoleta en trabajando debe aceptar el turno: %v", err)
 	}
 	esperarEstado(t, g, s.ID, EstadoTerminada)
@@ -98,7 +98,7 @@ func TestConversarProponeTrabajoOrdenadoSinArrancarCola(t *testing.T) {
 	motor := nuevoMotor(flow.EstadoTerminado)
 	g, alm := gestorDe(t, motor)
 	s, _ := g.Crear("sesión", "")
-	if err := g.Conversar(context.Background(), s.ID, "plan", "primero esto, luego esto"); err != nil {
+	if err := g.Conversar(context.Background(), s.ID, "plan", "primero esto, luego esto", nil); err != nil {
 		t.Fatal(err)
 	}
 	esperarEstado(t, g, s.ID, EstadoTerminada)

@@ -29,8 +29,8 @@ Los dos agentes incluidos, con permisos distintos: uno que solo mira y propone, 
 
 ## Alcance
 
-Incluye `plan` y `build`: qué hace cada uno, a qué herramientas tiene acceso y cómo se pasa de uno a otro.
-No incluye agentes propios, skills ni flujos.
+Incluye `plan` y `build`: qué hace cada uno, a qué herramientas tiene acceso y cómo se pasa de uno a otro. Incluye además cargar agentes propios: cualquier `ai/agents/*.json` válido se añade a los disponibles y `Tab` recorre todos.
+No incluye skills ni flujos.
 
 ## Actores
 
@@ -41,6 +41,8 @@ No incluye agentes propios, skills ni flujos.
 ## Dónde se definen
 
 Cada agente es un `ai/agents/*.json` con campos fijos: `nombre`, `descripcion`, `prompt`, `permisos` y `skills`. Se eligió JSON y no un README porque un README deja margen a interpretación de qué significa cada parte.
+
+**Todos los `*.json` de la carpeta se cargan**, no solo `plan.json` y `build.json`: el nombre del archivo no decide nada, manda el campo `nombre`. Dejar un `ai/agents/<nombre>.json` válido basta para tener un agente nuevo disponible —sin tocar el código—: aparece en la lista por la que cicla `Tab` y puede referenciarse desde una etapa de un flujo propio. `plan` y `build` siempre están disponibles aunque falte o no cargue su archivo (quedan con un prompt de respaldo), porque los flujos oficiales los referencian. Un archivo inválido se ignora sin impedir el arranque.
 
 El campo `permisos` es el que sostiene la garantía: declara, por acción (`leer`, `editar`, `ejecutar`, `internet`), si el agente puede (`permitir`) o no (`denegar`). Si `plan` deniega `editar`, no tiene ninguna herramienta que escriba, aunque se la pidan. El catálogo efectivo de herramientas se **deriva** de los permisos contra el catálogo cerrado de `tools`: no hay una segunda lista que pueda contradecirlos. La garantía vive en los datos, no en el código.
 
@@ -127,6 +129,8 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 - Un intercambio de chat empieza con el contexto de esa sesión, no con el de otra.
 - Fuera de un flujo, ambos agentes atienden el chat con el catálogo derivado de sus permisos: `plan` lee y propone, `build` escribe con aprobación.
 - `plan` propone y `build` aplica dentro de un flujo; un flujo solo existe cuando el usuario lo arranca con un comando explícito.
+- Los agentes se cargan de `ai/agents/*.json`: `plan` y `build` siempre están disponibles y cualquier agente propio válido se añade a los disponibles. Un archivo inválido se ignora sin impedir el arranque.
+- La interfaz recorre los agentes disponibles con `Tab`; el agente activo es el que recibe la petición. Un agente propio vale igual que los base: responde con el catálogo derivado de sus permisos.
 
 ## Criterios de aceptación
 
@@ -142,6 +146,9 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 - [ ] `build` marca la tarea como bloqueada y dice qué falta cuando no puede continuar.
 - [ ] `build` verifica el resultado antes de cerrar la tarea.
 - [ ] Dentro de un flujo arrancado por comando, `build` toma la siguiente tarea de la cola.
+- [ ] Dejar un `ai/agents/<nombre>.json` válido añade un agente disponible sin tocar el código.
+- [ ] `Tab` recorre todos los agentes disponibles, no solo `plan` y `build`.
+- [ ] Un `ai/agents/*.json` inválido se ignora y el arranque sigue.
 - [ ] El contenido de una sesión no aparece en otra sesión del mismo proyecto.
 
 ## Requisitos no funcionales

@@ -125,6 +125,27 @@ func TestProcesarLineaPureza(t *testing.T) {
 	}
 }
 
+// En /api/chat el razonamiento viene ANIDADO en message.thinking (el harness
+// usa ese endpoint). Sin mirarlo, el razonamiento se perdía y la vista decía
+// que el modelo no lo entregó.
+func TestProcesarLineaRazonamientoAnidadoDeChat(t *testing.T) {
+	var acc acumulador
+	linea := []byte(`{"message":{"role":"assistant","content":"digo","thinking":"pienso"},"done":false}`)
+	evs, err := procesarLinea(linea, &acc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 2 || evs[0].Tipo != EventoRazonamiento || evs[0].Texto != "pienso" {
+		t.Fatalf("razonamiento anidado mal clasificado: %+v", evs)
+	}
+	if evs[1].Tipo != EventoToken || evs[1].Texto != "digo" {
+		t.Fatalf("texto anidado mal clasificado: %+v", evs)
+	}
+	if acc.razonamiento == nil || string(acc.razonamiento) != "pienso" {
+		t.Errorf("razonamiento no acumulado: %q", acc.razonamiento)
+	}
+}
+
 // --- T-B005-03: razonamiento separado -------------------------------------
 
 func TestStreamReasoningSeparaTextoYRazonamiento(t *testing.T) {
@@ -150,6 +171,101 @@ func TestStreamReasoningSeparaTextoYRazonamiento(t *testing.T) {
 	}
 	if razon.String() != "Voy a pensar. " {
 		t.Errorf("razonamiento=%q", razon.String())
+	}
+}
+
+// El mismo camino que usa el harness: /api/chat, con el razonamiento anidado en
+// message.thinking. Fija que el endpoint real separa texto y razonamiento.
+func TestStreamChatSeparaTextoYRazonamiento(t *testing.T) {
+	fixture := leerFixture(t, "stream_chat.ndjson")
+	c := nuevoServidorOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			t.Errorf("ruta inesperada %s", r.URL.Path)
+		}
+		w.Write(fixture)
+	})
+	events, err := c.Chat(context.Background(), GenerarRequest{
+		Model:    "qwen3",
+		Messages: []Mensaje{{Role: "user", Content: "p"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var texto, razon strings.Builder
+	var final *RespuestaFinal
+	for ev := range events {
+		switch ev.Tipo {
+		case EventoToken:
+			texto.WriteString(ev.Texto)
+		case EventoRazonamiento:
+			razon.WriteString(ev.Texto)
+		case EventoDone:
+			final = ev.Done
+		case EventoError:
+			t.Fatal(ev.Error)
+		}
+	}
+	if texto.String() != "La respuesta." {
+		t.Errorf("texto=%q", texto.String())
+	}
+	if razon.String() != "Voy a pensar. " {
+		t.Errorf("razonamiento=%q", razon.String())
+	}
+	if final == nil || final.Razonamien != "Voy a pensar. " {
+		t.Errorf("razonamiento final incorrecto: %+v", final)
+	}
+}
+
+// Las imágenes de un turno multimodal viajan en `message.images` de /api/chat,
+// que es el campo que espera Ollama para los modelos con visión.
+func TestChatEnviaImagenes(t *testing.T) {
+	var recibido GenerarRequest
+	c := nuevoServidorOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			t.Errorf("ruta inesperada %s", r.URL.Path)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&recibido)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{\"model\":\"llava\",\"done\":true}\n"))
+	})
+	imgs := []string{"aG9sYQ==", "bXVuZG8="}
+	events, err := c.Chat(context.Background(), GenerarRequest{
+		Model:    "llava",
+		Messages: []Mensaje{{Role: "user", Content: "¿qué hay aquí?", Images: imgs}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range events {
+	}
+	if len(recibido.Messages) != 1 {
+		t.Fatalf("mensajes = %d, quiero 1", len(recibido.Messages))
+	}
+	got := recibido.Messages[0].Images
+	if len(got) != len(imgs) || got[0] != imgs[0] || got[1] != imgs[1] {
+		t.Errorf("images = %v, quiero %v", got, imgs)
+	}
+}
+
+// Sin imágenes el campo no debe viajar: `images` es `omitempty` para no mandar
+// un `null` que algunos modelos interpretan como «hay imágenes vacías».
+func TestChatOmiteImagenesSinAdjuntos(t *testing.T) {
+	var crudo []byte
+	c := nuevoServidorOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		crudo, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte("{\"model\":\"m\",\"done\":true}\n"))
+	})
+	events, err := c.Chat(context.Background(), GenerarRequest{
+		Model:    "m",
+		Messages: []Mensaje{{Role: "user", Content: "hola"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range events {
+	}
+	if strings.Contains(string(crudo), "images") {
+		t.Errorf("sin imágenes no debe viajar el campo images: %s", crudo)
 	}
 }
 

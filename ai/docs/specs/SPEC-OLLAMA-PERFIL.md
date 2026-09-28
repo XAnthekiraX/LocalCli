@@ -54,7 +54,10 @@ No incluye proveedores distintos de Ollama ni la visualización de tokens, que e
 - El perfil se aplica a las sesiones nuevas del proyecto.
 - El último modelo y el último agente usados se recuerdan entre ejecuciones como preferencia global del usuario (fuera del proyecto). Al arrancar se reutiliza el modelo recordado si sigue instalado, y el agente recordado.
 - Si el modelo no declara capacidad de herramientas, la interfaz lo marca y avisa sin bloquear al elegirlo, para que el usuario cambie de modelo. No se le impide usarlo: las herramientas viajan como texto y el modelo puede responder igualmente.
-- Bajo la línea de entrada se muestra el modelo en uso y si tiene acceso a herramientas (`sí`/`no`/`?` mientras se desconoce).
+- Si el texto de un mensaje de chat incluye la ruta de una imagen existente, la imagen se adjunta a ese turno hacia el modelo: viaja codificada en base64 en el campo `images` de `/api/chat`, que es lo que aceptan los modelos multimodales. Solo el módulo `ollama` conoce ese formato.
+- Las imágenes adjuntas son efímeras: no se persisten ni se replican en el historial. Un turno posterior que no vuelva a mencionar la imagen no la ve.
+- Si el modelo en uso no declara capacidad de visión (`vision` en `/api/show`) y el turno lleva imágenes, la interfaz avisa sin bloquear el envío; no se le impide usarlo.
+- Bajo la línea de entrada se muestra el modelo en uso y si tiene acceso a herramientas y a la visión (`sí`/`no`/`?` mientras se desconoce).
 - Todo el modelo y toda la conversación ocurren en la máquina local: no se envía nada fuera.
 - La única excepción es la búsqueda en internet de [[specs/SPEC-TOOLS]], y solo sale la consulta, nunca contenido del proyecto.
 - El tamaño de contexto disponible se tiene en cuenta al decidir cuánto contexto entregar.
@@ -68,7 +71,9 @@ No incluye proveedores distintos de Ollama ni la visualización de tokens, que e
 - [ ] El perfil confirmado se aplica a las sesiones nuevas.
 - [ ] Al reabrir LocalCli se parte del último modelo y el último agente usados.
 - [ ] Un modelo que no declara capacidad de herramientas se marca y avisa sin bloquear.
-- [ ] Bajo la entrada se ve el modelo en uso y si tiene acceso a herramientas.
+- [ ] Las imágenes de un turno de chat viajan al modelo en el campo `images` de `/api/chat`, codificadas en base64.
+- [ ] Un modelo que no declara visión avisa, sin bloquear, al adjuntar una imagen.
+- [ ] Bajo la entrada se ve el modelo en uso y si tiene acceso a herramientas y a la visión.
 - [ ] La herramienta sigue funcionando con 16 GB de RAM sin agotar la memoria.
 - [ ] Si Ollama no está disponible, avisa con una instrucción clara.
 - [ ] La única información que sale de la máquina es la consulta de una búsqueda, nunca contenido del proyecto.

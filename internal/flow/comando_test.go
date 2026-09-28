@@ -76,7 +76,7 @@ func TestConversarUsaElAgenteActivo(t *testing.T) {
 		Contexto: &stubContexto{},
 		Agente:   &stubAgente{traza: &traza},
 	}
-	res, err := m.Conversar(context.Background(), tools.AgenteBuild, "dime de qué va", nil)
+	res, err := m.Conversar(context.Background(), tools.AgenteBuild, "dime de qué va", nil, nil)
 	if err != nil {
 		t.Fatalf("Conversar: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestConversarUsaElAgenteActivo(t *testing.T) {
 	if res.Texto == "" {
 		t.Error("la respuesta del agente no puede quedar vacía")
 	}
-	if _, err := m.Conversar(context.Background(), "inventado", "x", nil); err == nil {
-		t.Error("un agente fuera de plan/build debe rechazarse")
+	if _, err := m.Conversar(context.Background(), "", "x", nil, nil); err == nil {
+		t.Error("un chat sin agente debe rechazarse")
 	}
 }

@@ -32,24 +32,34 @@ import (
 // --- dobles ---------------------------------------------------------------
 
 type puertoStub struct {
-	activa            *session.Sesion
-	sesiones          []session.Sesion
-	historial         []MensajeHistorial
-	enviados          []string
-	resueltas         []string
-	pausadas          []string
-	cancelado         []string
-	activasResueltas  int
-	suscripciones     int
-	canal             chan Evento
-	err               error
-	modelos           []ModeloLocal
-	modelosErr        error
-	modelo            string
-	agenteRecordado   string
-	capHerramientas   bool
-	capErr            error
-	capConsultas      int
+	activa           *session.Sesion
+	sesiones         []session.Sesion
+	historial        []MensajeHistorial
+	enviados         []string
+	resueltas        []string
+	pausadas         []string
+	cancelado        []string
+	activasResueltas int
+	suscripciones    int
+	canal            chan Evento
+	err              error
+	modelos          []ModeloLocal
+	modelosErr       error
+	modelo           string
+	agenteRecordado  string
+	// agentesDisponibles es la lista que ofrece el puerto; vacía deja los base
+	// plan/build.
+	agentesDisponibles []string
+	// comandos es el catálogo que ofrece el puerto para la paleta; vacío deja el
+	// respaldo oficial de la vista.
+	comandos        []ComandoFlujo
+	capHerramientas bool
+	capVision       bool
+	capErr          error
+	capConsultas    int
+	// imagenesEnviadas guarda, por envío, las imágenes (base64) que la vista
+	// detectó en el texto, en el mismo orden que `enviados`.
+	imagenesEnviadas  [][]string
 	peticionesModelos int
 	fijados           []string
 	// Lecturas bajo demanda del modal de sesiones: cada apertura pide la lista
@@ -141,12 +151,13 @@ func (p *puertoStub) Historial(sesionID string) ([]MensajeHistorial, error) {
 
 // Enviar registra también el agente: lo que se pide con `build` sale con
 // `build` (T-F015-04).
-func (p *puertoStub) Enviar(ctx context.Context, sesionID, agente, texto string) error {
+func (p *puertoStub) Enviar(ctx context.Context, sesionID, agente, texto string, imagenes []string) error {
 	if p.err != nil {
 		return p.err
 	}
 	p.enviados = append(p.enviados, sesionID+"|"+texto)
 	p.agentes = append(p.agentes, agente)
+	p.imagenesEnviadas = append(p.imagenesEnviadas, imagenes)
 	return nil
 }
 
@@ -188,10 +199,16 @@ func (p *puertoStub) ModeloActual() string { return p.modelo }
 // preferencia (la vista cae en plan).
 func (p *puertoStub) AgenteRecordado() string { return p.agenteRecordado }
 
+// Agentes simula la lista de agentes disponibles. Vacía deja los base
+// (`plan`, `build`), que es lo que ofrece la vista sin catálogo propio.
+func (p *puertoStub) Agentes() []string { return p.agentesDisponibles }
+
+func (p *puertoStub) Comandos() []ComandoFlujo { return p.comandos }
+
 // CapacidadesModelo simula la consulta de capacidades del modelo en uso.
-func (p *puertoStub) CapacidadesModelo(nombre string) (bool, error) {
+func (p *puertoStub) CapacidadesModelo(nombre string) (Capacidades, error) {
 	p.capConsultas++
-	return p.capHerramientas, p.capErr
+	return Capacidades{Herramientas: p.capHerramientas, Vision: p.capVision}, p.capErr
 }
 
 func (p *puertoStub) FijarModelo(nombre string) {

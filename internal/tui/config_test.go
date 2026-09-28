@@ -1,8 +1,9 @@
 package tui
 
 // Tests de las preferencias del usuario (config.json): se recuerdan entre
-// ejecuciones, un archivo ausente o corrupto no rompe el arranque y el agente
-// se normaliza (SPEC-OLLAMA-PERFIL, FRONTEND.md §3).
+// ejecuciones y un archivo ausente o corrupto no rompe el arranque; el agente
+// recordado se valida contra la lista de disponibles al construir la vista
+// (SPEC-OLLAMA-PERFIL, FRONTEND.md §3).
 
 import (
 	"os"
@@ -36,16 +37,23 @@ func TestLasPreferenciasSeRecuerdanYSeToleran(t *testing.T) {
 	}
 }
 
-func TestElAgenteRecordadoSeNormaliza(t *testing.T) {
+// ValidarAgente devuelve el agente si está entre los disponibles y, si no, el
+// primero de la lista. Acepta agentes propios, no solo plan/build.
+func TestValidarAgenteContraLaLista(t *testing.T) {
+	disponibles := []string{AgentePlan, AgenteBuild, "revisor"}
 	casos := map[string]string{
 		AgenteBuild: AgenteBuild,
-		AgentePlan:  AgentePlan,
+		"revisor":   "revisor",
 		"":          AgentePlan,
 		"otro":      AgentePlan,
 	}
 	for entrada, quiere := range casos {
-		if got := ValidarAgente(entrada); got != quiere {
-			t.Errorf("ValidarAgente(%q) = %q, quiero %q", entrada, got, quiere)
+		if got := ValidarAgente(entrada, disponibles); got != quiere {
+			t.Errorf("ValidarAgente(%q, lista) = %q, quiero %q", entrada, got, quiere)
 		}
+	}
+	// Sin lista, plan: la vista siempre tiene un agente válido.
+	if got := ValidarAgente("revisor", nil); got != AgentePlan {
+		t.Errorf("sin lista cae en plan: %q", got)
 	}
 }

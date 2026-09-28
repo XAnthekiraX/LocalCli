@@ -27,17 +27,21 @@ type stubAgente struct {
 	traza     *[]string
 	fallar    bool
 	historial []Mensaje
+	contexto  string
+	imagenes  []string
 }
 
-func (s *stubAgente) Ejecutar(ctx context.Context, agente, contexto string, historial []Mensaje) (Resultado, error) {
+func (s *stubAgente) Ejecutar(ctx context.Context, agente, contexto string, historial []Mensaje, imagenes []string) (Resultado, error) {
 	s.historial = historial
+	s.contexto = contexto
+	s.imagenes = imagenes
 	if s.traza != nil {
 		*s.traza = append(*s.traza, "agente:"+agente)
 	}
 	if s.fallar {
 		return Resultado{}, errors.New("boom")
 	}
-	if !strings.HasPrefix(contexto, "contexto:") {
+	if !strings.Contains(contexto, "contexto:") {
 		return Resultado{}, errors.New("la etapa no recibió contexto")
 	}
 	return Resultado{Texto: "ok"}, nil
@@ -132,12 +136,15 @@ func TestResolverSecuenciaDocumentada(t *testing.T) {
 		t.Fatalf("EjecutarFlujo: %v", err)
 	}
 	quiero := []string{
-		"agente:" + tools.AgenteBuild, // evidencia
-		"agente:" + tools.AgentePlan,  // localizar
-		"agente:" + tools.AgentePlan,  // causa raíz
-		"agente:" + tools.AgentePlan,  // propuesta
-		"agente:" + tools.AgenteBuild, // aplicar
-		"agente:" + tools.AgenteBuild, // verificar
+		"agente:" + tools.AgentePlan, // recibir_tarea
+		"agente:" + tools.AgentePlan, // entender_problema
+		"agente:" + tools.AgentePlan, // buscar_contexto
+		"agente:" + tools.AgentePlan, // investigar
+		"agente:" + tools.AgentePlan, // diagnosticar
+		"agente:" + tools.AgentePlan, // archivos_afectados
+		"agente:" + tools.AgentePlan, // diseno
+		"agente:" + tools.AgentePlan, // plan_ejecucion
+		"agente:" + tools.AgentePlan, // entregar_plan
 	}
 	var soloAgentes []string
 	for _, p := range traza {
@@ -147,6 +154,27 @@ func TestResolverSecuenciaDocumentada(t *testing.T) {
 	}
 	if strings.Join(soloAgentes, ",") != strings.Join(quiero, ",") {
 		t.Fatalf("secuencia = %v, quiero %v", soloAgentes, quiero)
+	}
+}
+
+// TestElBriefDelFlujoLlegaAlAgente — las reglas del flujo y la instrucción de
+// la etapa viajan con el contexto que recibe el agente: es cómo un flujo
+// declara sus reglas (por ejemplo, cómo descubrir la documentación) sin código.
+func TestElBriefDelFlujoLlegaAlAgente(t *testing.T) {
+	ag := &stubAgente{}
+	m := &Motor{Contexto: &stubContexto{}, Agente: ag, Aprobador: &stubAprobador{aprobar: true}}
+	if _, err := m.EjecutarFlujo(context.Background(), FlujoResolver(), "arreglar x"); err != nil {
+		t.Fatalf("EjecutarFlujo: %v", err)
+	}
+	if !strings.Contains(ag.contexto, "Reglas del flujo:") {
+		t.Errorf("el contexto no lleva las reglas del flujo: %q", ag.contexto)
+	}
+	if !strings.Contains(ag.contexto, ReglasResolver[0]) {
+		t.Errorf("el contexto no lleva la primera regla del flujo: %q", ag.contexto)
+	}
+	// La última etapa de resolver es `entregar_plan`, con `plan`.
+	if !strings.Contains(ag.contexto, "No implementes nada") {
+		t.Errorf("el contexto no lleva la instrucción de la etapa: %q", ag.contexto)
 	}
 }
 
@@ -186,7 +214,7 @@ func TestCadaEtapaPideContextoConSuEtapa(t *testing.T) {
 func TestConversarPideContextoComoChat(t *testing.T) {
 	ctx := &stubContexto{}
 	m := &Motor{Contexto: ctx, Agente: &stubAgente{}}
-	if _, err := m.Conversar(context.Background(), tools.AgenteBuild, "hola", nil); err != nil {
+	if _, err := m.Conversar(context.Background(), tools.AgenteBuild, "hola", nil, nil); err != nil {
 		t.Fatalf("Conversar: %v", err)
 	}
 	if len(ctx.etapas) != 1 || ctx.etapas[0] != EtapaChat {
@@ -202,11 +230,36 @@ func TestConversarPasaElHistorialAlAgente(t *testing.T) {
 		{Rol: RolUsuario, Texto: "hola"},
 		{Rol: RolAsistente, Texto: "qué tal"},
 	}
-	if _, err := m.Conversar(context.Background(), tools.AgenteBuild, "sigue", historial); err != nil {
+	if _, err := m.Conversar(context.Background(), tools.AgenteBuild, "sigue", historial, nil); err != nil {
 		t.Fatalf("Conversar: %v", err)
 	}
 	if len(ag.historial) != 2 || ag.historial[0].Texto != "hola" || ag.historial[1].Rol != RolAsistente {
 		t.Fatalf("el historial no llegó al agente: %+v", ag.historial)
+	}
+}
+
+// Las imágenes del turno llegan al agente tal cual; el motor no las interpreta.
+func TestConversarReenviaLasImagenesAlAgente(t *testing.T) {
+	ag := &stubAgente{}
+	m := &Motor{Contexto: &stubContexto{}, Agente: ag}
+	imgs := []string{"aG9sYQ==", "bXVuZG8="}
+	if _, err := m.Conversar(context.Background(), tools.AgenteBuild, "mira esto", nil, imgs); err != nil {
+		t.Fatalf("Conversar: %v", err)
+	}
+	if len(ag.imagenes) != 2 || ag.imagenes[1] != imgs[1] {
+		t.Fatalf("las imágenes no llegaron al agente: %+v", ag.imagenes)
+	}
+}
+
+// Un flujo no lleva imágenes: sus etapas corren sin ellas (solo el chat las usa).
+func TestEjecutarFlujoNoPasaImagenes(t *testing.T) {
+	ag := &stubAgente{}
+	m := &Motor{Contexto: &stubContexto{}, Agente: ag, Aprobador: &stubAprobador{aprobar: true}}
+	if _, err := m.EjecutarFlujo(context.Background(), FlujoPlanificacion(), "objetivo"); err != nil {
+		t.Fatalf("EjecutarFlujo: %v", err)
+	}
+	if len(ag.imagenes) != 0 {
+		t.Errorf("una etapa de flujo no debe llevar imágenes: %+v", ag.imagenes)
 	}
 }
 
@@ -230,7 +283,9 @@ func TestEventosPorEtapa(t *testing.T) {
 		Aprobador: &stubAprobador{aprobar: true},
 		Eventos:   emisor,
 	}
-	if _, err := m.EjecutarFlujo(context.Background(), FlujoResolver(), "objetivo"); err != nil {
+	// El ciclo de trabajo tiene etapas con aprobación, que son las que emiten
+	// pausa y reanudación; resolver ya no aprueba nada (solo diagnostica).
+	if _, err := m.EjecutarFlujo(context.Background(), FlujoTrabajo(task.AccionCrear), "objetivo"); err != nil {
 		t.Fatalf("EjecutarFlujo: %v", err)
 	}
 	nombres := emisor.nombres()

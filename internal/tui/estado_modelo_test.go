@@ -41,6 +41,24 @@ func TestLaLineaDeEstadoMuestraModeloYHerramientas(t *testing.T) {
 	}
 }
 
+// La línea de estado también refleja la capacidad de visión del modelo.
+func TestLaLineaDeEstadoMuestraVision(t *testing.T) {
+	p := &puertoStub{modelo: "llava", capHerramientas: true, capVision: true}
+	a := Nuevo(p)
+	a.Vista = VistaPrincipal
+	a.Panel.SesionID = "s1"
+	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	// Antes de saberlo, «?».
+	if !strings.Contains(sinEstilo(a.View()), "visión: ?") {
+		t.Fatalf("sin dato, la visión se muestra como duda:\n%s", sinEstilo(a.View()))
+	}
+	pulsa(t, a, capacidadesMsg{Nombre: "llava", Herramientas: true, Vision: true})
+	if !strings.Contains(sinEstilo(a.View()), "visión: sí") {
+		t.Errorf("con visión:\n%s", sinEstilo(a.View()))
+	}
+}
+
 func TestElegirModeloActualizaLaLineaDeEstado(t *testing.T) {
 	p := &puertoStub{
 		modelo: "con-tools",

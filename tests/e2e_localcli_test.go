@@ -93,8 +93,8 @@ func (contextoFijo) ContextoPara(ctx context.Context, etapa, objetivo string) (s
 
 type agenteFijo struct{}
 
-func (agenteFijo) Ejecutar(ctx context.Context, agente, contexto string, historial []flow.Mensaje) (flow.Resultado, error) {
-	if !strings.HasPrefix(contexto, "contexto para ") {
+func (agenteFijo) Ejecutar(ctx context.Context, agente, contexto string, historial []flow.Mensaje, imagenes []string) (flow.Resultado, error) {
+	if !strings.Contains(contexto, "contexto para ") {
 		return flow.Resultado{}, os.ErrInvalid
 	}
 	return flow.Resultado{Texto: "etapa completada"}, nil
@@ -137,7 +137,7 @@ func TestElCicloDeTrabajoRecorreCompleto(t *testing.T) {
 	}
 }
 
-// TestElCicloDeResolverRecorreCompleto — las 6 etapas de FlujoResolver.
+// TestElCicloDeResolverRecorreCompleto — las 9 etapas de FlujoResolver.
 func TestElCicloDeResolverRecorreCompleto(t *testing.T) {
 	m := motorE2E(true)
 	estado, err := m.EjecutarFlujo(context.Background(), flow.FlujoResolver(), "arreglar el fallo")

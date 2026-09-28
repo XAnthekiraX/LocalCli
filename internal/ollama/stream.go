@@ -42,14 +42,17 @@ type Evento struct {
 }
 
 // lineaJSON es la forma cruda de una línea NDJSON de /api/generate o
-// /api/chat (chat mete el token dentro de message.content).
+// /api/chat: chat mete el token de texto dentro de message.content y el de
+// razonamiento dentro de message.thinking; generate los trae al nivel superior
+// (response y thinking).
 type lineaJSON struct {
 	Model    string `json:"model"`
-	Response string `json:"response"` // generate
+	Response string `json:"response"` // generate: token de texto
 	Message  struct {
-		Content string `json:"content"` // chat
+		Content  string `json:"content"`  // chat: token de texto
+		Thinking string `json:"thinking"` // chat: token de razonamiento
 	} `json:"message"`
-	Thinking string `json:"thinking"` // razonamiento (generate y chat)
+	Thinking string `json:"thinking"` // generate: token de razonamiento
 	Done     bool   `json:"done"`
 	Context  []byte `json:"context,omitempty"`
 
@@ -84,7 +87,16 @@ func procesarLinea(linea []byte, acc *acumulador) ([]Evento, error) {
 	// Orden dentro de la línea: primero razonamiento, luego texto. Es el orden
 	// natural de aparición (el modelo piensa antes de responder) y mantiene
 	// separados ambos flujos (contrato §5: razonamiento distinguible).
-	if r := separarRazonamiento(l.Thinking); r != "" {
+	//
+	// El razonamiento llega como `thinking` de nivel superior en /api/generate y
+	// anidado en `message.thinking` en /api/chat. El harness usa /api/chat, así
+	// que sin mirar lo anidado el razonamiento se perdía en silencio y la vista
+	// acababa diciendo que el modelo no lo entregó.
+	r := separarRazonamiento(l.Thinking)
+	if r == "" {
+		r = separarRazonamiento(l.Message.Thinking)
+	}
+	if r != "" {
 		acc.razonamiento = append(acc.razonamiento, r...)
 		evs = append(evs, Evento{Tipo: EventoRazonamiento, Texto: r})
 	}

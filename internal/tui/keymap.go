@@ -105,7 +105,7 @@ var DescripcionDeAccion = map[Accion]string{
 	AccionCerrarSelector:   "cerrar lo abierto",
 	AccionAyuda:            "modal de atajos de teclado",
 	AccionModalModelos:     "modal de modelos",
-	AccionCiclarAgente:     "cambiar de agente (plan ↔ build)",
+	AccionCiclarAgente:     "cambiar de agente",
 	AccionSubir:            "subir en la lista",
 	AccionBajar:            "bajar en la lista",
 	AccionChatSubir:        "subir por el historial del chat",

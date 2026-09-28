@@ -190,14 +190,18 @@ func (mm *ModelsModal) IndiceDe(nombre string) int {
 	return 0
 }
 
-// lineaDeModelo compone la fila del modelo. Los que no declaran capacidad de
-// herramientas se marcan para que se sepa antes de elegirlos (SPEC-OLLAMA-PERFIL:
-// el usuario cambia de modelo si el suyo no sirve).
+// lineaDeModelo compone la fila del modelo. Los que no declaran una capacidad
+// se marcan para que se sepa antes de elegirlos (SPEC-OLLAMA-PERFIL: el usuario
+// cambia de modelo si el suyo no sirve).
 func lineaDeModelo(m ModeloLocal) string {
+	marcas := ""
 	if m.SinHerramientas {
-		return m.Nombre + "  (sin herramientas)"
+		marcas += "  (sin herramientas)"
 	}
-	return m.Nombre
+	if m.SinVision {
+		marcas += "  (sin visión)"
+	}
+	return m.Nombre + marcas
 }
 
 // ModeloElegidoLocal devuelve el modelo resaltado con todos sus datos (nombre

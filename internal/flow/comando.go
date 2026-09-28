@@ -14,8 +14,7 @@ package flow
 
 import (
 	"strings"
-
-	"localcli/internal/task"
+	"sync"
 )
 
 // Comando es un comando explícito que arranca un flujo. `Consumir` distingue
@@ -27,44 +26,51 @@ type Comando struct {
 	Consumir bool
 }
 
-// ComandoDe reconoce un comando explícito al inicio de la línea. Devuelve el
-// comando y true solo para los seis nombres de la spec; cualquier otro texto
+// catalogoPorDefecto es el catálogo de los flujos oficiales, armado una vez.
+// El arranque usa el catálogo cargado del proyecto (con los flujos propios de
+// `ai/flows/`); esta función cubre a quien solo necesita los oficiales.
+var catalogoPorDefecto = sync.OnceValue(CatalogoPorDefecto)
+
+// ComandoDe reconoce un comando explícito contra los flujos oficiales. Devuelve
+// el comando y true solo para los seis nombres de la spec; cualquier otro texto
 // (incluido otro `/…`) es chat.
 func ComandoDe(texto string) (Comando, bool) {
-	campos := strings.Fields(strings.TrimSpace(texto))
-	if len(campos) == 0 {
-		return Comando{}, false
+	return catalogoPorDefecto().De(texto)
+}
+
+// Objetivo devuelve la petición que acompaña al comando. Sin texto, usa la
+// `peticion` declarada por el flujo o, en su defecto, el nombre del comando:
+// nunca se entrega un objetivo vacío.
+func (c Comando) Objetivo(texto string) string {
+	if resto := quitarComando(texto); resto != "" {
+		return resto
 	}
-	switch campos[0] {
-	case "/planificar":
-		return Comando{Nombre: campos[0], Flujo: FlujoPlanificacion()}, true
-	case "/crear":
-		return Comando{Nombre: campos[0], Flujo: FlujoTrabajo(task.AccionCrear)}, true
-	case "/actualizar":
-		return Comando{Nombre: campos[0], Flujo: FlujoTrabajo(task.AccionActualizar)}, true
-	case "/eliminar":
-		return Comando{Nombre: campos[0], Flujo: FlujoTrabajo(task.AccionEliminar)}, true
-	case "/resolver":
-		return Comando{Nombre: campos[0], Flujo: FlujoResolver()}, true
-	case "/ejecutar":
-		return Comando{Nombre: campos[0], Consumir: true}, true
+	if c.Flujo.Peticion != "" {
+		return c.Flujo.Peticion
 	}
-	return Comando{}, false
+	return c.Nombre
 }
 
 // ObjetivoDe quita el comando y devuelve el resto de la línea, que es el
 // objetivo que recibe el flujo. Sin resto —por ejemplo `/planificar` a secas—
-// el objetivo es el nombre del comando: nunca se entrega un objetivo vacío.
+// el objetivo es el nombre del comando.
 func ObjetivoDe(texto string) string {
 	t := strings.TrimSpace(texto)
-	i := strings.IndexAny(t, " \t\n")
-	if i < 0 {
-		return t
-	}
-	if resto := strings.TrimSpace(t[i+1:]); resto != "" {
+	if resto := quitarComando(t); resto != "" {
 		return resto
 	}
 	return t
+}
+
+// quitarComando devuelve el texto que sigue al primer campo (el comando), sin
+// espacios. Vacío si la línea es solo el comando.
+func quitarComando(texto string) string {
+	t := strings.TrimSpace(texto)
+	i := strings.IndexAny(t, " \t\n")
+	if i < 0 {
+		return ""
+	}
+	return strings.TrimSpace(t[i+1:])
 }
 
 // SugerenciaTrabajo propone ejecutar un flujo cuando la petición parece trabajo

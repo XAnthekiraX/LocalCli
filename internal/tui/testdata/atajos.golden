@@ -19,7 +19,7 @@
                   ctrl+a           abrir o cerrar el panel de aprobaciones                          
                   (deshabilitada)  pausar la cola en curso                                          
                   ctrl+f           cancelar el trabajo en curso (pide confirmación)                 
-                  tab              cambiar de agente (plan ↔ build)                                 
+                  tab              cambiar de agente                                                
                                                                                                     
                   Modales                                                                           
                   ctrl+d           eliminar la sesión resaltada                                     

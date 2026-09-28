@@ -42,11 +42,11 @@ const (
 	EventoFlujoCancelado     = "flujo_cancelado"
 )
 
-// Agentes que puede cyclical la acción `agent_cycle` (SPEC-KEYBINDS §Acción
-// `agent_cycle`: "plan ↔ build"). Son los dos valores de `tools`, pero la vista
-// no puede importarlos: `tui` no conoce `tools` (tests/arquitectura_test.go
-// §TestLimitesDeImporteEntreModulos). El puerto los viaja como texto y es el
-// adaptador quien los reconoce.
+// Agentes base que conoce la vista de fábrica. El puerto ofrece la lista real
+// de agentes disponibles (`Agentes`, cargada de `ai/agents/*.json`); si no
+// ofrece ninguna, la vista cae en estos dos. La vista no puede importar `tools`
+// (tests/arquitectura_test.go §TestLimitesDeImporteEntreModulos), así que los
+// recibe como texto.
 const (
 	AgentePlan  = "plan"
 	AgenteBuild = "build"
@@ -62,6 +62,16 @@ type ModeloLocal struct {
 	// herramientas. El valor cero es «sí puede»: un fallo de detección no debe
 	// alarmar. La vista solo lo pinta y avisa; no decide nada (DOMAIN §4).
 	SinHerramientas bool
+	// SinVision marca los modelos que Ollama no declara capaces de interpretar
+	// imágenes. Mismo criterio: el valor cero es «sí puede» y un fallo no alarma.
+	SinVision bool
+}
+
+// Capacidades es lo que la vista conoce del modelo en uso para su línea de
+// estado. Los dos campos son «sí puede»: la vista solo los pinta y avisa.
+type Capacidades struct {
+	Herramientas bool
+	Vision       bool
 }
 
 // Puerto es lo que la vista necesita de `session`. Todo lo que no esté aquí, la
@@ -82,15 +92,27 @@ type Puerto interface {
 	// modelo de la bienvenida (SPEC-INTERFAZ §Línea de modelo), y lo lee la
 	// pantalla una vez al construirse, sin llamar a Ollama.
 	ModeloActual() string
-	// CapacidadesModelo dice si el modelo indicado declara capacidad de usar
-	// herramientas, para la línea de estado bajo el input (SPEC-OLLAMA-PERFIL).
-	// La vista no importa `ollama`: el booleano llega ya resuelto.
-	CapacidadesModelo(nombre string) (bool, error)
+	// CapacidadesModelo dice qué declara capaz de hacer el modelo indicado, para
+	// la línea de estado bajo el input (SPEC-OLLAMA-PERFIL). La vista no importa
+	// `ollama`: los booleanos llegan ya resueltos.
+	CapacidadesModelo(nombre string) (Capacidades, error)
 	// AgenteRecordado devuelve el último agente con el que se trabajó, para que
 	// la vista arranque en él (SPEC-OLLAMA-PERFIL: la preferencia se recuerda).
 	// Vacío significa «sin preferencia»: la vista cae en `plan`. Lo lee el motor,
 	// que es quien conoce el archivo de preferencias del usuario.
 	AgenteRecordado() string
+	// Agentes devuelve los nombres de los agentes disponibles, en orden estable
+	// (los base primero y el resto alfabético). Los carga el arranque de
+	// `ai/agents/*.json`: el usuario añade un agente dejando su JSON ahí, sin
+	// tocar el código. La vista cicla por esta lista con `Tab`.
+	Agentes() []string
+	// Comandos devuelve los comandos de flujo disponibles en el proyecto: los
+	// oficiales más los que declara `ai/flows/*.json`
+	// ([[specs/SPEC-FLUJO-PERSONALIZADO]]). La vista los lista en la paleta y
+	// reconoce los que se escriben; no decide cuáles existen. Es un dato en
+	// memoria —el catálogo cargado al arrancar—, así que la bienvenida lo puede
+	// leer sin esperar a nada externo.
+	Comandos() []ComandoFlujo
 	// FijarModelo elige el modelo con el que trabajará el motor a partir de
 	// ahora; lo elegido por el usuario prevalece sobre la autodetección del
 	// arranque (SPEC-OLLAMA-PERFIL: el modelo lo elige el usuario). Se llama al
@@ -114,8 +136,9 @@ type Puerto interface {
 	// que el usuario tiene elegido en el indicador, no el que la vista adivine.
 	// `agente` es `AgentePlan` o `AgenteBuild`; la vista nunca envía otro
 	// (SPEC-INTERFAZ §Zonas 2, "Indicador de agente": el agente activo es el que
-	// manda).
-	Enviar(ctx context.Context, sesionID, agente, texto string) error
+	// manda). `imagenes` son las imágenes (base64) detectadas en el texto del
+	// turno; viajan efímeras con este mensaje y no forman parte del historial.
+	Enviar(ctx context.Context, sesionID, agente, texto string, imagenes []string) error
 	// Pendientes devuelve lo que espera decisión, de cualquier sesión.
 	Pendientes() ([]Aprobacion, error)
 	// Resolver aplica la decisión sobre una aprobación.
@@ -148,12 +171,13 @@ type (
 		Modelos []ModeloLocal
 		Err     error
 	}
-	// capacidadesMsg trae si el modelo en uso declara capacidad de herramientas,
-	// para la línea de estado bajo el input. Un fallo deja el dato como
-	// desconocido («?»): no bloquea nada.
+	// capacidadesMsg trae qué declara capaz de hacer el modelo en uso, para la
+	// línea de estado bajo el input. Un fallo deja el dato como desconocido
+	// («?»): no bloquea nada.
 	capacidadesMsg struct {
 		Nombre       string
 		Herramientas bool
+		Vision       bool
 		Err          error
 	}
 	aprobacionesMsg struct{ Items []Aprobacion }

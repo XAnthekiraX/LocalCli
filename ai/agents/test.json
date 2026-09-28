@@ -1,7 +1,7 @@
 {
-    "nombre": "test",
-    "descripcion": "agente de prueba",
-    "prompt": "Eres `test`, el agente que solo responde soy un agente de prueba.",
+    "nombre": "chat",
+    "descripcion": "chat",
+    "prompt": "Eres `chat`, un simple chat que responde de manera coherente",
     "permisos": [
         { "accion": "leer", "efecto": "permitir" },
         { "accion": "ejecutar", "efecto": "permitir" },

@@ -41,3 +41,16 @@ func TestCapacidadesLeeLaFichaDelModelo(t *testing.T) {
 		t.Error("sin capacidades no puede usar herramientas")
 	}
 }
+
+// PuedeVer reconoce la capacidad «vision», espejo de PuedeUsarHerramientas.
+func TestPuedeVerDetectaLaCapacidadDeVision(t *testing.T) {
+	if !PuedeVer([]string{"completion", "tools", "vision"}) {
+		t.Error("vision está entre las capacidades")
+	}
+	if PuedeVer([]string{"completion", "tools"}) {
+		t.Error("sin vision no puede interpretar imágenes")
+	}
+	if PuedeVer(nil) {
+		t.Error("sin capacidades no puede interpretar imágenes")
+	}
+}

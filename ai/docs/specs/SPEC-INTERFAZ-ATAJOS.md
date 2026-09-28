@@ -71,7 +71,7 @@ El panel de aprobaciones **no es** el panel de datos. El de datos es de lectura 
 - [ ] Se listan los atajos disponibles y la acción de cada uno, incluidas las secuencias con líder (el propio modal de atajos se abre con `Ctrl+P`).
 - [ ] `Ctrl+X m` abre el modal de modelos y `Ctrl+X l` el modal de sesiones desde cualquier vista; `Enter` en el modal de sesiones abre la sesión elegida.
 - [ ] `Esc` cierra cualquier modal abierto sin cambiar nada.
-- [ ] `Tab` cambia entre los agentes disponibles (`plan` ↔ `build`) y el indicador junto al input se actualiza.
+- [ ] `Tab` recorre los agentes disponibles (los base `plan` y `build` y los propios de `ai/agents/*.json`) y el indicador junto al input se actualiza.
 - [ ] Se puede cambiar un atajo y el cambio queda guardado.
 - [ ] El panel muestra las aprobaciones pendientes de todas las sesiones.
 - [ ] Cada aprobación se resuelve de forma independiente.

@@ -15,70 +15,121 @@ Prioridad: P1 (importante)
 
 ## Propósito
 
-Resolver un problema detectado durante el desarrollo, sin que eso se confunda con un cambio de funcionalidad.
+Investigar un problema detectado durante el desarrollo, diagnosticar su causa y entregar un **plan de solución**, sin confundirlo con un cambio de funcionalidad y **sin implementar nada**.
 
 ## Alcance
 
-Incluye analizar la causa, proponer una solución, ejecutarla y verificar que quedó resuelta.
-Es un ciclo aparte: no amplía el alcance del proyecto ni crea tareas por su cuenta. Eso lo hace [[specs/SPEC-CICLO-TRABAJO]].
+Incluye recibir la tarea, entender el problema, buscar contexto, investigar, diagnosticar, identificar los archivos afectados, diseñar la solución, armar el plan de ejecución y **entregar el PLAN**.
+No implementa: no aplica cambios ni crea tareas; entregar el PLAN es el final del ciclo. Es un ciclo aparte: no amplía el alcance del proyecto. Eso lo hace [[specs/SPEC-CICLO-TRABAJO]].
+Su flujo se declara en `ai/flows/resolver.json`; el motor lo carga al arrancar y, si el archivo no está, usa su definición oficial de respaldo.
 
 ## Actores
 
-- **Usuario**: reporta el problema y aprueba la solución.
-- **Agente `plan`**: investiga, propone la solución y pide aprobación. No escribe.
-- **Agente `build`**: aplica la solución aprobada y verifica.
-- **Sistema**: aporta el contexto y ejecuta la verificación.
+- **Usuario**: reporta el problema y recibe el PLAN.
+- **Agente `plan`**: investiga, diagnostica y propone el plan. No escribe ni implementa.
+- **Sistema**: aporta el contexto y ejecuta las pruebas que el agente pida.
 
 ## Qué lo distingue de un cambio de funcionalidad
 
 - Un cambio de funcionalidad amplía lo que el proyecto puede hacer. Va por el ciclo de trabajo.
-- Un problema es algo que ya debía funcionar y no funciona. Se arregla en su lugar.
-- **Si al arreglar un problema se descubre que hace falta una funcionalidad nueva, el problema se resuelve primero y la funcionalidad se pide aparte por el ciclo de trabajo.**
+- Un problema es algo que ya debía funcionar y no funciona. El resolver lo diagnostica y propone cómo arreglarlo; no lo arregla.
+- **Si al diagnosticar se descubre que hace falta una funcionalidad nueva, se dice en el PLAN y la funcionalidad se pide aparte por el ciclo de trabajo.**
 
 ## Flujo principal
 
-1. El usuario describe el problema, o pega el error.
-2. `build` captura evidencia: logs, mensajes de error, fallos de verificación.
-3. Localiza el código relacionado.
-4. Identifica la causa raíz. No propone soluciones sin evidencia.
-5. Presenta la propuesta: qué archivos cambian y cómo.
-6. Espera aprobación.
-7. Cambias a `build`, que aplica la solución.
-8. Verifica que el problema quedó resuelto ejecutando la comprobación que aplique.
+El flujo se declara en `ai/flows/resolver.json` (ver [[specs/SPEC-FLUJO-PERSONALIZADO]]); esta es su forma oficial. Es un recorrido de nueve pasos, todos con `plan`:
+
+1. **Recibir la tarea.**
+2. **Entender el problema.** Qué se pidió y qué comportamiento se espera.
+3. **Buscar contexto.** Documentación, estructura del código, archivos relacionados, tests y configuración. Solo lo necesario.
+4. **Investigar el problema.** Seguir el flujo real, encontrar dónde ocurre, verificar hipótesis y ejecutar pruebas si hace falta.
+5. **Diagnosticar.** La causa, el comportamiento actual y el comportamiento esperado.
+6. **Identificar los archivos afectados**, en tres grupos: MODIFICAR, CONSULTAR y NO TOCAR, cada uno con su motivo.
+7. **Diseñar la solución.** Qué cambiar, dónde cambiarlo y cómo se relacionan los cambios.
+8. **Crear el plan de ejecución.** Pasos concretos, en orden, con su validación.
+9. **Entregar el PLAN. No se implementa.**
+
+### La regla central
+
+Antes de terminar, el resolver debe poder responder estas seis preguntas:
+
+1. ¿Qué está pasando?
+2. ¿Qué debería pasar?
+3. ¿Dónde está el problema?
+4. ¿Por qué está ocurriendo?
+5. ¿Qué archivos están involucrados?
+6. ¿Qué hay que hacer para solucionarlo?
+
+### Salida estándar
+
+Toda resolución cierra con esta estructura, para que sea reutilizable:
+
+```
+## Diagnóstico
+
+[Qué ocurre y cuál es la causa.]
+
+## Archivos involucrados
+
+### Modificar
+- `archivo` — motivo
+
+### Consultar
+- `archivo` — relación con el problema
+
+### No modificar
+- `archivo` — por qué no es necesario
+
+## Solución
+
+[Descripción concreta de la solución.]
+
+## Plan
+
+1. [Cambio]
+2. [Cambio]
+3. [Validación]
+
+## Resultado esperado
+
+[Cómo debe comportarse después del cambio.]
+```
+
+Las reglas del flujo —entre ellas, cómo descubrir la documentación y cerrar con la salida estándar— viajan con el contexto de cada etapa.
 
 ## Flujos alternativos
 
 - El error no viene del código: se explica y se propone la corrección fuera del proyecto.
 - El problema es ambiguo: se pregunta antes de proponer.
 - La causa no se encuentra: se informa qué se descartó y qué falta, sin inventar un arreglo.
-- La solución cambia el comportamiento del sistema: se avisa y pasa por el ciclo de trabajo antes de aplicarse.
-- El arreglo toca documentación: se actualiza después de aprobar, como cualquier otro cambio.
+- El diagnóstico descubre que hace falta una funcionalidad nueva: se dice en el PLAN; la funcionalidad se pide aparte por el ciclo de trabajo.
+- El PLAN cambia el comportamiento del sistema: se avisa en el plan; aplicarlo es cosa del ciclo de trabajo, no del resolver.
 
 ## Reglas de negocio
 
-- Nunca se propone una solución sin evidencia que la respalde.
-- La propuesta se muestra antes de aplicarse, siempre.
-- La solución la aplica `build` después del relevo, no `plan`.
-- Después de aplicar, se verifica que el problema quedó resuelto ejecutando pruebas, linter, tipos o build. Sin verificación, la tarea no se cierra.
-- Un arreglo nunca amplía el alcance del proyecto por su cuenta.
-- Un arreglo nunca se aplica sin pasar por las reglas de permiso.
-- No se ejecutan cambios destructivos sin confirmación explícita.
-- El arreglo queda registrado como parte del historial de la tarea afectada.
+- El resolver **no implementa**: su salida es un PLAN.
+- Nunca se afirma nada sin evidencia que lo respalde: se cita el archivo y la línea.
+- Antes de terminar, se responden las seis preguntas.
+- El PLAN cierra con la salida estándar (Diagnóstico; Archivos involucrados; Solución; Plan; Resultado esperado).
+- Los archivos se clasifican en MODIFICAR, CONSULTAR y NO TOCAR, cada uno con su motivo.
+- Un diagnóstico nunca amplía el alcance del proyecto por su cuenta.
+- No se ejecutan cambios destructivos; el resolver no escribe.
+- El PLAN queda registrado como parte del historial de la tarea afectada.
 
 ## Criterios de aceptación
 
 - [ ] El problema se investiga con evidencia, no con suposiciones.
-- [ ] La propuesta indica qué archivos cambian y cómo, antes de aplicarse.
-- [ ] `plan` propone y `build` aplica, con el relevo de por medio.
-- [ ] Nada se aplica sin aprobación.
-- [ ] Tras aplicar, se ejecuta una verificación y se informa su resultado.
+- [ ] El PLAN indica qué archivos se modificarían, cuáles se consultan y cuáles no se tocan, con su motivo.
+- [ ] Antes de terminar quedan respondidas las seis preguntas.
+- [ ] La salida cierra con la estructura estándar.
+- [ ] El resolver no escribe ni implementa nada: entrega un PLAN.
 - [ ] Si la causa no se encuentra, se informa en vez de inventar un arreglo.
-- [ ] Si el arreglo requiere una funcionalidad nueva, se deriva al ciclo de trabajo.
-- [ ] Si el arreglo cambia el comportamiento del sistema, se avisa antes de aplicarlo.
+- [ ] Si el arreglo requiere una funcionalidad nueva, se dice en el PLAN para el ciclo de trabajo.
+- [ ] Si el arreglo cambia el comportamiento del sistema, se avisa en el PLAN.
 
 ## Requisitos no funcionales
 
-- La verificación ocurre siempre, también cuando el arreglo parece obvio.
+- El diagnóstico se apoya en evidencia, también cuando el problema parece obvio.
 
 ## Dependencias funcionales
 
@@ -90,7 +141,7 @@ Es un ciclo aparte: no amplía el alcance del proyecto ni crea tareas por su cue
 
 ## Supuestos
 
-- Qué comprobaciones concretas se ejecutan para verificar (pruebas, linter, tipos, build) se fija en FASE 2 y FASE 3.
+- El formato del PLAN es la salida estándar de arriba; los detalles de redacción se ajustan en uso.
 
 ## Referencias
 

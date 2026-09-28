@@ -33,6 +33,9 @@ type Bienvenida struct {
 	// Pos es la posición del cursor en runas dentro de Texto (0..len). Permite
 	// editar en cualquier punto, igual que la línea de la vista principal.
 	Pos int
+	// adjuntos recuerda las imágenes pegadas o arrastradas: se muestran como
+	// [nombre.ext] y se expanden a su ruta al enviar.
+	adjuntos adjuntos
 }
 
 // NuevaBienvenida deja la pantalla lista con la entrada enfocada: es la única
@@ -99,7 +102,22 @@ func (b *Bienvenida) Inicio()    { b.Pos = 0 }
 func (b *Bienvenida) Fin()       { b.Pos = len([]rune(b.Texto)) }
 
 // Limpiar vacía la línea y devuelve el cursor al principio.
-func (b *Bienvenida) Limpiar() { b.Texto = ""; b.Pos = 0 }
+func (b *Bienvenida) Limpiar() {
+	b.Texto = ""
+	b.Pos = 0
+	b.adjuntos.Olvidar()
+}
+
+// AnotarPegado convierte en tokens las rutas de imagen de un texto pegado o
+// arrastrado y devuelve lo que hay que escribir en la línea.
+func (b *Bienvenida) AnotarPegado(texto string) string { return b.adjuntos.Anotar(texto) }
+
+// TextoExpandido devuelve lo escrito con los tokens de imagen expandidos a su
+// ruta real: es el texto que se envía y con el que trabaja el resto del harness.
+func (b *Bienvenida) TextoExpandido() string { return b.adjuntos.Expandir(b.Texto) }
+
+// Resaltar pinta los tokens de imagen de un texto ya renderizado.
+func (b *Bienvenida) Resaltar(texto string) string { return b.adjuntos.Resaltar(texto) }
 
 // teclaBienvenida resuelve una pulsación de la bienvenida. T-F012-06: también
 // pasa por el KeyResolver. Las acciones propias de la interfaz principal
@@ -159,6 +177,7 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if c, ok := a.Paleta.Seleccionado(); ok {
 				a.Bienvenida.Texto = c.Nombre + " "
 				a.Bienvenida.Pos = len([]rune(a.Bienvenida.Texto))
+				a.Bienvenida.adjuntos.Olvidar()
 				a.Paleta.Filtrar(a.Bienvenida.Texto)
 			}
 			return a, nil
@@ -223,7 +242,11 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch m.Type {
 	case tea.KeyRunes:
-		a.Bienvenida.Escribir(string(m.Runes))
+		texto := string(m.Runes)
+		if m.Paste {
+			texto = a.Bienvenida.AnotarPegado(texto)
+		}
+		a.Bienvenida.Escribir(texto)
 	case tea.KeySpace:
 		a.Bienvenida.Escribir(" ")
 	case tea.KeyBackspace:
@@ -253,7 +276,7 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 // SPEC-SESIONES: una sesión nueva se crea con la primera petición desde la
 // bienvenida).
 func (a *App) enviarDesdeBienvenida() tea.Cmd {
-	texto := strings.TrimSpace(a.Bienvenida.Texto)
+	texto := strings.TrimSpace(a.Bienvenida.TextoExpandido())
 	if texto == "" {
 		return nil
 	}
@@ -277,7 +300,8 @@ func (a *App) enviarDesdeBienvenida() tea.Cmd {
 	a.fijarModeloEnPuerto()
 	a.Chat.AñadirUsuario(texto)
 	a.Vista = VistaPrincipal
-	return a.enviarCmd(a.Panel.SesionID, texto)
+	imagenes := a.prepararAdjuntos(texto)
+	return a.enviarCmd(a.Panel.SesionID, texto, imagenes)
 }
 
 // fijarModeloEnPuerto entrega al motor el modelo en uso. Lo elige el usuario
@@ -326,9 +350,9 @@ func (a *App) viewBienvenida() string {
 		pos = len(r)
 	}
 	if a.Bienvenida.Foco {
-		b.WriteString(string(r[:pos]) + "▌" + string(r[pos:]))
+		b.WriteString(a.Bienvenida.Resaltar(string(r[:pos])) + "▌" + a.Bienvenida.Resaltar(string(r[pos:])))
 	} else {
-		b.WriteString(a.Bienvenida.Texto)
+		b.WriteString(a.Bienvenida.Resaltar(a.Bienvenida.Texto))
 	}
 	// El aviso transitorio (p. ej. el modelo sin herramientas) también se ve
 	// aquí: la bienvenida es donde primero se elige modelo.

@@ -71,7 +71,7 @@ func TestElBucleRespondeSinHerramientasEnUnaPasada(t *testing.T) {
 	}}}
 	sink := &sinkGrabador{}
 	e := &Ejecutor{Runner: g}
-	res, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, sink)
+	res, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, sink)
 	if err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestElBucleAnteponeElHistorialAlContexto(t *testing.T) {
 		{Role: "user", Content: "hola"},
 		{Role: "assistant", Content: "qué tal"},
 	}
-	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", historial, nil); err != nil {
+	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", historial, nil, nil); err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
 	if len(g.ultimos) != len(historial)+1 {
@@ -106,6 +106,28 @@ func TestElBucleAnteponeElHistorialAlContexto(t *testing.T) {
 	}
 	if ult := g.ultimos[len(g.ultimos)-1]; ult.Role != "user" || ult.Content != "ctx" {
 		t.Errorf("el contexto del turno debe ir al final como usuario: %+v", ult)
+	}
+}
+
+// Las imágenes del turno viajan solo en el mensaje de usuario del turno actual:
+// el historial no las lleva (en la v1 no se persisten).
+func TestElTurnoLlevaImagenesAlModelo(t *testing.T) {
+	g := &generadorGuion{pasadas: [][]ollama.Evento{{{Tipo: ollama.EventoToken, Texto: "ok"}}}}
+	e := &Ejecutor{Runner: g}
+	historial := []ollama.Mensaje{{Role: "user", Content: "hola"}}
+	imgs := []string{"aG9sYQ=="}
+	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", historial, imgs, nil); err != nil {
+		t.Fatalf("Ejecutar: %v", err)
+	}
+	if len(g.ultimos) != 2 {
+		t.Fatalf("mensajes = %d, quiero 2", len(g.ultimos))
+	}
+	if len(g.ultimos[0].Images) != 0 {
+		t.Errorf("el historial no debe llevar imágenes: %+v", g.ultimos[0])
+	}
+	ult := g.ultimos[len(g.ultimos)-1]
+	if len(ult.Images) != 1 || ult.Images[0] != imgs[0] {
+		t.Errorf("el turno actual debe llevar las imágenes: %+v", ult)
 	}
 }
 
@@ -122,7 +144,7 @@ func TestElBucleEjecutaHerramientaYVuelveAlModelo(t *testing.T) {
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
 	ag := Agente{Nombre: "plan", Herramientas: tools.HerramientasDePlan()}
 
-	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil)
+	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
@@ -149,7 +171,7 @@ func TestElBucleUnRechazoNoCortaElTurno(t *testing.T) {
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
 	ag := Agente{Nombre: "plan", Herramientas: tools.HerramientasDePlan()}
 
-	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil)
+	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("un rechazo no debe cortar el turno: %v", err)
 	}
@@ -170,7 +192,7 @@ func TestElBucleSeDetieneEnElTopeDePasadas(t *testing.T) {
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 2}
 	ag := Agente{Nombre: "plan", Herramientas: tools.HerramientasDePlan()}
 
-	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil); err != nil {
+	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, nil); err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
 	if g.llamadas != 2 {
@@ -183,7 +205,7 @@ func TestElBuclePropagaElErrorDelModelo(t *testing.T) {
 	fallo := errors.New("modelo caído")
 	g := &generadorGuion{pasadas: [][]ollama.Evento{{{Tipo: ollama.EventoError, Error: fallo}}}}
 	e := &Ejecutor{Runner: g}
-	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil); !errors.Is(err, fallo) {
+	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, nil); !errors.Is(err, fallo) {
 		t.Fatalf("err = %v, quiero %v", err, fallo)
 	}
 }

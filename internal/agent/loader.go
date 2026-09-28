@@ -17,6 +17,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"localcli/internal/tools"
 )
 
 // Cargar lee y valida un agente desde una ruta concreta.
@@ -73,4 +75,27 @@ func PorNombre(agentes []Agente, nombre string) (Agente, bool) {
 		}
 	}
 	return Agente{}, false
+}
+
+// OrdenarNombres devuelve los nombres de un catálogo de agentes en un orden
+// estable para presentarlos: `plan` y `build` primero —son los agentes base y
+// los que arrancan los flujos por defecto— y el resto alfabético. Un catálogo
+// vacío devuelve una lista vacía.
+func OrdenarNombres(agentes map[string]Agente) []string {
+	primeros := []string{tools.AgentePlan, tools.AgenteBuild}
+	out := make([]string, 0, len(agentes))
+	for _, n := range primeros {
+		if _, ok := agentes[n]; ok {
+			out = append(out, n)
+		}
+	}
+	resto := make([]string, 0, len(agentes))
+	for n := range agentes {
+		if n == tools.AgentePlan || n == tools.AgenteBuild {
+			continue
+		}
+		resto = append(resto, n)
+	}
+	sort.Strings(resto)
+	return append(out, resto...)
 }

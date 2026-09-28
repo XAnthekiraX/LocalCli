@@ -14,8 +14,7 @@ package flow
 
 import (
 	"fmt"
-
-	"localcli/internal/tools"
+	"strings"
 )
 
 // Decision es lo que el motor decide al terminar una etapa.
@@ -47,21 +46,43 @@ func (d Decision) String() string {
 type Etapa struct {
 	ID         string
 	Nombre     string
-	Agente     string // tools.AgentePlan | tools.AgenteBuild
+	Agente     string // nombre del agente que la corre (p. ej. `plan` o `build`)
 	Aprobacion bool   // el efecto de la etapa pasa por aprobación
+	// Instruccion es lo que la etapa pide al agente. Se une a las Reglas del
+	// flujo y viaja con el contexto de la etapa: es cómo un flujo declara sus
+	// reglas (por ejemplo, cómo descubrir la documentación) sin tocar el código.
+	Instruccion string
 }
 
-// Flujo es una secuencia ordenada de etapas con nombre.
+// Flujo es una secuencia ordenada de etapas con nombre. Puede venir de los
+// flujos oficiales (los constructores de este paquete) o de un JSON del
+// proyecto (ver flujo.go y catalogo.go).
 type Flujo struct {
 	Nombre string
+	// Comando es el comando explícito que lo arranca, p. ej. "/resolver".
+	// Vacío en un flujo que no se arranca por comando.
+	Comando string
+	// Descripcion dice, en minúscula, para qué es el flujo.
+	Descripcion string
+	// Peticion es la petición por defecto del flujo: el objetivo que se usa
+	// cuando el comando se escribe sin texto detrás.
+	Peticion string
+	// Reglas son las reglas del flujo (no del agente): se anteponen al contexto
+	// de cada etapa. Aquí viven las reglas de descubrimiento de documentación.
+	Reglas []string
 	Etapas []Etapa
 }
 
 // Validar comprueba que el flujo es encadenable: nombre, al menos una etapa y
-// cada etapa con identificador y un agente del reparto plan/build.
+// cada etapa con identificador y un agente con nombre. Qué agentes existen lo
+// sabe el arranque (los carga de `ai/agents/*.json`); aquí solo se exige que la
+// etapa declare uno, y el ejecutor rechaza un nombre desconocido al correrla.
 func (f Flujo) Validar() error {
 	if f.Nombre == "" {
 		return fmt.Errorf("flow: el flujo no tiene nombre")
+	}
+	if f.Comando != "" && !strings.HasPrefix(f.Comando, "/") {
+		return fmt.Errorf("flow: el comando del flujo %s no empieza por / (%q)", f.Nombre, f.Comando)
 	}
 	if len(f.Etapas) == 0 {
 		return fmt.Errorf("flow: el flujo %s no tiene etapas", f.Nombre)
@@ -70,8 +91,8 @@ func (f Flujo) Validar() error {
 		if e.ID == "" {
 			return fmt.Errorf("flow: la etapa %d del flujo %s no tiene id", i, f.Nombre)
 		}
-		if e.Agente != tools.AgentePlan && e.Agente != tools.AgenteBuild {
-			return fmt.Errorf("flow: la etapa %s no tiene un agente válido (%q)", e.ID, e.Agente)
+		if strings.TrimSpace(e.Agente) == "" {
+			return fmt.Errorf("flow: la etapa %s no declara agente", e.ID)
 		}
 	}
 	return nil

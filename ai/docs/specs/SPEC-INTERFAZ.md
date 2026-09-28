@@ -112,7 +112,7 @@ El logotipo es fijo y esta es su definición, que sirve de salida dorada para la
 - Escribe hacia la sesión activa.
 - El texto se edita en cualquier punto: las flechas mueven el cursor, `home`/`end` van al principio y al final y `ctrl+b`/`ctrl+e` son sus equivalentes. Los atajos que coincidan con una acción (por ejemplo `ctrl+a`) siguen resolviéndose como acción y no editan.
 - Bajo la línea de entrada se muestra el modelo en uso y si tiene acceso a herramientas (`modelo: X · herramientas: sí/no/?`). La línea de entrada de la bienvenida se edita igual que esta.
-- **Indicador de agente a la izquierda del input**: justo al lado izquierdo de la línea de entrada se muestra el agente activo, `plan` o `build` (p. ej. `[plan] > █`). Cambia al instante con `Tab`, que alterna entre los agentes disponibles. El indicador es visible tanto en la interfaz principal como en la bienvenida.
+- **Indicador de agente a la izquierda del input**: justo al lado izquierdo de la línea de entrada se muestra el agente activo (p. ej. `[plan] > `). Cambia al instante con `Tab`, que recorre los agentes disponibles (los base `plan` y `build` más los que el usuario añada en `ai/agents/*.json`). El indicador es visible tanto en la interfaz principal como en la bienvenida.
 - El agente activo responde con el catálogo derivado de sus permisos: `plan` solo lee y propone; `build` escribe con aprobación. Quién responde lo decide el indicador, no el texto escrito.
 
 ### 3. Panel de datos
@@ -183,11 +183,14 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - Al abrir el modal de modelos, el resaltado arranca en el modelo en uso. Los modelos que no declaran capacidad de herramientas se marcan; elegirlos avisa sin bloquear y deja al usuario cambiar de modelo.
 - La rueda del ratón desplaza el historial. Arrastrar con el botón izquierdo selecciona texto y, al soltar, se copia al portapapeles; al capturar el ratón, la selección nativa de la terminal queda disponible con `Shift`. Con el panel de aprobaciones abierto, un clic sobre «aprobar» o «declinar» de una línea resuelve esa aprobación.
 - Con la sesión activa trabajando, el primer `esc` pide confirmación («presiona esc otra vez para cancelar razonamiento») y el segundo cancela el trabajo; cualquier otra tecla la descarta.
-- Bajo la entrada se muestra el modelo en uso y si tiene acceso a herramientas.
+- Bajo la entrada se muestra el modelo en uso y si tiene acceso a herramientas y a la visión (interpretar imágenes).
+- Si el texto de una petición de chat incluye la ruta de un archivo de imagen existente, la imagen se adjunta a ese turno hacia el modelo. Las imágenes son efímeras: no se guardan en el historial, así que un turno posterior que no las vuelva a mencionar no las ve.
+- Al pegar o arrastrar un archivo de imagen, la línea de entrada muestra `[nombre.ext]` resaltado en lugar de la ruta completa; al enviar se usa la ruta real, así que la imagen se adjunta igual y el mensaje conserva la referencia al archivo.
+- Adjuntar una imagen a un modelo que no declara visión avisa en el chat sin bloquear el envío; el usuario decide si cambia de modelo.
 - El marco de la vista nunca excede el alto de la terminal: el historial se recorta a lo disponible para que la entrada no quede fuera.
 - El modal de atajos agrupa las acciones por categorías y alinea la tecla con su descripción.
 - Hay exactamente tres modales (modelos, sesiones, atajos); solo uno puede estar abierto a la vez y `Esc` cierra cualquiera.
-- El agente activo (`plan` o `build`) se muestra siempre a la izquierda del input; `Tab` alterna entre los agentes disponibles, en bienvenida y en la vista principal. Con un modal abierto, `Tab` no cicla.
+- El agente activo se muestra siempre a la izquierda del input; `Tab` recorre los agentes disponibles, en bienvenida y en la vista principal. Con un modal abierto, `Tab` no cicla.
 - Cambiar de sesión no detiene lo que está corriendo.
 - El panel refleja los datos de la sesión activa, no de otra.
 - Con el modal de sesiones abierto, `Ctrl+D` elimina la sesión resaltada; si está trabajando, se confirma antes de borrarla.
@@ -224,6 +227,9 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] La rueda del ratón desplaza el historial y arrastrar con el ratón copia al portapapeles el texto seleccionado.
 - [ ] Con la sesión trabajando, `esc` pide confirmación y un segundo `esc` cancela; otra tecla la descarta.
 - [ ] Bajo la entrada se ve el modelo en uso y si tiene acceso a herramientas.
+- [ ] Bajo la entrada se ve también si el modelo interpreta imágenes (visión).
+- [ ] Escribir la ruta de una imagen existente en el mensaje la adjunta al turno; con un modelo que no declara visión avisa sin bloquear el envío.
+- [ ] Pegar o arrastrar una imagen muestra `[nombre.ext]` resaltado en la entrada y el mensaje enviado usa su ruta real.
 - [ ] La línea de entrada de la bienvenida se edita en cualquier punto (flechas, `home`/`end`).
 - [ ] El modal de atajos agrupa las acciones por categorías y alinea tecla y descripción.
 - [ ] `Esc` cierra cualquier modal sin cambiar nada; con ninguno abierto no hace nada visible.

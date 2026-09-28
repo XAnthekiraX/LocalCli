@@ -130,3 +130,41 @@ func TestElAgenteViajaConLaPrimeraPeticionDesdeLaBienvenida(t *testing.T) {
 		t.Fatalf("la primera petición sale con el agente activo: %v", p.agentes)
 	}
 }
+
+// --- T-F031: el ciclo recorre todos los agentes disponibles -----------------
+
+// Con un catálogo propio, Tab recorre todos los agentes, no solo plan y build.
+func TestTabRecorreTodosLosAgentesDisponibles(t *testing.T) {
+	p := &puertoStub{agentesDisponibles: []string{AgentePlan, AgenteBuild, "revisor"}}
+	a := Nuevo(p)
+	a.Vista = VistaPrincipal
+	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	if a.Agente != AgentePlan {
+		t.Fatalf("arranca en el primero de la lista: %q", a.Agente)
+	}
+	tecla(t, a, tea.KeyTab)
+	if a.Agente != AgenteBuild {
+		t.Errorf("Tab pasa al segundo: %q", a.Agente)
+	}
+	tecla(t, a, tea.KeyTab)
+	if a.Agente != "revisor" || a.Entrada.Agente != "revisor" {
+		t.Errorf("Tab llega al agente propio en la vista y el indicador: %q / %q", a.Agente, a.Entrada.Agente)
+	}
+	if v := sinEstilo(a.Entrada.View()); !strings.HasPrefix(v, "[revisor] > ") {
+		t.Errorf("el indicador pinta el agente propio: %q", v)
+	}
+	tecla(t, a, tea.KeyTab)
+	if a.Agente != AgentePlan {
+		t.Errorf("Tab vuelve al primero: %q", a.Agente)
+	}
+}
+
+// Un agente recordado que ya no está en la lista cae en el primero disponible.
+func TestElAgenteRecordadoSeValidaContraLaLista(t *testing.T) {
+	p := &puertoStub{agenteRecordado: AgenteBuild, agentesDisponibles: []string{AgentePlan, "revisor"}}
+	a := Nuevo(p)
+	if a.Agente != AgentePlan {
+		t.Errorf("un agente recordado que ya no existe cae en el primero: %q", a.Agente)
+	}
+}

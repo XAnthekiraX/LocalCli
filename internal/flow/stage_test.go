@@ -46,18 +46,23 @@ func TestEstadoTrasDecisionRechazaInvalida(t *testing.T) {
 	}
 }
 
-// TestFlujoValidar — un flujo sin etapas o con un agente fuera del reparto no
-// es encadenable.
+// TestFlujoValidar — un flujo sin etapas o con una etapa sin agente no es
+// encadenable; un agente propio (no plan/build) sí vale: el reparto lo carga el
+// arranque de `ai/agents/*.json`.
 func TestFlujoValidar(t *testing.T) {
 	if err := (Flujo{Nombre: "x"}).Validar(); err == nil {
 		t.Error("un flujo sin etapas no es válido")
 	}
-	malo := Flujo{Nombre: "x", Etapas: []Etapa{{ID: "a", Nombre: "A", Agente: "otro"}}}
+	malo := Flujo{Nombre: "x", Etapas: []Etapa{{ID: "a", Nombre: "A"}}}
 	if err := malo.Validar(); err == nil {
-		t.Error("un agente fuera de plan/build debe rechazarse")
+		t.Error("una etapa sin agente debe rechazarse")
 	}
 	bueno := Flujo{Nombre: "x", Etapas: []Etapa{{ID: "a", Nombre: "A", Agente: tools.AgentePlan}}}
 	if err := bueno.Validar(); err != nil {
 		t.Errorf("flujo válido rechazado: %v", err)
+	}
+	propio := Flujo{Nombre: "x", Etapas: []Etapa{{ID: "a", Nombre: "A", Agente: "revisor"}}}
+	if err := propio.Validar(); err != nil {
+		t.Errorf("un agente propio debe aceptarse: %v", err)
 	}
 }
