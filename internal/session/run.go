@@ -252,7 +252,33 @@ func (g *Gestor) ejecutarFlujo(ctx context.Context, sesionID, objetivo string, f
 		f = FlujoPorDefecto()
 	}
 	estadoFlujo, err := g.Motor.EjecutarFlujo(ctx, f, objetivo)
+	// Un flujo que termina bien ya dejó su entrega final en el historial: la
+	// última etapa es visible y el ejecutor la persistió. Cerrar el turno aquí
+	// solo fija el estado; no se añade un mensaje de relleno.
+	if err == nil && estadoFlujo == flow.EstadoTerminado {
+		return g.cerrarFlujoTerminado(sesionID)
+	}
 	return g.cerrarTurno(sesionID, estadoFlujo, err)
+}
+
+// cerrarFlujoTerminado fija el estado de una sesión cuyo flujo terminó bien. No
+// escribe mensaje —la entrega final ya está en el historial, la escribió la
+// última etapa del flujo— y avisa como un flujo («terminó el trabajo»), no como
+// un chat.
+func (g *Gestor) cerrarFlujoTerminado(sesionID string) error {
+	actual, oErr := g.Alcance.Almacen.Obtener(sesionID)
+	if oErr != nil {
+		return oErr
+	}
+	if store.ValidarTransicionSesion(actual.Status, EstadoTerminada) {
+		if cErr := g.Alcance.Almacen.CambiarEstado(sesionID, EstadoTerminada); cErr != nil {
+			return cErr
+		}
+		g.avisar(sesionID, EstadoTerminada, "")
+		return nil
+	}
+	g.avisar(sesionID, actual.Status, "")
+	return nil
 }
 
 // cerrarTurno guarda el desenlace del turno y avisa del estado resultante.

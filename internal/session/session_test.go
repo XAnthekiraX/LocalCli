@@ -578,12 +578,15 @@ func TestEnviarInvocaFlowUnaVez(t *testing.T) {
 	if err := g.Enviar(context.Background(), s.ID, ""); err == nil {
 		t.Error("un mensaje vacío no debe arrancar nada")
 	}
+	// Un flujo correcto cierra con el estado y sin mensaje de relleno: la
+	// entrega final la escribe la última etapa del flujo (aquí el motor doble no
+	// la persiste), así que el historial solo lleva lo que pidió el usuario.
 	h, err := alm.Historial(s.ID)
-	if err != nil || len(h) != 2 {
-		t.Fatalf("el historial debe tener el mensaje del usuario y el cierre del turno: %v (%d)", err, len(h))
+	if err != nil || len(h) != 1 {
+		t.Fatalf("un flujo correcto no añade un mensaje de cierre: %v (%d)", err, len(h))
 	}
-	if h[0].Role != "user" || h[1].Role != "agent" {
-		t.Errorf("roles inesperados: %s, %s", h[0].Role, h[1].Role)
+	if h[0].Role != "user" {
+		t.Errorf("rol inesperado: %s", h[0].Role)
 	}
 }
 

@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"localcli/internal/task"
+	"localcli/internal/tools"
 )
 
 // Nombres de los eventos que emite el motor (EVENTS.md §1). No se inventa
@@ -86,13 +87,27 @@ type Contexto interface {
 // capas comprueban que los dos literales coinciden.
 const EtapaChat = "chat"
 
+// PeticionEtapa es lo que el motor le pide a un agente para correr una etapa (o
+// el chat). Un solo contrato para los dos caminos: `Silenciosa` distingue una
+// etapa intermedia de un flujo —cuyo texto no se muestra ni se persiste, solo
+// alimenta la cadena— de la última etapa y del chat. `Etapa` es el nombre de la
+// etapa (vacío en el chat); la vista lo usa en su línea de progreso.
+type PeticionEtapa struct {
+	Agente     string
+	Contexto   string
+	Historial  []Mensaje
+	Imagenes   []string
+	Etapa      string
+	Silenciosa bool
+}
+
 // Agente ejecuta una etapa con el agente indicado (`plan` o `build`) sobre el
 // contexto que recibe, precedido del historial de conversación de la sesión
 // (vacío en una etapa de flujo; completo o compactado en el chat). Lo implementa
 // `agent` (T-B006). No ejecuta herramientas aquí: eso es cosa de `agent` →
 // `tools`.
 type Agente interface {
-	Ejecutar(ctx context.Context, agente, contexto string, historial []Mensaje, imagenes []string) (Resultado, error)
+	Ejecutar(ctx context.Context, p PeticionEtapa) (Resultado, error)
 }
 
 // Aprobador pide la decisión del usuario para una etapa que la requiere.
@@ -135,14 +150,21 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 		return EstadoConError, err
 	}
 
-	for _, etapa := range f.Etapas {
+	// `acumulado` guarda el resumen corto de cada etapa ya corrida. Vive en el
+	// motor (no en la base de datos) y se inyecta en el contexto de la etapa
+	// siguiente: es el encadenado de SPEC-MOTOR-FLUJOS ("el resultado pasa a la
+	// etapa siguiente"), sin arrastrar la salida completa.
+	var acumulado []string
+	for i, etapa := range f.Etapas {
 		if cerr := ctx.Err(); cerr != nil {
 			m.emitir(EventoFlujoCancelado, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 			return EstadoDetenido, nuevoError(CodigoFlujoCancelado,
 				"el flujo "+f.Nombre+" se canceló en la etapa "+etapa.ID)
 		}
 
-		m.emitir(EventoEtapaIniciada, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
+		m.emitir(EventoEtapaIniciada, map[string]string{
+			"flujo": f.Nombre, "etapa": etapa.ID, "nombre": etapa.Nombre,
+		})
 
 		contexto, cErr := m.Contexto.ContextoPara(ctx, etapa.ID, objetivo)
 		if cErr != nil {
@@ -150,7 +172,20 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 			return EstadoConError, fmt.Errorf("%w: %s: %v", ErrEtapaFallida, etapa.ID, cErr)
 		}
 		contexto = componerBrief(f.Reglas, etapa.Instruccion, contexto)
-		res, aErr := m.Agente.Ejecutar(ctx, etapa.Agente, contexto, nil, nil)
+		if len(acumulado) > 0 {
+			contexto += "\n\n## Resultados de los pasos anteriores\n" + strings.Join(acumulado, "\n\n")
+		}
+		// Una etapa intermedia que no pide aprobación corre en silencio: su texto
+		// no se muestra en el chat ni se guarda, solo alimenta la cadena. La
+		// última etapa y las que piden aprobación se muestran: la entrega final y
+		// lo que el usuario debe ver para poder aprobar.
+		silenciosa := i < len(f.Etapas)-1 && !etapa.Aprobacion
+		res, aErr := m.Agente.Ejecutar(ctx, PeticionEtapa{
+			Agente:     etapa.Agente,
+			Contexto:   contexto,
+			Etapa:      etapa.Nombre,
+			Silenciosa: silenciosa,
+		})
 		if aErr != nil {
 			m.emitir(EventoEtapaFallida, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 			return EstadoConError, fmt.Errorf("%w: %s: %v", ErrEtapaFallida, etapa.ID, aErr)
@@ -183,9 +218,11 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 			m.emitir(EventoFlujoReanudado, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 		}
 
+		acumulado = append(acumulado, bloqueResumen(etapa.Nombre, res.Texto))
 		m.emitir(EventoEtapaTerminada, map[string]string{
 			"flujo":   f.Nombre,
 			"etapa":   etapa.ID,
+			"nombre":  etapa.Nombre,
 			"resumen": res.Texto,
 		})
 	}
@@ -222,7 +259,12 @@ func (m *Motor) Conversar(ctx context.Context, agente, objetivo string, historia
 	if err != nil {
 		return Resultado{}, err
 	}
-	return m.Agente.Ejecutar(ctx, agente, contexto, historial, imagenes)
+	return m.Agente.Ejecutar(ctx, PeticionEtapa{
+		Agente:    agente,
+		Contexto:  contexto,
+		Historial: historial,
+		Imagenes:  imagenes,
+	})
 }
 
 // ElementoCola es un elemento del TODO listo para ejecutarse.
@@ -281,6 +323,22 @@ func (m *Motor) ConsumirCola(ctx context.Context, cola Cola, f Flujo) error {
 		}
 		enProgreso = ""
 	}
+}
+
+// limiteTokensResumenEtapa acota el resumen de una etapa antes de encadenarlo a
+// la siguiente. Es corto a propósito: cada etapa recibe solo lo que necesita, no
+// todo lo que produjo la anterior (SPEC-MOTOR-FLUJOS §Reglas de negocio).
+const limiteTokensResumenEtapa = 400
+
+// bloqueResumen compone el bloque que una etapa deja a la siguiente: su nombre y
+// su resultado, recortado al límite. Lo usan el encadenado y el evento
+// `etapa_terminada`.
+func bloqueResumen(nombre, texto string) string {
+	texto, _ = tools.Recortar(strings.TrimSpace(texto), limiteTokensResumenEtapa)
+	if texto == "" {
+		texto = "(sin resultado)"
+	}
+	return "### " + nombre + "\n" + texto
 }
 
 // componerBrief antepone las reglas del flujo y la instrucción de la etapa al

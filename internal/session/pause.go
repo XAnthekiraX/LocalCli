@@ -59,13 +59,13 @@ func (g *Gestor) ConsumirCola(ctx context.Context, sesionID string, cola flow.Co
 	t.cola = envuelta
 	g.lanzar(ctx, sesionID, t, func(c context.Context) error {
 		err := g.Motor.ConsumirCola(c, envuelta, g.flujoOFectivo())
-		var estadoFlujo flow.EstadoFlujo
 		if err == nil {
-			estadoFlujo = flow.EstadoTerminado
-		} else {
-			estadoFlujo = flow.EstadoConError
+			// La cola terminó: la entrega final del último elemento ya está en
+			// el historial —la escribió la última etapa visible de su flujo—,
+			// así que se cierra el turno solo con el estado.
+			return g.cerrarFlujoTerminado(sesionID)
 		}
-		return g.cerrarTurno(sesionID, estadoFlujo, err)
+		return g.cerrarTurno(sesionID, flow.EstadoConError, err)
 	})
 	return nil
 }

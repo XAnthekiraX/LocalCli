@@ -10,6 +10,7 @@
         "No afirmes nada sin evidencia: cita el archivo y la línea.",
         "El resolver NO implementa: investiga, diagnostica y entrega un plan de solución.",
         "Antes de terminar debes poder responder estas seis preguntas: qué está pasando, qué debería pasar, dónde está el problema, por qué ocurre, qué archivos están involucrados y qué hay que hacer para solucionarlo.",
+        "Cada paso devuelve solo lo suyo, en pocas líneas; el último compone la salida estándar con lo que devolvieron los pasos anteriores.",
         "Cierra siempre con la salida estándar: Diagnóstico; Archivos involucrados (Modificar, Consultar, No modificar); Solución; Plan; Resultado esperado."
     ],
     "etapas": [
@@ -74,7 +75,7 @@
             "nombre": "Entregar el PLAN",
             "agente": "plan",
             "aprobacion": false,
-            "instruccion": "Entrega el PLAN con la salida estándar. No implementes nada."
+            "instruccion": "Entrega el PLAN con la salida estándar, componiéndola con lo que devolvieron los pasos anteriores. No implementes nada."
         }
     ]
 }

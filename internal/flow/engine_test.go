@@ -24,24 +24,26 @@ func (s *stubContexto) ContextoPara(ctx context.Context, etapa, objetivo string)
 }
 
 type stubAgente struct {
-	traza     *[]string
-	fallar    bool
-	historial []Mensaje
-	contexto  string
-	imagenes  []string
+	traza      *[]string
+	fallar     bool
+	historial  []Mensaje
+	contexto   string
+	imagenes   []string
+	peticiones []PeticionEtapa
 }
 
-func (s *stubAgente) Ejecutar(ctx context.Context, agente, contexto string, historial []Mensaje, imagenes []string) (Resultado, error) {
-	s.historial = historial
-	s.contexto = contexto
-	s.imagenes = imagenes
+func (s *stubAgente) Ejecutar(ctx context.Context, p PeticionEtapa) (Resultado, error) {
+	s.historial = p.Historial
+	s.contexto = p.Contexto
+	s.imagenes = p.Imagenes
+	s.peticiones = append(s.peticiones, p)
 	if s.traza != nil {
-		*s.traza = append(*s.traza, "agente:"+agente)
+		*s.traza = append(*s.traza, "agente:"+p.Agente)
 	}
 	if s.fallar {
 		return Resultado{}, errors.New("boom")
 	}
-	if !strings.Contains(contexto, "contexto:") {
+	if !strings.Contains(p.Contexto, "contexto:") {
 		return Resultado{}, errors.New("la etapa no recibió contexto")
 	}
 	return Resultado{Texto: "ok"}, nil
@@ -178,6 +180,79 @@ func TestElBriefDelFlujoLlegaAlAgente(t *testing.T) {
 	}
 }
 
+// --- Encadenado de pasos y etapas silenciosas ------------------------------
+
+// TestCadaEtapaRecibeElResumenDeLaAnterior — el resultado de una etapa se pasa a
+// la siguiente como un bloque corto: es el encadenado de SPEC-MOTOR-FLUJOS ("el
+// resultado pasa a la etapa siguiente"), sin arrastrar la salida completa.
+func TestCadaEtapaRecibeElResumenDeLaAnterior(t *testing.T) {
+	ag := &stubAgente{}
+	m := &Motor{Contexto: &stubContexto{}, Agente: ag, Aprobador: &stubAprobador{aprobar: true}}
+	if _, err := m.EjecutarFlujo(context.Background(), FlujoResolver(), "objetivo"); err != nil {
+		t.Fatalf("EjecutarFlujo: %v", err)
+	}
+	if len(ag.peticiones) < 2 {
+		t.Fatalf("peticiones = %d, quiero al menos 2", len(ag.peticiones))
+	}
+	if strings.Contains(ag.peticiones[0].Contexto, "Resultados de los pasos anteriores") {
+		t.Errorf("la primera etapa no debe llevar pasos anteriores: %q", ag.peticiones[0].Contexto)
+	}
+	seg := ag.peticiones[1].Contexto
+	if !strings.Contains(seg, "Resultados de los pasos anteriores") {
+		t.Fatalf("la segunda etapa no recibió lo resuelto por la anterior: %q", seg)
+	}
+	if !strings.Contains(seg, "### Recibir la tarea") {
+		t.Errorf("el bloque acumulado no lleva el nombre de la etapa anterior: %q", seg)
+	}
+}
+
+// TestEtapasIntermediasSilenciosas — una etapa intermedia sin aprobación corre
+// en silencio (no se muestra en el chat ni se persiste); la última se muestra.
+func TestEtapasIntermediasSilenciosas(t *testing.T) {
+	ag := &stubAgente{}
+	m := &Motor{Contexto: &stubContexto{}, Agente: ag, Aprobador: &stubAprobador{aprobar: true}}
+	if _, err := m.EjecutarFlujo(context.Background(), FlujoResolver(), "objetivo"); err != nil {
+		t.Fatalf("EjecutarFlujo: %v", err)
+	}
+	ult := len(ag.peticiones) - 1
+	for i, p := range ag.peticiones {
+		if i == ult {
+			if p.Silenciosa {
+				t.Errorf("la última etapa no puede ser silenciosa")
+			}
+			continue
+		}
+		if !p.Silenciosa {
+			t.Errorf("la etapa intermedia %q debería ser silenciosa", p.Etapa)
+		}
+	}
+	if ag.peticiones[0].Etapa != "Recibir la tarea" {
+		t.Errorf("la etapa no lleva su nombre: %q", ag.peticiones[0].Etapa)
+	}
+}
+
+// TestEtapaConAprobacionNoEsSilenciosa — el usuario debe ver lo que aprueba: una
+// etapa intermedia con aprobación se muestra aunque no sea la última.
+func TestEtapaConAprobacionNoEsSilenciosa(t *testing.T) {
+	ag := &stubAgente{}
+	m := &Motor{Contexto: &stubContexto{}, Agente: ag, Aprobador: &stubAprobador{aprobar: true}}
+	if _, err := m.EjecutarFlujo(context.Background(), FlujoTrabajo(task.AccionCrear), "objetivo"); err != nil {
+		t.Fatalf("EjecutarFlujo: %v", err)
+	}
+	visto := false
+	for _, p := range ag.peticiones {
+		if p.Etapa == "Presentar el plan" { // etapa con Aprobacion: true
+			visto = true
+			if p.Silenciosa {
+				t.Errorf("una etapa con aprobación no debe ser silenciosa")
+			}
+		}
+	}
+	if !visto {
+		t.Fatal("no se corrió la etapa con aprobación")
+	}
+}
+
 // --- T-B010-07: eventos por decisión --------------------------------------
 
 // TestCadaEtapaPideContextoConSuEtapa — la etapa viaja con la petición: es lo
@@ -299,6 +374,15 @@ func TestEventosPorEtapa(t *testing.T) {
 		if e.Nombre == EventoEtapaTerminada {
 			if e.Datos["etapa"] == "" || e.Datos["resumen"] != "ok" {
 				t.Errorf("payload de etapa_terminada = %v", e.Datos)
+			}
+			break
+		}
+	}
+	// Payload: etapa_iniciada lleva el nombre para la línea de progreso.
+	for _, e := range emisor.eventos {
+		if e.Nombre == EventoEtapaIniciada {
+			if e.Datos["nombre"] == "" {
+				t.Errorf("etapa_iniciada no lleva nombre: %v", e.Datos)
 			}
 			break
 		}
