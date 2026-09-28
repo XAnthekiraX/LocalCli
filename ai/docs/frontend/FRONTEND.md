@@ -5,7 +5,6 @@ depende_de:
   - "[[PROJECT]]"
   - "[[backend/BACKEND]]"
   - "[[specs/SPEC-INTERFAZ]]"
-  - "[[specs/SPEC-INTERFAZ]]"
 relacionado:
   - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
   - "[[database/DATABASE]]"
@@ -34,20 +33,26 @@ Este documento es el mapa de navegación del frontend. El motor está en [[backe
 internal/tui/
   app.go        modelo raíz, enrutado de eventos y suscripciones
   welcome.go    pantalla de bienvenida: logotipo ASCII, línea de modelo y primera petición
-  modelsmodal.go modal de modelos (Ctrl+X m): lista de Ollama cargada bajo demanda
-  keyresolver.go KeyResolver: líder ctrl+x, timeout, contexto y acciones
-  testdata/     salidas doradas: logo.txt (logotipo canónico de la bienvenida)
-  chat.go       historial de la sesión activa: razonamiento y respuesta
+  chat.go       historial de la sesión activa: respuesta, líneas compactas de herramienta y razonamiento revelable
   input.go      entrada de texto con el indicador de agente a la izquierda ([plan]/[build])
+  comandos.go   paleta de comandos de flujo: catálogo del motor, filtro y render sobre el input
   panel.go      panel de datos plegable con sus nueve datos
-  sessionsmodal.go modal de sesiones (Ctrl+X l): al aplicar abre esa sesión
-  keysmodal.go  modal de atajos (Ctrl+P): listado de acción + tecla
+  reasoning.go  estado del razonamiento en vivo (texto revelado u oculto)
   approvals.go  panel de aprobaciones pendientes de todas las sesiones
   notify.go     línea de aviso de aprobaciones pendientes con el panel cerrado
-  keys.go       mapa de teclas reasignable
+  modelsmodal.go modal de modelos (Ctrl+X m): lista de Ollama cargada bajo demanda
+  sessionsmodal.go modal de sesiones (Ctrl+X l): al aplicar abre esa sesión
+  keysmodal.go  modal de atajos (Ctrl+P): listado de acción + tecla
+  keymap.go     mapa central de teclas: acciones, bindings múltiples y tecla líder
+  keyresolver.go KeyResolver: líder ctrl+x, timeout, contexto y acciones
+  keys.go       persistencia del mapa de teclas en ~/.config/localcli/keys.json
   config.go     preferencias del usuario: último modelo y último agente
+  adjuntos.go   tokens de archivo, carpeta o texto pegados o arrastrados ([nombre.ext], [CARPETA N elementos], [PEGADO N líneas]) y su expansión al valor real
   selection.go  selección con el ratón y copia al portapapeles
   styles.go     estilos Lip Gloss y render de bloques
+  wire.go       Puerto: la frontera de la tui con el motor (eventos y peticiones)
+  doc.go        documentación del paquete
+  testdata/     salidas doradas: logo.txt (logotipo canónico de la bienvenida) y *.golden
 ```
 
 ## 3. Contratos
@@ -66,6 +71,7 @@ internal/tui/
 | Mapa de teclas en `~/.config/localcli/keys.json` | El atajo es del usuario, no del proyecto; ubicación XDG estándar, editable a mano o desde la ayuda | Guardarlo dentro del proyecto, que mezclaría preferencia personal con contenido versionado |
 | Preferencias en `~/.config/localcli/config.json` | El último modelo y el último agente son preferencia del usuario, no estado del proyecto | Persistirlos en SQLite, que los ataría a un solo proyecto |
 | Ratón capturado en la TUI | Permite seleccionar y copiar texto con el ratón y desplazar con la rueda | No capturarlo, que deja a la app sin poder copiar al instante |
+| Paleta de comandos alimentada por el catálogo del motor | Un solo origen de verdad: los flujos oficiales y los propios de `ai/flows/*.json` se descubren sin mantener una segunda lista en la vista | Cablear los comandos en la TUI, que se desincronizaría de los flujos reales |
 
 ## Mapa de Navegación
 

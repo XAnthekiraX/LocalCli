@@ -8,11 +8,15 @@ depende_de:
 relacionado:
   - "[[specs/SPEC-SESIONES]]"
   - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+  - "[[specs/SPEC-TOOLS]]"
+  - "[[specs/SPEC-OLLAMA-PERFIL]]"
   - "[[database/03-operations/QUERIES]]"
 ---
 # INTERFACES — Entradas y salidas de la TUI
 
 La TUI no tiene red ni API: su frontera son dos entradas (teclado y eventos) y dos salidas (peticiones a `session` y lecturas a `store`).
+
+No importa `tools`. Recibe lo que llega por el bus, que es lo que la prohibición de módulos exige. Ver [[backend/04-infrastructure/EVENTS]].
 
 ## 1. Eventos que consume
 
@@ -21,16 +25,59 @@ De [[backend/04-infrastructure/EVENTS]] llega cada evento y así reacciona la pa
 | Evento | Qué hace la TUI |
 |---|---|
 | `token` | Añade el fragmento al bloque de razonamiento o a la respuesta, en vivo |
+| `herramienta_invocada` | Abre la línea de herramienta en el chat con su verbo y su tema (la ruta, el patrón o el comando) |
+| `herramienta_resultado` | Completa esa misma línea: la marca, la medida del resultado y si se recortó |
 | `estado_sesion` | Actualiza el estado en el selector y en el panel |
 | `titulo_sesion` | Renombra la sesión en el panel (si es la activa) y en su fila del modal de sesiones |
 | `notificacion` | Marca el aviso de esa sesión aunque no sea la activa |
 | `peticion_aprobacion` | Añade la línea al panel de aprobaciones y actualiza el contador |
 | `aprobacion_resuelta` | Retira o marca la línea y actualiza el contador |
-| `etapa_iniciada` / `terminada` / `fallida` | Actualiza el estado de la sesión y el historial del chat |
+| `etapa_iniciada` | Pinta en el chat la línea `[Sub Proceso] <nombre>` de la etapa que empieza |
+| `etapa_terminada` / `etapa_fallida` | Sin línea propia: la entrega final del flujo la escribe su último paso; `fallida` deja aviso |
 | `flujo_pausado` / `reanudado` / `cancelado` | Refleja el estado del flujo |
 | `cola_actualizada` / `elemento_bloqueado` | Actualiza la zona de capa y cola del panel |
+| `todo_actualizada` | Repinta la lista de pasos de la sesión activa en el panel |
 | `cambio_aplicado` | Refresca el dato de git en el panel |
 | `contexto_auditado` | Queda disponible para consulta; no se pinta por defecto |
+
+## 1.1 La línea de herramienta
+
+Es lo que hace visible el trabajo del agente, y sin ella no habría nada que ver.
+
+Con el contrato en prosa, la llamada a una herramienta viajaba dentro del texto del modelo y se veía sola. Con el canal nativo **la llamada sale del texto**: si la TUI no la pinta, mientras el agente lee un archivo o corre las pruebas la pantalla se queda quieta y de golpe aparece una respuesta como si nada.
+
+La línea es una sola: **nace al invocar y se completa al terminar**. Al invocar lleva el verbo y el tema; al llegar el resultado se le añade la marca, la medida y —si se recortó— el aviso:
+
+```
+  LEER [internal/tools/catalog.go]
+  ✓ LEER [internal/tools/catalog.go] · 70 líneas
+  ✓ EJEC [go test ./...] · 42 líneas · recortado
+  ✗ CREAR [nuevo.txt] · el archivo ya existe
+```
+
+Tres reglas de lo que se pinta y lo que no:
+
+- **El verbo, el tema y la medida.** El verbo es la etiqueta corta de la herramienta ([[backend/02-interfaces/TOOLS]]); el tema es el **argumento objetivo** que su catálogo declara (la ruta, el patrón, el comando, la consulta), colapsado y recortado. Es solo ese campo: el resto de argumentos —cuerpos de archivo, credenciales— no se expone, porque esto va a pantalla y a auditoría. La medida es el tamaño del resultado en su unidad (`líneas`, `coincidencias`, `entradas`).
+- **La salida, nunca.** El resultado va al modelo, no a la pantalla. Si quieres ver qué devolvió una herramienta, lo vas a ver explicado en la respuesta del agente.
+- **Si se recortó, se dice.** Un resultado recortado sin avisar es peor que no verlo: el agente puede actuar como si tuviera el resultado entero.
+
+El agente que la pidió no se pinta en la línea (sigue en el evento, para la auditoría).
+
+**El orden del hilo.** La línea de herramienta se inserta en su sitio cronológico, no en bloque al final del turno: el texto que el modelo escribió antes queda en un globo arriba de ella y el que escribe después abre un globo nuevo. Cada vez que una línea se interpone en el hilo —una herramienta, una notificación, una etapa de flujo, un cambio aplicado—, el segmento de texto en curso se cierra antes de escribirla, con su razonamiento. Así el chat no funde en un solo globo el texto anterior y el posterior a la herramienta.
+
+Una herramienta que necesita aprobación **no** muestra nada extra: la línea de la herramienta aparece, y debajo la línea de aprobación que ya existía. El usuario ve que el agente está actuando y que se le está pidiendo permiso por ello.
+
+## 1.2 La línea de sub-proceso
+
+Un flujo corre sus etapas como sub-procesos: cada una trabaja sin arrastrar el contexto del chat y su resultado se encadena a la siguiente ([[specs/SPEC-MOTOR-FLUJOS]]). En el hilo, cada etapa que empieza deja una sola línea con su nombre:
+
+```
+[Sub Proceso] Entender el problema
+[Sub Proceso] Buscar contexto
+[Sub Proceso] Diagnosticar
+```
+
+El texto de un paso intermedio **no** se pinta: el motor lo corre en silencio y solo alimenta la cadena. Lo que el usuario lee al final es la **entrega** del último paso del flujo, en un solo globo —por ejemplo, el PLAN del resolver con su salida estándar ([[specs/SPEC-RESOLVER]])—. Una etapa que pide aprobación sí muestra su salida, porque el usuario tiene que ver lo que aprueba; y una etapa que falla deja su aviso.
 
 ## 2. Peticiones que envía
 
@@ -39,6 +86,7 @@ Todas van a `session`, la única puerta del motor:
 | Petición | Cuándo |
 |---|---|
 | Enviar mensaje | El usuario escribe y confirma, tanto en la bienvenida (primera petición) como en el chat |
+| Ejecutar comando de flujo | El usuario escribe un comando explícito (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`) y confirma, o lo elige en la paleta y pulsa `Enter`; el motor lo reconoce y arranca el flujo |
 | Crear sesión | Al enviar desde la bienvenida (o con `Ctrl+X n`): nace una sesión nueva con nombre provisional «Nueva sesión» y va el mensaje; el modelo le pondrá título con esa primera petición |
 | Cambiar de sesión | Elige en el selector momentáneo; también desde la bienvenida, donde al elegir la vista pasa a la principal con el historial de esa sesión |
 | Aprobar / declinar | Resuelve una línea del panel de aprobaciones |
@@ -46,7 +94,7 @@ Todas van a `session`, la única puerta del motor:
 
 ## 3. Lecturas a `store`
 
-Solo lectura, con las consultas de [[database/03-operations/QUERIES]]: historial de la sesión activa, aprobaciones pendientes de todas las sesiones, auditoría de una etapa y datos del panel. Nunca escribe: si algo cambia, es el motor quien lo persiste y notifica.
+Solo lectura, con las consultas de [[database/03-operations/QUERIES]]: historial de la sesión activa, la lista de pasos de la sesión activa, aprobaciones pendientes de todas las sesiones, auditoría de una etapa y datos del panel. Nunca escribe: si algo cambia, es el motor quien lo persiste y notifica.
 
 ## 4. Teclado
 
@@ -77,6 +125,8 @@ Atajos por defecto, reasignables desde la ayuda y guardados en `~/.config/localc
 
 Las sesiones se crean con `Ctrl+X n` desde la vista principal o enviando la primera petición desde la bienvenida. No hay ayuda por `?`: el listado de atajos es el modal de `Ctrl+P`.
 
+**Paleta de comandos de flujo.** Al escribir `/` en la entrada —principal o bienvenida— se despliega encima la lista de comandos que sirve el motor (los oficiales y los propios de `ai/flows/*.json`). Mientras está desplegada, `↑`/`↓` la recorren, `Tab` autocompleta el comando resaltado dejando la línea lista para la petición (`/comando [petición]`) y `Enter` lo ejecuta; un espacio retira la paleta y lo escrito pasa a ser la petición. Lo que no coincide con ningún comando —aunque empiece por `/`— se responde como chat.
+
 **Ratón.** La rueda desplaza el historial del chat. Arrastrar con el botón izquierdo selecciona texto y, al soltar, se copia al portapapeles. Al capturar el ratón —necesario para poder copiar—, la selección nativa de la terminal queda disponible manteniendo `Shift`. Con el panel de aprobaciones visible, un clic sobre «aprobar» o «declinar» de una línea resuelve esa aprobación, sin necesidad de darle el foco con el teclado (un clic, no un arrastre: arrastrar sigue seleccionando texto).
 
 Reglas, según [[specs/SPEC-INTERFAZ-ATAJOS]] y [[specs/SPEC-KEYBINDS]]:
@@ -91,14 +141,21 @@ Reglas, según [[specs/SPEC-INTERFAZ-ATAJOS]] y [[specs/SPEC-KEYBINDS]]:
 ## 5. Estados de espera
 
 - Si la sesión activa está generando, la entrada sigue activa: escribir no bloquea ni cancela nada.
+- La línea de entrada envuelve en varias filas lo que no cabe en el ancho, sin recortarlo, y reajusta el reparto al redimensionar la terminal; `Enter` envía y no inserta saltos. En el chat, lo del usuario y lo del agente se pintan en globos con color propio.
+- Un pegado o arrastre se muestra como token: cada archivo `[nombre.ext]`, cada carpeta `[CARPETA N elementos]` y un texto de varias líneas `[PEGADO N líneas]` (un token por elemento si todas las líneas son rutas). Al enviar se expande al valor real: la ruta, el texto entero o, si es imagen, la imagen adjunta.
 - Bajo la entrada se muestra el modelo en uso y si tiene acceso a herramientas (`sí`/`no`, o `?` mientras se desconoce).
+- **Si el modelo en uso no puede usar herramientas, se dice explícitamente** que el agente va a conversar sin ellas. Es una diferencia entre «todavía no lo sé» y «este modelo no puede», y confundirlas hace que el usuario espere un trabajo que no va a pasar. Ver [[specs/SPEC-OLLAMA-PERFIL]].
+- Mientras una herramienta se ejecuta, su línea está en el chat. Si la sesión espera permiso por una herramienta, la línea de la herramienta y la de aprobación coexisten.
 - Con la sesión trabajando, el primer `esc` pide confirmación («presiona esc otra vez para cancelar razonamiento») y el segundo cancela; cualquier otra tecla la descarta.
 - Si el usuario cierra una sesión con un flujo en marcha, la TUI muestra la pregunta de qué hacer con el flujo; la decisión la aplica `session`.
 - Mientras una sesión espera permiso, su estado se ve en selector, panel y, si procede, en la línea de aviso.
+- **Una sesión esperando tu aprobación no bloquea a las demás.** Si en otra pestaña hay una sesión generando, sigue generando mientras decides. Ver [[specs/SPEC-SESIONES]].
 
 ## Referencias
 
 - [[frontend/FRONTEND]] — mapa de la capa.
-- [[backend/04-infrastructure/EVENTS]] — productores y payloads.
+- [[backend/04-infrastructure/EVENTS]] — productores y payloads, incluidos los de herramienta.
+- [[backend/02-interfaces/TOOLS]] — la capa universal que emite esos eventos.
 - [[database/03-operations/QUERIES]] — las consultas de lectura que puede ejecutar.
 - [[specs/SPEC-INTERFAZ-ATAJOS]] — reglas funcionales de los atajos.
+- [[specs/SPEC-TOOLS]] — el catálogo, y qué se pinta de una ejecución.
