@@ -36,6 +36,14 @@ Fuente de verdad del progreso del frontend. Derivada exclusivamente de `ai/docs/
 | T-F029 | actualizar | input: adjunta al turno las imágenes cuyas rutas aparecen en el mensaje; avisa si el modelo no declara visión | T-F004, T-F025 | completada | `029-task-imagenes-input.md` |
 | T-F030 | actualizar | input: al pegar o arrastrar una imagen muestra `[nombre.ext]` resaltado y expande a la ruta real al enviar | T-F004, T-F029 | completada | `030-task-token-imagen.md` |
 | T-F031 | actualizar | agentes: `Tab` recorre todos los agentes disponibles que ofrece el puerto, no solo `plan` y `build` | T-F015 | completada | `031-task-agentes-lista.md` |
+| T-F032 | actualizar | paleta de comandos de flujo: escribir `/` despliega encima del input el catálogo del motor; `↑`/`↓` la recorren, `Tab` autocompleta y `Enter` ejecuta | T-F004, T-F010 | completada | `032-task-paleta-comandos.md` |
+| T-F033 | actualizar | indicador en vivo (`[⠋ Pensando]`, `[⠋ Usando herramienta: X]`) con el razonamiento revelable por `Ctrl+R`, líneas de herramienta compactas y contador de tokens del turno bajo la entrada | T-F002, T-F005, T-F010 | completada | `033-task-indicador-actividad-tokens.md` |
+| T-F034 | actualizar | panel: sección «TODO DEL AGENTE» con la lista de pasos de la sesión, repintada por `todo_actualizada` | T-F002, T-F006 | completada | `034-task-panel-todo.md` |
+| T-F035 | actualizar | input: la línea de entrada salta de renglón al desbordar el ancho (hasta un tope) en vez de recortar el texto, y reajusta el reparto al redimensionar; también en la bienvenida | T-F004, T-F003 | completada | `035-task-entrada-salto-linea.md` |
+| T-F036 | actualizar | chat: globos de color para lo escrito por el usuario y lo que responde el agente; las líneas del sistema van sueltas | T-F005 | completada | `036-task-globos-chat.md` |
+| T-F037 | actualizar | línea de herramienta compacta: una sola línea que nace con el verbo y el tema (la ruta que se busca) y se completa con la marca y la medida del resultado | T-F005, T-F033 | completada | `037-task-linea-herramienta.md` |
+| T-F038 | actualizar | tokens de archivo, carpeta y pegado en la entrada: un archivo `[nombre.ext]`, una carpeta `[CARPETA N elementos]` y un texto de varias líneas `[PEGADO N líneas]`, expandiéndose al valor real al enviar | T-F004, T-F029 | completada | `038-task-tokens-archivo-y-pegado.md` |
+| T-F039 | actualizar | orden del texto y las líneas de herramienta: el texto previo a una herramienta queda arriba de su línea y el posterior abre un globo nuevo, en el orden de ejecución | T-F037 | completada | `039-task-orden-texto-herramientas.md` |
 
 ## Referencias
 
