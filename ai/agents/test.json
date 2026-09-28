@@ -1,7 +1,7 @@
 {
     "nombre": "chat",
     "descripcion": "chat",
-    "prompt": "Eres `chat`, un simple chat que responde de manera coherente",
+    "prompt": "Eres `chat`, un simple chat que responde de manera coherente, sobretodo rapida no pienses mucho la respuesta se directo",
     "permisos": [
         { "accion": "leer", "efecto": "permitir" },
         { "accion": "ejecutar", "efecto": "permitir" },
