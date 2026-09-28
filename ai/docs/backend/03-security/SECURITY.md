@@ -22,19 +22,25 @@ No hay autenticación, y no es una omisión. El proceso se abre en tu terminal, 
 
 Lo que sí hay es **identidad de agente**: cada petición al motor viene de un agente (`plan` o `build`) y ese agente tiene un conjunto fijo de herramientas. La "autenticación" del modelo es saber qué agente es, no quién es el usuario. Ver [[backend/02-interfaces/TOOLS]].
 
+Con el canal nativo de herramientas hay una pieza más de identidad que antes no hacía falta: **cada llamada va firmada con el agente que la pidió**. El nombre del agente no lo elige el modelo, sino quien construye la petición; el modelo solo elige la herramienta y sus argumentos. Por eso un modelo no puede pedir en nombre de otro agente: la capa de ejecución comprueba la firma contra el agente activo y, si no coincide, la deniega. No es criptografía —`tools.Peticion.Agente` es un campo de la petición en memoria y el modelo no lo controla—, sino atribución dentro del proceso.
+
 ## 2. Autorización
 
 No hay roles de usuario. La autorización se resuelve en tres capas, y por eso es auditable: puedes leer en un solo sitio quién pidió, quién autorizó y quién ejecutó.
 
 | Capa | Módulo | Qué decide |
 |---|---|---|
-| Qué puede pedir el agente | `agent` | Qué herramientas tiene `plan` (solo lectura) y `build` (todo) |
+| Qué puede pedir el agente | `agent` | Qué herramientas tiene `plan` (lectura, ejecución, internet y la lista de pasos, sin escritura de proyecto) y `build` (todas) |
 | Si la petición está permitida | `tools` | Que la herramienta exista y que el agente la tenga |
 | Si el efecto se aplica | `fileops`, `exec` | La aprobación concreta, la frontera de rutas, la lista blanca y Landlock |
 
-La garantía central: **`plan` no tiene herramientas de escritura**. No es que las tenga bloqueadas, es que no existen para él. Por eso la garantía de que nada se escribe sin propuesta y aprobación previa no depende de que alguien recuerde comprobar un permiso. Ver [[backend/DECISIONS]].
+El paso 2 ocurre en **la capa universal de `tools`**, antes de que se ejecute nada y antes de que se toque el disco. Es el mismo punto para las catorce herramientas incluidas y para las del usuario: no hay un camino alternativo que se salte la comprobación.
+
+La garantía central: **`plan` no tiene herramientas que escriban en el proyecto**. No es que las tenga bloqueadas, es que no existen para él. La acción `tareas` (la lista de pasos de la sesión) no escribe en el proyecto —es estado de la sesión—, así que la tienen los dos agentes sin debilitar la garantía. Ver [[backend/DECISIONS]].
 
 **Una aprobación vale para el cambio propuesto, no para lo que siga.** Si `build` necesita algo que `plan` no propuso, vuelve a preguntar.
+
+**La aprobación es un mecanismo único.** Vive en `Contexto.Ask`, no dentro de los handlers. Eso significa que toda herramienta —incluida una escrita por el usuario— pasa por el mismo camino, y que no puede existir una herramienta cuya aprobación se comporte de otra manera. Una política de permiso repartida en catorce sitios es una política que en algún sitio se olvidó.
 
 ## 3. Protección de las operaciones
 
@@ -57,7 +63,29 @@ La terminal tiene dos controles independientes:
 1. **Lista blanca:** solo compilar, probar, revisar estilo y tipos, y ver estado/diferencias/historial de git corren sin preguntar. Cualquier otro comando pide aprobación.
 2. **Bloqueo de escritura:** la terminal no puede crear, editar ni borrar archivos del proyecto, y la garantía es del kernel (Landlock), no del texto del comando. Por eso `find -delete`, `tee`, una tubería hacia un archivo, `python3 -c` o `sh -c` con redirección no la esquivan.
 
+Lo único con escritura concedida es el espacio propio del comando —temporales, caché de compilación y carpeta de trabajo por sesión— y los **dispositivos nulos** (`/dev/null`, `/dev/zero`, `/dev/full`): programas de la lista blanca como `git` abren `/dev/null` con `O_RDWR` aunque no guarden nada, y sin ese permiso `git status`, `git diff` y `git log` fallaban. La regla de Landlock se ancla en cada dispositivo, no en `/dev`, así que el resto del sistema sigue denegado.
+
 La terminal tampoco puede descartar cambios del repositorio, hacer commits ni subir cambios.
+
+## 3.1 Herramientas del usuario
+
+Un `.json` en `.localcli/tools/` añade una herramienta. Eso abre una superficie que antes no existía —el usuario puede hacer que LocalCli ejecute lo que quiera— y por eso tiene reglas propias, todas en [[specs/SPEC-TOOLS]] y [[backend/02-interfaces/TOOLS]].
+
+**No es código, es una declaración.** Un `.json` no puede ejecutar nada por sí mismo: LocalCli lo lee y lo ejecuta con su propio ejecutor. No hay intérprete, ni runtime, ni plugin compilado. La diferencia no es cosmética: no hay nada en el formato que permita ejecutar una función.
+
+**El aislamiento es el de la terminal, no uno nuevo.** La herramienta corre sobre `exec.Ejecutor`, así que hereda Landlock, el límite de tiempo y la cola. La garantía de que no puede escribir en el proyecto no hay que volver a pensarla ni volver a probarla: es la misma.
+
+**No hay shell.** `equipo` es una lista de argumentos que se pasa al ejecutable tal cual. Sin intérprete de shell no existen las tuberías, ni las redirecciones, ni `sh -c`. Un argumento con un `;` es un argumento con un punto y coma. Esto es lo que hace que la garantía estructural de Landlock se sostenga también para estas herramientas: un argumento que no pasa por un shell no puede convertir un argumento en una escritura.
+
+**Siempre pide aprobación, y no se toca la lista blanca.** El ejecutable lo eligió el usuario, así que LocalCli no sabe qué hace aunque se llame como un comando que ya conoce. Que la lista blanca sea solo para los comandos que el harness conoce es precisamente lo que hace predecible el control: si dependiera del nombre, un binario con el mismo nombre y otro comportamiento se ejecutaría sin preguntar.
+
+**`modo: escribe` se rechaza al arrancar.** La única vía sancionada para escribir en el proyecto son las herramientas de archivo: solo las tiene `build`, pasan por aprobación y quedan registradas en `change_history`. Aceptar una segunda vía de escritura con reglas distintas rompería la garantía central por la puerta de atrás.
+
+**No puede escalar.** El handler de una herramienta del usuario no tiene acceso al registro, así que no puede pedir otras herramientas, no puede encadenar y no puede elevarse de permisos. No hay una ruta de una herramienta del usuario a una capacidad que no tuviera.
+
+**Un JSON inválido no detiene nada.** Se ignora y se avisa, como con un agente o un flujo inválido. Un error de carga deja el catálogo como estaba, no lo deja a medias.
+
+**El coste de aceptar esto.** El esquema que ve el modelo para una herramienta del usuario es genérico —un objeto, sin properties— porque el harness no puede saber qué argumentos espera un ejecutable que no es suyo. En la práctica eso significa que el modelo improvisa los argumentos de una herramienta del usuario, y que un error de nombre de argumento se descubre al ejecutar, no antes. Es un precio asumido a cambio de que añadir una herramienta no requiera recompilar; queda dicho aquí y en [[backend/02-interfaces/dto/TOOLS-DTO]] para que no sorprenda.
 
 ## 4. Frontera de internet
 
@@ -77,15 +105,17 @@ Las dos herramientas de internet son las únicas que hacen salir información de
 
 - **Rate limiting:** no aplica. No hay red pública. Lo equivalente es el presupuesto de contexto, que recorta la entrada y evita que una respuesta o un comando desborden. Ver [[specs/SPEC-OLLAMA-PERFIL]].
 - **CORS:** no aplica. No hay navegador ni servidor.
-- **Secrets:** Ollama corre en local, sin credenciales. La búsqueda por internet es la única salida y solo lleva la consulta. LocalCli no guarda ni pide claves de API.
-- **Aislamiento en sistemas sin Landlock:** en sistemas que no son Linux, o en Linux sin Landlock, la terminal no tiene el bloqueo estructural. La garantía es más débil y queda documentada como tal; el proyecto lo asume. Ver [[backend/04-infrastructure/CONFIGURATION]].
+- **Secrets:** Ollama corre en local, sin credenciales. La búsqueda por internet es la única salida y solo lleva la consulta. LocalCli no guarda ni pide claves de API. Una herramienta del usuario puede llevar sus propias credenciales en sus argumentos, que viajan al modelo y al registro de auditoría: quien declare una sabe que el argumento queda visible ahí.
+- **Aislamiento en sistemas sin Landlock:** en sistemas que no son Linux, o en Linux sin Landlock, la terminal no tiene el bloqueo estructural. La garantía es más débil y queda documentada como tal; el proyecto lo asume. Ver [[backend/04-infrastructure/CONFIGURATION]]. **Las herramientas del usuario heredan esta limitación tal cual**: sin Landlock no tienen el bloqueo de escritura, y su única defensa restante es la aprobación, que es una decisión del usuario y no una garantía.
 - **El modelo no es de fiar para decidir permisos.** `plan` y `build` tienen herramientas fijas, y el permiso lo comprueban módulos, no el modelo. El modelo no puede concederse permisos.
-- **Confiar en el texto del comando es un error.** Cualquier intento de validar la terminal leyendo el comando es frágil por diseño; por eso el bloqueo es estructural.
+- **Confiar en el texto del comando es un error.** Cualquier intento de validar la terminal leyendo el comando es frágil por diseño; por eso el bloqueo es estructural. Y por eso las herramientas del usuario pasan una lista de argumentos en vez de una línea de texto: quitar el shell es quitar esa clase de ataque entera, no cerrar sus casos sueltos.
+- **Un error de herramienta no termina el turno.** El fallo se le devuelve al modelo para que lo corrija. Eso es intencionado, y es también un riesgo: un modelo puede insistir en una herramienta que falla. Por eso el máximo de pasadas por turno es un límite duro, no un detalle de implementación.
 
 ## Referencias
 
 - [[specs/SPEC-ARCHIVOS]] — reglas de permiso sobre archivos.
-- [[specs/SPEC-TOOLS]] — el catálogo y los controles de la terminal.
-- [[backend/02-interfaces/TOOLS]] — el reparto `plan`/`build`.
-- [[backend/DECISIONS]] — por qué Landlock y por qué `plan` no escribe.
+- [[specs/SPEC-TOOLS]] — el catálogo, la terminal y las herramientas del usuario.
+- [[backend/02-interfaces/TOOLS]] — el reparto `plan`/`build`, la capa universal y el punto de extensión.
+- [[backend/02-interfaces/dto/TOOLS-DTO]] — los esquemas derivados y el caso genérico del usuario.
+- [[backend/DECISIONS]] — por qué Landlock, por qué `plan` no escribe y por qué no hay shell en las herramientas del usuario.
 - [[backend/04-infrastructure/INTEGRATIONS]] — la integración de Ollama e internet.

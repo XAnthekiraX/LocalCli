@@ -22,7 +22,7 @@ Definir dónde vive cada cosa en la pantalla: qué se ve, dónde está y cómo s
 
 ## Alcance
 
-Incluye la disposición de la pantalla, las zonas, los datos que muestra cada una, la pantalla de bienvenida y cómo se cambia de sesión.
+Incluye la disposición de la pantalla, las zonas —incluida la paleta de comandos de flujo de la entrada—, los datos que muestra cada una, la pantalla de bienvenida y cómo se cambia de sesión.
 No incluye los atajos de teclado, que están en [[specs/SPEC-INTERFAZ-ATAJOS]] ni el mecanismo de resolución de teclas y la tecla líder, que está en [[specs/SPEC-KEYBINDS]], ni el significado y el cálculo de los números de contexto, que están en [[specs/SPEC-PANEL-CONTEXTO]], ni las reglas de permiso, que están en [[specs/SPEC-ARCHIVOS]].
 
 ## Actores
@@ -91,9 +91,10 @@ El logotipo es fijo y esta es su definición, que sirve de salida dorada para la
 - **Línea de modelo**: bajo el nombre con versión se muestra solo el modelo en uso (el detectado en el arranque o el último elegido en el modal) y el recordatorio del atajo para cambiarlo (`Ctrl+X m`). No hay lista de modelos visible en la bienvenida.
 - **Modal de modelos**: la secuencia líder `Ctrl+X` seguida de `m` abre un modal centrado con la lista de modelos locales que reporta Ollama, con uno resaltado. `↑`/`↓` mueven la selección, `Enter` aplica el elegido y cierra el modal, `Esc` cierra sin cambiar nada. La lista se pide a Ollama al abrir el modal (no en el arranque); si Ollama no responde, el modal muestra el aviso «sin modelos» y se puede cerrar con `Esc` sin bloquear nada. Mientras el modal está abierto, las teclas son solo del modal: la escritura de la bienvenida no las recibe. Lo elegido pasa al motor como modelo de la sesión y se refleja en la línea de modelo de la bienvenida. La elección del usuario prevalece sobre la autodetección del arranque ([[specs/SPEC-OLLAMA-PERFIL]]: el modelo lo elige el usuario). El mecanismo de la secuencia está en [[specs/SPEC-KEYBINDS]].
 - Lo que se escribe es la **primera petición de la sesión**: se envía tal cual, igual que se enviaría desde el chat.
+- La línea de entrada de la bienvenida despliega también la **paleta de comandos de flujo** al escribir `/` (§Zonas 2): escribir filtra, `↑`/`↓` la recorren, `Tab` autocompleta y `Enter` ejecuta. Un comando crea la sesión y lleva a la vista principal igual que una primera petición.
 - Al enviarla, la vista cambia a la interfaz principal y la petición aparece como primer mensaje del chat. La transición no repite la petición ni pide confirmación.
 - No hay una sesión activa antes de usar la bienvenida: la primera petición **crea** una sesión nueva, con un nombre provisional que el modelo sustituye por un título generado a partir de esa misma petición. Ver [[specs/SPEC-SESIONES]].
-- Desde la bienvenida no se lanza ningún flujo ni se abre el panel de contexto: hay logotipo, línea de modelo y línea de entrada; con `Ctrl+X m` se abre el modal de modelos y con `Ctrl+X l` el de sesiones (al elegir una con `Enter`, la vista pasa a la principal con el historial de esa sesión). La salida es `Ctrl+C`.
+- Desde la bienvenida no hay panel de contexto ni de aprobaciones: hay logotipo, línea de modelo y línea de entrada; con `Ctrl+X m` se abre el modal de modelos y con `Ctrl+X l` el de sesiones (al elegir una con `Enter`, la vista pasa a la principal con el historial de esa sesión). Se escribe y se envía —o se ejecuta un comando de flujo— y la salida es `Ctrl+C`.
 
 ## Zonas
 
@@ -101,17 +102,21 @@ El logotipo es fijo y esta es su definición, que sirve de salida dorada para la
 
 - Ocupa el resto del ancho.
 - Muestra el historial de la sesión activa.
-- Cada intercambio muestra el razonamiento del modelo y su respuesta.
-- Cada respuesta del modelo muestra cuánto tardó en llegar, atenuado junto a ella. Mientras se espera, el tiempo corre en pantalla para saber que el modelo sigue trabajando.
+- Cada mensaje se pinta en un globo con el color de quien habla: uno para lo que escribe el usuario y otro para lo que responde el agente (el «terminal»). Las líneas del sistema —herramientas, avisos— no son un turno: se pintan sueltas, sin globo.
+- El hilo se pinta en el **orden en que ocurrió**: el texto que el modelo escribió antes de usar una herramienta queda arriba de su línea, y el que escribe después abre un globo nuevo. Los segmentos de texto de un mismo turno no se funden en uno solo por debajo de las líneas de herramienta.
+- Cada intercambio muestra la respuesta del modelo; mientras genera, un **indicador en vivo** (`[⠋ Pensando]`) sustituye al volcado del razonamiento. El texto del razonamiento se revela con `Ctrl+R` (ver §Razonamiento del modelo).
+- Cada respuesta del modelo muestra cuánto tardó en llegar, atenuado junto a ella. Mientras se espera, el tiempo corre en pantalla —junto al indicador en vivo— para saber que el modelo sigue trabajando.
 - Muestra las propuestas pendientes de aprobación.
 - El historial se puede recorrer: `↑`/`↓` suben y bajan línea a línea y `pgup`/`pgdown` por páginas; la rueda del ratón también desplaza. Mientras no se sube, la vista sigue el final y baja sola con cada respuesta nueva; al subir se respeta la posición. Cuando queda historial fuera de la ventana se indica con una línea discreta («↑ N líneas arriba» / «↓ N líneas abajo»).
 
 ### 2. Entrada de texto
 
-- Una sola línea para escribir.
+- Una línea de escritura que crece en filas: el texto es un solo párrafo, pero al desbordar el ancho disponible salta de renglón (hasta un tope de filas; a partir de ahí se desplaza dentro de la ventana) en vez de recortarse. Al redimensionar la terminal, el reparto se reajusta. `Enter` envía la petición; no inserta saltos de línea.
 - Escribe hacia la sesión activa.
+- **Paleta de comandos de flujo.** Al escribir `/` se despliega encima de la línea la lista de comandos de flujo disponibles —los oficiales más los propios de `ai/flows/*.json`—, con el resaltado en el primero. Lo escrito filtra la lista; `↑`/`↓` la recorren, `Tab` autocompleta el comando resaltado dejando la línea lista para escribir la petición detrás (`/comando [petición]`) y `Enter` ejecuta. En cuanto se escribe un espacio (empieza la petición) la paleta se retira. Es un ayudante para descubrir los comandos, no una vía nueva de arranque: el flujo sigue arrancando solo con su comando explícito y el catálogo lo sirve el motor.
 - El texto se edita en cualquier punto: las flechas mueven el cursor, `home`/`end` van al principio y al final y `ctrl+b`/`ctrl+e` son sus equivalentes. Los atajos que coincidan con una acción (por ejemplo `ctrl+a`) siguen resolviéndose como acción y no editan.
-- Bajo la línea de entrada se muestra el modelo en uso y si tiene acceso a herramientas (`modelo: X · herramientas: sí/no/?`). La línea de entrada de la bienvenida se edita igual que esta.
+- Bajo la línea de entrada se muestra el modelo en uso y si tiene acceso a herramientas (`modelo: X · herramientas: sí/no/?`) y, cuando hay consumo que mostrar, el conteo de tokens del turno (`tokens: 54k`). La línea de entrada de la bienvenida se edita igual que esta.
+- Sobre la línea de entrada, mientras el modelo trabaja, se pinta la **línea de actividad**: un glifo que gira y la etiqueta de lo que pasa —`[⠋ Pensando]` si aún no hay respuesta, `[⠋ Usando herramienta: X]` si corre una herramienta, `[⠋ Generando]` si ya llega respuesta— más el tiempo transcurrido. Sustituye al volcado crudo del razonamiento.
 - **Indicador de agente a la izquierda del input**: justo al lado izquierdo de la línea de entrada se muestra el agente activo (p. ej. `[plan] > `). Cambia al instante con `Tab`, que recorre los agentes disponibles (los base `plan` y `build` más los que el usuario añada en `ai/agents/*.json`). El indicador es visible tanto en la interfaz principal como en la bienvenida.
 - El agente activo responde con el catálogo derivado de sus permisos: `plan` solo lee y propone; `build` escribe con aprobación. Quién responde lo decide el indicador, no el texto escrito.
 
@@ -131,13 +136,16 @@ El logotipo es fijo y esta es su definición, que sirve de salida dorada para la
 
 Los datos de contexto se calculan y se interpretan según [[specs/SPEC-PANEL-CONTEXTO]].
 
+Debajo de los nueve datos, cuando el agente mantiene una lista de pasos (`actualizar_todo`) y le queda alguno por hacer, el panel muestra la sección «TODO DEL AGENTE» con `[•]` en curso, `[✓]` hecho, `[x]` cancelado y `[ ]` pendiente. Se oculta cuando no hay nada accionable. Ver [[specs/SPEC-TOOLS]].
+
 ## Razonamiento del modelo
 
-Se muestra **en vivo, arriba de la respuesta**, mientras el modelo genera.
+Mientras el modelo trabaja se muestra un **indicador en vivo** (`[⠋ Pensando]`, `[⠋ Usando herramienta: X]`) con su glifo girando y el tiempo transcurrido. El texto crudo del razonamiento **no se vuelca por defecto**: se **revela con `Ctrl+R`**, arriba de la respuesta, y entonces se distingue visualmente de ella.
 
-- Se distingue visualmente de la respuesta para que nunca se confundan.
-- Se puede ocultar para leer solo la respuesta.
-- Ocultarlo no detiene la generación.
+- El indicador no depende de que el texto esté revelado: se ve siempre que el turno está en marcha.
+- Revelar u ocultar el texto no detiene la generación: el razonamiento se sigue acumulando y volver a revelarlo lo recupera entero.
+- El texto revelado nunca se mezcla visualmente con la respuesta.
+- Si el modelo no expone razonamiento, al revelarlo se indica que no está disponible.
 
 ## Modales
 
@@ -149,7 +157,7 @@ Tres modales centrados comparten el mismo comportamiento: uno abierto a la vez, 
 | **Sesiones** | `Ctrl+X l` | Lista de las sesiones creadas anteriormente en el proyecto (nombre y estado, incluidas las de segundo plano) | Se abre esa sesión: el chat pasa a su historial sin detener lo que corre |
 | **Atajos** | `Ctrl+P` | Tabla de los atajos existentes agrupada por categorías (General, Chat, Vista, Modales, Aprobaciones, Entrada), con la tecla y su acción alineadas, incluidas las secuencias con líder | No aplica nada: es solo lectura; `Esc` lo cierra |
 
-No hay paleta de comandos ejecutables: `Ctrl+P` abre la lista de atajos. Ver [[specs/SPEC-SESIONES]] para el ciclo de vida de las sesiones.
+`Ctrl+P` abre la lista de atajos, no una paleta de comandos ejecutables: los comandos de flujo se descubren escribiendo `/` en la entrada (§Zonas 2). Ver [[specs/SPEC-SESIONES]] para el ciclo de vida de las sesiones.
 
 ## Cambiar de sesión
 
@@ -175,8 +183,9 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - El panel de datos es de lectura. Nada se escribe desde él.
 - El panel se abre y se cierra sin interrumpir ninguna sesión.
 - Abrir el panel no ralentiza la generación de una respuesta.
-- El razonamiento se muestra en vivo y se puede ocultar.
-- El razonamiento nunca se mezcla visualmente con la respuesta final.
+- Mientras el modelo trabaja se muestra un indicador en vivo (`[⠋ Pensando]`, `[⠋ Usando herramienta: X]`, `[⠋ Generando]`); el texto del razonamiento se revela con `Ctrl+R` y se puede volver a ocultar.
+- El razonamiento revelado nunca se mezcla visualmente con la respuesta final.
+- El conteo de tokens del turno se muestra bajo la entrada, atenuado, cuando hay consumo (`tokens: 54k`).
 - Cada respuesta muestra el tiempo que tardó el modelo en entregarla. Mientras el turno está en curso, ese tiempo corre en pantalla y se detiene al cerrarse el turno; el tiempo no se guarda en el historial, así que una sesión retomada no lo muestra.
 - No hay lista de sesiones permanente: se acceden con `Ctrl+X l`, que abre el modal de sesiones.
 - El historial del chat se recorre con `↑`/`↓` y `pgup`/`pgdown`; mientras no se sube, la vista sigue el final. La línea de entrada nunca queda fuera de pantalla.
@@ -185,7 +194,8 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - Con la sesión activa trabajando, el primer `esc` pide confirmación («presiona esc otra vez para cancelar razonamiento») y el segundo cancela el trabajo; cualquier otra tecla la descarta.
 - Bajo la entrada se muestra el modelo en uso y si tiene acceso a herramientas y a la visión (interpretar imágenes).
 - Si el texto de una petición de chat incluye la ruta de un archivo de imagen existente, la imagen se adjunta a ese turno hacia el modelo. Las imágenes son efímeras: no se guardan en el historial, así que un turno posterior que no las vuelva a mencionar no las ve.
-- Al pegar o arrastrar un archivo de imagen, la línea de entrada muestra `[nombre.ext]` resaltado en lugar de la ruta completa; al enviar se usa la ruta real, así que la imagen se adjunta igual y el mensaje conserva la referencia al archivo.
+- Al pegar o arrastrar un archivo, la línea de entrada muestra `[nombre.ext]` resaltado; una carpeta muestra `[CARPETA N elementos]` con sus entradas de primer nivel. Al enviar se usa la ruta real, así que una imagen se adjunta igual y el mensaje conserva la referencia al archivo.
+- Pegar texto de varias líneas se resume en la entrada como `[PEGADO N líneas]`; al enviar se inserta el texto completo. Si todas las líneas son rutas existentes (varios archivos o carpetas arrastrados a la vez), se muestra un token por elemento en vez del resumen.
 - Adjuntar una imagen a un modelo que no declara visión avisa en el chat sin bloquear el envío; el usuario decide si cambia de modelo.
 - El marco de la vista nunca excede el alto de la terminal: el historial se recorta a lo disponible para que la entrada no quede fuera.
 - El modal de atajos agrupa las acciones por categorías y alinea la tecla con su descripción.
@@ -205,6 +215,8 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - Desde la bienvenida no hay panel de contexto ni aprobaciones: se abre el modal de modelos (`Ctrl+X m`) o el de sesiones (`Ctrl+X l`), se escribe, se envía y se sale.
 - La vista principal es un chat: cada petición se responde como conversación. Ningún texto arranca un flujo de trabajo por sí solo.
 - Un flujo solo arranca con un comando explícito escrito en la entrada: `/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`.
+- La paleta de comandos de flujo se despliega al escribir `/` en la entrada —también en la bienvenida— y lista el catálogo que sirve el motor: los seis oficiales y los flujos propios de `ai/flows/*.json`. Es descubrimiento, no una vía nueva de arranque: no añade comandos que no existan.
+- Con la paleta desplegada, `↑`/`↓` la recorren, `Tab` autocompleta el comando resaltado en vez de ciclar el agente y `Enter` ejecuta; escribir un espacio retira la paleta y deja paso a la petición.
 - Si una petición parece trabajo ordenado, el sistema puede proponer un TODO, pero no lo ejecuta hasta que el usuario confirme o escriba el comando.
 - El agente activo responde con las herramientas derivadas de sus permisos; el chat no añade ni quita herramientas.
 - La bienvenida se pinta sin esperar a Ollama ni a la base: no depende de nada externo para mostrarse.
@@ -214,14 +226,19 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] Con el panel cerrado, el chat ocupa todo el ancho.
 - [ ] El panel se abre y se cierra sin interrumpir el trabajo.
 - [ ] El panel muestra los nueve datos definidos.
+- [ ] El panel muestra la lista de pasos del agente cuando queda alguno por hacer, y la oculta cuando no hay nada accionable.
 - [ ] El panel muestra los datos de la sesión activa, no los de otra.
-- [ ] El razonamiento se muestra mientras se genera, arriba de la respuesta.
-- [ ] El razonamiento se distingue visualmente de la respuesta y se puede ocultar.
+- [ ] Mientras el modelo trabaja se ve el indicador en vivo (`[⠋ Pensando]`, y `[⠋ Usando herramienta: X]` mientras corre una herramienta).
+- [ ] El razonamiento no se vuelca por defecto; `Ctrl+R` revela su texto, arriba de la respuesta y distinguible visualmente, y volver a pulsarlo lo oculta sin perderlo.
+- [ ] El conteo de tokens del turno se ve bajo la entrada (`tokens: 54k`).
 - [ ] Cada respuesta muestra el tiempo que tardó en llegar, y mientras se espera el tiempo corre en pantalla y se detiene al cerrarse el turno.
 - [ ] `Ctrl+X l` abre el modal de sesiones con nombre y estado de cada una; al seleccionar una con `Enter` se abre esa sesión y el chat muestra su historial.
 - [ ] `Ctrl+P` abre el modal con la lista de atajos existentes (acción + tecla); es de solo lectura.
 - [ ] El historial del chat se recorre con `↑`/`↓` y `pgup`/`pgdown`; mientras no se sube, la vista sigue el final.
 - [ ] El texto del input se edita en cualquier punto con las flechas y `home`/`end`.
+- [ ] Al escribir más de lo que cabe en el ancho, la línea salta de renglón en vez de recortarse; el reparto se reajusta al redimensionar la terminal.
+- [ ] El historial del chat muestra lo escrito por el usuario y lo que responde el agente en globos de color distinto.
+- [ ] El chat respeta el orden de ejecución: el texto previo a una herramienta queda arriba de su línea y el posterior abre un globo nuevo.
 - [ ] Al abrir el modal de modelos, el resaltado está en el modelo en uso.
 - [ ] Elegir un modelo sin capacidad de herramientas avisa sin bloquear.
 - [ ] La rueda del ratón desplaza el historial y arrastrar con el ratón copia al portapapeles el texto seleccionado.
@@ -229,7 +246,8 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] Bajo la entrada se ve el modelo en uso y si tiene acceso a herramientas.
 - [ ] Bajo la entrada se ve también si el modelo interpreta imágenes (visión).
 - [ ] Escribir la ruta de una imagen existente en el mensaje la adjunta al turno; con un modelo que no declara visión avisa sin bloquear el envío.
-- [ ] Pegar o arrastrar una imagen muestra `[nombre.ext]` resaltado en la entrada y el mensaje enviado usa su ruta real.
+- [ ] Pegar o arrastrar un archivo muestra `[nombre.ext]` resaltado y una carpeta `[CARPETA N elementos]`; el mensaje enviado usa su ruta real.
+- [ ] Pegar un texto de varias líneas lo resume como `[PEGADO N líneas]` y al enviar llega el texto completo; si todas las líneas son rutas, se muestra un token por elemento.
 - [ ] La línea de entrada de la bienvenida se edita en cualquier punto (flechas, `home`/`end`).
 - [ ] El modal de atajos agrupa las acciones por categorías y alinea tecla y descripción.
 - [ ] `Esc` cierra cualquier modal sin cambiar nada; con ninguno abierto no hace nada visible.
@@ -253,6 +271,9 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] `Ctrl+X l` en la bienvenida abre el modal de sesiones; al elegir una con `Enter` la vista pasa a la principal con el historial de esa sesión.
 - [ ] La vista principal responde como chat; ningún texto arranca un flujo de trabajo sin un comando explícito.
 - [ ] `/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` y `/ejecutar` arrancan su flujo.
+- [ ] Escribir `/` despliega encima de la entrada la lista de comandos de flujo; escribir filtra, `↑`/`↓` la recorren y `Tab` autocompleta el comando resaltado.
+- [ ] `Enter` con la paleta desplegada ejecuta el comando resaltado y el flujo se arranca por el motor; su eco aparece en el chat.
+- [ ] La paleta también se despliega en la bienvenida; ejecutar un comando desde ahí crea la sesión y lleva a la vista principal.
 - [ ] Una petición sin comando se responde en el chat con las herramientas del agente activo.
 - [ ] La bienvenida se muestra aunque Ollama no esté disponible.
 - [ ] Con la líder pulsada (`Ctrl+X`) pero sin segunda tecla, no se abre ningún modal y tras el timeout el indicador de líder desaparece.

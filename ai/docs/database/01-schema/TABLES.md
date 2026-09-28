@@ -7,27 +7,30 @@ relacionado:
   - "[[database/01-schema/RELATIONSHIPS]]"
   - "[[database/01-schema/ENUMS]]"
   - "[[database/02-rules/BUSINESS_RULES]]"
+  - "[[database/02-rules/DATA_FLOW]]"
   - "[[specs/SPEC-AGENTE-BASE]]"
   - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
   - "[[specs/SPEC-NODO-CONTEXTO]]"
   - "[[specs/SPEC-PANEL-CONTEXTO]]"
+  - "[[specs/SPEC-TOOLS]]"
 ---
 # TABLES — Tablas de la base de datos
 
 ## 1. Tablas
 
-El esquema tiene seis tablas. La estructura de alto nivel está en [[database/01-schema/SCHEMA]]; aquí cada columna en detalle. Las relaciones entre tablas están en [[database/01-schema/RELATIONSHIPS]] y los valores cerrados, en [[database/01-schema/ENUMS]].
+El esquema tiene siete tablas. La estructura de alto nivel está en [[database/01-schema/SCHEMA]]; aquí cada columna en detalle. Las relaciones entre tablas están en [[database/01-schema/RELATIONSHIPS]] y los valores cerrados, en [[database/01-schema/ENUMS]].
 
-Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TEXT` en ISO 8601 UTC, y los booleanos son enteros `0`/`1`.
+Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TEXT` en ISO 8601 UTC, y los booleanos son enteros `0`/`1`. La única excepción es `todos`, que no tiene `id`: se identifica por `(session_id, position)`.
 
 ## 2. Propósito de cada tabla
 
 - **`sessions`** — Una sesión de trabajo. Es la unidad de la que cuelgan la conversación, las aprobaciones y la auditoría. Su campo `status` es lo que la interfaz muestra cuando cambias de sesión.
-- **`messages`** — Los turnos de la conversación. Guarda lo que escribió el usuario y lo que respondió el agente, más los tokens de cada turno para el panel de contexto.
+- **`messages`** — Los turnos de la conversación. Guarda lo que escribió el usuario y lo que respondió el agente, más los tokens de cada turno para el panel de contexto. Un turno puede incluir llamadas a herramientas, pero **esas no se guardan**: viven mientras dura el turno y se descartan. Lo que queda es el mensaje final del agente. Ver [[database/02-rules/DATA_FLOW]].
 - **`reasoning`** — El razonamiento del modelo de un mensaje concreto. Va en tabla aparte porque llega token a token mientras se genera y porque se consulta y se mide por separado del texto final. El diseño está en [[specs/SPEC-AGENTE-BASE]].
 - **`approvals`** — Lo que una sesión necesita que decidas antes de seguir. El panel de aprobaciones las lee todas, de cualquier sesión. Ver [[specs/SPEC-INTERFAZ-ATAJOS]].
 - **`context_audit`** — La traza de qué documentación recibió el modelo en cada etapa y qué se descartó, con el motivo. Es lo que hace auditable el nodo de contexto. Ver [[specs/SPEC-NODO-CONTEXTO]].
 - **`change_history`** — Cada cambio aplicado a un archivo del proyecto, con lo que había antes y lo que quedó. Nunca se borra. Ver [[database/02-rules/BUSINESS_RULES]].
+- **`todos`** — La lista de pasos de una sesión: el plan que el agente mantiene con `actualizar_todo`. Es estado de ejecución de la sesión, no un documento del proyecto: se reescribe entera y cae con su sesión. Ver [[specs/SPEC-TOOLS]].
 
 ## 3. Columnas
 
@@ -57,6 +60,10 @@ Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TE
 | `created_at` | Cuándo se escribió el mensaje | ISO 8601 UTC | No | — |
 
 Los dos campos de tokens son `NULL` cuando el modelo no los reporta. Se distinguen del `0`: `NULL` significa "no lo sé", `0` significa "cero". El panel de contexto marca la estimación como tal. Ver [[specs/SPEC-PANEL-CONTEXTO]].
+
+**Lo que no hay en esta tabla.** No hay columnas para las peticiones de herramientas ni para sus resultados, y `role` no tiene un valor de herramienta. Es una decisión, no un olvido: el detalle de las ejecuciones pertenece al turno en curso, y lo que el usuario relee al volver es la conclusión del agente, que ya está en `content`.
+
+Añadirlas obligaría a migrar el `CHECK` de `role` y a decidir qué se reinyecta al retomar una sesión. Ver [[database/01-schema/ENUMS]] y [[backend/DECISIONS]].
 
 ### `reasoning`
 
@@ -111,11 +118,26 @@ Hay un registro por documento y por etapa. `reason` es `NULL` cuando `decision` 
 
 `session_id` es `NULL` cuando la sesión que aplicó el cambio ya fue eliminada. El registro sobrevive a la sesión porque esta tabla nunca se borra. `before_content` es `NULL` si el archivo no existía y `after_content` es `NULL` si el archivo fue eliminado.
 
+### `todos`
+
+| Columna | Qué representa | Valores permitidos | Nullable | Default |
+|---|---|---|---|---|
+| `session_id` | Sesión dueña de la lista | UUID v4 de `sessions.id` | No | — |
+| `position` | Orden del paso dentro de la lista | Entero ≥ 0 | No | — |
+| `content` | Qué hay que hacer | Texto libre | No | — |
+| `status` | Estado del paso | `pendiente`, `en_progreso`, `completada`, `cancelada` | No | — |
+| `priority` | Prioridad del paso | `alta`, `media`, `baja` | No | `media` |
+| `created_at` | Cuándo se escribió la lista | ISO 8601 UTC | No | — |
+| `updated_at` | Última reescritura | ISO 8601 UTC | No | — |
+
+La clave primaria es `(session_id, position)` y no hay `id` de fila: la lista llega entera y se numera por su índice, así que no hay identificadores que puedan quedar obsoletos. Cada llamada a `actualizar_todo` borra la lista de la sesión y la reinserta con sus posiciones. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su lista.
+
 ## 4. Relaciones
 
 - `sessions` 1:N `messages`; `messages` 1:1 opcional `reasoning`.
 - `sessions` 1:N `approvals`.
 - `sessions` 1:N `context_audit`.
+- `sessions` 1:N `todos`.
 - `sessions` 1:N opcional `change_history`, que sobrevive a la sesión.
 
 El detalle de cardinalidades, claves foráneas y cascadas está en [[database/01-schema/RELATIONSHIPS]].

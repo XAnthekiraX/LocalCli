@@ -23,9 +23,9 @@ Definido en 19 especificaciones funcionales bajo `ai/docs/specs/`.
 ### Núcleo (P0)
 
 - [[specs/SPEC-AGENTE-BASE]] — los dos agentes incluidos y el relevo entre ellos.
-- [[specs/SPEC-TOOLS]] — catálogo de herramientas y reparto por agente.
+- [[specs/SPEC-TOOLS]] — catálogo de herramientas, reparto por agente y herramientas del usuario.
 - [[specs/SPEC-ARCHIVOS]] — reglas de acceso y permiso sobre archivos y carpetas.
-- [[specs/SPEC-OLLAMA-PERFIL]] — conexión a Ollama y perfil de hardware.
+- [[specs/SPEC-OLLAMA-PERFIL]] — conexión a Ollama, perfil de hardware, capacidad de herramientas y concurrencia.
 - [[specs/SPEC-NODO-CONTEXTO]] — selección y recorte del contexto por etapa.
 - [[specs/SPEC-SESIONES]] — varias sesiones con contexto independiente.
 - [[specs/SPEC-HISTORIAL-CONVERSACION]] — memoria del chat y compactación del historial.
@@ -73,12 +73,12 @@ internal/
   tui/             chat, panel de datos, selector de sesiones, aprobaciones
   session/         creación, cambio, memoria de conversación y ejecución en segundo plano de sesiones
   agent/           carga de agentes (ai/agents/*.json: nombres, prompts, permisos y relevo)
-  ollama/          cliente HTTP, streaming, razonamiento, perfil de hardware y capacidades del modelo
+  ollama/          cliente HTTP, streaming, razonamiento, canal de herramientas, perfil y capacidades del modelo
   context/         grafo de frontmatter, selección, recorte y auditoría
   flow/            motor de etapas y encadenamiento
   queue/           cola por capa y orden por dependencias
   task/            archivos de tarea
-  tools/           registro de herramientas y comprobación de permisos
+  tools/           catálogo, capa universal de ejecución y herramientas del usuario
   fileops/         validación de rutas, acceso a archivos e historial de cambios
   exec/            terminal: lista blanca y bloqueo estructural de escritura
   store/           persistencia SQLite
@@ -90,12 +90,14 @@ internal/
 1. `tui` recibe lo que escribes y lo envía a la sesión activa.
 2. `session` responde la petición como chat; solo arranca un flujo cuando la línea es un comando explícito (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`).
 3. `context` arma el contexto de la etapa: lee el grafo de dependencias, filtra, deja que el modelo elija y recorta hasta el límite.
-4. `agent` construye la llamada con el prompt de `plan` o de `build`, respetando qué herramientas tiene cada uno.
-5. `ollama` envía la petición y devuelve el token a token.
+4. `agent` construye la llamada con el prompt de `plan` o de `build` y los esquemas de las herramientas de ese agente, sin escribir el catálogo en el prompt.
+5. `ollama` envía la petición y devuelve el token a token, junto con las peticiones de herramienta que el modelo formule.
 6. `tui` muestra el razonamiento en vivo y después la respuesta.
-7. Si el agente pide una herramienta, `tools` comprueba el permiso y despacha a `fileops` o a `exec`.
+7. Si el agente pide una herramienta, `tools` comprueba el permiso, valida los argumentos, ejecuta el handler, recorta la salida y emite el evento. Cada petición del modelo puede ir en una vuelta del bucle; hay un máximo de rondas.
 8. El resultado de la etapa pasa a `flow`, que decide si sigue, si se detiene o si espera tu aprobación.
 9. `store` persiste el estado; `queue` toma la siguiente tarea cuando toca.
+
+Un turno de herramienta no se guarda en el historial: se resuelve en memoria y lo que persiste es el mensaje tuyo y la respuesta final del agente. Ver [[database/02-rules/DATA_FLOW]].
 
 ### Concurrencia
 
@@ -127,6 +129,7 @@ La cola se deriva de los archivos de tarea y se reconstruye al arrancar en memor
 
 - **Ollama.** API HTTP en local. Peticiones en streaming para poder mostrar el razonamiento mientras llega.
 - **Búsqueda en internet.** Es la única integración que hace salir información de la máquina, y solo sale la consulta. El contenido que vuelve entra al mismo presupuesto de contexto que el resto y queda registrado.
+- **Herramientas del usuario.** El usuario declara herramientas en `.localcli/tools/*.json` y se ejecutan como subproceso con la lista blanca y el aislamiento de la terminal. Siempre piden permiso y solo pueden leer. Ver [[backend/02-interfaces/TOOLS]].
 
 ## Seguridad
 
@@ -138,10 +141,11 @@ La cola se deriva de los archivos de tarea y se reconstruye al arrancar en memor
 
 ## Pruebas
 
-- **Unitarias.** Grafo de dependencias y selección de contexto, orden de la cola por dependencias, comprobación de permisos, reparto de herramientas por agente, validación de rutas.
-- **De integración.** Conexión y streaming con Ollama, ciclo completo de una etapa con las herramientas de lectura, aplicación de un cambio con su aprobación, ciclo de cola.
+- **Unitarias.** Grafo de dependencias y selección de contexto, orden de la cola por dependencias, comprobación de permisos, reparto de herramientas por agente, validación de rutas, generación de esquemas y recorte de la salida de una herramienta.
+- **De integración.** Conexión y streaming con Ollama, ciclo completo de una etapa con las herramientas de lectura, aplicación de un cambio con su aprobación, ciclo de cola, turno con varias herramientas encadenadas.
 - **Del aislamiento.** Un caso que intente escribir en el proyecto a través de la terminal y debe fallar. Es la prueba que sostiene la garantía de Landlock.
 - **De contexto.** Que el recorte reduzca de forma medible frente a leer el proyecto completo, y que lo entregado quepa en el límite del modelo.
+- **De herramientas del usuario.** Que un `.json` mal formado se salte sin romper el arranque, que toda ejecución pida permiso y que la salida se recorte antes de volver al modelo.
 
 ## Despliegue
 

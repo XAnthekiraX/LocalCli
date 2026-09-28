@@ -45,9 +45,9 @@ Se arranca con el comando explícito `/ejecutar`. Encadena las tareas grandes di
 1. El usuario escribe el comando que nombra el flujo con un objetivo.
 2. El motor lo descompone en sus etapas.
 3. Cada etapa pide su contexto al nodo de contexto, identificándose con su etapa: es lo que hace auditable qué recibió cada una (`context_audit`, una fila por documento y etapa).
-4. La etapa produce un resultado.
-5. El resultado pasa a la etapa siguiente.
-6. El flujo termina y se muestra el resultado final.
+4. La etapa produce su resultado y lo deja como un **resumen corto**.
+5. El resumen pasa a la etapa siguiente, que lo recibe además de su propio contexto. No se arrastra la salida completa: cada etapa recibe solo lo que necesita.
+6. El flujo termina y el chat muestra el resultado final: la entrega del último paso.
 
 ## Flujos alternativos
 
@@ -61,6 +61,9 @@ Se arranca con el comando explícito `/ejecutar`. Encadena las tareas grandes di
 
 - Las etapas se ejecutan en orden y cada una arranca cuando la anterior terminó.
 - Cada etapa recibe solo el contexto que necesita, no todo lo que la etapa anterior produjo.
+- Cada etapa es un sub-proceso: corre sin el historial del chat y recibe de las anteriores solo sus resúmenes cortos, encadenados.
+- Una etapa intermedia que no pide aprobación corre en silencio: su texto no se muestra en el chat ni se persiste; la vista solo anuncia su nombre (`[Sub Proceso] <nombre>`). La última etapa y las que piden aprobación sí se muestran.
+- El estado de la cadena —los resúmenes de las etapas— vive en el motor, no en la base de datos; al terminar, el chat muestra la entrega del último paso.
 - Si una etapa falla, el flujo se detiene. El usuario elige reintentar, saltar esa etapa o cancelar.
 - Un flujo pausado por un permiso se retoma desde la misma etapa, sin repetir lo ya hecho.
 - Todo lo que hace cada etapa queda registrado: qué recibió, qué hizo y qué produjo.
@@ -79,6 +82,9 @@ Se arranca con el comando explícito `/ejecutar`. Encadena las tareas grandes di
 - [ ] Una petición sin comando se responde en el chat y no arranca etapas.
 - [ ] Una tarea con dependencias sin cumplir no arranca.
 - [ ] Cada etapa recibe solo el contexto que necesita.
+- [ ] El resultado de cada etapa se pasa a la siguiente como un resumen corto.
+- [ ] Una etapa intermedia sin aprobación no se muestra ni se persiste; la vista solo anuncia su nombre.
+- [ ] Al terminar el flujo, el chat muestra la entrega del último paso.
 - [ ] Si una etapa falla, el flujo se detiene y el usuario elige qué hacer.
 - [ ] Un flujo pausado por un permiso se retoma exactamente donde estaba.
 - [ ] El usuario puede cancelar un flujo en cualquier momento.

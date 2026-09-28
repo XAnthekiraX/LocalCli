@@ -29,7 +29,7 @@ Cada módulo tiene una responsabilidad y un límite. Si un módulo necesita hace
 | `context` | Grafo de frontmatter, selección de lo relevante, recorte y auditoría | No llama al modelo por su cuenta; pide la decisión y aplica |
 | `agent` | Cargar las definiciones de agente desde JSON: prompt, permisos y relevo. Corre el ciclo conversacional del agente. El agente base es un JSON, no código | No ejecuta herramientas; las despacha a `tools` |
 | `ollama` | Cliente HTTP con streaming, extracción de razonamiento, perfil de hardware | Es el único que habla con el modelo; no sabe de tareas |
-| `tools` | Registro de las trece herramientas, comprobación de permiso, enrutado | No inventa herramientas ni las aplica |
+| `tools` | Registro de las catorce herramientas, comprobación de permiso, enrutado | No inventa herramientas ni las aplica |
 | `fileops` | Operaciones de archivo y carpeta, frontera de rutas, historial de cambios | No decide permisos; comprueba y aplica |
 | `exec` | Terminal: lista blanca y bloqueo estructural de escritura | No es una puerta trasera a los archivos del proyecto |
 | `store` | Único acceso a SQLite: esquema, WAL, transacciones | No decide nada de negocio |

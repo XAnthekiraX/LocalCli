@@ -9,6 +9,7 @@ relacionado:
   - "[[backend/01-domain/DOMAIN]]"
   - "[[backend/05-quality/ERRORS]]"
   - "[[database/01-schema/TABLES]]"
+  - "[[specs/SPEC-OLLAMA-PERFIL]]"
 ---
 # TOOLS-DTO — Payloads de las herramientas
 
@@ -18,51 +19,116 @@ Los cuerpos de petición y respuesta de cada herramienta. `LocalCli` no tiene HT
 
 Pertenece al recurso **herramientas del agente**, que es la superficie que consume el modelo a través de `agent` y `tools`. Ver [[specs/SPEC-TOOLS]].
 
-## 2. Request Schemas
+## 2. Los tipos son la fuente del esquema
+
+Cada herramienta declara su petición como un tipo de Go, y **el JSON Schema que ve el modelo se deriva de ese tipo por reflexión**. No hay un esquema escrito a mano al lado: si los dos existieran, divergirían.
+
+```go
+type PeticionLeerArchivo struct {
+    Ruta string `json:"ruta" desc:"Ruta relativa a la carpeta del proyecto"`
+}
+```
+
+derivaría en:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "ruta": {
+      "type": "string",
+      "description": "Ruta relativa a la carpeta del proyecto"
+    }
+  },
+  "required": ["ruta"]
+}
+```
+
+Reglas de derivación:
+
+- El nombre del campo es el del tag `json`.
+- El tipo es el del campo: `string`, `bool`, número, `[]T` como arreglo, `map` como objeto.
+- Un campo **sin** `omitempty` es obligatorio y va en `required`. Con `omitempty`, es opcional.
+- `desc` es la descripción que ve el modelo. Si falta, el campo viaja sin descripción.
+
+**`desc` está escrito para el modelo, no para quien lee el código.** Dice cuándo usar el argumento y qué significa, no cómo está implementado. Es la prosa más cara del sistema —cada definición viaja en cada petición al modelo— y por eso no se adorna.
+
+Los tipos anidados siguen la misma regla en profundidad: un `[]Cambio` de `editar_archivo` expone el esquema de `Cambio` entero, no un `object` vacío.
+
+La comprobación de que el esquema derivado coincide con el documentado aquí es un **test**, no una revisión manual. Si divergen, falla la suite.
+
+## 3. Request Schemas
 
 Los argumentos que el modelo envía. Todos obligatorios salvo lo marcado.
 
 ### Archivos de lectura
 
-| Herramienta | Campo | Tipo | Obligatorio | Notas |
+| Herramienta | Campo | Tipo | Obligatorio | `desc` |
 |---|---|---|---|---|
-| `leer_archivo` | `ruta` | string | Sí | Relativa a la carpeta del proyecto |
-| `listar_carpeta` | `ruta` | string | Sí | Relativa; un nivel |
-| `buscar_archivos` | `patron` | string | Sí | Coincide contra nombres de archivo |
-| `buscar_en_archivos` | `patron` | string | Sí | Coincide contra el contenido |
+| `leer_archivo` | `ruta` | string | Sí | Ruta relativa a la carpeta del proyecto |
+| `listar_carpeta` | `ruta` | string | Sí | Ruta relativa; un nivel |
+| `buscar_archivos` | `patron` | string | Sí | Texto contra el que se comparan los nombres de archivo |
+| `buscar_en_archivos` | `patron` | string | Sí | Texto a buscar dentro de los archivos |
 | `buscar_en_archivos` | `ruta` | string | No | Limita la búsqueda a una subcarpeta |
 
 ### Archivos de escritura (solo `build`)
 
-| Herramienta | Campo | Tipo | Obligatorio | Notas |
+| Herramienta | Campo | Tipo | Obligatorio | `desc` |
 |---|---|---|---|---|
-| `crear_archivo` | `ruta` | string | Sí | Falla si ya existe |
-| `crear_archivo` | `contenido` | string | Sí | Texto plano, cualquier extensión |
-| `escribir_archivo` | `ruta` | string | Sí | Sobrescribe |
-| `escribir_archivo` | `contenido` | string | Sí | Reemplaza el contenido entero |
-| `editar_archivo` | `ruta` | string | Sí | |
+| `crear_archivo` | `ruta` | string | Sí | Ruta del archivo a crear; falla si ya existe |
+| `crear_archivo` | `contenido` | string | Sí | Texto completo del archivo |
+| `escribir_archivo` | `ruta` | string | Sí | Ruta del archivo a sobrescribir |
+| `escribir_archivo` | `contenido` | string | Sí | Texto que reemplaza el contenido entero |
+| `editar_archivo` | `ruta` | string | Sí | Ruta del archivo a modificar |
 | `editar_archivo` | `cambio` | string | Sí | La edición a aplicar |
-| `eliminar_archivo` | `ruta` | string | Sí | Pide confirmación explícita |
-| `crear_carpeta` | `ruta` | string | Sí | Falla si ya existe |
-| `eliminar_carpeta` | `ruta` | string | Sí | Pide confirmación explícita |
+| `eliminar_archivo` | `ruta` | string | Sí | Ruta del archivo a borrar; pide confirmación explícita |
+| `crear_carpeta` | `ruta` | string | Sí | Ruta de la carpeta; falla si ya existe |
+| `eliminar_carpeta` | `ruta` | string | Sí | Ruta de la carpeta; pide confirmación explícita |
 
 ### Terminal
 
-| Herramienta | Campo | Tipo | Obligatorio | Notas |
+| Herramienta | Campo | Tipo | Obligatorio | `desc` |
 |---|---|---|---|---|
-| `ejecutar_comando` | `comando` | string | Sí | Se valida contra la lista blanca, no contra su texto |
-| `ejecutar_comando` | `carpeta` | string | No | Por defecto, la carpeta del proyecto |
+| `ejecutar_comando` | `comando` | string | Sí | Comando a correr; se valida contra la lista blanca, no contra su texto |
+| `ejecutar_comando` | `carpeta` | string | No | Carpeta de trabajo; por defecto, la del proyecto |
 
 ### Internet
 
-| Herramienta | Campo | Tipo | Obligatorio | Notas |
+| Herramienta | Campo | Tipo | Obligatorio | `desc` |
 |---|---|---|---|---|
-| `buscar_en_internet` | `consulta` | string | Sí | Lo único que sale de la máquina |
-| `abrir_pagina` | `direccion` | string | Sí | URL de la página a abrir |
+| `buscar_en_internet` | `consulta` | string | Sí | Qué buscar; es lo único que sale de la máquina |
+| `abrir_pagina` | `direccion` | string | Sí | Dirección de la página a abrir |
 
-## 3. Response Schemas
+### Sesión
+
+| Herramienta | Campo | Tipo | Obligatorio | `desc` |
+|---|---|---|---|---|
+| `actualizar_todo` | `elementos` | array de objeto | Sí | La lista completa de pasos; reemplaza la anterior |
+| `actualizar_todo` | `elementos[].contenido` | string | Sí | Qué hay que hacer; una acción concreta |
+| `actualizar_todo` | `elementos[].estado` | string | Sí | `pendiente` \| `en_progreso` \| `completada` \| `cancelada` |
+| `actualizar_todo` | `elementos[].prioridad` | string | No | `alta` \| `media` \| `baja` (opcional; por defecto `media`) |
+
+`elementos` es un `array` cuyo `items` expone el objeto de cada paso: el esquema anida `contenido`, `estado` y `prioridad`, no un `object` vacío. Lo que llega es la lista entera, no un delta: una lista vacía deja la lista en blanco. La capa universal comprueba que el estado y la prioridad estén en su vocabulario, y un valor fuera vuelve al modelo como `E_BAD_ARGS` corregible. Ver [[specs/SPEC-TOOLS]].
+
+### Del usuario
+
+El tipo de petición de una herramienta del usuario es genérico, no declarado: acepta cualquier objeto. El modelo ve `{"type": "object"}` y lo que el ejecutable entienda.
+
+Esto es una consecuencia honesta de que la herramienta sea código del usuario y no de LocalCli: **el harness no puede saber qué argumentos espera**. Los valida contra la forma de un objeto, nada más.
+
+| Herramienta | Campo | Tipo | Obligatorio | `desc` |
+|---|---|---|---|---|
+| `<cualquiera>` | — | object | — | Lo que la herramienta espere; LocalCli no lo valida |
+
+Es el precio de que el usuario escriba la herramienta en vez de elegirla de un catálogo. Queda dicho aquí para que nadie lo descubra en producción: el esquema no describe los argumentos de una herramienta del usuario, solo que el argumento es un objeto.
+
+## 4. Response Schemas
 
 Lo que cada herramienta devuelve al agente. El agente lo ve en su respuesta, así que el contenido importa: va al mismo presupuesto de contexto que el resto.
+
+Todas las respuestas comparten envoltura: `Resultado{Salida, Meta, Truncado, Error}`. Lo que las tablas de abajo describen es el contenido de `Salida`.
+
+El tamaño de `Salida` no viaja al modelo, pero sí a la línea del chat: cada herramienta declara su **unidad** ([[backend/02-interfaces/TOOLS]] §1) y el harness cuenta sus líneas con contenido. `leer_archivo`, `ejecutar_comando` y `abrir_pagina` se miden en líneas; `listar_carpeta` en entradas; `buscar_archivos` y `buscar_en_archivos` en coincidencias; `buscar_en_internet` en resultados; `actualizar_todo` en pasos. Las escrituras no tienen medida.
 
 ### Lectura de archivos
 
@@ -98,6 +164,8 @@ Toda escritura aprobada queda registrada en `change_history` con el antes y el d
 
 Un comando que sale con error no es un fallo de la herramienta: devuelve su salida de error y el agente sigue. Ver [[backend/05-quality/ERRORS]].
 
+El `truncado` de aquí es el del handler, que tiene su propio límite. La capa universal respeta ese `true` y no vuelve a recortar.
+
 ### Internet
 
 | Herramienta | Devuelve | Tipo |
@@ -107,9 +175,30 @@ Un comando que sale con error no es un fallo de la herramienta: devuelve su sali
 
 Lo que vuelve entra al presupuesto de contexto, se recorta y se audita como cualquier otro documento. Ver [[backend/01-domain/DOMAIN]].
 
+### Sesión
+
+| Herramienta | Devuelve | Tipo |
+|---|---|---|
+| `actualizar_todo` | La lista de pasos resultante, como checklist de texto (`[ ]`, `[•]`, `[✓]`, `[x]`) | string |
+
+El modelo ve la lista resultante en el propio resultado, así que no necesita una herramienta de lectura. La lista además se persiste por sesión y se anuncia al panel con el evento `todo_actualizada`. Ver [[backend/04-infrastructure/EVENTS]] y [[database/01-schema/TABLES]].
+
+### Del usuario
+
+| Campo | Tipo | Notas |
+|---|---|---|
+| `salida` | string | Lo que el ejecutable escribió en su salida estándar |
+| `codigo` | int | Código de salida del ejecutable |
+| `truncado` | bool | Si la salida se cortó por tamaño o tiempo |
+| `termino` | bool | Si el ejecutable terminó |
+
+La salida de error del ejecutable **no** se distingue de la normal: se concatena a `Salida`, igual que hace la terminal. Es el mismo mecanismo, y el modelo no necesita saber de dónde vino.
+
 ## Referencias
 
-- [[backend/02-interfaces/TOOLS]] — el catálogo y su comportamiento.
+- [[backend/02-interfaces/TOOLS]] — el catálogo, la capa universal y su comportamiento.
 - [[backend/05-quality/VALIDATION]] — qué campos son obligatorios y cómo se validan.
-- [[specs/SPEC-TOOLS]] — la especificación funcional.
+- [[specs/SPEC-TOOLS]] — la especificación funcional y las herramientas del usuario.
+- [[specs/SPEC-OLLAMA-PERFIL]] — el canal por el que viajan los esquemas.
 - [[database/01-schema/TABLES]] — dónde queda lo que las herramientas de escritura registran.
+

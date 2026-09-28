@@ -6,7 +6,9 @@ depende_de:
   - "[[database/DATABASE]]"
 relacionado:
   - "[[database/01-schema/INDEXES]]"
+  - "[[database/01-schema/ENUMS]]"
   - "[[database/02-rules/BUSINESS_RULES]]"
+  - "[[database/02-rules/DATA_FLOW]]"
   - "[[database/03-operations/SEEDING]]"
   - "[[specs/SPEC-ARCHIVOS]]"
 ---
@@ -16,12 +18,12 @@ relacionado:
 
 La versión del esquema se guarda en el `PRAGMA user_version` de SQLite, un entero que ya viene en la base y que no se usa para otra cosa. No hay tabla de migraciones.
 
-La razón de no usar una tabla propia es que este proyecto no necesita el historial de qué migraciones se aplicaron: solo necesita saber en qué versión está el esquema y poder pasar al siguiente. `user_version` cubre exactamente eso sin añadir una séptima tabla a un esquema de seis.
+La razón de no usar una tabla propia es que este proyecto no necesita el historial de qué migraciones se aplicaron: solo necesita saber en qué versión está el esquema y poder pasar al siguiente. `user_version` cubre exactamente eso sin añadir una tabla de control de migraciones al esquema.
 
 Las migraciones se ejecutan automáticamente al abrir un proyecto, antes de usar la base. El usuario no ejecuta migraciones a mano.
 
 Subir una migración aplicada no es lo mismo que tener un esquema válido: `user_version` registra qué se aplicó, no qué hay en las tablas. Por eso, además de aplicar lo que falte, al abrir un proyecto se verifica el esquema real contra la versión actual, y si no cuadra la apertura falla en lugar de declarar un esquema que no es. Ver
-[[database/03-operations/MIGRATIONS#3-datos-existentes]] y la nota sobre el esquema actual, más abajo.
+[[database/03-operations/MIGRATIONS#4-datos-existentes]] y la nota sobre el esquema actual, más abajo.
 
 ## 2. Modificación del esquema
 
@@ -58,45 +60,74 @@ Reglas:
 
 ## Nota sobre el esquema actual
 
-La base se crea ya en su versión 1, con las seis tablas de [[database/01-schema/SCHEMA]]. No hay migración de creación pendiente: la creación del archivo y su esquema inicial ocurren en el mismo paso, y `user_version` arranca en 1. Las migraciones de [[database/01-schema/INDEXES]] existen, pero se aplican junto con la creación inicial, no después.
+La base se crea ya en su versión actual (v2): las seis tablas de [[database/01-schema/SCHEMA]] más `todos`, la lista de pasos de la sesión. La creación del archivo, su esquema inicial y la migración `002-crear-todo` ocurren en el mismo paso de apertura, así que `user_version` arranca en 2. Los índices de [[database/01-schema/INDEXES]] se aplican junto con la creación, no después.
 
-### Un `user_version` a 1 no basta para saber que el esquema es el de la v1
+La migración `002-crear-todo` es aditiva: añade la tabla `todos` y su clave primaria `(session_id, position)`, sin tocar ninguna fila existente. Una base en `user_version = 1` la recibe al abrirse y pasa a la 2 sin perder nada.
+
+### Un `user_version` correcto no basta para saber que el esquema es el de la versión
 
 `user_version` dice qué migración se aplicó por última vez, no qué hay en las
 tablas. Un archivo creado por una build anterior a la corrección del DDL de la
-v1 tiene `user_version = 1` y, sin embargo:
+v1 tiene `user_version` correcto para su momento y, sin embargo:
 
 - sus seis tablas declaran `id TEXT PRIMARY KEY` **sin `NOT NULL`**, así que
   admiten filas con `id` nulo, y
 - no tienen el índice `idx_context_audit_unico`, así que admiten una segunda
   auditoría de la misma terna.
 
-Aplicar una migración `002` no arregla eso: subir el `user_version` a 2 sobre un
-esquema que nunca tuvo la corrección declararía un esquema que no es el de la v2,
-y la próxima apertura volvería a mirar el `user_version` y a creérselo. Es peor
-que no detectar nada.
+Subir el `user_version` no arregla eso: declararía un esquema que no es el que
+tiene el archivo, y la próxima apertura volvería a mirar el `user_version` y a
+creérselo. Es peor que no detectar nada.
 
 Por eso, además de la versión, al abrir un proyecto se **verifica el esquema
-real**: se comprueba que estén las seis tablas y que su `id` sea `NOT NULL`. Si
-algo no cuadra, la apertura falla con `E_DB_SCHEMA_OUTDATED` diciendo qué
-archivo borrar. No se corrige solo y no se borra solo: el archivo es del
-usuario, y la política de no tocar datos es de [[database/DATABASE]].
+real**: se comprueba que estén las tablas esperadas, que su `id` sea `NOT NULL` y
+que existan la tabla `todos` y el índice único de auditoría. Si algo no cuadra,
+la apertura falla con `E_DB_SCHEMA_OUTDATED` diciendo qué archivo borrar. No se
+corrige solo y no se borra solo: el archivo es del usuario, y la política de no
+tocar datos es de [[database/DATABASE]].
 
-Como la v1 es la versión inicial y todavía no hay una v2, el camino previsto es
+La corrección del DDL de la v1 no se aplica como migración; el camino previsto es
 borrar `.localcli/state.db` y dejar que se vuelva a crear. La base es caché y
 traza local: el contenido que no se puede recuperar de ella está en git. Si
-alguna vez esto ya no fuera cierto, la corrección pasaría a ser la migración
-`002` con su transformación de datos, y esta verificación seguiría siendo
-necesaria para detectar bases ajenas.
+alguna vez esto ya no fuera cierto, la corrección pasaría a ser una migración con
+su transformación de datos, y esta verificación seguiría siendo necesaria para
+detectar bases ajenas.
 
 La comparación contra el esquema real es también un test: fija el número de
 versión esperado contra el literal que dice esta sección, para que subir la
 constante sin actualizar el documento salga en rojo.
 
+## Nota sobre el canal de herramientas
+
+La incorporación del canal nativo de herramientas **no genera migración**, y esa
+ausencia es una decisión documentada, no un descuido.
+
+Lo que añadiría el canal son mensajes con rol de herramienta en la conversación.
+Esos mensajes viven solo durante el turno: no se insertan, no hay tabla para
+ellos y `messages.role` sigue cerrado a `user` y `agent`.
+
+Las razones para no persistirlos:
+
+- El `CHECK` de `role` no cambia, así que no hay DDL que migrar.
+- Al retomar una sesión, lo que el usuario necesita es qué se hizo y qué quedó,
+  y eso ya está en el texto del mensaje final del agente. Reinyectar peticiones
+  de herramientas de hace tres sesiones no aporta nada y multiplica el contexto.
+- Una migración que cambiara `role` y añadiera columnas de argumentos y
+  resultados obligaría además a decidir qué se reconstruye y qué se descarta al
+  cargar una sesión, que es una política, no un problema de esquema.
+
+El rastro de las ejecuciones existe, pero en otro sitio: los eventos de la capa
+universal y `change_history`, que son efímeros y permanentes respectivamente. Ver
+[[database/02-rules/DATA_FLOW]] y [[database/01-schema/ENUMS]].
+
+Si en el futuro se quisiera persistir los turnos con herramientas, sería una migración completa: `CHECK` de `role`, columnas nuevas y la política de reconstrucción. No se hace ahora.
+
 ## Referencias
 
 - [[database/01-schema/SCHEMA]] — el esquema que migran.
 - [[database/01-schema/INDEXES]] — índices que crean las migraciones.
+- [[database/01-schema/ENUMS]] — por qué `messages.role` no crece.
+- [[database/02-rules/DATA_FLOW]] — qué se guarda de un turno y qué no.
 - [[database/DATABASE]] — políticas, en particular la de no borrar el historial.
 - [[database/02-rules/BUSINESS_RULES]] — por qué el historial no se toca.
 - [[database/03-operations/SEEDING]] — qué se inserta tras crear el esquema.

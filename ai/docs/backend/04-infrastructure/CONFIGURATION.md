@@ -31,10 +31,12 @@ Ninguna es obligatoria. No hay variables que apliques por omisión.
 | Variable | Propósito | Por defecto | Obligatoria |
 |---|---|---|---|
 | `LOCALCLI_DB_PATH` | Sobrescribe la ruta del archivo SQLite del proyecto | Derivada de la carpeta de ejecución | No |
-| `LOCALCLI_CONTEXT_LIMIT` | Limita los tokens de contexto que se respetan al recortar | El del modelo elegido | No |
+| `LOCALCLI_CONTEXT_LIMIT` | Tope de la ventana de contexto (`num_ctx`) que se pide a Ollama y de los tokens que se respetan al recortar | `16384`, o la ventana del modelo si es menor | No |
 | `LOCALCLI_ALLOW_INTERNET` | Permite las herramientas de internet | Desactivado | No |
 
 `LOCALCLI_DB_PATH` existe solo para casos raros, como trabajar con la base en otro sitio. En el uso normal no hace falta.
+
+`LOCALCLI_CONTEXT_LIMIT` es el tope de la ventana de contexto que cada petición declara a Ollama (`num_ctx`). Sin él, la ventana es la menor entre lo que declara el modelo y 16384; el nodo de contexto y el presupuesto del historial se derivan de ahí. Bajarlo en máquinas muy justas de memoria es lo habitual. Ver [[specs/SPEC-OLLAMA-PERFIL]] y [[backend/DECISIONS]].
 
 Sobre `LOCALCLI_ALLOW_INTERNET`: es la única integración que saca información de la máquina, así que no viene activada. El usuario la habilita. Ver [[backend/03-security/SECURITY]].
 
@@ -49,6 +51,8 @@ Sobre `LOCALCLI_ALLOW_INTERNET`: es la única integración que saca información
 
 El modelo lo elige el usuario, siempre. Ver [[specs/SPEC-OLLAMA-PERFIL]] y [[backend/04-infrastructure/INTEGRATIONS]].
 
+El tamaño de contexto no se configura por modelo: cada petición lo declara (`num_ctx`) como la menor entre la ventana que reporta el modelo en `/api/tags` y el tope (`LOCALCLI_CONTEXT_LIMIT`, 16384 por defecto). Es lo que evita que Ollama use su valor de servidor (pequeño) y corte los turnos con herramientas. Ver [[backend/DECISIONS]].
+
 ## 4. Rutas
 
 Todo se deriva de la carpeta desde la que se ejecuta `localcli`:
@@ -56,14 +60,34 @@ Todo se deriva de la carpeta desde la que se ejecuta `localcli`:
 | Qué | Dónde |
 |---|---|
 | Carpeta del proyecto | La carpeta desde la que se ejecuta `localcli` |
-| Archivo SQLite | Derivado de esa carpeta |
+| Archivo SQLite | `.localcli/state.db` dentro del proyecto, o `LOCALCLI_DB_PATH` si se sobrescribe |
 | Documentación | `ai/docs/` dentro del proyecto |
 | TODO de trabajo | `ai/tasks/` dentro del proyecto |
+| Herramientas del usuario | `.localcli/tools/*.json` dentro del proyecto |
 | Archivos y carpetas | Todo lo que cuelgue de la carpeta del proyecto |
 
 El proyecto es la carpeta abierta. El chat de una carpeta nunca aparece en otra. Ver [[specs/SPEC-SESIONES]].
 
-La ruta exacta del archivo SQLite es una decisión aún abierta en [[backend/DECISIONS]]; `LOCALCLI_DB_PATH` permite ajustarla sin esperar a cerrarla.
+El archivo SQLite va en `.localcli/state.db` dentro del proyecto, y `.localcli/` está fuera de git. La ruta se deriva de la carpeta abierta y no necesita variables; `LOCALCLI_DB_PATH` existe solo para los casos raros, como trabajar con la base en otro sitio. Ver [[backend/DECISIONS]].
+
+### Herramientas del usuario
+
+El usuario puede añadir herramientas sin tocar el código: cada archivo `.json` de `.localcli/tools/` declara una. La carpeta es del proyecto, así que se versiona con él y cada uno lleva las suyas. No hay nada que activar: si el archivo está, la herramienta existe.
+
+```json
+{
+  "nombre": "contar_lineas",
+  "descripcion": "Cuenta las líneas de un archivo del proyecto.",
+  "modo": "lee",
+  "equipo": ["wc", "-l"]
+}
+```
+
+- **Se declaran, no se ejecutan al leerlas.** Un archivo mal formado se avisa y se salta; no rompe el arranque ni las demás herramientas.
+- **No se confiables por estar en la carpeta.** Toda ejecución pide permiso, sin excepción, aunque el agente ya tenga permiso para herramientas de lectura. Ver [[backend/03-security/SECURITY]].
+- **Solo lectura.** `modo` tiene un único valor admisible, `lee`. Declarar `escribe` se rechaza con un aviso: Landlock impide que un proceso escriba en el proyecto, así que una herramienta de escritura no podría cumplir su promesa y fallaría de forma confusa. Si algún día se admite, será una decisión de seguridad nueva, no un cambio de configuración. Ver [[backend/02-interfaces/TOOLS]].
+- **`equipo` es argv, no una línea de shell.** El primer elemento es el programa y los siguientes sus argumentos. No hay shell, no hay comillas que interpretar y no hay encadenado con `|`, `>` ni `&&`.
+- **Se ejecutan como un subproceso** con la misma lista blanca y el mismo aislamiento que la terminal, y su salida se recorta antes de volver al modelo. Ver [[specs/SPEC-TOOLS]].
 
 ## 5. Configuración por ambiente
 
@@ -106,6 +130,9 @@ Además de `~/.config/localcli/keys.json` (el mapa de teclas), el usuario tiene 
 
 ## Referencias
 
+- [[backend/02-interfaces/TOOLS]] — el contrato de una herramienta del usuario y cómo se ejecuta.
+- [[specs/SPEC-TOOLS]] — la especificación funcional del catálogo.
 - [[backend/04-infrastructure/INTEGRATIONS]] — cómo se habla con Ollama y cómo se listan los modelos.
-- [[backend/DECISIONS]] — decisiones de configuración aún abiertas.
+- [[backend/03-security/SECURITY]] — los límites de lo que puede hacer una herramienta.
+- [[backend/DECISIONS]] — decisiones de configuración ya cerradas.
 - [[PROJECT]] — requisitos en la máquina y despliegue.

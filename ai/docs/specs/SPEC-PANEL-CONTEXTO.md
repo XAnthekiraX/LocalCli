@@ -32,8 +32,8 @@ Aquí se define **qué significan** los números y de dónde salen. **Dónde se 
 ## Flujo principal
 
 1. Se envía una petición al modelo.
-2. Mientras responde, se muestra su razonamiento a medida que llega.
-3. Al terminar, se muestra cuántos tokens se usaron y qué parte del contexto quedó ocupada.
+2. Mientras responde, se muestra un **indicador en vivo** (`[⠋ Pensando]`); el texto del razonamiento se revela con `Ctrl+R` a medida que llega.
+3. Mientras responde y al terminar, se muestran los tokens del turno (el consumo vivo se corrige con el total exacto al cerrarse) y qué parte del contexto quedó ocupada.
 
 ## Flujos alternativos
 
@@ -43,16 +43,16 @@ Aquí se define **qué significan** los números y de dónde salen. **Dónde se 
 
 ## Reglas de negocio
 
-- El conteo de tokens se muestra siempre. Si es una estimación, aparece marcado como estimación.
-- El razonamiento se muestra tal como lo devuelve el modelo, sin editarlo.
+- El conteo de tokens se muestra siempre: en el panel de datos y, cuando hay consumo, también bajo la línea de entrada (`tokens: 54k`). Si es una estimación, aparece marcado como estimación.
+- El razonamiento se revela tal como lo devuelve el modelo, sin editarlo (`Ctrl+R`); por defecto se ve el indicador en vivo, no el texto.
 - La ocupación del contexto se expresa sobre el límite del modelo.
 - Los datos corresponden a la petición actual, no a la suma de la sesión.
 - Los datos se pueden ocultar sin detener nada.
 
 ## Criterios de aceptación
 
-- [ ] Se ve el razonamiento del modelo mientras genera la respuesta.
-- [ ] Se ve cuántos tokens se usaron en la petición.
+- [ ] Se ve el indicador en vivo mientras el modelo genera, y `Ctrl+R` revela el texto del razonamiento.
+- [ ] Se ve cuántos tokens se usaron en la petición, bajo la línea de entrada (`tokens: 54k`).
 - [ ] Se ve qué porcentaje del contexto está ocupado.
 - [ ] Si el conteo es estimado, aparece marcado como estimación.
 - [ ] Si el modelo no entrega razonamiento, se indica que no está disponible.

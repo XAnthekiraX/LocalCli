@@ -43,9 +43,9 @@ internal/
   queue/           cola de trabajo en forma de TODO y su orden
   context/         grafo de frontmatter, selección de contexto y auditoría
   agent/           agentes desde JSON: prompt, permisos, ciclo conversacional y relevo
-  ollama/          cliente HTTP, streaming, razonamiento, perfil de hardware y capacidades
+  ollama/          cliente HTTP, streaming, razonamiento, canal de herramientas, perfil y capacidades
   task/            archivos de tarea
-  tools/           registro de herramientas y comprobación de permisos
+  tools/           catálogo, capa universal de ejecución, hooks y herramientas del usuario
   fileops/         validación de rutas, acceso a archivos e historial
   exec/            terminal: lista blanca y bloqueo estructural
   store/           persistencia SQLite
@@ -61,11 +61,11 @@ Cada módulo tiene un límite. Ver [[backend/01-domain/DOMAIN]] para el detalle.
 - **`flow`** — Motor de etapas. Encadena las etapas de los ciclos oficiales (planificación, trabajo, resolver), decide si sigue, si para o si espera tu aprobación. No sabe de herramientas ni de SQL.
 - **`queue`** — Cola de la ejecución en curso. Consume el TODO que creó esta solicitud, respeta su orden y marca lo bloqueado. No inventa trabajo: el TODO se lo creó `flow` al detectar tu petición.
 - **`context`** — Nodo de contexto. Lee el grafo de dependencias, deja que el modelo decida qué es relevante, recorta hasta el límite y registra qué entró y qué salió. No llama al modelo por su cuenta.
-- **`agent`** — Carga las definiciones de agente desde JSON: prompt, permisos y relevo. El agente base es un JSON editable, no código. Corre el ciclo conversacional (modelo → herramienta → resultado → modelo) y antepone al contexto del turno el historial de conversación que le entrega `flow`; no ejecuta herramientas: las despacha a `tools`. Las skills no vienen de fábrica; las crea el usuario en markdown.
-- **`ollama`** — Cliente de Ollama: HTTP en local, streaming token a token, extracción de razonamiento, perfil de hardware y capacidades del modelo (`/api/show`). Es el único que habla con el modelo.
-- **`tools`** — Registro de las trece herramientas, comprobación de permiso y enrutado. No inventa herramientas y no aplica permisos: solo enruta.
+- **`agent`** — Carga las definiciones de agente desde JSON: prompt, permisos y relevo. El agente base es un JSON editable, no código. Corre el ciclo conversacional (modelo → herramienta → resultado → modelo, con un máximo de rondas) y antepone al contexto del turno el historial de conversación que le entrega `flow`. Construye la petición al modelo con los esquemas de las herramientas del agente activo y no las ejecuta: se las pide a `tools`. Si el modelo en uso no admite herramientas, el agente cae a modo conversación. Las skills no vienen de fábrica; las crea el usuario en markdown.
+- **`ollama`** — Cliente de Ollama: HTTP en local, streaming token a token, extracción de razonamiento, serialización del canal de herramientas, perfil de hardware y capacidades del modelo (`/api/show`). Es el único que habla con el modelo.
+- **`tools`** — Registro del catálogo, capa universal de ejecución y punto de extensión. Envuelve **toda** ejecución —incluidas las del usuario— con la misma secuencia: buscar, comprobar permiso, validar argumentos, ejecutar el handler, recortar la salida y emitir el evento. Define los tipos; las implementaciones se inyectan al cablear, así que no importa `fileops` ni `exec`. Carga las herramientas que el usuario declara en `.localcli/tools/`. No inventa herramientas y no inventa permisos: comprueba los que el agente trae.
 - **`fileops`** — Aplica operaciones de archivo y carpeta, valida la frontera de rutas y guarda el historial de cambios. Donde vive la frontera de la carpeta del proyecto.
-- **`exec`** — Terminal. Lista blanca de comandos y bloqueo estructural de escritura con Landlock. Lo único que puede lanzar procesos.
+- **`exec`** — Terminal. Lista blanca de comandos y bloqueo estructural de escritura con Landlock. Lo único que puede lanzar procesos, y también lo que ejecuta las herramientas del usuario.
 - **`store`** — Único acceso a SQLite: esquema, WAL y transacciones. Ningún otro módulo escribe en la base.
 - **`docs`** — Carga la documentación del proyecto, lee el frontmatter y construye el grafo de dependencias. No guarda nada.
 - **`task`** — Lee y escribe el TODO de la ejecución: elementos, orden y estado.
@@ -79,9 +79,10 @@ Los módulos se comunican por canales de Go, no por red. Un solo proceso. La for
 - `flow` → `context`: cada etapa pide su contexto por un objetivo concreto.
 - `flow` → `agent`: el motor dice qué agente corre (`plan` o `build`) en cada etapa y le pasa el contexto del turno junto con el historial de la conversación.
 - `context` → `ollama` y `store`: para pedir al modelo qué documentos necesita, y para registrar la auditoría.
-- `agent` → `ollama`: el agente construye la llamada con su prompt y la envía.
-- `agent` → `tools`: el agente pide una herramienta; `tools` comprueba permiso y enruta.
-- `tools` → `fileops` o `exec`: las de archivo van a `fileops`; la de terminal, a `exec`.
+- `agent` → `ollama`: el agente construye la llamada con su prompt, sus esquemas de herramientas y el historial, y la envía. Vuelve por streaming, token a token, y con las peticiones de herramienta acumuladas.
+- `agent` → `tools`: el agente pide los esquemas de las herramientas del agente activo, y despacha cada ejecución. `tools` decide si se permite y qué pasa.
+- `arranque` → `fileops`, `exec`: sus implementaciones se **inyectan** en el registro de herramientas como handlers. `tools` no los importa; es lo que permite que cada herramienta lleve su propio `Ejecutar` sin un ciclo de importación.
+- `tools` → `exec`: las herramientas que el usuario declara en `.localcli/tools/` se ejecutan sobre el ejecutor de la terminal, heredando Landlock, el límite de tiempo y la cola.
 - `fileops` → `store`: cada cambio aplicado se registra en `change_history`.
 - `queue` → `flow`: la cola toma la siguiente tarea y el motor la ejecuta.
 - `docs` → `context` y `task`: proveen el grafo y las tareas.
@@ -89,7 +90,9 @@ Los módulos se comunican por canales de Go, no por red. Un solo proceso. La for
 
 ### Concurrencia
 
-Una goroutine por sesión en ejecución, con el motor de etapas encima. Los canales de Go hacen de cola entre la TUI y el trabajo de fondo. SQLite en WAL para que la interfaz pueda leer mientras las sesiones de fondo escriben. Las sesiones concurrentes comparten un único modelo en Ollama, así que sus respuestas se serializan: mientras una genera, la otra espera. Es una consecuencia del hardware, no del diseño. Ver [[backend/04-infrastructure/INTEGRATIONS]].
+Una goroutine por sesión en ejecución, con el motor de etapas encima. Los canales de Go hacen de cola entre la TUI y el trabajo de fondo. SQLite en WAL para que la interfaz pueda leer mientras las sesiones de fondo escriben. Las sesiones concurrentes comparten un único modelo en Ollama, así que sus respuestas se serializan por orden de llegada: mientras una genera, la otra espera. Es una consecuencia del hardware, no del diseño.
+
+**El turno de inferencia se toma por petición al modelo, no por ejecución completa.** Un turno puede necesitar varias peticiones —pedir, ejecutar herramientas, volver a pedir—, y entre una y otra puede haber una espera de aprobación. Si el testigo se tomara alrededor de la ejecución entera, una sesión bloqueada esperando al usuario retendría el modelo y las demás sesiones no podrían generar durante ese rato. Ver [[specs/SPEC-OLLAMA-PERFIL]] y [[backend/04-infrastructure/INTEGRATIONS]].
 
 ## Stack
 
@@ -105,7 +108,7 @@ Una goroutine por sesión en ejecución, con el motor de etapas encima. Los cana
 - Módulos y entidades → [[backend/01-domain/DOMAIN]]
 - Reglas del motor → [[backend/01-domain/BUSINESS_RULES]]
 - Contratos entre módulos y superficies → [[backend/02-interfaces/INTERFACES-GENERAL]]
-- Las trece herramientas → [[backend/02-interfaces/TOOLS]]
+- Las catorce herramientas → [[backend/02-interfaces/TOOLS]]
 - Seguridad y permisos → [[backend/03-security/SECURITY]]
 - Configuración → [[backend/04-infrastructure/CONFIGURATION]]
 - Integraciones externas → [[backend/04-infrastructure/INTEGRATIONS]]

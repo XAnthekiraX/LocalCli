@@ -47,6 +47,12 @@ La base de datos tiene cuatro columnas con un conjunto cerrado de valores. Cada 
 
 El razonamiento solo existe en mensajes con `role = agent`.
 
+**No hay un rol `tool`, y es deliberado.** Con el canal nativo de herramientas, cada turno puede incluir mensajes de herramienta: la petición del modelo y el resultado de cada ejecución. Esos mensajes existen **solo mientras dura el turno** y no se guardan.
+
+Lo que sí se guarda es el mensaje `agent` final, que ya dice en su texto qué hizo y con qué resultado. Eso es lo que el usuario lee al volver a abrir la sesión, y lo que el modelo recibe como historial.
+
+Añadir el rol habría obligado a migrar el `CHECK`, a decidir cómo se reconstruye un turno con herramientas al retomar la sesión, y a multiplicar el contexto de las sesiones largas con resultados de herramientas que hace turnos que ya no importan. El coste es que una sesión retomada no recuerda el detalle de las ejecuciones: recuerda la conclusión. Ver [[database/02-rules/DATA_FLOW]] y [[backend/DECISIONS]].
+
 ### Estado de aprobación — `approvals.status`
 
 | Valor | Significado |
@@ -72,6 +78,8 @@ Los seis valores coinciden con las seis herramientas de escritura del catálogo,
 | `eliminar_carpeta` | `eliminar_carpeta` | Una carpeta borrada |
 
 `crear_archivo` y `escribir_archivo` están separados a propósito: el primero falla si el archivo ya existe, el segundo lo sobrescribe. La base refleja esa diferencia.
+
+**Una herramienta del usuario no genera una operación nueva.** Sus comandos se ejecutan bajo Landlock, que no le permite escribir en el proyecto, así que nunca hay una escritura que registrar. Si en el futuro se permitiera, sería un valor nuevo aquí y una migración; hoy el conjunto de seis sigue completo. Ver [[backend/03-security/SECURITY]].
 
 ## 3. Estados y transiciones
 
@@ -111,10 +119,17 @@ pendiente ──▶ aprobada
 
 Cuando una sesión se elimina, sus aprobaciones `pendiente` se borran en cascada con ella y no pasan por `obsoleta`. La fila desaparece porque la sesión desaparece.
 
+### Herramientas y aprobaciones
+
+Un turno puede pedir varias herramientas, y cada una que lo necesite abre su propia aprobación. Las aprobaciones de un turno se resuelven **una a una, en el orden en que el modelo las pidió**: las ejecuciones son secuenciales, así que la segunda ni siquiera se intenta hasta que la primera está resuelta.
+
+Una aprobación se vuelve `obsoleta` si la sesión termina mientras esperaba, o si el turno se cancela. El motivo es el mismo que con las aprobaciones normales: la decisión ya no sirve para nada.
+
 ## Referencias
 
 - [[database/01-schema/TABLES]] — columnas donde se usan estos valores.
 - [[database/01-schema/RELATIONSHIPS]] — cascadas y supervivencia del historial.
 - [[database/01-schema/CONSTRAINTS]] — los `CHECK` que los validan.
+- [[database/02-rules/DATA_FLOW]] — qué se guarda de un turno y qué no.
 - [[specs/SPEC-SESIONES]] — de dónde salen los estados de sesión.
-- [[specs/SPEC-TOOLS]] — el catálogo del que salen las operaciones de archivo.
+- [[specs/SPEC-TOOLS]] — el catálogo del que salen las operaciones de archivo y las herramientas del usuario.
