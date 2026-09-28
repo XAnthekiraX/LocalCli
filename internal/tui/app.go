@@ -107,11 +107,25 @@ type App struct {
 	PidiendoCancelarEsc bool
 
 	// Estado de la selección con el ratón y el último marco pintado, del que se
-	// extrae el texto al soltar (selection.go).
+	// extrae el texto al soltar (selection.go). ratonIni es el ancla (donde se
+	// pulsó) y ratonFin el puntero. Mientras difieren, la selección se pinta.
 	ratonSelec  bool
 	ratonIni    posicion
 	ratonFin    posicion
 	ultimaVista string
+	// chatFilaIni/chatFilaFin son las filas que ocupa la ventana del historial
+	// dentro del marco pintado, y iniEnChat/finEnChat dicen si el ancla y el
+	// puntero viven en esa banda. Es lo que permite a la rueda reanclar la
+	// selección al texto sin desplazar lo que no es chat (selection.go).
+	chatFilaIni int
+	chatFilaFin int
+	iniEnChat   bool
+	finEnChat   bool
+	// copiado enciende el aviso transitorio [Copiado] (arriba a la derecha) tras
+	// copiar una selección; copiadoGen invalida el temporizador de una copia
+	// anterior para que no apague el aviso de una copia nueva.
+	copiado    bool
+	copiadoGen uint64
 	// Los tres modales (SPEC-INTERFAZ §Modales: "Tres modales centrados
 	// comparten el mismo comportamiento: uno abierto a la vez… Esc cierra sin
 	// cambios"). Todos se abren con acciones globales del mapa —session_picker,
@@ -280,6 +294,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.Entrada.AjustarTeclasPropias()
 		return a, nil
 	case tea.KeyMsg:
+		// Una tecla es una interacción nueva: la selección del ratón deja de
+		// estar vigente, para que su realce no quede pegado sobre lo que venga
+		// después (un modal, otra vista). La rueda no pasa por aquí.
+		a.limpiarSeleccion()
 		// La confirmación de borrado captura el teclado en cualquier vista:
 		// mientras está activa, s/n/esc y nada más (SPEC-SESIONES).
 		if a.PidiendoEliminarSesion != "" {
@@ -354,6 +372,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// cerrar un turno no deja dos cadenas corriendo.
 		a.latido++
 		return a, tickCmd(a.latido)
+	case copiadoExpiradoMsg:
+		// El aviso [Copiado] se apaga solo al vencer su tiempo; un temporizador
+		// de una copia anterior no apaga el aviso de una copia nueva.
+		if m.gen == a.copiadoGen {
+			a.copiado = false
+		}
+		return a, nil
 	case tickMsg:
 		// El contador late solo mientras hay un turno vivo y la cadena sea la
 		// vigente; al cerrarse el turno (o quedar obsoleta la generación), el
@@ -1135,17 +1160,31 @@ func (a *App) pausar() tea.Cmd {
 }
 
 // View pinta la pantalla y recuerda el marco: de él se extrae el texto de una
-// selección con el ratón (selection.go).
+// selección con el ratón (selection.go). Si hay una selección (el ancla y el
+// puntero difieren, solo durante el arrastre), se devuelve el marco con su
+// tramo resaltado en video inverso; `ultimaVista` se guarda en crudo para que la
+// extracción del texto que se copia no dependa del realce. Encima va el aviso
+// transitorio [Copiado] cuando toca.
 func (a *App) View() string {
 	v := a.view()
 	a.ultimaVista = v
-	return v
+	out := v
+	if a.ratonIni != a.ratonFin {
+		out = resaltarSeleccion(v, a.ratonIni, a.ratonFin)
+	}
+	if a.copiado {
+		out = superponerDerecha(out, estiloCopiado.Render("[Copiado]"), a.Ancho)
+	}
+	return out
 }
 
 // view pinta la pantalla: un modal abierto si lo hay, y si no la bienvenida o la
 // interfaz principal. Los tres modales se dibujan centrados sobre la ventana
 // (SPEC-INTERFAZ §Modales: "Tres modales centrados").
 func (a *App) view() string {
+	// La banda del chat solo existe en la vista principal: en las demás se
+	// neutraliza para que ningún extremo de una selección cuente como del chat.
+	a.chatFilaIni, a.chatFilaFin = 0, 0
 	// La confirmación de borrado se pinta encima de todo: mientras está activa
 	// es lo único que el usuario puede responder.
 	if a.PidiendoEliminarSesion != "" {
@@ -1364,6 +1403,12 @@ func (a *App) viewPrincipal() string {
 		altoChat = 3
 	}
 	cuerpo := construir(altoChat)
+
+	// La banda del chat del marco recién compuesto, para que la rueda pueda
+	// reanclar la selección (selection.go). La línea «↑ N líneas arriba», si
+	// está, ocupa la primera fila.
+	a.chatFilaIni = cabecera(a.Chat.OcultasArriba())
+	a.chatFilaFin = a.chatFilaIni + altoChat
 
 	if !a.Panel.Abierto {
 		return cuerpo

@@ -40,6 +40,10 @@ var (
 	// herramienta: X]): lo que reemplaza al vuelco crudo del razonamiento.
 	estiloActividad = lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true)
 
+	// estiloCopiado pinta el aviso transitorio [Copiado] que aparece arriba a la
+	// derecha tras copiar una selección con el ratón (selection.go).
+	estiloCopiado = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true)
+
 	// estiloGloboUsuario y estiloGloboAgente dibujan los globos del chat (T-F036):
 	// borde redondeado con el color de cada interlocutor —azul para lo que escribes,
 	// verde para lo que responde el agente/terminal— y un relleno de una columna a
@@ -52,6 +56,19 @@ var (
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("10")).
 				Padding(0, 1)
+)
+
+// Códigos del realce de la selección con el ratón (selection.go). No se usa
+// lipgloss.Render porque hay que envolver un TRAMO dentro de una línea ya
+// pintada, no un string entero: `seleccionOn` enciende el video inverso (7) al
+// entrar en el tramo y `seleccionOff` lo apaga (27) —solo el inverso, para no
+// perder los colores que la línea ya traía—.
+const (
+	seleccionOn  = "\x1b[7m"
+	seleccionOff = "\x1b[27m"
+	// sgrReset cierra cualquier atributo abierto. Se usa antes del aviso
+	// [Copiado] para que no herede el color de lo que tuviera debajo.
+	sgrReset = "\x1b[0m"
 )
 
 // framesActividad son los glifos del indicador en vivo, en orden. Se recorren

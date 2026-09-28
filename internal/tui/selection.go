@@ -18,6 +18,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -31,43 +33,109 @@ func (a *App) raton(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.Button == tea.MouseButtonWheelUp:
 		if !a.modalAbierto() {
-			a.Chat.Subir(3)
+			a.desplazarChat(-3)
 		}
 		return a, nil
 	case m.Button == tea.MouseButtonWheelDown:
 		if !a.modalAbierto() {
-			a.Chat.Bajar(3)
+			a.desplazarChat(3)
 		}
 		return a, nil
 	case m.Action == tea.MouseActionPress && m.Button == tea.MouseButtonLeft:
 		a.ratonSelec = true
 		a.ratonIni = posicion{X: m.X, Y: m.Y}
 		a.ratonFin = a.ratonIni
+		a.iniEnChat = a.enChat(m.Y)
+		a.finEnChat = a.iniEnChat
 		return a, nil
 	case m.Action == tea.MouseActionMotion && a.ratonSelec:
 		a.ratonFin = posicion{X: m.X, Y: m.Y}
+		a.finEnChat = a.enChat(m.Y)
 		return a, nil
 	case m.Action == tea.MouseActionRelease && a.ratonSelec:
 		a.ratonSelec = false
 		fin := posicion{X: m.X, Y: m.Y}
+		a.finEnChat = a.enChat(fin.Y)
 		// Un clic (pulsar y soltar sin arrastrar) sobre «aprobar» o «declinar»
 		// de una fila de aprobaciones resuelve ESA aprobación. Un arrastre sigue
 		// siendo una selección de texto.
 		if a.ratonIni == fin {
 			if ap, aprobar, ok := a.decisionEnCelda(fin); ok {
-				a.ratonIni, a.ratonFin = posicion{}, posicion{}
+				a.limpiarSeleccion()
 				return a, a.decidirAprobacion(ap, aprobar)
 			}
 		}
 		a.ratonFin = fin
-		if texto := textoSeleccionado(a.ultimaVista, a.ratonIni, a.ratonFin); strings.TrimSpace(texto) != "" {
-			// La copia corre en el hilo del bucle (síncrona): así no se
-			// entremezcla con el pintado de la siguiente pantalla.
-			copiarFunc(texto)
+		texto := textoSeleccionado(a.ultimaVista, a.ratonIni, a.ratonFin)
+		// Al soltar termina la selección: el realce desaparece (solo vivía en el
+		// arrastre). Si había algo, se copia y se avisa.
+		a.limpiarSeleccion()
+		if strings.TrimSpace(texto) == "" {
+			return a, nil
 		}
-		return a, nil
+		// La copia corre en el hilo del bucle (síncrona): así no se entremezcla
+		// con el pintado de la siguiente pantalla.
+		copiarFunc(texto)
+		return a, a.avisarCopiado()
 	}
 	return a, nil
+}
+
+// limpiarSeleccion descarta la selección vigente (extremos a cero). Se llama
+// cuando una tecla abre una interacción nueva —abrir un modal, cambiar de
+// vista—: el realce no debe quedar pegado sobre lo que venga después. La rueda
+// no la usa: desplazar nunca cancela la selección (desplazarChat).
+func (a *App) limpiarSeleccion() {
+	a.ratonIni, a.ratonFin = posicion{}, posicion{}
+	a.iniEnChat, a.finEnChat = false, false
+}
+
+// enChat dice si una fila de pantalla cae sobre la ventana visible del
+// historial (chatFilaIni..chatFilaFin, fijados al pintar en app.go). Fuera de
+// la vista principal la banda vale 0 y ningún extremo cuenta como del chat.
+func (a *App) enChat(y int) bool {
+	return y >= a.chatFilaIni && y < a.chatFilaFin
+}
+
+// cabecera vale 1 cuando el historial va precedido de la línea «↑ N líneas
+// arriba» —que ocupa una fila antes de la ventana— y 0 cuando no.
+func cabecera(ocultasArriba int) int {
+	if ocultasArriba > 0 {
+		return 1
+	}
+	return 0
+}
+
+// desplazarChat mueve el historial n líneas (n<0 sube, n>0 baja) y reancla la
+// selección al texto en vez de dejarla clavada a la pantalla: al cambiar el
+// offset, las mismas coordenadas señalarían otro texto. Cada extremo que vive
+// en el chat se corrige por el desplazamiento real en filas de pantalla —que es
+// `cabecera(oa) - oa + contenido`—, de modo que la rueda puede usarse mientras
+// se selecciona sin que la selección se cancele ni quede desalineada. Durante
+// el arrastre se reancla solo el ancla (el puntero sigue en su celda del ratón,
+// para poder seguir seleccionando); con la selección ya soltada se reanclan los
+// dos extremos.
+func (a *App) desplazarChat(n int) {
+	if n == 0 {
+		return
+	}
+	oaAntes := a.Chat.OcultasArriba()
+	if n < 0 {
+		a.Chat.Subir(-n)
+	} else {
+		a.Chat.Bajar(n)
+	}
+	oaDespues := a.Chat.OcultasArriba()
+	delta := cabecera(oaDespues) - cabecera(oaAntes) - (oaDespues - oaAntes)
+	if delta == 0 {
+		return
+	}
+	if a.iniEnChat {
+		a.ratonIni.Y += delta
+	}
+	if !a.ratonSelec && a.finEnChat {
+		a.ratonFin.Y += delta
+	}
 }
 
 // decisionEnCelda mira si una celda del último marco pintado cae sobre la
@@ -162,6 +230,153 @@ func textoSeleccionado(vista string, ini, fin posicion) string {
 		out = out[:len(out)-1]
 	}
 	return strings.Join(out, "\n")
+}
+
+// resaltarSeleccion envuelve en video inverso el tramo que va de una celda a
+// otra del marco pintado: es el realce que dice qué se está seleccionando. No
+// altera el texto visible (los códigos de color se conservan; solo se añade el
+// inverso), así que el texto que se copia no cambia. Los extremos se ordenan
+// igual que en textoSeleccionado y las columnas se cuentan en runas sobre el
+// texto sin códigos. Un extremo fuera de pantalla —el ancla puede salirse del
+// marco al hacer scroll— cuenta como el borde de la línea.
+func resaltarSeleccion(vista string, ini, fin posicion) string {
+	if vista == "" {
+		return vista
+	}
+	if fin.Y < ini.Y || (fin.Y == ini.Y && fin.X < ini.X) {
+		ini, fin = fin, ini
+	}
+	lineas := strings.Split(vista, "\n")
+	for y := ini.Y; y <= fin.Y; y++ {
+		if y < 0 || y >= len(lineas) {
+			continue
+		}
+		n := len([]rune(sinANSI(lineas[y])))
+		x0, x1 := 0, n
+		if y == ini.Y {
+			x0 = ini.X
+		}
+		if y == fin.Y {
+			x1 = fin.X
+		}
+		if x0 < 0 {
+			x0 = 0
+		}
+		if x1 > n {
+			x1 = n
+		}
+		if x0 >= x1 {
+			continue
+		}
+		lineas[y] = resaltarTramo(lineas[y], x0, x1)
+	}
+	return strings.Join(lineas, "\n")
+}
+
+// resaltarTramo aplica el video inverso a las columnas [x0,x1) de una línea ya
+// pintada, que puede traer códigos ANSI. Cuenta columnas por runas visibles
+// (los escapes no ocupan columna) y reafirma el inverso tras cada secuencia de
+// escape dentro del tramo, para que un `\x1b[0m` intermedio no lo apague.
+func resaltarTramo(linea string, x0, x1 int) string {
+	var b strings.Builder
+	col := 0
+	dentro := false
+	for i := 0; i < len(linea); {
+		if loc := codigosANSIRE.FindStringIndex(linea[i:]); loc != nil && loc[0] == 0 {
+			b.WriteString(linea[i : i+loc[1]])
+			if dentro {
+				b.WriteString(seleccionOn)
+			}
+			i += loc[1]
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(linea[i:])
+		nuevo := col >= x0 && col < x1
+		if nuevo != dentro {
+			if nuevo {
+				b.WriteString(seleccionOn)
+			} else {
+				b.WriteString(seleccionOff)
+			}
+			dentro = nuevo
+		}
+		b.WriteRune(r)
+		col++
+		i += size
+	}
+	if dentro {
+		b.WriteString(seleccionOff)
+	}
+	return b.String()
+}
+
+// superponerDerecha pega `texto` al borde derecho de la primera línea del marco,
+// pisando lo que hubiera en esas columnas. Es lo que sitúa el aviso transitorio
+// [Copiado] arriba a la derecha. No cambia el resto del marco ni ocupa una línea
+// nueva (así la disposición no salta). Sin ancho conocido no pinta nada.
+func superponerDerecha(vista, texto string, ancho int) string {
+	if vista == "" || ancho <= 0 {
+		return vista
+	}
+	anchoTexto := len([]rune(sinANSI(texto)))
+	if anchoTexto >= ancho {
+		lineas := strings.Split(vista, "\n")
+		lineas[0] = texto
+		return strings.Join(lineas, "\n")
+	}
+	lineas := strings.Split(vista, "\n")
+	// El relleno hasta el borde y un reset antes del aviso: no debe heredar el
+	// color de lo que tuviera debajo.
+	lineas[0] = recortarColumnas(lineas[0], ancho-anchoTexto) + sgrReset + texto
+	return strings.Join(lineas, "\n")
+}
+
+// recortarColumnas deja la línea con exactamente n columnas visibles: copia lo
+// que quepa (sin cortar los códigos de color) y rellena con espacios lo que
+// falte. Cierra cualquier atributo abierto antes del relleno.
+func recortarColumnas(linea string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	var b strings.Builder
+	col := 0
+	for i := 0; i < len(linea) && col < n; {
+		if loc := codigosANSIRE.FindStringIndex(linea[i:]); loc != nil && loc[0] == 0 {
+			b.WriteString(linea[i : i+loc[1]])
+			i += loc[1]
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(linea[i:])
+		b.WriteRune(r)
+		col++
+		i += size
+	}
+	if col > 0 {
+		b.WriteString(sgrReset)
+	}
+	for ; col < n; col++ {
+		b.WriteByte(' ')
+	}
+	return b.String()
+}
+
+// duracionCopiado es lo que el aviso [Copiado] permanece en pantalla antes de
+// apagarse solo.
+const duracionCopiado = 1500 * time.Millisecond
+
+// copiadoExpiradoMsg apaga el aviso [Copiado] cuando vence su tiempo. `gen`
+// distingue la copia que lo encendió: un aviso nuevo no lo apaga el temporizador
+// de uno viejo.
+type copiadoExpiradoMsg struct{ gen uint64 }
+
+// avisarCopiado enciende el aviso [Copiado] arriba a la derecha y programa su
+// apagado. Una copia nueva reemplaza la generación vigente, así que su
+// temporizador no apaga antes de tiempo el aviso recién encendido.
+func (a *App) avisarCopiado() tea.Cmd {
+	a.copiado = true
+	a.copiadoGen++
+	gen := a.copiadoGen
+	return tea.Tick(duracionCopiado, func(time.Time) tea.Msg { return copiadoExpiradoMsg{gen: gen} })
 }
 
 // copiarFunc es la copia efectiva; variable para poder sustituirla en las
