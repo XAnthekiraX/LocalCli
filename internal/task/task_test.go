@@ -200,7 +200,7 @@ func TestCargarElementosDeTodasLasCapas(t *testing.T) {
 
 	esperado := map[Capa]int{
 		CapaBackend:  28,
-		CapaFrontend: 40,
+		CapaFrontend: 41,
 	}
 	for capa, want := range esperado {
 		elems, err := CargarElementos(raiz, capa)

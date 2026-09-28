@@ -44,6 +44,7 @@ Fuente de verdad del progreso del frontend. Derivada exclusivamente de `ai/docs/
 | T-F037 | actualizar | línea de herramienta compacta: una sola línea que nace con el verbo y el tema (la ruta que se busca) y se completa con la marca y la medida del resultado | T-F005, T-F033 | completada | `037-task-linea-herramienta.md` |
 | T-F038 | actualizar | tokens de archivo, carpeta y pegado en la entrada: un archivo `[nombre.ext]`, una carpeta `[CARPETA N elementos]` y un texto de varias líneas `[PEGADO N líneas]`, expandiéndose al valor real al enviar | T-F004, T-F029 | completada | `038-task-tokens-archivo-y-pegado.md` |
 | T-F039 | actualizar | orden del texto y las líneas de herramienta: el texto previo a una herramienta queda arriba de su línea y el posterior abre un globo nuevo, en el orden de ejecución | T-F037 | completada | `039-task-orden-texto-herramientas.md` |
+| T-F040 | actualizar | ratón: la selección se resalta en video inverso y la rueda no la cancela (anclada al texto); al soltar se copia, el realce desaparece y sale el aviso `[Copiado]` | T-F024 | completada | `040-task-seleccion-resaltada.md` |
 
 ## Referencias
 
