@@ -1,19 +1,22 @@
 package tools
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
-// TestCatalogoTieneTreceHerramientas — T-B007-01: el registro contiene
-// exactamente las trece herramientas documentadas. Una más o una menos
+// TestCatalogoTieneCatorceHerramientas — T-B007-01: el registro contiene
+// exactamente las catorce herramientas documentadas. Una más o una menos
 // rompería la garantía: una de más que escriba sería un agujero, y una de
 // menos dejaría al agente sin poder trabajar.
-func TestCatalogoTieneTreceHerramientas(t *testing.T) {
+func TestCatalogoTieneCatorceHerramientas(t *testing.T) {
 	h := Herramientas()
-	if len(h) != 13 {
-		t.Fatalf("el catálogo tiene %d herramientas, quiero 13: %v", len(h), NombresCatalogo())
+	if len(h) != 14 {
+		t.Fatalf("el catálogo tiene %d herramientas, quiero 14: %v", len(h), NombresCatalogo())
 	}
 }
 
-// TestCatalogoNombresDocumentados — los trece nombres exactos de TOOLS.md §1.
+// TestCatalogoNombresDocumentados — los catorce nombres exactos de TOOLS.md §1.
 // El nombre es la clave con la que el modelo pide la herramienta y la que el
 // JSON del agente declara, así que un nombre distinto rompe el contrato en
 // los dos extremos.
@@ -24,6 +27,7 @@ func TestCatalogoNombresDocumentados(t *testing.T) {
 		"crear_carpeta", "eliminar_carpeta",
 		"ejecutar_comando",
 		"buscar_en_internet", "abrir_pagina",
+		"actualizar_todo",
 	}
 	got := NombresCatalogo()
 	if len(got) != len(want) {
@@ -47,35 +51,37 @@ func TestHerramientaInventadaNoExiste(t *testing.T) {
 	}
 }
 
-// TestSoloBuildCorrespondeAEscritura — el reparto por agente sale de un solo
-// dato: las seis de escritura son "Solo build" y las siete de lectura son de
-// ambos agentes (TOOLS.md §1 y §2, SPEC-TOOLS §El reparto).
+// TestSoloBuildCorrespondeAEscritura — el reparto por agente sale de la acción
+// `editar`: las seis que escriben en el proyecto son "solo build"; el resto
+// —las de lectura y la lista de pasos de la sesión— son de ambos (TOOLS.md §1 y
+// §2, SPEC-TOOLS §El reparto).
 func TestSoloBuildCorrespondeAEscritura(t *testing.T) {
-	var escritura, lectura int
+	var escritura, otros int
 	for _, h := range Herramientas() {
 		if h.SoloBuild() {
 			escritura++
-			if h.Modo != Escribe {
-				t.Errorf("%s: SoloBuild con Modo %s", h.Nombre, h.Modo)
+			if h.Accion() != AccionEditar {
+				t.Errorf("%s: SoloBuild con acción %s", h.Nombre, h.Accion())
 			}
 			continue
 		}
-		lectura++
-		if h.Modo != Lee {
-			t.Errorf("%s: lectura con Modo %s", h.Nombre, h.Modo)
+		otros++
+		if h.Accion() == AccionEditar {
+			t.Errorf("%s: herramienta de escritura que no es SoloBuild", h.Nombre)
 		}
 	}
 	if escritura != 6 {
 		t.Errorf("herramientas de escritura = %d, quiero 6 (crear, escribir, editar, eliminar archivo, crear y eliminar carpeta)", escritura)
 	}
-	if lectura != 7 {
-		t.Errorf("herramientas de lectura = %d, quiero 7 (4 de archivo, 1 de terminal, 2 de internet)", lectura)
+	if otros != 8 {
+		t.Errorf("herramientas no exclusivas de build = %d, quiero 8 (4 de archivo, 1 de terminal, 2 de internet y la lista de pasos)", otros)
 	}
 }
 
-// TestCategoriasRepartenTrezeHerramientas — la categoría decide el destino del
-// enrutado (TOOLS.md §7): 10 de archivo, 1 de terminal, 2 de internet.
-func TestCategoriasRepartenTreceHerramientas(t *testing.T) {
+// TestCategoriasRepartenLasHerramientas — la categoría decide el destino del
+// enrutado (TOOLS.md §7): 10 de archivo, 1 de terminal, 2 de internet y 1 de
+// sesión.
+func TestCategoriasRepartenLasHerramientas(t *testing.T) {
 	casos := []struct {
 		cat  Categoria
 		want int
@@ -83,6 +89,7 @@ func TestCategoriasRepartenTreceHerramientas(t *testing.T) {
 		{CatArchivos, 10},
 		{CatTerminal, 1},
 		{CatInternet, 2},
+		{CatTareas, 1},
 	}
 	for _, c := range casos {
 		if got := len(NombresDeCategoria(c.cat)); got != c.want {
@@ -132,11 +139,12 @@ func TestAccionSeDerivaDeCategoriaYModo(t *testing.T) {
 	}
 }
 
-// TestNombresDeAccionReparteLasTrece — las cuatro acciones cubren las trece
-// herramientas sin solaparse: la partición que sostiene el catálogo derivado.
-func TestNombresDeAccionReparteLasTrece(t *testing.T) {
+// TestNombresDeAccionReparteLasHerramientas — las cinco acciones cubren las
+// catorce herramientas sin solaparse: la partición que sostiene el catálogo
+// derivado.
+func TestNombresDeAccionReparteLasHerramientas(t *testing.T) {
 	var total int
-	for _, a := range []Accion{AccionLeer, AccionEditar, AccionEjecutar, AccionInternet} {
+	for _, a := range []Accion{AccionLeer, AccionEditar, AccionEjecutar, AccionInternet, AccionTareas} {
 		total += len(NombresDeAccion(a))
 	}
 	if total != len(NombresCatalogo()) {
@@ -145,27 +153,43 @@ func TestNombresDeAccionReparteLasTrece(t *testing.T) {
 	if len(NombresDeAccion(AccionEditar)) != 6 {
 		t.Errorf("`editar` tiene %d herramientas, quiero 6", len(NombresDeAccion(AccionEditar)))
 	}
+	if len(NombresDeAccion(AccionTareas)) != 1 {
+		t.Errorf("`tareas` tiene %d herramientas, quiero 1", len(NombresDeAccion(AccionTareas)))
+	}
 	if Accion("inventada").Valida() {
-		t.Error("una acción fuera de las cuatro no puede ser válida")
+		t.Error("una acción fuera de las cinco no puede ser válida")
 	}
 }
 
-// TestCamposDeSaleDelContrato — el esquema de argumentos del catálogo que ve el
-// modelo se deriva del DTO, así que no puede divergir de él.
-func TestCamposDeSaleDelContrato(t *testing.T) {
-	campos, ok := CamposDe("leer_archivo")
-	if !ok || len(campos) != 1 || campos[0].Nombre != "ruta" || !campos[0].Obligatorio {
-		t.Fatalf("campos de leer_archivo = %+v, quiero `ruta` obligatorio", campos)
+// TestNuevaHerramientaConectaElHandler — el registro se construye desde el
+// catálogo con su handler propio; un nombre fuera del catálogo no se conecta.
+func TestNuevaHerramientaConectaElHandler(t *testing.T) {
+	h, ok := NuevaHerramienta("leer_archivo", func(ctx context.Context, args any, c Contexto) (Resultado, error) {
+		return Resultado{Salida: "x"}, nil
+	})
+	if !ok || h.Ejecutar == nil {
+		t.Fatalf("NuevaHerramienta no conectó el handler: %+v", h)
 	}
-	// `buscar_en_archivos` tiene una ruta opcional (omitempty).
-	campos, _ = CamposDe("buscar_en_archivos")
-	var opcional bool
-	for _, c := range campos {
-		if c.Nombre == "ruta" && !c.Obligatorio {
-			opcional = true
+	if h.Categoria != CatArchivos || h.Modo != Lee {
+		t.Errorf("la entrada del catálogo se copia tal cual: %+v", h)
+	}
+	if _, ok := NuevaHerramienta("inventada", nil); ok {
+		t.Error("un nombre fuera del catálogo no se conecta")
+	}
+}
+
+// TestAccionesBase — las acciones de los agentes base salen de SPEC-TOOLS: plan
+// no concede `editar` pero sí `tareas`; build concede las cinco.
+func TestAccionesBase(t *testing.T) {
+	if AccionEditar.Permitida(AccionesDePlan()) {
+		t.Error("plan no puede conceder `editar`")
+	}
+	if !AccionTareas.Permitida(AccionesDePlan()) {
+		t.Error("plan sí concede `tareas` (la lista de pasos de la sesión)")
+	}
+	for _, a := range []Accion{AccionLeer, AccionEditar, AccionEjecutar, AccionInternet, AccionTareas} {
+		if !a.Permitida(AccionesDeBuild()) {
+			t.Errorf("build debe conceder %s", a)
 		}
-	}
-	if !opcional {
-		t.Error("`ruta` de buscar_en_archivos debe ser opcional")
 	}
 }

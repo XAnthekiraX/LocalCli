@@ -157,3 +157,77 @@ func TestLandlockImpideEscribirEnElProyecto(t *testing.T) {
 		t.Fatalf("el hijo no reportó bloqueo: salida=%q error=%q", res.Salida, res.Error)
 	}
 }
+
+// TestHelperDispositivoNulo es el hijo del test de dispositivos nulos: abre
+// /dev/null para escritura, como hace git. Solo corre cuando lo invoca ese test.
+func TestHelperDispositivoNulo(t *testing.T) {
+	if os.Getenv("HELPER_DEVNULL") == "" {
+		t.Skip("solo se usa como proceso hijo del test de dispositivos nulos")
+	}
+	f, err := os.OpenFile("/dev/null", os.O_RDWR, 0)
+	if err != nil {
+		fmt.Println("BLOQUEADO")
+		return
+	}
+	if _, err := f.Write([]byte("x")); err != nil {
+		f.Close()
+		fmt.Println("BLOQUEADO")
+		return
+	}
+	f.Close()
+	fmt.Println("OK")
+}
+
+// TestLandlockPermiteDispositivosNulos — el sandbox deja abrir /dev/null para
+// escritura, que es lo que necesita git. Sin esto, `git status` falla con
+// "could not open '/dev/null' ... Permission denied".
+func TestLandlockPermiteDispositivosNulos(t *testing.T) {
+	if !GarantiaFuerte() {
+		t.Skip("este sistema no tiene Landlock")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	t.Setenv("HELPER_DEVNULL", "1")
+
+	e := &Ejecutor{
+		Proyecto:      t.TempDir(),
+		Aprobador:     aprobadorSiempre(true),
+		EspacioPropio: []string{t.TempDir()},
+		Limite:        30 * time.Second,
+	}
+	res, err := e.Ejecutar(context.Background(), exe+" -test.run=TestHelperDispositivoNulo", "")
+	if err != nil {
+		t.Fatalf("Ejecutar: %v", err)
+	}
+	if strings.Contains(res.Error, "E_NO_LANDLOCK") {
+		t.Skip("Landlock no se pudo aplicar en este entorno")
+	}
+	if !strings.Contains(res.Salida, "OK") {
+		t.Fatalf("no se pudo abrir /dev/null en el sandbox: salida=%q error=%q", res.Salida, res.Error)
+	}
+}
+
+// TestEspacioEscrituraIncluyeDispositivosNulos — los dispositivos nulos se
+// conceden siempre, con o sin espacio propio.
+func TestEspacioEscrituraIncluyeDispositivosNulos(t *testing.T) {
+	casos := []struct {
+		nombre string
+		e      *Ejecutor
+	}{
+		{"sin espacio propio", &Ejecutor{}},
+		{"con espacio propio", &Ejecutor{EspacioPropio: []string{t.TempDir()}}},
+	}
+	for _, c := range casos {
+		encontrado := false
+		for _, p := range c.e.espacioEscritura() {
+			if p == "/dev/null" {
+				encontrado = true
+			}
+		}
+		if !encontrado {
+			t.Errorf("%s: espacioEscritura() = %v, falta /dev/null", c.nombre, c.e.espacioEscritura())
+		}
+	}
+}

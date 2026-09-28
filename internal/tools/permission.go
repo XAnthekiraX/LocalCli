@@ -1,74 +1,65 @@
 package tools
 
-// permission.go — T-B007-05: comprobar que el agente puede pedir la
-// herramienta.
+// permission.go — comprobar que el agente puede pedir la herramienta.
 //
-// Fuente de verdad: ai/docs/backend/02-interfaces/TOOLS.md §2 y §7,
+// Fuente de verdad: ai/docs/backend/02-interfaces/TOOLS.md §2 y §8,
 // ai/docs/backend/03-security/SECURITY.md §2 y ai/docs/backend/DECISIONS.md
 // ("Permiso comprobado en tools, aplicado en fileops y exec").
 //
-// La garantía central no es que este módulo "bloquee" la escritura para
-// `plan`: es que `plan` **no tiene** ninguna herramienta de escritura en su
-// catálogo. El campo `herramientas` del JSON del agente es la fuente de
-// verdad, así que la comprobación recibe esa lista tal cual (el catálogo del
-// agente) y solo verifica dos cosas: que la herramienta exista en el catálogo
-// cerrado y que el agente la tenga. Todo lo demás —la aprobación concreta, la
-// frontera de rutas, la lista blanca— lo aplican `fileops` y `exec`.
+// La garantía central no es que este módulo "bloquee" la escritura para `plan`:
+// es que `plan` **no tiene** ninguna herramienta de escritura en su catálogo
+// efectivo, porque sus permisos no conceden `editar`. El catálogo efectivo se
+// DERIVA de los permisos contra el catálogo cerrado (`agent.HerramientasDe`), y
+// la comprobación de la capa universal vuelve a mirar la acción: la herramienta
+// pertenece a una acción y el agente concede o no esa acción.
 
-// Identidad de los dos agentes base (specs/SPEC-AGENTE-BASE). El nombre es
-// para trazabilidad; la lista de herramientas es la que decide de verdad.
+// Identidad de los dos agentes base (specs/SPEC-AGENTE-BASE).
 const (
 	AgentePlan  = "plan"
 	AgenteBuild = "build"
 )
 
 // HerramientasDePlan devuelve el catálogo del agente base `plan`: leer,
-// ejecutar e internet, nunca editar. Que esta lista no contenga ninguna acción
-// de escritura es la garantía; no hay ningún filtro posterior que la pueda
-// debilitar. Se conserva como valor por defecto y para los tests; el catálogo
-// real de cada agente sale de sus `permisos` (agent.HerramientasDe).
+// ejecutar, internet y tareas, nunca editar. Se conserva como valor por defecto
+// y para los tests; el catálogo real de cada agente sale de sus `permisos`
+// (agent.HerramientasDe).
 func HerramientasDePlan() []string {
 	var out []string
 	out = append(out, NombresDeAccion(AccionLeer)...)
 	out = append(out, NombresDeAccion(AccionEjecutar)...)
 	out = append(out, NombresDeAccion(AccionInternet)...)
+	out = append(out, NombresDeAccion(AccionTareas)...)
 	return out
 }
 
-// HerramientasDeBuild devuelve el catálogo completo: `build` es el único
-// agente que crea, modifica y borra.
+// HerramientasDeBuild devuelve el catálogo completo.
 func HerramientasDeBuild() []string { return NombresCatalogo() }
 
-// ComprobarPermiso valida la petición contra el catálogo del agente.
+// AccionesDePlan y AccionesDeBuild son los permisos por acción de los agentes
+// base, para las pruebas y el respaldo.
+func AccionesDePlan() []Accion {
+	return []Accion{AccionLeer, AccionEjecutar, AccionInternet, AccionTareas}
+}
+
+func AccionesDeBuild() []Accion {
+	return []Accion{AccionLeer, AccionEditar, AccionEjecutar, AccionInternet, AccionTareas}
+}
+
+// ComprobarPermiso valida la petición contra las acciones del agente.
 //
-//   - Una herramienta fuera del catálogo cerrado es E_TOOL_UNKNOWN, sin
-//     importar el agente.
-//   - Una herramienta que el agente no declara es E_TOOL_NOT_ALLOWED. Es el
-//     caso de `plan` pidiendo escritura: no la tiene, así que se rechaza.
-//
-// `permitidas` es el campo `herramientas` del JSON del agente, ya validado
-// contra el catálogo por `agent`. Un agente de solo conversación tiene la
-// lista vacía y no puede pedir nada.
-func ComprobarPermiso(permitidas []string, nombre string) error {
+//   - Una herramienta fuera del catálogo cerrado es E_TOOL_UNKNOWN, sin importar
+//     el agente.
+//   - Una acción que el agente no concede es E_TOOL_NOT_ALLOWED. Es el caso de
+//     `plan` pidiendo escritura: no la tiene, así que se rechaza.
+func ComprobarPermiso(permisos []Accion, nombre string) error {
 	h, ok := Buscar(nombre)
 	if !ok {
 		return nuevoError(CodigoHerramientaDesconocida,
 			"la herramienta "+nombre+" no está en el catálogo cerrado")
 	}
-	if !contiene(permitidas, nombre) {
+	if !h.Accion().Permitida(permisos) {
 		return nuevoError(CodigoHerramientaNoPermitida,
-			"el agente no tiene la herramienta "+nombre+" ("+h.Modo.String()+
-				"); usa uno que la tenga en su catálogo")
+			"el agente no tiene la acción `"+h.Accion().String()+"`, que es la de "+nombre)
 	}
 	return nil
-}
-
-// contiene informa si la lista incluye el nombre exacto.
-func contiene(lista []string, nombre string) bool {
-	for _, n := range lista {
-		if n == nombre {
-			return true
-		}
-	}
-	return false
 }

@@ -17,8 +17,8 @@ func TestPlanNoTieneHerramientasDeEscritura(t *testing.T) {
 			t.Errorf("plan declara %s, que es de escritura", nombre)
 		}
 	}
-	if len(HerramientasDePlan()) != 7 {
-		t.Errorf("plan tiene %d herramientas, quiero 7 de lectura", len(HerramientasDePlan()))
+	if len(HerramientasDePlan()) != 8 {
+		t.Errorf("plan tiene %d herramientas, quiero 8 (lectura, ejecución, internet y tareas)", len(HerramientasDePlan()))
 	}
 }
 
@@ -26,21 +26,21 @@ func TestPlanNoTieneHerramientasDeEscritura(t *testing.T) {
 // pidiendo una herramienta de escritura produce E_TOOL_NOT_ALLOWED.
 func TestPlanPidiendoEscrituraSeRechaza(t *testing.T) {
 	for _, nombre := range []string{"crear_archivo", "escribir_archivo", "editar_archivo", "eliminar_archivo", "crear_carpeta", "eliminar_carpeta"} {
-		err := ComprobarPermiso(HerramientasDePlan(), nombre)
+		err := ComprobarPermiso(AccionesDePlan(), nombre)
 		if !errors.Is(err, ErrHerramientaNoPermitida) {
 			t.Errorf("plan pidiendo %s: err = %v, quiero E_TOOL_NOT_ALLOWED", nombre, err)
 		}
 	}
 }
 
-// TestBuildTieneElCatalogoCompleto — `build` declara las trece y no se le
+// TestBuildTieneElCatalogoCompleto — `build` declara las catorce y no se le
 // rechaza ninguna.
 func TestBuildTieneElCatalogoCompleto(t *testing.T) {
-	if len(HerramientasDeBuild()) != 13 {
-		t.Fatalf("build tiene %d herramientas, quiero 13", len(HerramientasDeBuild()))
+	if len(HerramientasDeBuild()) != 14 {
+		t.Fatalf("build tiene %d herramientas, quiero 14", len(HerramientasDeBuild()))
 	}
 	for _, nombre := range NombresCatalogo() {
-		if err := ComprobarPermiso(HerramientasDeBuild(), nombre); err != nil {
+		if err := ComprobarPermiso(AccionesDeBuild(), nombre); err != nil {
 			t.Errorf("build pidiendo %s: %v", nombre, err)
 		}
 	}
@@ -49,7 +49,7 @@ func TestBuildTieneElCatalogoCompleto(t *testing.T) {
 // TestHerramientaDesconocidaSeRechaza — el catálogo es cerrado, sin importar
 // el agente.
 func TestHerramientaDesconocidaSeRechaza(t *testing.T) {
-	err := ComprobarPermiso(HerramientasDeBuild(), "inventada")
+	err := ComprobarPermiso(AccionesDeBuild(), "inventada")
 	if !errors.Is(err, ErrHerramientaDesconocida) {
 		t.Errorf("err = %v, quiero E_TOOL_UNKNOWN", err)
 	}

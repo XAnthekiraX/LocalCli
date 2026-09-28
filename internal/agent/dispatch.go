@@ -1,32 +1,31 @@
 package agent
 
-// dispatch.go — T-B006-06: despachar las peticiones de herramienta del modelo
-// hacia `tools`.
+// dispatch.go — despachar las peticiones de herramienta del modelo hacia
+// `tools` y exponer las definiciones que viajan al modelo.
 //
-// Fuente de verdad: ai/docs/backend/02-interfaces/TOOLS.md §7 (pasos 1-3: la
-// petición llega con nombre y argumentos, se comprueba, se enruta) y
-// ai/docs/backend/02-interfaces/INTERFACES-GENERAL.md §5 ("`agent` construye
-// la llamada de un agente y despacha sus herramientas").
+// Fuente de verdad: ai/docs/backend/02-interfaces/TOOLS.md §11 (el cable:
+// `agent` pide los esquemas a `tools` y los pone en la petición; después entrega
+// las peticiones del modelo a `Registro.Ejecutar`) y §8 (la capa universal).
 //
 // `agent` no ejecuta la herramienta ni decide permisos: convierte la petición
-// del modelo en la `Peticion` de `tools` y deja que `tools` compruebe el
-// permiso, valide y enrute. El modelo no puede concederse permisos: lo único
-// que aporta es el nombre y los argumentos, y el catálogo del agente lo pone
-// el motor desde el JSON.
+// del modelo en la `Peticion` de `tools` —con las ACCIONES del agente— y deja
+// que la capa universal compruebe el permiso, valide y ejecute. El modelo no
+// puede concederse permisos: lo único que aporta es el nombre y los argumentos,
+// y la política la pone el motor desde el JSON del agente.
 
 import (
 	"context"
 	"encoding/json"
 
+	"localcli/internal/ollama"
 	"localcli/internal/tools"
 )
 
 // SolicitudHerramienta es lo que el modelo pide: el nombre de una herramienta
-// y sus argumentos. El nombre tiene que estar en el catálogo cerrado; los
-// argumentos los valida `tools` contra el contrato de esa herramienta.
+// y sus argumentos ya formados.
 type SolicitudHerramienta struct {
-	Nombre     string          `json:"nombre"`
-	Argumentos json.RawMessage `json:"argumentos"`
+	Nombre     string
+	Argumentos json.RawMessage
 }
 
 // Despachador lleva las peticiones de herramienta de un agente a `tools`.
@@ -39,22 +38,47 @@ func NuevoDespachador(registro *tools.Registro) *Despachador {
 	return &Despachador{registro: registro}
 }
 
-// Despachar convierte la solicitud en la petición de `tools` y la enruta. El
-// catálogo del agente (`a.Herramientas`) viaja tal cual: es lo que sostiene la
-// garantía de que `plan` no escribe.
-//
-// Los argumentos se decodifican contra el contrato de la herramienta; si el
-// nombre no está en el catálogo o los argumentos no encajan, `tools` devuelve
-// E_TOOL_UNKNOWN o E_BAD_ARGS y la herramienta no se ejecuta.
-func (d *Despachador) Despachar(ctx context.Context, a Agente, s SolicitudHerramienta) (any, error) {
-	argumentos, err := tools.Decodificar(s.Nombre, s.Argumentos)
-	if err != nil {
-		return nil, err
+// Registro devuelve el registro subyacente (lo usa el cableado).
+func (d *Despachador) Registro() *tools.Registro {
+	if d == nil {
+		return nil
 	}
-	return d.registro.Enrutar(ctx, tools.Peticion{
+	return d.registro
+}
+
+// Definiciones traduce el catálogo efectivo del agente al formato que espera
+// `/api/chat`: las herramientas de las acciones que el agente concede. Incluye
+// las del usuario, que se reparten con las mismas reglas.
+func (d *Despachador) Definiciones(a Agente) []ollama.Herramienta {
+	if d == nil || d.registro == nil {
+		return nil
+	}
+	defs := d.registro.Definiciones(a.Acciones())
+	out := make([]ollama.Herramienta, 0, len(defs))
+	for _, def := range defs {
+		out = append(out, ollama.Herramienta{
+			Type: "function",
+			Function: ollama.Definicion{
+				Name:        def.Nombre,
+				Description: def.Descripcion,
+				Parameters:  def.Esquema,
+			},
+		})
+	}
+	return out
+}
+
+// Despachar ejecuta una petición de herramienta por la capa universal. El
+// primer valor es lo que se le devuelve al modelo; el error es un fallo que el
+// modelo no puede corregir (permiso denegado, fallo del harness).
+func (d *Despachador) Despachar(ctx context.Context, a Agente, s SolicitudHerramienta) (tools.Resultado, error) {
+	if d == nil || d.registro == nil {
+		return tools.Resultado{Error: "no hay herramientas conectadas"}, nil
+	}
+	return d.registro.Ejecutar(ctx, tools.Peticion{
 		Agente:      a.Nombre,
-		Permitidas:  a.Herramientas,
+		Permisos:    a.Acciones(),
 		Herramienta: s.Nombre,
-		Argumentos:  argumentos,
+		Argumentos:  s.Argumentos,
 	})
 }

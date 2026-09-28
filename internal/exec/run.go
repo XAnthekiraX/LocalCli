@@ -15,6 +15,7 @@ package exec
 // avisa, sin bloquear el uso (SECURITY.md §6).
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -57,15 +58,17 @@ type Ejecutor struct {
 	Limite       time.Duration
 	LimiteSalida int
 	// EspacioPropio son las rutas donde el comando sí puede escribir. Vacío
-	// usa temporales y caché de compilación.
+	// usa temporales y caché de compilación. Los dispositivos nulos se añaden
+	// siempre, tengan o no valor propio.
 	EspacioPropio []string
 }
 
 func (e *Ejecutor) espacioEscritura() []string {
-	if len(e.EspacioPropio) > 0 {
-		return e.EspacioPropio
+	base := e.EspacioPropio
+	if len(base) == 0 {
+		base = rutasPermitidasEscritura()
 	}
-	return rutasPermitidasEscritura()
+	return unirRutas(base, dispositivosNulos)
 }
 
 func (e *Ejecutor) limite() time.Duration {
@@ -171,6 +174,63 @@ func (e *Ejecutor) Ejecutar(ctx context.Context, comando, carpeta string) (tools
 	return res, fmt.Errorf("no se pudo ejecutar el comando: %w", errEjec)
 }
 
+// EjecutarEquipo lanza un equipo declarado por el usuario como subproceso argv,
+// sin shell y sin lista blanca. Es la misma maquinaria que la terminal: si el
+// bloqueo estructural está disponible (Landlock), el proceso corre con él.
+//
+// La aprobación NO se pide aquí: quien ejecuta una herramienta del usuario ya
+// la pidió por `Contexto.Ask`, porque el comando lo escribió el usuario y nunca
+// puede estar en la lista blanca (SPEC-TOOLS §Herramientas del usuario). Los
+// argumentos del modelo llegan por la entrada estándar como un único JSON, de
+// modo que no pueden inyectar un programa ni un argumento nuevo.
+func (e *Ejecutor) EjecutarEquipo(ctx context.Context, equipo []string, entrada []byte, timeout time.Duration) (tools.RespuestaEjecutarComando, error) {
+	if len(equipo) == 0 {
+		return tools.RespuestaEjecutarComando{}, fmt.Errorf("exec: el equipo está vacío")
+	}
+	programa, err := exec.LookPath(equipo[0])
+	if err != nil {
+		return tools.RespuestaEjecutarComando{}, fmt.Errorf("no se encontró el programa %q: %w", equipo[0], err)
+	}
+	limite := e.limite()
+	if timeout > 0 {
+		limite = timeout
+	}
+	ctxT, cancel := context.WithTimeout(ctx, limite)
+	defer cancel()
+
+	cmd := e.comando(ctxT, programa, equipo)
+	cmd.Dir = e.Proyecto
+	if len(entrada) > 0 {
+		cmd.Stdin = bytes.NewReader(entrada)
+	}
+	captura := nuevaCaptura(e.limiteSalida())
+	cmd.Stdout = captura.Stdout()
+	cmd.Stderr = captura.Stderr()
+
+	errEjec := cmd.Run()
+	salida, errorSalida := captura.Salidas()
+	res := tools.RespuestaEjecutarComando{
+		Salida:   salida,
+		Error:    errorSalida,
+		Termino:  true,
+		Truncado: captura.Truncado(),
+	}
+	if errEjec == nil {
+		return res, nil
+	}
+	if errors.Is(ctxT.Err(), context.DeadlineExceeded) {
+		res.Termino = false
+		res.Truncado = true
+		return res, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(errEjec, &exitErr) {
+		res.Codigo = exitErr.ExitCode()
+		return res, nil
+	}
+	return res, fmt.Errorf("no se pudo ejecutar el equipo: %w", errEjec)
+}
+
 // comando construye el *exec.Cmd. Con Landlock disponible, el proceso hijo es
 // el propio binario en modo trampolín: aplica el bloqueo y luego exec el
 // comando real. Sin Landlock, se lanza directamente.
@@ -189,27 +249,43 @@ func (e *Ejecutor) comando(ctx context.Context, programa string, argv []string) 
 	return exec.CommandContext(ctx, programa, resto...)
 }
 
+// dispositivosNulos son archivos de dispositivo sin almacenamiento: escribir en
+// ellos no toca el proyecto ni crea archivos. El sandbox los deja abiertos para
+// escritura porque programas de la lista blanca (git) abren /dev/null con O_RDWR
+// aunque no escriban nada. La regla se ancla en el propio archivo, así que no
+// concede escritura en el resto de /dev. Ver SECURITY.md §3.
+var dispositivosNulos = []string{"/dev/null", "/dev/zero", "/dev/full"}
+
+// unirRutas concatena listas de rutas sin repetir y sin vacíos, preservando el
+// orden.
+func unirRutas(listas ...[]string) []string {
+	vistas := map[string]bool{}
+	var out []string
+	for _, lista := range listas {
+		for _, p := range lista {
+			if p == "" || vistas[p] {
+				continue
+			}
+			vistas[p] = true
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // rutasPermitidasEscritura es el propio espacio del comando: temporales y caché
 // de compilación (y de pruebas). El proyecto nunca está aquí, así que el
 // bloqueo lo cubre.
 func rutasPermitidasEscritura() []string {
-	vistas := map[string]bool{}
-	var out []string
-	añadir := func(p string) {
-		if p == "" || vistas[p] {
-			return
-		}
-		vistas[p] = true
-		out = append(out, p)
-	}
-	añadir(os.TempDir())
-	añadir(os.Getenv("GOTMPDIR"))
+	var propias []string
+	propias = append(propias, os.TempDir())
+	propias = append(propias, os.Getenv("GOTMPDIR"))
 	if cache := os.Getenv("GOCACHE"); cache != "" {
-		añadir(cache)
+		propias = append(propias, cache)
 	} else if uc, err := os.UserCacheDir(); err == nil {
-		añadir(filepath.Join(uc, "go-build"))
+		propias = append(propias, filepath.Join(uc, "go-build"))
 	}
-	return out
+	return unirRutas(propias)
 }
 
 // resolverCarpeta comprueba que la carpeta de trabajo se queda dentro del

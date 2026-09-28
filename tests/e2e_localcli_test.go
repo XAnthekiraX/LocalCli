@@ -93,8 +93,8 @@ func (contextoFijo) ContextoPara(ctx context.Context, etapa, objetivo string) (s
 
 type agenteFijo struct{}
 
-func (agenteFijo) Ejecutar(ctx context.Context, agente, contexto string, historial []flow.Mensaje, imagenes []string) (flow.Resultado, error) {
-	if !strings.Contains(contexto, "contexto para ") {
+func (agenteFijo) Ejecutar(ctx context.Context, p flow.PeticionEtapa) (flow.Resultado, error) {
+	if !strings.Contains(p.Contexto, "contexto para ") {
 		return flow.Resultado{}, os.ErrInvalid
 	}
 	return flow.Resultado{Texto: "etapa completada"}, nil
@@ -224,19 +224,19 @@ func TestLaColaRealConsumeElTODOCompleto(t *testing.T) {
 	}
 }
 
-// TestElCatalogoSigueCerradoYCompleto — las trece herramientas del catálogo,
+// TestElCatalogoSigueCerradoYCompleto — las catorce herramientas del catálogo,
 // con el reparto plan/build intacto: la frontera de la garantía al final del
 // ciclo completo.
 func TestElCatalogoSigueCerradoYCompleto(t *testing.T) {
 	nombres := tools.NombresCatalogo()
-	if len(nombres) != 13 {
-		t.Fatalf("catálogo = %d herramientas, quiero 13", len(nombres))
+	if len(nombres) != 14 {
+		t.Fatalf("catálogo = %d herramientas, quiero 14", len(nombres))
 	}
-	plan := tools.HerramientasDePlan()
+	plan := tools.AccionesDePlan()
 	for _, n := range nombres {
 		err := tools.ComprobarPermiso(plan, n)
 		h, _ := tools.Buscar(n)
-		if h.Modo == tools.Escribe && err == nil {
+		if h.SoloBuild() && err == nil {
 			t.Errorf("plan no puede tener la herramienta de escritura %s", n)
 		}
 	}

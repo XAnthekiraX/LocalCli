@@ -49,8 +49,9 @@ type lineaJSON struct {
 	Model    string `json:"model"`
 	Response string `json:"response"` // generate: token de texto
 	Message  struct {
-		Content  string `json:"content"`  // chat: token de texto
-		Thinking string `json:"thinking"` // chat: token de razonamiento
+		Content   string     `json:"content"`    // chat: token de texto
+		Thinking  string     `json:"thinking"`   // chat: token de razonamiento
+		ToolCalls []ToolCall `json:"tool_calls"` // chat: peticiones de herramienta
 	} `json:"message"`
 	Thinking string `json:"thinking"` // generate: token de razonamiento
 	Done     bool   `json:"done"`
@@ -65,6 +66,7 @@ type lineaJSON struct {
 type acumulador struct {
 	texto        []byte
 	razonamiento []byte
+	toolCalls    []ToolCall
 	final        RespuestaFinal
 }
 
@@ -108,6 +110,12 @@ func procesarLinea(linea []byte, acc *acumulador) ([]Evento, error) {
 		acc.texto = append(acc.texto, t...)
 		evs = append(evs, Evento{Tipo: EventoToken, Texto: t})
 	}
+	// Las peticiones de herramienta llegan en el mensaje del asistente. Se
+	// acumulan durante el streaming y se entregan con la señal de fin, sin
+	// esperar a ellas para el texto: los tokens siguen fluyendo en vivo.
+	if len(l.Message.ToolCalls) > 0 {
+		acc.toolCalls = append(acc.toolCalls, l.Message.ToolCalls...)
+	}
 	if l.Done {
 		acc.final = RespuestaFinal{
 			Model:      l.Model,
@@ -117,6 +125,7 @@ func procesarLinea(linea []byte, acc *acumulador) ([]Evento, error) {
 			TokensEntr: uint64(max64(l.PromptEvalCount, int64(acc.final.TokensEntr))),
 			TokensSal:  uint64(max64(l.EvalCount, int64(acc.final.TokensSal))),
 			DuracionNs: l.TotalDurationNs,
+			ToolCalls:  acc.toolCalls,
 		}
 		evs = append(evs, Evento{Tipo: EventoDone, Done: &acc.final})
 	}

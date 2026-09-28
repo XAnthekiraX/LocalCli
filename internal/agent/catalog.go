@@ -75,6 +75,26 @@ func (a Agente) Declara(nombre string) bool {
 	return false
 }
 
+// Acciones devuelve las acciones que el agente concede (`permitir`), sin
+// repetir ninguna. Es lo que alimenta el reparto de la capa universal y las
+// definiciones que viajan al modelo: las del usuario entran por la misma vía.
+func (a Agente) Acciones() []tools.Accion {
+	vistas := map[tools.Accion]bool{}
+	var out []tools.Accion
+	for _, p := range a.Permisos {
+		if p.Efecto != EfectoPermitir {
+			continue
+		}
+		acc := tools.Accion(p.Accion)
+		if !acc.Valida() || vistas[acc] {
+			continue
+		}
+		vistas[acc] = true
+		out = append(out, acc)
+	}
+	return out
+}
+
 // TieneEscritura informa si el agente tiene al menos una herramienta de
 // escritura. Para `plan` tiene que ser false: es la garantía de que no puede
 // escribir, sostenida en sus permisos y no en una comprobación olvidable.

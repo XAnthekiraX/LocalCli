@@ -13,15 +13,17 @@ import (
 // generadorGuion es un doble de `Generador`: en cada llamada emite el siguiente
 // guion de eventos. Evita Ollama y hace determinista el bucle.
 type generadorGuion struct {
-	pasadas  [][]ollama.Evento
-	llamadas int
-	// ultimos guarda los mensajes de la última llamada, para comprobar que el
-	// historial se antepone al contexto del turno.
-	ultimos []ollama.Mensaje
+	pasadas             [][]ollama.Evento
+	llamadas            int
+	ultimos             []ollama.Mensaje
+	ultimasHerramientas []ollama.Herramienta
+	ultimoNumCtx        int
 }
 
-func (g *generadorGuion) Generar(ctx context.Context, a Agente, modelo string, mensajes []ollama.Mensaje) (<-chan ollama.Evento, error) {
+func (g *generadorGuion) Generar(ctx context.Context, a Agente, modelo string, mensajes []ollama.Mensaje, herramientas []ollama.Herramienta, numCtx int) (<-chan ollama.Evento, error) {
 	g.ultimos = append([]ollama.Mensaje(nil), mensajes...)
+	g.ultimasHerramientas = append([]ollama.Herramienta(nil), herramientas...)
+	g.ultimoNumCtx = numCtx
 	var evs []ollama.Evento
 	if g.llamadas < len(g.pasadas) {
 		evs = g.pasadas[g.llamadas]
@@ -35,48 +37,81 @@ func (g *generadorGuion) Generar(ctx context.Context, a Agente, modelo string, m
 	return ch, nil
 }
 
-// sinkGrabador recoge lo que el bucle emite al consumidor.
-type sinkGrabador struct{ partes []string }
+// sinkGrabador recoge lo que el bucle emite al consumidor, incluidos los avisos.
+type sinkGrabador struct {
+	partes []string
+	avisos []string
+}
 
 func (s *sinkGrabador) Token(texto string, esRazon bool) { s.partes = append(s.partes, texto) }
+func (s *sinkGrabador) Aviso(texto string)               { s.avisos = append(s.avisos, texto) }
 
-// registroStub arma un registro de `tools` con handlers que devuelven un
-// valor fijo, capturando la última petición.
-func registroStub(capturado *tools.Peticion) *tools.Registro {
-	handler := func(ctx context.Context, p tools.Peticion) (any, error) {
-		if capturado != nil {
-			*capturado = p
-		}
-		return map[string]string{"ok": "resultado"}, nil
+// --- constructores de guiones ------------------------------------------------
+
+// respuesta es una pasada que termina con texto y sin peticiones.
+func respuesta(texto string) []ollama.Evento {
+	var evs []ollama.Evento
+	if texto != "" {
+		evs = append(evs, ollama.Evento{Tipo: ollama.EventoToken, Texto: texto})
 	}
-	r, err := tools.NuevoRegistro(tools.Destinos{Archivos: handler, Terminal: handler, Internet: handler})
+	evs = append(evs, ollama.Evento{
+		Tipo: ollama.EventoDone,
+		Done: &ollama.RespuestaFinal{Texto: texto, Done: true},
+	})
+	return evs
+}
+
+// pedido es una pasada que termina pidiendo herramientas, con su texto.
+func pedido(texto string, calls ...ollama.ToolCall) []ollama.Evento {
+	evs := respuesta(texto)
+	evs[len(evs)-1].Done.ToolCalls = calls
+	return evs
+}
+
+// llamada arma una petición de herramienta con sus argumentos.
+func llamada(nombre, args string) ollama.ToolCall {
+	var c ollama.ToolCall
+	c.Function.Name = nombre
+	c.Function.Arguments = []byte(args)
+	return c
+}
+
+// registroStub arma el registro del catálogo con handlers que devuelven un
+// valor fijo. Si `orden` no es nil, apunta el nombre de cada herramienta
+// ejecutada en orden.
+func registroStub(orden *[]string) *tools.Registro {
+	var impls []tools.Herramienta
+	for _, nombre := range tools.NombresCatalogo() {
+		n := nombre
+		h, _ := tools.NuevaHerramienta(n, func(ctx context.Context, args any, c tools.Contexto) (tools.Resultado, error) {
+			if orden != nil {
+				*orden = append(*orden, n)
+			}
+			return tools.Resultado{Salida: "resultado de " + n}, nil
+		})
+		impls = append(impls, h)
+	}
+	r, err := tools.NuevoRegistro(impls)
 	if err != nil {
 		panic(err)
 	}
 	return r
 }
 
-// bloqueHerramienta arma el texto que el modelo escribiría para pedir una
-// herramienta.
-func bloqueHerramienta(nombre, args string) string {
-	return "```herramienta\n" + nombre + "\n" + args + "\n```"
-}
+// --- tests -------------------------------------------------------------------
 
 // TestElBucleRespondeSinHerramientasEnUnaPasada — si el modelo no pide nada,
 // el bucle cierra en la primera pasada con el texto completo.
 func TestElBucleRespondeSinHerramientasEnUnaPasada(t *testing.T) {
-	g := &generadorGuion{pasadas: [][]ollama.Evento{{
-		{Tipo: ollama.EventoToken, Texto: "hola"},
-		{Tipo: ollama.EventoToken, Texto: " mundo"},
-	}}}
+	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("hola mundo")}}
 	sink := &sinkGrabador{}
 	e := &Ejecutor{Runner: g}
-	res, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, sink)
+	res, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, 0, sink)
 	if err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
 	if res.Texto != "hola mundo" {
-		t.Errorf("texto = %q, quiero %q", res.Texto, "hola mundo")
+		t.Errorf("texto = %q", res.Texto)
 	}
 	if g.llamadas != 1 {
 		t.Errorf("llamadas al modelo = %d, quiero 1", g.llamadas)
@@ -86,16 +121,15 @@ func TestElBucleRespondeSinHerramientasEnUnaPasada(t *testing.T) {
 	}
 }
 
-// El historial de conversación se antepone al contexto del turno: los mensajes
-// previos viajan tal cual y el contexto actual va al final, como usuario.
+// El historial de conversación se antepone al contexto del turno.
 func TestElBucleAnteponeElHistorialAlContexto(t *testing.T) {
-	g := &generadorGuion{pasadas: [][]ollama.Evento{{{Tipo: ollama.EventoToken, Texto: "ok"}}}}
+	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("ok")}}
 	e := &Ejecutor{Runner: g}
 	historial := []ollama.Mensaje{
 		{Role: "user", Content: "hola"},
 		{Role: "assistant", Content: "qué tal"},
 	}
-	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", historial, nil, nil); err != nil {
+	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", historial, nil, 0, nil); err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
 	if len(g.ultimos) != len(historial)+1 {
@@ -109,18 +143,13 @@ func TestElBucleAnteponeElHistorialAlContexto(t *testing.T) {
 	}
 }
 
-// Las imágenes del turno viajan solo en el mensaje de usuario del turno actual:
-// el historial no las lleva (en la v1 no se persisten).
+// Las imágenes del turno viajan solo en el mensaje de usuario del turno actual.
 func TestElTurnoLlevaImagenesAlModelo(t *testing.T) {
-	g := &generadorGuion{pasadas: [][]ollama.Evento{{{Tipo: ollama.EventoToken, Texto: "ok"}}}}
+	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("ok")}}
 	e := &Ejecutor{Runner: g}
-	historial := []ollama.Mensaje{{Role: "user", Content: "hola"}}
 	imgs := []string{"aG9sYQ=="}
-	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", historial, imgs, nil); err != nil {
+	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", []ollama.Mensaje{{Role: "user", Content: "hola"}}, imgs, 0, nil); err != nil {
 		t.Fatalf("Ejecutar: %v", err)
-	}
-	if len(g.ultimos) != 2 {
-		t.Fatalf("mensajes = %d, quiero 2", len(g.ultimos))
 	}
 	if len(g.ultimos[0].Images) != 0 {
 		t.Errorf("el historial no debe llevar imágenes: %+v", g.ultimos[0])
@@ -132,51 +161,89 @@ func TestElTurnoLlevaImagenesAlModelo(t *testing.T) {
 }
 
 // TestElBucleEjecutaHerramientaYVuelveAlModelo — el ciclo central: el modelo
-// pide una herramienta, se despacha, su resultado se reinyecta y el modelo
-// vuelve a responder.
+// pide una herramienta por el canal nativo, se ejecuta y su resultado vuelve
+// como mensaje de rol `tool`.
 func TestElBucleEjecutaHerramientaYVuelveAlModelo(t *testing.T) {
-	var capturado tools.Peticion
-	d := NuevoDespachador(registroStub(&capturado))
+	var orden []string
+	d := NuevoDespachador(registroStub(&orden))
 	g := &generadorGuion{pasadas: [][]ollama.Evento{
-		{{Tipo: ollama.EventoToken, Texto: bloqueHerramienta("leer_archivo", `{"ruta":"a.md"}`)}},
-		{{Tipo: ollama.EventoToken, Texto: "listo"}},
+		pedido("", llamada("leer_archivo", `{"ruta":"a.md"}`)),
+		respuesta("listo"),
 	}}
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
-	ag := Agente{Nombre: "plan", Herramientas: tools.HerramientasDePlan()}
+	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
 
-	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, nil)
+	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, nil)
 	if err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
 	if res.Texto != "listo" {
-		t.Errorf("texto final = %q, quiero %q", res.Texto, "listo")
-	}
-	if capturado.Herramienta != "leer_archivo" {
-		t.Errorf("herramienta despachada = %q, quiero leer_archivo", capturado.Herramienta)
+		t.Errorf("texto final = %q", res.Texto)
 	}
 	if g.llamadas != 2 {
 		t.Errorf("llamadas al modelo = %d, quiero 2", g.llamadas)
 	}
+	if len(orden) != 1 || orden[0] != "leer_archivo" {
+		t.Errorf("herramientas ejecutadas = %v, quiero [leer_archivo]", orden)
+	}
+	// La segunda llamada lleva el resultado como mensaje de rol `tool`.
+	var visto bool
+	for _, m := range g.ultimos {
+		if m.Role == "tool" && strings.Contains(m.Content, "resultado de leer_archivo") {
+			visto = true
+		}
+	}
+	if !visto {
+		t.Errorf("el resultado debe volver al modelo como mensaje de herramienta: %+v", g.ultimos)
+	}
 }
 
-// TestElBucleUnRechazoNoCortaElTurno — un error de `tools` viaja al modelo como
-// resultado y el turno continúa.
+// TestElBucleEjecutaEnElOrdenPedido — las herramientas de un turno se ejecutan
+// en el orden en que el modelo las pidió, nunca en paralelo.
+func TestElBucleEjecutaEnElOrdenPedido(t *testing.T) {
+	var orden []string
+	d := NuevoDespachador(registroStub(&orden))
+	g := &generadorGuion{pasadas: [][]ollama.Evento{
+		pedido("", llamada("listar_carpeta", `{"ruta":"."}`), llamada("buscar_archivos", `{"patron":"*.go"}`)),
+		respuesta("hecho"),
+	}}
+	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
+	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, nil); err != nil {
+		t.Fatalf("Ejecutar: %v", err)
+	}
+	if len(orden) != 2 || orden[0] != "listar_carpeta" || orden[1] != "buscar_archivos" {
+		t.Errorf("orden = %v, quiero el pedido por el modelo", orden)
+	}
+}
+
+// TestElBucleUnRechazoNoCortaElTurno — un fallo no corregible viaja al modelo
+// como resultado y el turno continúa.
 func TestElBucleUnRechazoNoCortaElTurno(t *testing.T) {
 	d := NuevoDespachador(registroStub(nil))
 	g := &generadorGuion{pasadas: [][]ollama.Evento{
-		// `plan` no tiene escritura: la petición será E_TOOL_NOT_ALLOWED.
-		{{Tipo: ollama.EventoToken, Texto: bloqueHerramienta("crear_archivo", `{"ruta":"a.md","contenido":"x"}`)}},
-		{{Tipo: ollama.EventoToken, Texto: "no puedo"}},
+		// `plan` no tiene escritura: la petición es E_TOOL_NOT_ALLOWED.
+		pedido("", llamada("crear_archivo", `{"ruta":"a.md","contenido":"x"}`)),
+		respuesta("no puedo"),
 	}}
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
-	ag := Agente{Nombre: "plan", Herramientas: tools.HerramientasDePlan()}
+	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
 
-	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, nil)
+	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, nil)
 	if err != nil {
 		t.Fatalf("un rechazo no debe cortar el turno: %v", err)
 	}
 	if res.Texto != "no puedo" {
-		t.Errorf("texto final = %q, quiero %q", res.Texto, "no puedo")
+		t.Errorf("texto final = %q", res.Texto)
+	}
+	var dicho bool
+	for _, m := range g.ultimos {
+		if m.Role == "tool" && strings.Contains(m.Content, "no tiene la herramienta") {
+			dicho = true
+		}
+	}
+	if !dicho {
+		t.Errorf("el motivo debe llegar al modelo: %+v", g.ultimos)
 	}
 }
 
@@ -185,14 +252,13 @@ func TestElBucleUnRechazoNoCortaElTurno(t *testing.T) {
 func TestElBucleSeDetieneEnElTopeDePasadas(t *testing.T) {
 	d := NuevoDespachador(registroStub(nil))
 	g := &generadorGuion{pasadas: [][]ollama.Evento{
-		{{Tipo: ollama.EventoToken, Texto: bloqueHerramienta("leer_archivo", `{"ruta":"a.md"}`)}},
-		{{Tipo: ollama.EventoToken, Texto: bloqueHerramienta("leer_archivo", `{"ruta":"b.md"}`)}},
-		{{Tipo: ollama.EventoToken, Texto: "no debería llegar"}},
+		pedido("", llamada("leer_archivo", `{"ruta":"a.md"}`)),
+		pedido("", llamada("leer_archivo", `{"ruta":"b.md"}`)),
+		respuesta("no debería llegar"),
 	}}
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 2}
-	ag := Agente{Nombre: "plan", Herramientas: tools.HerramientasDePlan()}
-
-	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, nil); err != nil {
+	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, nil); err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
 	if g.llamadas != 2 {
@@ -205,22 +271,79 @@ func TestElBuclePropagaElErrorDelModelo(t *testing.T) {
 	fallo := errors.New("modelo caído")
 	g := &generadorGuion{pasadas: [][]ollama.Evento{{{Tipo: ollama.EventoError, Error: fallo}}}}
 	e := &Ejecutor{Runner: g}
-	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, nil); !errors.Is(err, fallo) {
+	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, 0, nil); !errors.Is(err, fallo) {
 		t.Fatalf("err = %v, quiero %v", err, fallo)
 	}
 }
 
-// TestSolicitudesExtraeBloquesValidos — el parser del contrato textual: solo
-// los bloques `herramienta` con nombre del catálogo y JSON válido.
-func TestSolicitudesExtraeBloquesValidos(t *testing.T) {
-	texto := "antes " + bloqueHerramienta("leer_archivo", `{"ruta":"a.md"}`) +
-		" " + bloqueHerramienta("inventada", `{}`) +
-		" " + bloqueHerramienta("listar_carpeta", "{roto")
-	got := Solicitudes(texto)
-	if len(got) != 1 {
-		t.Fatalf("solicitudes = %d, quiero 1: %+v", len(got), got)
+// TestAcumulaLosTokensDelTurno — T-B024-13: el conteo de tokens del evento de
+// fin se consume en vez de descartarse.
+func TestAcumulaLosTokensDelTurno(t *testing.T) {
+	g := &generadorGuion{pasadas: [][]ollama.Evento{{
+		{Tipo: ollama.EventoToken, Texto: "hola"},
+		{Tipo: ollama.EventoDone, Done: &ollama.RespuestaFinal{Texto: "hola", Done: true, TokensEntr: 11, TokensSal: 3}},
+	}}}
+	e := &Ejecutor{Runner: g}
+	res, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, 0, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got[0].Nombre != "leer_archivo" {
-		t.Errorf("nombre = %q, quiero leer_archivo", got[0].Nombre)
+	if res.TokensEntrada != 11 || res.TokensSalida != 3 {
+		t.Errorf("tokens = %d/%d, quiero 11/3", res.TokensEntrada, res.TokensSalida)
+	}
+}
+
+// TestElTestigoSeTomaPorPeticion — T-B024-14: el turno de inferencia se toma
+// una vez por pasada, no una vez por ejecución completa: una espera de
+// aprobación entre pasadas no retiene el modelo.
+func TestElTestigoSeTomaPorPeticion(t *testing.T) {
+	d := NuevoDespachador(registroStub(nil))
+	g := &generadorGuion{pasadas: [][]ollama.Evento{
+		pedido("", llamada("leer_archivo", `{"ruta":"a.md"}`)),
+		respuesta("listo"),
+	}}
+	var tomas int
+	e := &Ejecutor{
+		Runner:     g,
+		Despachar:  d,
+		MaxPasadas: 3,
+		Testigo: func(ctx context.Context, fn func(context.Context) error) error {
+			tomas++
+			return fn(ctx)
+		},
+	}
+	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	if tomas != 2 {
+		t.Errorf("el testigo se tomó %d veces, quiero 2 (una por petición al modelo)", tomas)
+	}
+}
+
+// TestSinHerramientasDegradaAConversacion — T-B024-16: si el modelo no declara
+// capacidad de herramientas, no se le presentan y el agente avisa de que va a
+// conversar.
+func TestSinHerramientasDegradaAConversacion(t *testing.T) {
+	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("converso")}}
+	sink := &sinkGrabador{}
+	e := &Ejecutor{
+		Runner:            g,
+		Despachar:         NuevoDespachador(registroStub(nil)),
+		PuedeHerramientas: func(modelo string) bool { return false },
+	}
+	ag := Agente{Nombre: "plan", Prompt: "p", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, sink)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(g.ultimasHerramientas) != 0 {
+		t.Errorf("no deben viajar herramientas: %+v", g.ultimasHerramientas)
+	}
+	if len(sink.avisos) != 1 || !strings.Contains(sink.avisos[0], "conversar") {
+		t.Errorf("avisos = %v, quiero uno diciendo que va a conversar", sink.avisos)
+	}
+	if res.Aviso == "" {
+		t.Error("el resultado debe llevar el aviso")
 	}
 }

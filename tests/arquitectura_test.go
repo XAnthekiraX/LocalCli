@@ -97,31 +97,38 @@ func TestStoreEsElUnicoPuntoDeEscrituraSQLite(t *testing.T) {
 	}
 }
 
-// TestSinTablasProhibidas — el esquema tiene exactamente las seis tablas de
-// TABLES.md. No hay tabla de cola (es una proyección del TODO, DOMAIN.md §3),
+// TestSinTablasProhibidas — el esquema tiene exactamente las siete tablas
+// aprobadas (las seis de TABLES.md más `todos`, la lista de pasos de la sesión).
+// No hay tabla de cola (es una proyección del TODO de `ai/tasks/`, DOMAIN.md §3),
 // ni tabla de grafo (vive en el frontmatter), ni tabla de usuarios (no hay
-// cuentas). Si aparece una séptima, es un error de arquitectura.
+// cuentas). Si aparece una octava, es un error de arquitectura.
 func TestSinTablasProhibidas(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("..", "internal", "store", "schema.sql"))
-	if err != nil {
-		t.Fatalf("leer schema.sql: %v", err)
+	var ddl strings.Builder
+	for _, f := range []string{"schema.sql", "todo.sql"} {
+		b, err := os.ReadFile(filepath.Join("..", "internal", "store", f))
+		if err != nil {
+			t.Fatalf("leer %s: %v", f, err)
+		}
+		ddl.Write(b)
+		ddl.WriteString("\n")
 	}
 	permitidas := map[string]bool{
 		"sessions": true, "messages": true, "reasoning": true,
 		"approvals": true, "context_audit": true, "change_history": true,
+		"todos": true,
 	}
 	var encontradas []string
-	for _, m := range regexpCreateTable.FindAllStringSubmatch(string(b), -1) {
+	for _, m := range regexpCreateTable.FindAllStringSubmatch(ddl.String(), -1) {
 		nombre := m[1]
 		if !permitidas[nombre] {
 			t.Errorf("la tabla %q no existe en el esquema aprobado", nombre)
 		}
 		encontradas = append(encontradas, nombre)
 	}
-	if len(encontradas) != 6 {
-		t.Errorf("el esquema tiene %d tablas, quiero 6: %v", len(encontradas), encontradas)
+	if len(encontradas) != 7 {
+		t.Errorf("el esquema tiene %d tablas, quiero 7: %v", len(encontradas), encontradas)
 	}
-	for _, prohibida := range []string{"cola", "queue", "grafo", "graph", "usuarios", "users", "todo"} {
+	for _, prohibida := range []string{"cola", "queue", "grafo", "graph", "usuarios", "users"} {
 		if permitidas[prohibida] {
 			continue
 		}

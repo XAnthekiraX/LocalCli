@@ -110,8 +110,8 @@ func TestAgenteSinHerramientasEsSoloConversacion(t *testing.T) {
 	if !a.SoloConversacion() {
 		t.Error("un agente sin herramientas debe ser de solo conversación")
 	}
-	// Sin herramientas, no puede pedir ninguna: tools lo rechaza.
-	if err := tools.ComprobarPermiso(a.Herramientas, "leer_archivo"); err == nil {
+	// Sin acciones, no puede pedir ninguna: tools lo rechaza.
+	if err := tools.ComprobarPermiso(a.Acciones(), "leer_archivo"); err == nil {
 		t.Error("un agente de solo conversación no puede pedir herramientas")
 	}
 }
@@ -135,16 +135,16 @@ func TestAgentesBaseDocumentados(t *testing.T) {
 	if plan.TieneEscritura() {
 		t.Error("plan no puede tener ninguna herramienta de escritura")
 	}
-	if len(plan.Herramientas) != 7 {
-		t.Errorf("plan declara %d herramientas, quiero 7 de lectura", len(plan.Herramientas))
+	if len(plan.Herramientas) != 8 {
+		t.Errorf("plan declara %d herramientas, quiero 8 (lectura, ejecución, internet y tareas)", len(plan.Herramientas))
 	}
 
 	build, ok := PorNombre(agentes, "build")
 	if !ok {
 		t.Fatal("falta el agente base build")
 	}
-	if len(build.Herramientas) != 13 {
-		t.Errorf("build declara %d herramientas, quiero 13", len(build.Herramientas))
+	if len(build.Herramientas) != 14 {
+		t.Errorf("build declara %d herramientas, quiero 14", len(build.Herramientas))
 	}
 	if !build.TieneEscritura() {
 		t.Error("build debe tener herramientas de escritura")

@@ -16,6 +16,7 @@ package tools
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"reflect"
 	"strings"
@@ -72,9 +73,40 @@ func Validar(nombre string, peticion any) error {
 		return requerido(nombre, "consulta", p.Consulta)
 	case *PeticionAbrirPagina:
 		return requerido(nombre, "direccion", p.Direccion)
+	case *PeticionActualizarTodo:
+		return validarTodo(nombre, p)
 	}
 	return nuevoError(CodigoArgumentosInvalidos,
 		"los argumentos de "+nombre+" no encajan con su contrato")
+}
+
+// Vocabularios de la lista de pasos de la sesión (SPEC-TOOLS).
+var (
+	estadosDeTodo = map[string]bool{
+		"pendiente": true, "en_progreso": true, "completada": true, "cancelada": true,
+	}
+	prioridadesDeTodo = map[string]bool{"alta": true, "media": true, "baja": true}
+)
+
+// validarTodo comprueba el vocabulario de la lista. Una lista vacía es válida:
+// es como se deja la lista en blanco. Un estado o una prioridad fuera del
+// vocabulario es E_BAD_ARGS y vuelve al modelo para que corrija.
+func validarTodo(nombre string, p *PeticionActualizarTodo) error {
+	for i, e := range p.Elementos {
+		if strings.TrimSpace(e.Contenido) == "" {
+			return nuevoError(CodigoArgumentosInvalidos,
+				fmt.Sprintf("el elemento %d de %s no tiene `contenido`", i, nombre))
+		}
+		if !estadosDeTodo[e.Estado] {
+			return nuevoError(CodigoArgumentosInvalidos,
+				fmt.Sprintf("el estado %q del elemento %d de %s no es válido: usa pendiente, en_progreso, completada o cancelada", e.Estado, i, nombre))
+		}
+		if e.Prioridad != "" && !prioridadesDeTodo[e.Prioridad] {
+			return nuevoError(CodigoArgumentosInvalidos,
+				fmt.Sprintf("la prioridad %q del elemento %d de %s no es válida: usa alta, media o baja", e.Prioridad, i, nombre))
+		}
+	}
+	return nil
 }
 
 // Decodificar convierte el texto que produjo el modelo en el tipo de
@@ -102,6 +134,26 @@ func Decodificar(nombre string, datos []byte) (any, error) {
 		return nil, err
 	}
 	return v, nil
+}
+
+// DecodificarUsuario acepta el objeto genérico de una herramienta del usuario.
+// El harness no conoce el ejecutable, así que no puede validar campos: solo
+// comprueba que lo que llega es un objeto JSON (VALIDATION.md §1).
+func DecodificarUsuario(datos []byte) (any, error) {
+	var objeto map[string]any
+	dec := json.NewDecoder(bytes.NewReader(datos))
+	if err := dec.Decode(&objeto); err != nil {
+		return nil, nuevoError(CodigoArgumentosInvalidos,
+			"los argumentos de una herramienta del usuario deben ser un objeto JSON: "+err.Error())
+	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		return nil, nuevoError(CodigoArgumentosInvalidos,
+			"los argumentos de una herramienta del usuario llevan contenido de más")
+	}
+	if objeto == nil {
+		return map[string]any{}, nil
+	}
+	return objeto, nil
 }
 
 // requerido comprueba que un campo obligatorio no esté vacío. Un valor en

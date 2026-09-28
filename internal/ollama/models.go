@@ -18,6 +18,9 @@ type Modelo struct {
 	Familia     string
 	Parametros  string
 	TamanoBytes int64
+	// ContextLength es la ventana máxima que declara el modelo. 0 = no la
+	// reporta; el arranque decide entonces con su tope.
+	ContextLength int
 }
 
 // respuestaTags es la forma cruda de /api/tags.
@@ -30,6 +33,7 @@ type respuestaTags struct {
 			Size          string `json:"size"`
 			Family        string `json:"family"`
 			NumParameters string `json:"num_parameters"`
+			ContextLength int    `json:"context_length"`
 		} `json:"details"`
 	} `json:"models"`
 }
@@ -58,10 +62,11 @@ func (c *Client) ListarModelos(ctx context.Context) ([]Modelo, error) {
 			nombre = m.Model
 		}
 		out = append(out, Modelo{
-			Nombre:      nombre,
-			Familia:     m.Parameters.Family,
-			Parametros:  m.Parameters.NumParameters,
-			TamanoBytes: m.Size,
+			Nombre:        nombre,
+			Familia:       m.Parameters.Family,
+			Parametros:    m.Parameters.NumParameters,
+			TamanoBytes:   m.Size,
+			ContextLength: m.Parameters.ContextLength,
 		})
 	}
 	return out, nil

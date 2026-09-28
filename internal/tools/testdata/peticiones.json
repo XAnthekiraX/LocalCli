@@ -42,5 +42,11 @@
   },
   "abrir_pagina": {
     "direccion": "https://example.com/docs"
+  },
+  "actualizar_todo": {
+    "elementos": [
+      { "contenido": "Añadir la tabla todos", "estado": "en_progreso", "prioridad": "alta" },
+      { "contenido": "Actualizar la documentación", "estado": "pendiente" }
+    ]
   }
 }

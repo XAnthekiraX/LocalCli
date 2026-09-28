@@ -324,6 +324,213 @@ func TestSeparadorEnTextoMarcadoresInline(t *testing.T) {
 	}
 }
 
+// TestAcumulaToolCalls — T-B024-11: las peticiones de herramienta llegan en el
+// mensaje del asistente y se acumulan durante el streaming, sin esperar a ellas
+// para los tokens de texto.
+func TestAcumulaToolCalls(t *testing.T) {
+	var acc acumulador
+	primera := []byte(`{"message":{"role":"assistant","content":"miro","tool_calls":[{"function":{"name":"leer_archivo","arguments":{"ruta":"a.md"}}}]},"done":false}`)
+	evs, err := procesarLinea(primera, &acc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// El texto se emite ya; las herramientas viajan con la señal de fin.
+	var texto bool
+	for _, e := range evs {
+		if e.Tipo == EventoToken && e.Texto == "miro" {
+			texto = true
+		}
+	}
+	if !texto {
+		t.Fatalf("el texto debe emitirse sin esperar a las herramientas: %+v", evs)
+	}
+
+	segunda := []byte(`{"message":{"role":"assistant","tool_calls":[{"function":{"name":"listar_carpeta","arguments":{"ruta":"."}}}]},"done":true,"eval_count":4}`)
+	evs, err = procesarLinea(segunda, &acc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var final *RespuestaFinal
+	for _, e := range evs {
+		if e.Tipo == EventoDone {
+			final = e.Done
+		}
+	}
+	if final == nil || len(final.ToolCalls) != 2 {
+		t.Fatalf("tool_calls = %+v, quiero las dos acumuladas", final)
+	}
+	if final.ToolCalls[0].Nombre() != "leer_archivo" || final.ToolCalls[1].Nombre() != "listar_carpeta" {
+		t.Errorf("orden de tool_calls = %+v", final.ToolCalls)
+	}
+	// Los argumentos se normalizan a JSON crudo, tanto si vienen como objeto
+	// como si vienen como cadena.
+	if got := string(final.ToolCalls[0].ArgumentosJSON()); got != `{"ruta":"a.md"}` {
+		t.Errorf("argumentos = %s", got)
+	}
+
+	var cadena acumulador
+	_, err = procesarLinea([]byte(`{"message":{"tool_calls":[{"function":{"name":"x","arguments":"{\"a\":1}"}}]},"done":true}`), &cadena)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(cadena.final.ToolCalls[0].ArgumentosJSON()); got != `{"a":1}` {
+		t.Errorf("argumentos en cadena = %s", got)
+	}
+}
+
+// TestChatSerializaElCanalDeHerramientas — T-B024-10: la petición lleva un
+// objeto por herramienta en el campo `tools`.
+func TestChatSerializaElCanalDeHerramientas(t *testing.T) {
+	var crudo []byte
+	c := nuevoServidorOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		crudo, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte("{\"model\":\"m\",\"done\":true}\n"))
+	})
+	events, err := c.Chat(context.Background(), GenerarRequest{
+		Model:    "m",
+		Messages: []Mensaje{{Role: "user", Content: "hola"}},
+		Tools: []Herramienta{{Type: "function", Function: Definicion{
+			Name:        "leer_archivo",
+			Description: "Lee un archivo.",
+			Parameters:  map[string]any{"type": "object"},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range events {
+	}
+	var cuerpo struct {
+		Tools []struct {
+			Type     string `json:"type"`
+			Function struct {
+				Name       string `json:"name"`
+				Parameters any    `json:"parameters"`
+			} `json:"function"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(crudo, &cuerpo); err != nil {
+		t.Fatalf("la petición no es JSON: %v (%s)", err, crudo)
+	}
+	if len(cuerpo.Tools) != 1 {
+		t.Fatalf("tools = %d, quiero un objeto por herramienta: %s", len(cuerpo.Tools), crudo)
+	}
+	if cuerpo.Tools[0].Type != "function" || cuerpo.Tools[0].Function.Name != "leer_archivo" {
+		t.Errorf("definición mal serializada: %+v", cuerpo.Tools[0])
+	}
+}
+
+// Sin herramientas el campo no viaja: no se manda un `null` que el modelo
+// pueda interpretar como un catálogo vacío.
+func TestChatOmiteToolsSinHerramientas(t *testing.T) {
+	var crudo []byte
+	c := nuevoServidorOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		crudo, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte("{\"model\":\"m\",\"done\":true}\n"))
+	})
+	events, err := c.Chat(context.Background(), GenerarRequest{Model: "m", Messages: []Mensaje{{Role: "user", Content: "hola"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range events {
+	}
+	if strings.Contains(string(crudo), "\"tools\"") {
+		t.Errorf("sin herramientas no debe viajar el campo tools: %s", crudo)
+	}
+}
+
+// --- Ventana de contexto (num_ctx) -----------------------------------------
+
+// TestVentanaDeModelo — la ventana es el menor entre lo que declara el modelo y
+// el tope; sin dato del modelo, manda el tope.
+func TestVentanaDeModelo(t *testing.T) {
+	if got := VentanaDeModelo(Modelo{ContextLength: 262144}, TopeVentanaPorDefecto); got != TopeVentanaPorDefecto {
+		t.Errorf("modelo grande → %d, quiero el tope %d", got, TopeVentanaPorDefecto)
+	}
+	if got := VentanaDeModelo(Modelo{ContextLength: 8192}, TopeVentanaPorDefecto); got != 8192 {
+		t.Errorf("modelo pequeño → %d, quiero 8192", got)
+	}
+	if got := VentanaDeModelo(Modelo{}, TopeVentanaPorDefecto); got != TopeVentanaPorDefecto {
+		t.Errorf("sin dato → %d, quiero el tope", got)
+	}
+	if got := VentanaDeModelo(Modelo{ContextLength: 262144}, 4096); got != 4096 {
+		t.Errorf("tope explícito → %d, quiero 4096", got)
+	}
+}
+
+// TestChatLlevaNumCtx — T: la ventana viaja en `options.num_ctx` de la petición,
+// no como campo suelto en la raíz. Sin ella Ollama corta los turnos con
+// herramientas.
+func TestChatLlevaNumCtx(t *testing.T) {
+	var crudo []byte
+	c := nuevoServidorOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		crudo, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte("{\"model\":\"m\",\"done\":true}\n"))
+	})
+	events, err := c.Chat(context.Background(), GenerarRequest{
+		Model:    "m",
+		Messages: []Mensaje{{Role: "user", Content: "hola"}},
+		NumCtx:   16384,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range events {
+	}
+	var cuerpo struct {
+		Options map[string]any `json:"options"`
+		Suelto  any            `json:"num_ctx"`
+	}
+	if err := json.Unmarshal(crudo, &cuerpo); err != nil {
+		t.Fatalf("petición no JSON: %v (%s)", err, crudo)
+	}
+	if got, _ := cuerpo.Options["num_ctx"].(float64); int(got) != 16384 {
+		t.Errorf("options.num_ctx = %v, quiero 16384: %s", cuerpo.Options["num_ctx"], crudo)
+	}
+	if cuerpo.Suelto != nil {
+		t.Errorf("num_ctx no debe viajar suelto en la raíz: %s", crudo)
+	}
+}
+
+// TestChatOmiteNumCtxSinVentana — sin ventana no se inventa un `options`: se
+// deja que el servidor use su valor (comportamiento anterior intacto).
+func TestChatOmiteNumCtxSinVentana(t *testing.T) {
+	var crudo []byte
+	c := nuevoServidorOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		crudo, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte("{\"model\":\"m\",\"done\":true}\n"))
+	})
+	events, err := c.Chat(context.Background(), GenerarRequest{Model: "m", Messages: []Mensaje{{Role: "user", Content: "hola"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range events {
+	}
+	if strings.Contains(string(crudo), "num_ctx") || strings.Contains(string(crudo), "\"options\"") {
+		t.Errorf("sin ventana no debe viajar options/num_ctx: %s", crudo)
+	}
+}
+
+// TestElErrorIncluyeElMotivoDeOllama — un 500 trae el motivo real en el cuerpo
+// (`{"error": …}`); antes se descartaba y la pantalla mostraba un «(500)» pelado.
+func TestElErrorIncluyeElMotivoDeOllama(t *testing.T) {
+	c := nuevoServidorOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, `{"error":"no user query found in messages"}`)
+	})
+	_, err := c.Chat(context.Background(), GenerarRequest{Model: "m", Messages: []Mensaje{{Role: "user", Content: "hola"}}})
+	if err == nil {
+		t.Fatal("quiero error del 500")
+	}
+	if !strings.Contains(err.Error(), "no user query found in messages") {
+		t.Errorf("el error debe incluir el motivo de Ollama: %v", err)
+	}
+	var e *ErrorOllama
+	if !errors.As(err, &e) || e.Codigo != CodigoOllamaNoDisponible {
+		t.Errorf("código: %+v", e)
+	}
+}
+
 // --- T-B005-04: listado de modelos -----------------------------------------
 
 func TestListarModelosParseaTags(t *testing.T) {
@@ -344,8 +551,11 @@ func TestListarModelosParseaTags(t *testing.T) {
 	if modelos[0].Nombre != "qwen2.5:3b" || modelos[0].TamanoBytes != 1900000000 {
 		t.Errorf("modelo 0: %+v", modelos[0])
 	}
-	if modelos[2].TamanoBytes != 0 {
-		t.Errorf("sin tamaño debe quedar 0: %+v", modelos[2])
+	if modelos[0].ContextLength != 32768 {
+		t.Errorf("context_length no parseado: %+v", modelos[0])
+	}
+	if modelos[2].TamanoBytes != 0 || modelos[2].ContextLength != 0 {
+		t.Errorf("sin tamaño/contexto deben quedar 0: %+v", modelos[2])
 	}
 }
 

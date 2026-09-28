@@ -28,62 +28,62 @@ package tools
 
 // PeticionLeerArchivo pide el contenido de un archivo del proyecto.
 type PeticionLeerArchivo struct {
-	Ruta string `json:"ruta"` // obligatoria; relativa a la carpeta del proyecto
+	Ruta string `json:"ruta" desc:"Ruta relativa a la carpeta del proyecto"`
 }
 
 // PeticionListarCarpeta pide las entradas de un nivel de una carpeta.
 type PeticionListarCarpeta struct {
-	Ruta string `json:"ruta"` // obligatoria; relativa; un nivel
+	Ruta string `json:"ruta" desc:"Ruta relativa; un nivel"`
 }
 
 // PeticionBuscarArchivos busca rutas por nombre de archivo.
 type PeticionBuscarArchivos struct {
-	Patron string `json:"patron"` // obligatorio; coincide contra nombres de archivo
+	Patron string `json:"patron" desc:"Texto contra el que se comparan los nombres de archivo"`
 }
 
 // PeticionBuscarEnArchivos busca por contenido. Ruta es opcional y acota la
 // búsqueda a una subcarpeta (TOOLS-DTO.md §2).
 type PeticionBuscarEnArchivos struct {
-	Patron string `json:"patron"`         // obligatorio; coincide contra el contenido
-	Ruta   string `json:"ruta,omitempty"` // opcional; limita a una subcarpeta
+	Patron string `json:"patron" desc:"Texto a buscar dentro de los archivos"`
+	Ruta   string `json:"ruta,omitempty" desc:"Limita la búsqueda a una subcarpeta"`
 }
 
 // --- Archivos de escritura (solo `build`) ---------------------------------
 
 // PeticionCrearArchivo crea un archivo. Falla si ya existe.
 type PeticionCrearArchivo struct {
-	Ruta      string `json:"ruta"`      // obligatoria
-	Contenido string `json:"contenido"` // obligatorio; texto plano, cualquier extensión
+	Ruta      string `json:"ruta" desc:"Ruta del archivo a crear; falla si ya existe"`
+	Contenido string `json:"contenido" desc:"Texto completo del archivo"`
 }
 
 // PeticionEscribirArchivo sobrescribe el contenido entero de un archivo.
 type PeticionEscribirArchivo struct {
-	Ruta      string `json:"ruta"`      // obligatoria
-	Contenido string `json:"contenido"` // obligatorio
+	Ruta      string `json:"ruta" desc:"Ruta del archivo a sobrescribir"`
+	Contenido string `json:"contenido" desc:"Texto que reemplaza el contenido entero"`
 }
 
 // PeticionEditarArchivo aplica una edición parcial. El cambio va como texto
 // porque el contrato lo define así; cómo lo aplica `fileops` es cosa suya.
 type PeticionEditarArchivo struct {
-	Ruta   string `json:"ruta"`   // obligatoria
-	Cambio string `json:"cambio"` // obligatorio; la edición a aplicar
+	Ruta   string `json:"ruta" desc:"Ruta del archivo a modificar"`
+	Cambio string `json:"cambio" desc:"La edición a aplicar"`
 }
 
 // PeticionEliminarArchivo borra un archivo. La confirmación explícita no viaja
 // aquí: la pide el motor a la persona.
 type PeticionEliminarArchivo struct {
-	Ruta string `json:"ruta"` // obligatoria
+	Ruta string `json:"ruta" desc:"Ruta del archivo a borrar; pide confirmación explícita"`
 }
 
 // PeticionCrearCarpeta crea una carpeta. Falla si ya existe.
 type PeticionCrearCarpeta struct {
-	Ruta string `json:"ruta"` // obligatoria
+	Ruta string `json:"ruta" desc:"Ruta de la carpeta; falla si ya existe"`
 }
 
 // PeticionEliminarCarpeta borra una carpeta. La confirmación explícita no
 // viaja aquí, igual que en el borrado de archivos.
 type PeticionEliminarCarpeta struct {
-	Ruta string `json:"ruta"` // obligatoria
+	Ruta string `json:"ruta" desc:"Ruta de la carpeta; pide confirmación explícita"`
 }
 
 // --- Terminal (ambos agentes) ---------------------------------------------
@@ -92,8 +92,8 @@ type PeticionEliminarCarpeta struct {
 // es seguro: la lista blanca y Landlock lo deciden (TOOLS.md §5, VALIDATION.md
 // §5).
 type PeticionEjecutarComando struct {
-	Comando string `json:"comando"`           // obligatorio
-	Carpeta string `json:"carpeta,omitempty"` // opcional; por defecto, la del proyecto
+	Comando string `json:"comando" desc:"Comando a correr; se valida contra la lista blanca, no contra su texto"`
+	Carpeta string `json:"carpeta,omitempty" desc:"Carpeta de trabajo; por defecto, la del proyecto"`
 }
 
 // --- Internet (ambos agentes) ---------------------------------------------
@@ -102,12 +102,27 @@ type PeticionEjecutarComando struct {
 // de la máquina (SECURITY.md §4), así que el tipo no admite ningún campo
 // adjunto: no hay forma de mandar contenido del proyecto.
 type PeticionBuscarInternet struct {
-	Consulta string `json:"consulta"` // obligatoria
+	Consulta string `json:"consulta" desc:"Qué buscar; es lo único que sale de la máquina"`
 }
 
 // PeticionAbrirPagina pide el contenido de una página.
 type PeticionAbrirPagina struct {
-	Direccion string `json:"direccion"` // obligatoria; URL de la página
+	Direccion string `json:"direccion" desc:"Dirección de la página a abrir"`
+}
+
+// --- Sesión (ambos agentes) ------------------------------------------------
+
+// ElementoTodo es un paso de la lista de la sesión.
+type ElementoTodo struct {
+	Contenido string `json:"contenido" desc:"Qué hay que hacer; una acción concreta"`
+	Estado    string `json:"estado" desc:"pendiente | en_progreso | completada | cancelada"`
+	Prioridad string `json:"prioridad,omitempty" desc:"alta | media | baja (opcional; por defecto media)"`
+}
+
+// PeticionActualizarTodo reemplaza la lista de pasos de la sesión: lo que llega
+// es la lista entera, no un delta. Una lista vacía la deja en blanco.
+type PeticionActualizarTodo struct {
+	Elementos []ElementoTodo `json:"elementos" desc:"La lista completa de pasos; reemplaza la anterior"`
 }
 
 // peticiones asocia cada nombre del catálogo con un valor vacío de su tipo.
@@ -128,6 +143,7 @@ var peticiones = map[string]func() any{
 	"ejecutar_comando":   func() any { return &PeticionEjecutarComando{} },
 	"buscar_en_internet": func() any { return &PeticionBuscarInternet{} },
 	"abrir_pagina":       func() any { return &PeticionAbrirPagina{} },
+	"actualizar_todo":    func() any { return &PeticionActualizarTodo{} },
 }
 
 // NuevaPeticion devuelve un valor vacío del tipo de argumentos de la

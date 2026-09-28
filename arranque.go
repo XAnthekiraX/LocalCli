@@ -15,8 +15,8 @@
 //   - deja el ciclo de sesiones listo (sin crear ninguna hasta la primera petición) y reconstruye la conversación al responder,
 //   - y hace vivir el flujo de aprobación real: cada petición de permiso llega
 //     a la vista como `peticion_aprobacion` y la decisión del usuario vuelve al
-//     motor como `aprobacion_resuelta` (el puente entre fileops/AprobadorSQLite
-//     y el panel de la TUI).
+//     motor como `aprobacion_resuelta` (el puente entre el `Ask` de `tools` y
+//     el panel de la TUI).
 package main
 
 import (
@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,7 +36,6 @@ import (
 	"localcli/internal/agent"
 	tcontext "localcli/internal/context"
 	lcexec "localcli/internal/exec"
-	"localcli/internal/fileops"
 	"localcli/internal/flow"
 	"localcli/internal/ollama"
 	"localcli/internal/queue"
@@ -75,8 +75,10 @@ type Adaptador struct {
 	aprobar *store.Aprobaciones
 	cerrar  *store.Turnos
 	auditar *store.Auditorias
-	bus     *session.Bus
-	dir     string
+	// todos es el repositorio de la lista de pasos de la sesión (SPEC-TOOLS).
+	todos *store.Todos
+	bus   *session.Bus
+	dir   string
 	// catalogo son los flujos del proyecto: los oficiales más los que declara
 	// `ai/flows/*.json`. Lo arma el arranque; `Enviar` reconoce los comandos
 	// contra él.
@@ -101,6 +103,11 @@ type Adaptador struct {
 	mu         sync.Mutex
 	sesionID   string
 	pendientas map[string]chan string // approvalID -> canal de resolución
+	// contextos cachea, por modelo, la ventana de contexto que declara
+	// `/api/tags` (details.context_length), para no repetir el listado al
+	// calcular `num_ctx` en cada turno. Un 0 cacheado significa «el modelo no la
+	// declara»: se guarda igual para no volver a listar.
+	contextos map[string]int
 }
 
 // modeloElegido es la lectura con mutex del modelo activo.
@@ -108,6 +115,52 @@ func (ad *Adaptador) modeloElegido() string {
 	ad.modeloMu.Lock()
 	defer ad.modeloMu.Unlock()
 	return ad.modelo
+}
+
+// topeVentana es el techo de la ventana de contexto: LOCALCLI_CONTEXT_LIMIT si
+// el usuario lo fijó, y si no el tope por defecto de `ollama`.
+func topeVentana() int {
+	if n := tcontext.LimiteDeEntorno(); n > 0 {
+		return n
+	}
+	return ollama.TopeVentanaPorDefecto
+}
+
+// ventana devuelve el `num_ctx` a pedir para el modelo dado: el menor entre su
+// ventana declarada y el tope. Es lo que evita que Ollama recorte la lista de
+// mensajes y responda `no user query found in messages` en los turnos con
+// herramientas (el servidor usa por defecto ~4096, que es demasiado poco).
+func (ad *Adaptador) ventana(modelo string) int {
+	return ollama.VentanaDeModelo(ollama.Modelo{ContextLength: ad.largoDeContexto(modelo)}, topeVentana())
+}
+
+// largoDeContexto devuelve la ventana que declara el modelo, cacheada. Si no
+// está en la caché, lista los modelos una vez y rellena toda la caché; un fallo
+// de Ollama se trata como «no la declara» (0) y el tope manda.
+func (ad *Adaptador) largoDeContexto(modelo string) int {
+	ad.mu.Lock()
+	if n, ok := ad.contextos[modelo]; ok {
+		ad.mu.Unlock()
+		return n
+	}
+	ad.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
+	defer cancel()
+	modelos, err := ad.cliente.ListarModelos(ctx)
+	if err != nil {
+		return 0
+	}
+	ad.mu.Lock()
+	defer ad.mu.Unlock()
+	largo := 0
+	for _, m := range modelos {
+		ad.contextos[m.Nombre] = m.ContextLength
+		if m.Nombre == modelo {
+			largo = m.ContextLength
+		}
+	}
+	return largo
 }
 
 var _ tui.Puerto = (*Adaptador)(nil)
@@ -146,17 +199,13 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	// montarse), así que el registro puede construirse antes de que el gestor
 	// exista.
 	cambios := store.NuevosCambios(conexion)
-	ad := &Adaptador{aprobar: aprobar, cerrar: turnos, auditar: store.NuevasAuditorias(conexion), bus: bus, dir: carpeta, pendientas: map[string]chan string{}, cliente: cliente}
+	ad := &Adaptador{aprobar: aprobar, cerrar: turnos, auditar: store.NuevasAuditorias(conexion), todos: store.NuevosTodos(conexion), bus: bus, dir: carpeta, pendientas: map[string]chan string{}, contextos: map[string]int{}, cliente: cliente}
 	ad.modelo = modelo
 	ad.agenteRecordado = prefs.Agente
-	aprobadorTerminal := func(ctx context.Context, descripcion string) (bool, error) {
-		return ad.aprobarComando(ctx, descripcion)
-	}
-	registro, err := tools.NuevoRegistro(tools.Destinos{
-		Archivos: handlerArchivos(aprobar, cambios, carpeta, ad),
-		Terminal: handlerTerminal(aprobadorTerminal),
-		Internet: handlerInternet(),
-	})
+	// El ejecutor externo corre las herramientas del usuario: el mismo módulo
+	// `exec` con la misma frontera (Landlock, límites y recorte).
+	ejecutorExterno := &lcexec.Ejecutor{Proyecto: carpeta}
+	registro, err := registroDeHerramientas(ad, carpeta, cambios, ad.todos, ejecutorExterno)
 	if err != nil {
 		conexion.Close()
 		return nil, err
@@ -201,7 +250,18 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	// usuario en sus preferencias (SPEC-HISTORIAL-CONVERSACION).
 	gest.Titulador = &tituladorPorTurno{ad: ad, infer: infer}
 	gest.Resumidor = &resumidorPorTurno{ad: ad, infer: infer}
+	// El presupuesto del historial se queda por debajo de la ventana de contexto
+	// para que el prompt entero (sistema + herramientas + historial + salidas de
+	// herramienta) quepa: la preferencia del usuario manda; si no,
+	// LOCALCLI_CONTEXT_LIMIT; si no, un cuarto de la ventana del modelo (4096
+	// para la ventana por defecto de 16384).
 	gest.Presupuesto = prefs.HistorialTokens
+	if gest.Presupuesto <= 0 {
+		gest.Presupuesto = tcontext.LimiteDeEntorno()
+	}
+	if gest.Presupuesto <= 0 {
+		gest.Presupuesto = ad.ventana(modelo) / 4
+	}
 	ad.gest = gest
 
 	a := &Arranque{cerrarDB: cerrarDB, Bus: bus, Gest: gest, Infer: infer}
@@ -214,10 +274,33 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	motorFlows.Contexto = &nodoPorTurno{ad: ad, grafo: grafo, cliente: cliente, modelo: modelo}
 	// El bucle conversacional (agente → modelo → herramientas → modelo) vive en
 	// `agent`; aquí solo se le dan sus dependencias reales y el mapa de agentes.
-	ejecutor := &agent.Ejecutor{Runner: agenteRunner, Despachar: despachador, MaxPasadas: 3}
+	//
+	// El turno de inferencia se toma POR PETICIÓN al modelo (`Testigo`), no por
+	// la ejecución entera: entre pasada y pasada, mientras el usuario decide una
+	// aprobación, el modelo queda libre para las demás sesiones
+	// (SPEC-OLLAMA-PERFIL).
+	ejecutor := &agent.Ejecutor{
+		Runner:     agenteRunner,
+		Despachar:  despachador,
+		MaxPasadas: 3,
+		Testigo: func(ctx context.Context, fn func(context.Context) error) error {
+			return infer.Encolar(ctx, ollama.OpcionesEncolar{IdSesion: ad.sesionActual()}, fn)
+		},
+		PuedeHerramientas: func(m string) bool {
+			ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
+			defer cancel()
+			caps, cErr := cliente.Capacidades(ctx, m)
+			if cErr != nil {
+				// Sin dato no se degrada: mejor conversar con herramientas que
+				// quitarle el trabajo al modelo por una ficha que no llegó.
+				return true
+			}
+			return ollama.PuedeUsarHerramientas(caps)
+		},
+	}
 	agentes := agenteBase(carpeta)
 	ad.agentes = agent.OrdenarNombres(agentes)
-	motorFlows.Agente = &ejecutorPorTurno{ad: ad, ejecutor: ejecutor, infer: infer, agente: agentes}
+	motorFlows.Agente = &ejecutorPorTurno{ad: ad, ejecutor: ejecutor, agente: agentes}
 	motorFlows.Aprobador = &aprobadorPorTurno{ad: ad}
 
 	// Arranque de sesión: NO se crea ninguna. La sesión nace con la primera
@@ -313,6 +396,13 @@ func (ad *Adaptador) Modelos() ([]tui.ModeloLocal, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Aprovechar el listado para calentar la caché de ventanas de contexto: al
+	// elegir un modelo no hará falta otra consulta a /api/tags.
+	ad.mu.Lock()
+	for _, m := range modelos {
+		ad.contextos[m.Nombre] = m.ContextLength
+	}
+	ad.mu.Unlock()
 	out := make([]tui.ModeloLocal, len(modelos))
 	// La ficha de cada modelo se pide en paralelo, con un tope de 4 a la vez:
 	// listar no debe tardar lo que la suma de las fichas.
@@ -405,6 +495,24 @@ func (ad *Adaptador) Historial(sesionID string) ([]tui.MensajeHistorial, error) 
 	return out, nil
 }
 
+// Tareas devuelve la lista de pasos de una sesión para que la vista la pinte al
+// cargarla (SPEC-TOOLS). Igual que el historial, la vista no toca la base: llega
+// como dato.
+func (ad *Adaptador) Tareas(sesionID string) ([]tui.TareaPanel, error) {
+	if ad.todos == nil || sesionID == "" {
+		return nil, nil
+	}
+	items, err := ad.todos.Leer(sesionID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tui.TareaPanel, 0, len(items))
+	for _, it := range items {
+		out = append(out, tui.TareaPanel{Contenido: it.Contenido, Estado: it.Estado})
+	}
+	return out, nil
+}
+
 // Enviar manda el mensaje al gestor. La vista principal responde como chat por
 // defecto; solo un comando explícito arranca un flujo (SPEC-INTERFAZ §Reglas:
 // "/planificar, /crear, /actualizar, /eliminar, /resolver o /ejecutar"). La
@@ -491,7 +599,7 @@ func (ad *Adaptador) Pendientes() ([]tui.Aprobacion, error) {
 // Resolver aplica la decisión del usuario en la transacción compuesta de
 // DATA_FLOW.md §2 (aprobar + devolver la sesión a su estado) y notifica al
 // motor por el bus: el evento `aprobacion_resuelta` libera la goroutine que
-// estaba esperando en AprobadorSQLite y la línea sale del panel.
+// estaba esperando en `pedirAprobacion` y la línea sale del panel.
 func (ad *Adaptador) Resolver(aprobacionID string, aprobar bool) error {
 	ap, err := ad.aprobar.Obtener(aprobacionID)
 	if err != nil {
@@ -523,22 +631,34 @@ func (ad *Adaptador) Resolver(aprobacionID string, aprobar bool) error {
 	return nil
 }
 
-// aprobarComando pide decisión humana para un comando de terminal: registra la
-// aprobación, emite la petición al panel y espera el veredicto. Es el puente
-// entre `exec` y la vista (DATA_FLOW.md §7).
-func (ad *Adaptador) aprobarComando(ctx context.Context, descripcion string) (bool, error) {
+// pedirAprobacion implementa `tools.Contexto.Ask`: es el ÚNICO puente entre la
+// capa universal de herramientas y la vista. Registra la aprobación, emite
+// `peticion_aprobacion` al panel y espera el veredicto, sea cual sea la
+// herramienta que lo pida (un comando, una escritura o una del usuario). Es el
+// mecanismo único de aprobación (DECISIONS.md).
+func (ad *Adaptador) pedirAprobacion(ctx context.Context, s tools.Solicitud) (tools.Decision, error) {
+	descripcion := s.Descripcion
+	if descripcion == "" {
+		descripcion = "aprobar una acción"
+	}
 	id, ch, err := ad.pedirPermiso(descripcion)
 	if err != nil {
-		return false, err
+		return tools.Decision{}, err
 	}
 	var estado string
 	select {
 	case estado = <-ch:
 	case <-ctx.Done():
 		ad.resolverCanal(id, store.ApprovalObsoleta)
-		return false, nil
+		return tools.Decision{}, nil
 	}
-	return estado == store.ApprovalAprobada, nil
+	switch estado {
+	case store.ApprovalAprobada:
+		// Resolver el borrado en el panel ES la confirmación explícita.
+		return tools.Decision{Aprobada: true, Explicita: true}, nil
+	default:
+		return tools.Decision{}, nil
+	}
 }
 
 func (ad *Adaptador) Pausar(sesionID string) error { return ad.gest.Pausar(sesionID) }
@@ -600,7 +720,7 @@ func (ad *Adaptador) pedirPermiso(descripcion string) (approvalID string, resolu
 }
 
 // resolverCanal entrega el estado final a quien esperaba (la goroutine del
-// motor bloqueada en AprobadorSQLite).
+// motor bloqueada en `pedirAprobacion`).
 func (ad *Adaptador) resolverCanal(aprobacionID, estado string) {
 	ad.mu.Lock()
 	ch, ok := ad.pendientas[aprobacionID]
@@ -654,110 +774,7 @@ func reemitirPendientes(aprobar *store.Aprobaciones, bus *session.Bus) {
 	}
 }
 
-// --- handlers de herramientas ------------------------------------------------
-
-// handlerArchivos enruta las once herramientas de archivo hacia `fileops`. Las
-// escrituras pasan por el aprobador de producción (AprobadorSQLite): cada
-// petición llega al panel como `peticion_aprobacion` y solo se aplica si el
-// usuario resuelve (SPEC-ARCHIVOS: toda escritura requiere aprobación).
-func handlerArchivos(aprobar *store.Aprobaciones, cambios *store.Cambios, carpeta string, ad *Adaptador) tools.Handler {
-	return func(ctx context.Context, p tools.Peticion) (any, error) {
-		ops := &fileops.Ops{
-			Proyecto:  carpeta,
-			Historial: cambios,
-			SesionID:  ad.sesionActual(),
-			Aprobador: &fileops.AprobadorSQLite{
-				Permisos: aprobar,
-				SesionID: ad.sesionActual(),
-				Espera:   esperarDesdeBase(aprobar),
-			},
-		}
-		switch h := p.Argumentos.(type) {
-		case *tools.PeticionLeerArchivo:
-			return fileops.LeerArchivo(carpeta, h.Ruta)
-		case *tools.PeticionListarCarpeta:
-			return fileops.ListarCarpeta(carpeta, h.Ruta)
-		case *tools.PeticionBuscarArchivos:
-			return fileops.BuscarArchivos(carpeta, h.Patron)
-		case *tools.PeticionBuscarEnArchivos:
-			return fileops.BuscarEnArchivos(carpeta, h.Patron, h.Ruta)
-		case *tools.PeticionCrearArchivo:
-			return ops.CrearArchivo(ctx, h.Ruta, h.Contenido)
-		case *tools.PeticionEscribirArchivo:
-			return ops.EscribirArchivo(ctx, h.Ruta, h.Contenido)
-		case *tools.PeticionEditarArchivo:
-			return ops.EditarArchivo(ctx, h.Ruta, h.Cambio)
-		case *tools.PeticionEliminarArchivo:
-			return ops.EliminarArchivo(ctx, h.Ruta)
-		case *tools.PeticionCrearCarpeta:
-			return ops.CrearCarpeta(ctx, h.Ruta)
-		case *tools.PeticionEliminarCarpeta:
-			return ops.EliminarCarpeta(ctx, h.Ruta)
-		default:
-			return nil, fmt.Errorf("arranque: petición de archivo desconocida %T", p.Argumentos)
-		}
-	}
-}
-
-// esperarDesdeBase es la `fileops.Espera` que usa el aprobador cuando una
-// escritura llega por una ruta sin canal vivo (una petición de herramienta
-// dentro del turno): sondea la base hasta que la aprobación se resuelve o el
-// contexto se cancela. La resolución la pone el panel vía `Adaptador.Resolver`.
-func esperarDesdeBase(aprobar *store.Aprobaciones) fileops.Espera {
-	return func(ctx context.Context, aprobacionID string) (string, error) {
-		ticker := time.NewTicker(250 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			ap, err := aprobar.Obtener(aprobacionID)
-			if err != nil {
-				return "", err
-			}
-			if ap.Status != store.ApprovalPendiente {
-				return ap.Status, nil
-			}
-			select {
-			case <-ctx.Done():
-				_ = aprobar.Resolver(aprobacionID, store.ApprovalObsoleta)
-				return store.ApprovalObsoleta, nil
-			case <-ticker.C:
-			}
-		}
-	}
-}
-
-// handlerTerminal enruta `ejecutar_comando` hacia `exec`: lista blanca,
-// límites y Landlock los decide el módulo. El aprobador es una función ligada
-// al adaptador vivo (se inyecta en nuevoArranque): cada comando que necesite
-// decisión humana llega al panel como `peticion_aprobacion`.
-func handlerTerminal(aprobar func(context.Context, string) (bool, error)) tools.Handler {
-	return func(ctx context.Context, p tools.Peticion) (any, error) {
-		h, ok := p.Argumentos.(*tools.PeticionEjecutarComando)
-		if !ok {
-			return nil, fmt.Errorf("arranque: petición de terminal desconocida %T", p.Argumentos)
-		}
-		ejecutor := &lcexec.Ejecutor{Proyecto: h.Carpeta, Aprobador: lcexec.AprobadorFunc(
-			func(c context.Context, descripcion string) (bool, error) { return aprobar(c, descripcion) })}
-		return ejecutor.Ejecutar(ctx, h.Comando, h.Carpeta)
-	}
-}
-
-// handlerInternet cubre `buscar_en_internet` y `abrir_pagina`. `tools` ya
-// exige LOCALCLI_ALLOW_INTERNET antes de enrutar aquí (SECURITY.md §4): sin la
-// variable ninguna petición sale de la máquina. Lo que devuelve entra al
-// contexto como contenido sin confianza, recortado y auditado como cualquier
-// documento.
-func handlerInternet() tools.Handler {
-	return func(ctx context.Context, p tools.Peticion) (any, error) {
-		switch h := p.Argumentos.(type) {
-		case *tools.PeticionBuscarInternet:
-			return buscarEnInternet(ctx, h.Consulta)
-		case *tools.PeticionAbrirPagina:
-			return abrirPagina(ctx, h.Direccion)
-		default:
-			return nil, fmt.Errorf("arranque: petición de internet desconocida %T", p.Argumentos)
-		}
-	}
-}
+// --- internet ----------------------------------------------------------------
 
 const (
 	internetMaxBody       = 512 << 10 // medio MiB de respuesta: suficiente y acotado
@@ -946,6 +963,10 @@ func (n *nodoPorTurno) ContextoPara(ctx context.Context, etapa, objetivo string)
 		Modelo:    &tcontext.ModeloOllama{Cliente: n.cliente, Modelo: modelo},
 		Auditor:   n.ad.auditar,
 		SessionID: n.ad.sesionActual(),
+		// El bloque de contexto se queda por debajo de la ventana del modelo:
+		// sin este límite, el nodo no recortaba nada (limite 0 = sin tope) y el
+		// contexto podía desbordar la petición. Un cuarto de la ventana.
+		Limite: n.ad.ventana(modelo) / 4,
 	}
 	return nodo.ContextoPara(ctx, etapa, objetivo)
 }
@@ -959,34 +980,44 @@ func (n *nodoPorTurno) ContextoPara(ctx context.Context, etapa, objetivo string)
 type ejecutorPorTurno struct {
 	ad       *Adaptador
 	ejecutor *agent.Ejecutor
-	infer    *ollama.ColaInferencia
 	agente   map[string]agent.Agente
 }
 
-func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, nombreAgente, contexto string, historial []flow.Mensaje, imagenes []string) (flow.Resultado, error) {
+func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, p flow.PeticionEtapa) (flow.Resultado, error) {
 	// El modelo se lee en cada turno: si el usuario lo cambió desde el selector
 	// de la bienvenida, esa elección es la que corre (SPEC-OLLAMA-PERFIL).
 	modelo := e.ad.modeloElegido()
 	if modelo == "" {
 		return flow.Resultado{}, errors.New("arranque: no hay modelo de Ollama disponible")
 	}
-	agente, ok := e.agente[nombreAgente]
+	agente, ok := e.agente[p.Agente]
 	if !ok {
-		return flow.Resultado{}, fmt.Errorf("arranque: agente base desconocido %q", nombreAgente)
+		return flow.Resultado{}, fmt.Errorf("arranque: agente base desconocido %q", p.Agente)
 	}
 	sesionID := e.ad.sesionActual()
 
-	var salida agent.Resultado
-	err := e.infer.Encolar(ctx, ollama.OpcionesEncolar{IdSesion: sesionID}, func(c context.Context) error {
-		res, err := e.ejecutor.Ejecutar(c, agente, modelo, contexto, mensajesDeOllama(historial), imagenes, sinkBus{ad: e.ad, sesionID: sesionID})
-		if err != nil {
-			return err
-		}
-		salida = res
-		return nil
-	})
+	// Una etapa silenciosa (intermedia de un flujo) no se muestra ni se guarda:
+	// su texto solo alimenta la cadena del motor. Sin sink no hay eventos de
+	// token y, más abajo, el turno no se persiste.
+	var sink agent.Sink
+	if !p.Silenciosa {
+		sink = sinkBus{ad: e.ad, sesionID: sesionID}
+	}
+
+	// El turno de inferencia NO se toma aquí: el bucle de `agent` lo toma por
+	// PETICIÓN al modelo, así que una sesión esperando una aprobación deja libre
+	// el modelo para las demás (SPEC-OLLAMA-PERFIL, T-B024-14).
+	salida, err := e.ejecutor.Ejecutar(ctx, agente, modelo, p.Contexto, mensajesDeOllama(p.Historial), p.Imagenes, e.ad.ventana(modelo), sink)
 	if err != nil {
 		return flow.Resultado{}, err
+	}
+	// El consumo del turno alimenta el panel de contexto; solo la etapa visible
+	// (o el chat) lo reporta: el de un sub-proceso no interrumpe la lectura.
+	if !p.Silenciosa && salida.TokensEntrada+salida.TokensSalida > 0 {
+		e.ad.bus.Emitir(tui.Evento{Nombre: tui.EventoTokensTurno, Datos: map[string]string{
+			"entrada": strconv.FormatUint(salida.TokensEntrada, 10),
+			"salida":  strconv.FormatUint(salida.TokensSalida, 10),
+		}})
 	}
 
 	resumen := strings.TrimSpace(salida.Texto)
@@ -995,8 +1026,9 @@ func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, nombreAgente, contexto 
 	}
 	// El turno del agente se guarda en la misma transacción que su razonamiento
 	// y su estado (DATA_FLOW.md): el historial que verá la próxima vez incluye
-	// esta respuesta.
-	if sesionID != "" {
+	// esta respuesta. Una etapa silenciosa no se persiste: solo la entrega final
+	// (o el chat) queda en el historial.
+	if sesionID != "" && !p.Silenciosa {
 		if _, cErr := cerrarTurnoGuardado(e.ad, sesionID, resumen, salida.Razonamiento); cErr != nil {
 			return flow.Resultado{}, cErr
 		}
@@ -1020,6 +1052,19 @@ func (s sinkBus) Token(texto string, esRazon bool) {
 		datos["razonamiento"] = "true"
 	}
 	s.ad.bus.Emitir(tui.Evento{Nombre: tui.EventoToken, Datos: datos})
+}
+
+// Aviso publica un aviso del turno (por ejemplo, que el agente ha caído a modo
+// conversación porque el modelo no declara herramientas) como una notificación
+// de sesión, que es como llega al usuario sin bloquear nada.
+func (s sinkBus) Aviso(texto string) {
+	if texto == "" {
+		return
+	}
+	s.ad.bus.Emitir(tui.Evento{Nombre: session.EventoNotificacion, Datos: map[string]string{
+		"sesion": s.sesionID,
+		"motivo": texto,
+	}})
 }
 
 // cerrarTurnoGuardado persiste la respuesta del agente con su razonamiento,
@@ -1120,6 +1165,7 @@ func generarTextoCorrido(ctx context.Context, ad *Adaptador, infer *ollama.ColaI
 		ch, err := ad.cliente.Chat(c, ollama.GenerarRequest{
 			Model:    modelo,
 			Messages: []ollama.Mensaje{{Role: "user", Content: prompt}},
+			NumCtx:   ad.ventana(modelo),
 		})
 		if err != nil {
 			return err

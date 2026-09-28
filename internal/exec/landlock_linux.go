@@ -16,8 +16,8 @@ package exec
 // proyecto no es accesible para escritura por más indirecto que sea el comando.
 //
 // Se manejan los derechos de escritura (crear, borrar, escribir, truncar) y se
-// conceden solo en las rutas permitidas (temporales y caché). Lo que no está
-// concedido, queda denegado.
+// conceden solo en las rutas permitidas (temporales, caché y dispositivos
+// nulos). Lo que no está concedido, queda denegado.
 
 import (
 	"fmt"
@@ -112,18 +112,27 @@ func aplicarLandlock(permitidos []string) error {
 	defer unix.Close(int(fd))
 
 	for _, ruta := range permitidos {
-		rule := unix.LandlockPathBeneathAttr{Allowed_access: acceso}
 		fdRuta, err := unix.Open(ruta, unix.O_PATH|unix.O_CLOEXEC, 0)
 		if err != nil {
 			continue // una ruta opcional que no existe no bloquea el resto
 		}
-		rule.Parent_fd = int32(fdRuta)
+		// Sobre un archivo (p. ej. /dev/null) solo aplican los derechos de
+		// archivo; los de directorio (crear, borrar) hacen que el kernel
+		// rechace la regla con EINVAL.
+		regla := acceso
+		var st unix.Stat_t
+		if err := unix.Fstat(fdRuta, &st); err == nil && st.Mode&unix.S_IFMT != unix.S_IFDIR {
+			regla &= unix.LANDLOCK_ACCESS_FS_WRITE_FILE | unix.LANDLOCK_ACCESS_FS_TRUNCATE
+		}
+		rule := unix.LandlockPathBeneathAttr{Parent_fd: int32(fdRuta), Allowed_access: regla}
 		_, _, e := unix.Syscall6(unix.SYS_LANDLOCK_ADD_RULE, fd,
 			uintptr(unix.LANDLOCK_RULE_PATH_BENEATH), uintptr(unsafe.Pointer(&rule)), 0, 0, 0)
 		unix.Close(fdRuta)
 		if e != 0 {
-			return nuevoError(CodigoSinLandlock,
-				"no se pudo conceder escritura en "+ruta+": "+e.Error())
+			// No poder permitir una ruta solo reduce permisos: se omite y el
+			// resto del bloqueo se aplica igual. Abortar aquí dejaría el
+			// proceso sin ninguna capa de Landlock, que es peor.
+			continue
 		}
 	}
 

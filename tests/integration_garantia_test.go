@@ -7,8 +7,8 @@
 // antes y después.
 //
 // Esto es una prueba de la garantía, no de una función: la petición entra por
-// la misma puerta que usaría el modelo (tools.Enrutar, con el permiso que el
-// agente declara en su catálogo) y el efecto sale por la misma puerta que
+// la misma puerta que usaría el modelo (la capa universal de `tools`, con las
+// acciones que el agente declara) y el efecto sale por la misma puerta que
 // aplicaría el motor (fileops.Ops). Si alguien conecta un atajo que se salte la
 // aprobación, esta prueba deja de pasar.
 package tests
@@ -16,6 +16,8 @@ package tests
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -35,40 +37,95 @@ func canalDeHerramientas(t *testing.T, aprobador fileops.Aprobador, _ []string) 
 		Historial: store.Historial{DB: db},
 		Aprobador: aprobador,
 	}
-	registro, err := tools.NuevoRegistro(tools.Destinos{
-		Archivos: func(ctx context.Context, p tools.Peticion) (any, error) {
-			return enrutadorArchivos(ops, p)
-		},
-		Terminal: func(ctx context.Context, p tools.Peticion) (any, error) {
-			return nil, nil
-		},
-		Internet: func(ctx context.Context, p tools.Peticion) (any, error) {
-			return nil, nil
-		},
-	})
+	handlers := handlersDeArchivos(ops)
+	var impls []tools.Herramienta
+	for _, nombre := range tools.NombresCatalogo() {
+		h, _ := tools.NuevaHerramienta(nombre, handlers[nombre])
+		impls = append(impls, h)
+	}
+	registro, err := tools.NuevoRegistro(impls)
 	if err != nil {
 		t.Fatalf("NuevoRegistro: %v", err)
 	}
 	return registro, ops, db
 }
 
-// enrutadorArchivos es el handler que produce el wiring real: despacha la
-// operación concreta al método de fileops que corresponde.
-func enrutadorArchivos(ops *fileops.Ops, p tools.Peticion) (any, error) {
-	ctx := context.Background()
-	switch args := p.Argumentos.(type) {
-	case *tools.PeticionCrearArchivo:
-		return ops.CrearArchivo(ctx, args.Ruta, args.Contenido)
-	case *tools.PeticionEscribirArchivo:
-		return ops.EscribirArchivo(ctx, args.Ruta, args.Contenido)
-	case *tools.PeticionEditarArchivo:
-		return ops.EditarArchivo(ctx, args.Ruta, args.Cambio)
-	case *tools.PeticionEliminarArchivo:
-		return ops.EliminarArchivo(ctx, args.Ruta)
-	case *tools.PeticionLeerArchivo:
-		return fileops.LeerArchivo(ops.Proyecto, args.Ruta)
-	default:
-		return nil, nil
+// handlersDeArchivos es el handler propio de cada herramienta de archivo: cada
+// uno llama a su método de fileops, como hace el cableado de producción.
+func handlersDeArchivos(ops *fileops.Ops) map[string]tools.Ejecutar {
+	fallo := func(err error) (tools.Resultado, error) {
+		if err == nil {
+			return tools.Resultado{}, nil
+		}
+		return tools.Resultado{Error: err.Error()}, nil
+	}
+	return map[string]tools.Ejecutar{
+		"leer_archivo": func(ctx context.Context, args any, _ tools.Contexto) (tools.Resultado, error) {
+			p, ok := args.(*tools.PeticionLeerArchivo)
+			if !ok {
+				return tools.Resultado{}, fmt.Errorf("argumentos inesperados %T", args)
+			}
+			resp, err := fileops.LeerArchivo(ops.Proyecto, p.Ruta)
+			if err != nil {
+				return fallo(err)
+			}
+			return tools.Resultado{Salida: resp.Contenido}, nil
+		},
+		"crear_archivo": func(ctx context.Context, args any, _ tools.Contexto) (tools.Resultado, error) {
+			p, ok := args.(*tools.PeticionCrearArchivo)
+			if !ok {
+				return tools.Resultado{}, fmt.Errorf("argumentos inesperados %T", args)
+			}
+			resp, err := ops.CrearArchivo(ctx, p.Ruta, p.Contenido)
+			if err != nil {
+				return fallo(err)
+			}
+			return tools.Resultado{Salida: resp.Confirmacion}, nil
+		},
+		"escribir_archivo": func(ctx context.Context, args any, _ tools.Contexto) (tools.Resultado, error) {
+			p, ok := args.(*tools.PeticionEscribirArchivo)
+			if !ok {
+				return tools.Resultado{}, fmt.Errorf("argumentos inesperados %T", args)
+			}
+			resp, err := ops.EscribirArchivo(ctx, p.Ruta, p.Contenido)
+			if err != nil {
+				return fallo(err)
+			}
+			return tools.Resultado{Salida: resp.Confirmacion}, nil
+		},
+		"editar_archivo": func(ctx context.Context, args any, _ tools.Contexto) (tools.Resultado, error) {
+			p, ok := args.(*tools.PeticionEditarArchivo)
+			if !ok {
+				return tools.Resultado{}, fmt.Errorf("argumentos inesperados %T", args)
+			}
+			resp, err := ops.EditarArchivo(ctx, p.Ruta, p.Cambio)
+			if err != nil {
+				return fallo(err)
+			}
+			return tools.Resultado{Salida: resp.Confirmacion}, nil
+		},
+		"eliminar_archivo": func(ctx context.Context, args any, _ tools.Contexto) (tools.Resultado, error) {
+			p, ok := args.(*tools.PeticionEliminarArchivo)
+			if !ok {
+				return tools.Resultado{}, fmt.Errorf("argumentos inesperados %T", args)
+			}
+			resp, err := ops.EliminarArchivo(ctx, p.Ruta)
+			if err != nil {
+				return fallo(err)
+			}
+			return tools.Resultado{Salida: resp.Confirmacion}, nil
+		},
+	}
+}
+
+// peticion arma la petición de `build` con los argumentos en JSON crudo, como
+// llegarían del modelo.
+func peticion(herramienta string, args string) tools.Peticion {
+	return tools.Peticion{
+		Agente:      tools.AgenteBuild,
+		Permisos:    tools.AccionesDeBuild(),
+		Herramienta: herramienta,
+		Argumentos:  json.RawMessage(args),
 	}
 }
 
@@ -76,13 +133,11 @@ func enrutadorArchivos(ops *fileops.Ops, p tools.Peticion) (any, error) {
 // `build` con el aprobador cerrado no toca el disco ni deja rastro.
 func TestSinAprobacionNoHayCambioEnDisco(t *testing.T) {
 	registro, ops, db := canalDeHerramientas(t, nil, tools.HerramientasDeBuild())
-	peticion := tools.Peticion{
-		Agente:      tools.AgenteBuild,
-		Permitidas:  tools.HerramientasDeBuild(),
-		Herramienta: "crear_archivo",
-		Argumentos:  &tools.PeticionCrearArchivo{Ruta: "nuevo.txt", Contenido: "hola"},
+	res, err := registro.Ejecutar(context.Background(), peticion("crear_archivo", `{"ruta":"nuevo.txt","contenido":"hola"}`))
+	if err != nil {
+		t.Fatalf("sin aprobador, un fallo cerrado es un resultado corregible: %v", err)
 	}
-	if _, err := registro.Enrutar(context.Background(), peticion); err == nil {
+	if res.Error == "" {
 		t.Fatal("sin aprobador la escritura debe rechazarse")
 	}
 	if _, err := os.Stat(filepath.Join(ops.Proyecto, "nuevo.txt")); err == nil {
@@ -96,13 +151,11 @@ func TestSinAprobacionNoHayCambioEnDisco(t *testing.T) {
 // TestEscrituraDeclinadaNoDejaRastro — declinar tampoco toca nada.
 func TestEscrituraDeclinadaNoDejaRastro(t *testing.T) {
 	registro, ops, db := canalDeHerramientas(t, negador(), tools.HerramientasDeBuild())
-	peticion := tools.Peticion{
-		Agente:      tools.AgenteBuild,
-		Permitidas:  tools.HerramientasDeBuild(),
-		Herramienta: "escribir_archivo",
-		Argumentos:  &tools.PeticionEscribirArchivo{Ruta: "doc.md", Contenido: "v1"},
+	res, err := registro.Ejecutar(context.Background(), peticion("escribir_archivo", `{"ruta":"doc.md","contenido":"v1"}`))
+	if err != nil {
+		t.Fatalf("una declaración es un fallo de negocio, no un error duro: %v", err)
 	}
-	if _, err := registro.Enrutar(context.Background(), peticion); err == nil {
+	if res.Error == "" {
 		t.Fatal("una escritura declinada debe rechazarse")
 	}
 	if _, err := os.Stat(filepath.Join(ops.Proyecto, "doc.md")); err == nil {
@@ -117,27 +170,17 @@ func TestEscrituraDeclinadaNoDejaRastro(t *testing.T) {
 // archivo existe y change_history tiene el antes y el después.
 func TestConAprobacionElCambioQuedaRegistrado(t *testing.T) {
 	registro, ops, db := canalDeHerramientas(t, aprobadorTotal(), tools.HerramientasDeBuild())
-	crear := tools.Peticion{
-		Agente:      tools.AgenteBuild,
-		Permitidas:  tools.HerramientasDeBuild(),
-		Herramienta: "crear_archivo",
-		Argumentos:  &tools.PeticionCrearArchivo{Ruta: "doc.md", Contenido: "v1"},
-	}
-	if _, err := registro.Enrutar(context.Background(), crear); err != nil {
-		t.Fatalf("crear aprobado: %v", err)
+	res, err := registro.Ejecutar(context.Background(), peticion("crear_archivo", `{"ruta":"doc.md","contenido":"v1"}`))
+	if err != nil || res.Error != "" {
+		t.Fatalf("crear aprobado: %v / %s", err, res.Error)
 	}
 	datos, err := os.ReadFile(filepath.Join(ops.Proyecto, "doc.md"))
 	if err != nil || string(datos) != "v1" {
 		t.Fatalf("el archivo aprobado no está como se aprobó: %q, %v", datos, err)
 	}
-	editar := tools.Peticion{
-		Agente:      tools.AgenteBuild,
-		Permitidas:  tools.HerramientasDeBuild(),
-		Herramienta: "editar_archivo",
-		Argumentos:  &tools.PeticionEditarArchivo{Ruta: "doc.md", Cambio: "v1" + "\n---\n" + "v2"},
-	}
-	if _, err := registro.Enrutar(context.Background(), editar); err != nil {
-		t.Fatalf("editar aprobado: %v", err)
+	res, err = registro.Ejecutar(context.Background(), peticion("editar_archivo", `{"ruta":"doc.md","cambio":"v1\n---\nv2"}`))
+	if err != nil || res.Error != "" {
+		t.Fatalf("editar aprobado: %v / %s", err, res.Error)
 	}
 	filas := historialDe(t, db, "doc.md")
 	if len(filas) != 2 {
@@ -149,17 +192,17 @@ func TestConAprobacionElCambioQuedaRegistrado(t *testing.T) {
 }
 
 // TestPlanNoPuedeEscribirNiConAprobadorAbierto — la garantía por catálogo: a
-// `plan` no le pasa ni con el aprobador concediendo todo, porque la petición se
-// rechaza ANTES de llegar a fileops.
+// `plan` no le pasa ni con el aprobador concediendo todo, porque el permiso se
+// comprueba ANTES de llegar a fileops.
 func TestPlanNoPuedeEscribirNiConAprobadorAbierto(t *testing.T) {
 	registro, ops, _ := canalDeHerramientas(t, aprobadorTotal(), tools.HerramientasDePlan())
-	peticion := tools.Peticion{
+	_, err := registro.Ejecutar(context.Background(), tools.Peticion{
 		Agente:      tools.AgentePlan,
-		Permitidas:  tools.HerramientasDePlan(),
+		Permisos:    tools.AccionesDePlan(),
 		Herramienta: "crear_archivo",
-		Argumentos:  &tools.PeticionCrearArchivo{Ruta: "colado.txt", Contenido: "x"},
-	}
-	if _, err := registro.Enrutar(context.Background(), peticion); err == nil {
+		Argumentos:  json.RawMessage(`{"ruta":"colado.txt","contenido":"x"}`),
+	})
+	if err == nil {
 		t.Fatal("GARANTÍA ROTA: plan escribió")
 	}
 	if _, err := os.Stat(filepath.Join(ops.Proyecto, "colado.txt")); err == nil {
