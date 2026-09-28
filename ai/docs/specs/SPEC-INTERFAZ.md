@@ -190,7 +190,7 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - No hay lista de sesiones permanente: se acceden con `Ctrl+X l`, que abre el modal de sesiones.
 - El historial del chat se recorre con `↑`/`↓` y `pgup`/`pgdown`; mientras no se sube, la vista sigue el final. La línea de entrada nunca queda fuera de pantalla.
 - Al abrir el modal de modelos, el resaltado arranca en el modelo en uso. Los modelos que no declaran capacidad de herramientas se marcan; elegirlos avisa sin bloquear y deja al usuario cambiar de modelo.
-- La rueda del ratón desplaza el historial. Arrastrar con el botón izquierdo selecciona texto y, al soltar, se copia al portapapeles; al capturar el ratón, la selección nativa de la terminal queda disponible con `Shift`. Con el panel de aprobaciones abierto, un clic sobre «aprobar» o «declinar» de una línea resuelve esa aprobación.
+- La rueda del ratón desplaza el historial. Arrastrar con el botón izquierdo selecciona texto, que se **resalta en video inverso** mientras se elige, y al soltar se copia al portapapeles —el realce desaparece y aparece el aviso transitorio `[Copiado]` arriba a la derecha, que se apaga solo—; al capturar el ratón, la selección nativa de la terminal queda disponible con `Shift`. La selección se mantiene **anclada al texto**: la rueda puede usarse mientras se selecciona y no la cancela, de modo que en un chat largo se puede seguir eligiendo al desplazarse. Con el panel de aprobaciones abierto, un clic sobre «aprobar» o «declinar» de una línea resuelve esa aprobación.
 - Con la sesión activa trabajando, el primer `esc` pide confirmación («presiona esc otra vez para cancelar razonamiento») y el segundo cancela el trabajo; cualquier otra tecla la descarta.
 - Bajo la entrada se muestra el modelo en uso y si tiene acceso a herramientas y a la visión (interpretar imágenes).
 - Si el texto de una petición de chat incluye la ruta de un archivo de imagen existente, la imagen se adjunta a ese turno hacia el modelo. Las imágenes son efímeras: no se guardan en el historial, así que un turno posterior que no las vuelva a mencionar no las ve.
@@ -241,7 +241,7 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] El chat respeta el orden de ejecución: el texto previo a una herramienta queda arriba de su línea y el posterior abre un globo nuevo.
 - [ ] Al abrir el modal de modelos, el resaltado está en el modelo en uso.
 - [ ] Elegir un modelo sin capacidad de herramientas avisa sin bloquear.
-- [ ] La rueda del ratón desplaza el historial y arrastrar con el ratón copia al portapapeles el texto seleccionado.
+- [ ] La rueda del ratón desplaza el historial y arrastrar con el ratón copia al portapapeles el texto seleccionado, que se resalta (video inverso) mientras se elige; la rueda no cancela esa selección (el resaltado se mantiene anclado al texto) y al soltar el resaltado desaparece con el aviso `[Copiado]` arriba a la derecha.
 - [ ] Con la sesión trabajando, `esc` pide confirmación y un segundo `esc` cancela; otra tecla la descarta.
 - [ ] Bajo la entrada se ve el modelo en uso y si tiene acceso a herramientas.
 - [ ] Bajo la entrada se ve también si el modelo interpreta imágenes (visión).
