@@ -159,3 +159,73 @@ func TestElAnchoDeLaEntradaSeAdaptaAlLayout(t *testing.T) {
 		t.Errorf("ancho 0 no debe tocar la medida: %d", a.Entrada.Ancho)
 	}
 }
+
+// --- T-F035: el salto de línea de la entrada --------------------------------
+
+func TestLaEntradaEnvuelveElTextoLargoEnVezDeRecortarlo(t *testing.T) {
+	a := Nuevo(&puertoStub{})
+	a.Vista = VistaPrincipal
+	a.Panel.SesionID = "s1"
+	pulsa(t, a, tea.WindowSizeMsg{Width: 40, Height: 20})
+	escribe(t, a, "este es un texto de prueba bastante largo que debe saltar de linea")
+
+	v := sinEstilo(a.Entrada.View())
+	// El texto está entero y repartido: saltó de línea en vez de recortarse al
+	// inicio o desbordar la terminal.
+	if filas := len(strings.Split(v, "\n")); filas < 2 {
+		t.Fatalf("un texto largo debe saltar de línea:\n%s", v)
+	}
+	// Se compara sin espacios ni saltos: las filas de continuación van sangradas
+	// al ancho del indicador, así que el texto se reparte pero no se pierde.
+	compacto := strings.Join(strings.Fields(v), "")
+	quiero := strings.Join(strings.Fields("este es un texto de prueba bastante largo que debe saltar de linea"), "")
+	if !strings.Contains(compacto, quiero) {
+		t.Errorf("el texto se conserva entero, repartido en filas:\n%s", v)
+	}
+	// Ninguna fila pasa del ancho de la terminal: la línea ya no desborda.
+	for _, l := range strings.Split(v, "\n") {
+		if n := len([]rune(l)); n > 40 {
+			t.Errorf("ninguna fila puede pasar del ancho (40), hay una de %d: %q", n, l)
+		}
+	}
+}
+
+func TestElSaltoDeLineaSeReajustaAlRedimensionar(t *testing.T) {
+	a := Nuevo(&puertoStub{})
+	a.Vista = VistaPrincipal
+	pulsa(t, a, tea.WindowSizeMsg{Width: 30, Height: 20})
+	escribe(t, a, "texto suficientemente largo para envolver en varias lineas")
+	if filas := a.Entrada.campo.Height(); filas < 2 {
+		t.Fatalf("a ancho 30 el texto ocupa varias filas: %d", filas)
+	}
+	// Al ensanchar la terminal, el texto vuelve a caber en una sola fila.
+	pulsa(t, a, tea.WindowSizeMsg{Width: 200, Height: 20})
+	if filas := a.Entrada.campo.Height(); filas != 1 {
+		t.Errorf("al ensanchar, el texto vuelve a una fila: %d", filas)
+	}
+}
+
+func TestElAltoDeLaEntradaNoPasaDelTope(t *testing.T) {
+	a := Nuevo(&puertoStub{})
+	a.Vista = VistaPrincipal
+	pulsa(t, a, tea.WindowSizeMsg{Width: 20, Height: 20})
+	escribe(t, a, strings.Repeat("palabra ", 100))
+	if filas := a.Entrada.campo.Height(); filas > altoMáximoEntrada {
+		t.Errorf("la entrada no pasa del tope de %d filas: %d", altoMáximoEntrada, filas)
+	}
+}
+
+func TestFilasEnvueltasCuentaElSoftWrap(t *testing.T) {
+	// Sin texto siempre hay al menos una fila.
+	if got := filasEnvueltas("", 10); got != 1 {
+		t.Errorf("un texto vacío ocupa una fila: %d", got)
+	}
+	// El ancho manda: cuanto más estrecho, más filas.
+	texto := "un texto de varias palabras para envolver"
+	if ancho := filasEnvueltas(texto, 100); ancho != 1 {
+		t.Errorf("con ancho de sobra el texto cabe en una fila: %d", ancho)
+	}
+	if estrecho, ancho := filasEnvueltas(texto, 15), filasEnvueltas(texto, 100); estrecho <= ancho {
+		t.Errorf("estrechar el ancho reparte el texto en más filas: %d vs %d", estrecho, ancho)
+	}
+}
