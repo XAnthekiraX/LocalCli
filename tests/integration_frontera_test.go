@@ -28,11 +28,13 @@ import (
 // storeHistorial construye el adaptador de historial para las pruebas.
 func storeHistorial(db *sql.DB) store.Historial { return store.Historial{DB: db} }
 
-// TestElTraversalNoEsquivaLaFrontera — las formas equivalentes de escribir
-// `../` acaban en E_PATH_OUTSIDE y no crean nada fuera.
-func TestElTraversalNoEsquivaLaFrontera(t *testing.T) {
+// TestSinAprobadorNadaSaleDeLaCarpeta — las formas equivalentes de escribir
+// `../` no tienen a quién pedir permiso, así que acaban en E_PATH_OUTSIDE y no
+// crean nada fuera (ERRORS.md §3: fuera «sin permiso y sin explicación»).
+func TestSinAprobadorNadaSaleDeLaCarpeta(t *testing.T) {
 	proyecto, db := proyectoTemp(t)
-	ops := &fileops.Ops{Proyecto: proyecto, Historial: storeHistorial(db), Aprobador: aprobadorTotal()}
+	// Sin aprobador: el estado por defecto es cerrado.
+	ops := &fileops.Ops{Proyecto: proyecto, Historial: storeHistorial(db)}
 
 	// Un archivo hermano del proyecto: fuera de la frontera.
 	fuera := filepath.Join(filepath.Dir(proyecto), "colado.txt")
@@ -56,11 +58,30 @@ func TestElTraversalNoEsquivaLaFrontera(t *testing.T) {
 	}
 }
 
-// TestElSymlinkNoEsPuertaTrasera — un enlace dentro del proyecto que apunta a
-// una carpeta exterior no sirve para escribir fuera.
-func TestElSymlinkNoEsPuertaTrasera(t *testing.T) {
+// TestFueraDeLaCarpetaSeAplicaConPermiso — la spec no prohíbe salir: exige
+// permiso (SPEC-ARCHIVOS §Reglas). Con la aprobación del usuario, la operación
+// se aplica.
+func TestFueraDeLaCarpetaSeAplicaConPermiso(t *testing.T) {
 	proyecto, db := proyectoTemp(t)
 	ops := &fileops.Ops{Proyecto: proyecto, Historial: storeHistorial(db), Aprobador: aprobadorTotal()}
+
+	fuera := filepath.Join(filepath.Dir(proyecto), "permitido.txt")
+	t.Cleanup(func() { _ = os.Remove(fuera) })
+
+	if _, err := ops.CrearArchivo(context.Background(), "../permitido.txt", "x"); err != nil {
+		t.Fatalf("con permiso, escribir fuera se aplica: %v", err)
+	}
+	if _, err := os.Stat(fuera); err != nil {
+		t.Errorf("el archivo aprobado debe existir fuera: %v", err)
+	}
+}
+
+// TestElSymlinkNoEsPuertaTrasera — un enlace dentro del proyecto que apunta a
+// una carpeta exterior se marca como fuera: sin aprobador no se toca, y pedir
+// permiso es obligatorio para llegar a él.
+func TestElSymlinkNoEsPuertaTrasera(t *testing.T) {
+	proyecto, db := proyectoTemp(t)
+	ops := &fileops.Ops{Proyecto: proyecto, Historial: storeHistorial(db)}
 
 	exterior := t.TempDir()
 	if err := os.Symlink(exterior, filepath.Join(proyecto, "puerta")); err != nil {
@@ -73,24 +94,32 @@ func TestElSymlinkNoEsPuertaTrasera(t *testing.T) {
 	if _, statErr := os.Stat(filepath.Join(exterior, "colado.txt")); statErr == nil {
 		t.Fatal("GARANTÍA ROTA: el symlink llevó la escritura fuera")
 	}
-	// Y leer a través de él tampoco.
+	// Y leer a través de él tampoco, cuando no hay con quién pedir permiso.
 	if _, err := fileops.LeerArchivo(proyecto, "puerta/colado.txt"); !errors.Is(err, fileops.ErrRutaFuera) {
 		t.Errorf("leer a través del symlink = %v, quiero E_PATH_OUTSIDE", err)
 	}
 }
 
-// TestUnaRutaAbsolutaSeRechaza — la ruta es siempre relativa a la carpeta
-// abierta (SECURITY.md §3); una absoluta no se reinterpreta: se rechaza.
-func TestUnaRutaAbsolutaSeRechaza(t *testing.T) {
+// TestUnaRutaAbsolutaFueraPidePermiso — la ruta absoluta que no cuelga del
+// proyecto sale fuera: sin aprobador no se toca; con aprobación, se aplica.
+func TestUnaRutaAbsolutaFueraPidePermiso(t *testing.T) {
 	proyecto, db := proyectoTemp(t)
-	ops := &fileops.Ops{Proyecto: proyecto, Historial: storeHistorial(db), Aprobador: aprobadorTotal()}
-
 	destino := filepath.Join(t.TempDir(), "absoluto.txt")
-	if _, err := ops.CrearArchivo(context.Background(), destino, "x"); !errors.Is(err, fileops.ErrRutaFuera) {
-		t.Fatalf("CrearArchivo(absoluta) = %v, quiero E_PATH_OUTSIDE", err)
+
+	cerrado := &fileops.Ops{Proyecto: proyecto, Historial: storeHistorial(db)}
+	if _, err := cerrado.CrearArchivo(context.Background(), destino, "x"); !errors.Is(err, fileops.ErrRutaFuera) {
+		t.Fatalf("CrearArchivo(absoluta) sin aprobador = %v, quiero E_PATH_OUTSIDE", err)
 	}
 	if _, err := os.Stat(destino); err == nil {
-		t.Fatal("GARANTÍA ROTA: la ruta absoluta escribió fuera")
+		t.Fatal("GARANTÍA ROTA: la ruta absoluta escribió sin permiso")
+	}
+
+	abierto := &fileops.Ops{Proyecto: proyecto, Historial: storeHistorial(db), Aprobador: aprobadorTotal()}
+	if _, err := abierto.CrearArchivo(context.Background(), destino, "x"); err != nil {
+		t.Fatalf("con permiso, la ruta absoluta de fuera se aplica: %v", err)
+	}
+	if _, err := os.Stat(destino); err != nil {
+		t.Errorf("el archivo aprobado debe existir: %v", err)
 	}
 }
 

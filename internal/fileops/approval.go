@@ -34,6 +34,9 @@ type SolicitudAprobacion struct {
 	Ruta        string
 	Descripcion string
 	Borrado     bool
+	// Fuera marca que la ruta sale de la carpeta del proyecto: la operación
+	// necesita permiso (SPEC-ARCHIVOS §Reglas), y el panel lo dice.
+	Fuera bool
 }
 
 // Aprobador pide una decisión sobre una operación de archivo.

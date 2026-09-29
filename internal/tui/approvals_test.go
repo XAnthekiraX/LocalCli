@@ -89,12 +89,48 @@ func TestElFormatoDeLíneaEsElDocumentado(t *testing.T) {
 	if len(lineas) != 1 {
 		t.Fatalf("una línea: %v", lineas)
 	}
-	// SPEC-INTERFAZ-ATAJOS: `sesión | acción propuesta | aprobar | declinar |
-	// <opción por definir>`. La tercera opción aún no está definida: sale como
-	// un hueco, no se inventa. La seleccionada lleva además su marca de cursor.
-	quiere := "› api | crear archivo | aprobar | declinar | —"
+	// SPEC-INTERFAZ-ATAJOS: `sesión | acción propuesta | aprobar | declinar`.
+	// La tercera opción sigue por definir y no se reserva un hueco vacío. La
+	// seleccionada lleva además su marca de cursor.
+	quiere := "› api | crear archivo | aprobar | declinar"
 	if lineas[0] != quiere {
 		t.Errorf("línea = %q, quiero %q", lineas[0], quiere)
+	}
+}
+
+// La línea va en corto: la sesión es su identificador abreviado y la carpeta del
+// usuario se abrevia a `~`, para que quepa de un vistazo.
+func TestLaLineaDeAprobacionVaEnCorto(t *testing.T) {
+	largo := "24afd397-ccdd-45df-a8df-90bf3ad0974a"
+	fila := FilaDe(Aprobacion{ID: "a1", Sesion: largo, Descripcion: "leer el archivo /home/x/foto.png"})
+	if strings.Contains(fila, largo) {
+		t.Errorf("el identificador de sesión va abreviado: %q", fila)
+	}
+	if !strings.HasPrefix(fila, "24afd397 | ") {
+		t.Errorf("la línea empieza por la sesión corta: %q", fila)
+	}
+	home := rutaDelUsuario()
+	if home != "" {
+		larga := FilaDe(Aprobacion{ID: "a1", Sesion: "s1", Descripcion: "leer el archivo " + home + "/foto.png"})
+		if !strings.Contains(larga, "~/foto.png") {
+			t.Errorf("la carpeta del usuario se abrevia a ~: %q", larga)
+		}
+	}
+}
+
+// Con una decisión esperando, el indicador lo dice: el turno no avanza hasta que
+// se resuelva, y «Pensando» haría creer que sigue trabajando.
+func TestElIndicadorDiceQueEsperaTuPermiso(t *testing.T) {
+	a := Nuevo(&puertoStub{})
+	a.Vista = VistaPrincipal
+	a.Panel.SesionID = "s1"
+	pulsa(t, a, tea.WindowSizeMsg{Width: 80, Height: 24})
+	a.Chat.AñadirUsuario("describe esto") // el turno queda vivo
+	pulsa(t, a, eventoMsg{Evento: Evento{Nombre: EventoPeticionAprobacion, Datos: map[string]string{
+		"aprobacion": "a1", "sesion": "s1", "descripcion": "leer foto.png",
+	}}})
+	if v := sinEstilo(a.View()); !strings.Contains(v, "Esperando tu permiso") {
+		t.Errorf("con una aprobación pendiente el indicador lo dice:\n%s", v)
 	}
 }
 

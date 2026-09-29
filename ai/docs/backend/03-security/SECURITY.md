@@ -52,7 +52,7 @@ Sin excepción: ni dentro de la carpeta del proyecto, ni fuera, ni dentro de un 
 
 ### Frontera de rutas
 
-- Toda ruta es relativa a la carpeta abierta del proyecto.
+- Toda ruta relativa es relativa a la carpeta abierta del proyecto; una absoluta se respeta y, si no cuelga de él, cuenta como «fuera».
 - Dentro de la carpeta: accesible, pero escribir sigue pidiendo aprobación.
 - Fuera de la carpeta: hace falta permiso **y** la explicación del agente sobre por qué busca eso. La explicación queda visible para ti.
 

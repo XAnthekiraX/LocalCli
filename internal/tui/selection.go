@@ -207,20 +207,33 @@ func (a *App) decisionEnCelda(pos posicion) (Aprobacion, bool, bool) {
 	texto := strings.TrimRight(string(cuerpo[2:]), " ")
 	x := pos.X - 2
 	for _, it := range a.Aprobs.Items {
-		if it.Obsoleta || FilaDe(it) != texto {
+		if it.Obsoleta {
 			continue
 		}
-		prefijo := len([]rune(it.Sesion + " | " + it.Descripcion + " | "))
-		if x >= prefijo && x < prefijo+len([]rune("aprobar")) {
+		fila := FilaDe(it)
+		if fila != texto {
+			continue
+		}
+		// La columna de cada opción sale del propio texto de la fila: así el
+		// panel puede acortar el formato sin dejar de mapear el clic.
+		if col, ok := columnaDe(fila, "aprobar"); ok && x >= col && x < col+len("aprobar") {
 			return it, true, true
 		}
-		colDeclinar := prefijo + len([]rune("aprobar | "))
-		if x >= colDeclinar && x < colDeclinar+len([]rune("declinar")) {
+		if col, ok := columnaDe(fila, "declinar"); ok && x >= col && x < col+len("declinar") {
 			return it, false, true
 		}
 		return Aprobacion{}, false, false
 	}
 	return Aprobacion{}, false, false
+}
+
+// columnaDe devuelve la columna (en runas) donde empieza `palabra` en la fila.
+func columnaDe(fila, palabra string) (int, bool) {
+	i := strings.Index(fila, palabra)
+	if i < 0 {
+		return 0, false
+	}
+	return len([]rune(fila[:i])), true
 }
 
 // codigosANSIRE reconoce los códigos de color SGR; se quitan para contar

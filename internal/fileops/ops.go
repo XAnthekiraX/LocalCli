@@ -43,10 +43,16 @@ type Ops struct {
 }
 
 // aprobar pide la decisión y la traduce a un error tipado. Sin aprobador no se
-// escribe (E_NEEDS_APPROVAL); declinada es E_APPROVAL_DECLINED; un borrado sin
+// aplica nada: E_NEEDS_APPROVAL para una escritura dentro de la carpeta y
+// E_PATH_OUTSIDE para una ruta de fuera (que es «fuera sin permiso y sin
+// explicación», ERRORS.md §3). Declinada es E_APPROVAL_DECLINED; un borrado sin
 // confirmación explícita es E_NEEDS_CONFIRM.
-func (o *Ops) aprobar(ctx context.Context, operacion, ruta string, borrado bool) error {
+func (o *Ops) aprobar(ctx context.Context, operacion, ruta string, borrado, fuera bool) error {
 	if o.Aprobador == nil {
+		if fuera {
+			return nuevoError(CodigoRutaFuera,
+				"la ruta "+ruta+" sale de la carpeta del proyecto y no hay con quién pedir permiso")
+		}
 		return nuevoError(CodigoNecesitaAprobacion,
 			"no se aplica ninguna escritura sin aprobación: "+describir(operacion, ruta))
 	}
@@ -54,8 +60,9 @@ func (o *Ops) aprobar(ctx context.Context, operacion, ruta string, borrado bool)
 		SessionID:   o.SesionID,
 		Operacion:   operacion,
 		Ruta:        ruta,
-		Descripcion: describir(operacion, ruta),
+		Descripcion: recomendar(operacion, ruta, fuera),
 		Borrado:     borrado,
+		Fuera:       fuera,
 	})
 	if err != nil {
 		return err
@@ -70,15 +77,44 @@ func (o *Ops) aprobar(ctx context.Context, operacion, ruta string, borrado bool)
 	return nil
 }
 
-// describir resume la operación para el panel de aprobaciones.
+// rutaDeLectura resuelve la ruta y, si sale de la carpeta del proyecto, pide
+// permiso antes de seguir (SPEC-ARCHIVOS §Reglas: fuera hace falta permiso).
+func (o *Ops) rutaDeLectura(ctx context.Context, operacion, ruta string) (string, error) {
+	abs, fuera, err := Resolver(o.Proyecto, ruta)
+	if err != nil {
+		return "", err
+	}
+	if fuera {
+		if err := o.aprobar(ctx, operacion, ruta, false, true); err != nil {
+			return "", err
+		}
+	}
+	return abs, nil
+}
+
+// recomendar describe la operación para el panel; si la ruta sale de la carpeta,
+// lo dice en corto: fuera hace falta permiso (SPEC-ARCHIVOS §Reglas).
+func recomendar(operacion, ruta string, fuera bool) string {
+	d := describir(operacion, ruta)
+	if fuera {
+		return d + " (fuera)"
+	}
+	return d
+}
+
+// describir resume la operación para el panel de aprobaciones, en corto.
 func describir(operacion, ruta string) string {
 	verbos := map[string]string{
-		"crear_archivo":    "crear el archivo",
-		"escribir_archivo": "sobrescribir el archivo",
-		"editar_archivo":   "editar el archivo",
-		"eliminar_archivo": "borrar el archivo",
-		"crear_carpeta":    "crear la carpeta",
-		"eliminar_carpeta": "borrar la carpeta",
+		"leer_archivo":       "leer",
+		"listar_carpeta":     "listar",
+		"buscar_archivos":    "buscar",
+		"buscar_en_archivos": "grep",
+		"crear_archivo":      "crear el archivo",
+		"escribir_archivo":   "sobrescribir el archivo",
+		"editar_archivo":     "editar el archivo",
+		"eliminar_archivo":   "borrar el archivo",
+		"crear_carpeta":      "crear la carpeta",
+		"eliminar_carpeta":   "borrar la carpeta",
 	}
 	verbo := verbos[operacion]
 	if verbo == "" {

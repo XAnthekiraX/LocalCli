@@ -23,9 +23,9 @@ Qué se valida antes de que algo ocurra: rutas, argumentos de herramientas, peti
 
 ### Rutas (todas las herramientas de archivo)
 
-- **Relativas a la carpeta abierta.** Una ruta absoluta se rechaza o se reinterpreta como relativa al proyecto; nunca sale de la carpeta por accidente.
+- **Relativas a la carpeta abierta.** Una ruta relativa cuelga del proyecto; una absoluta se respeta tal cual y, si no cuelga de él, cuenta como «fuera». Normalizar antes de validar evita que `../` salga de la carpeta por accidente.
 - **Dentro de la carpeta:** accesible. Escribir sigue pidiendo aprobación.
-- **Fuera de la carpeta:** requiere permiso **y** la explicación del agente. Sin las dos, se rechaza.
+- **Fuera de la carpeta:** requiere permiso **y** la explicación del agente. Sin las dos, se rechaza (`E_PATH_OUTSIDE`).
 - **`crear_archivo` falla si el archivo ya existe.** No sobrescribe.
 - **`escribir_archivo` sobrescribe**, y como pisa algo, la aprobación es explícita sobre el contenido que va a quedar.
 - **Borrar** (`eliminar_archivo`, `eliminar_carpeta`) pide confirmación explícita, no solo aprobación genérica.

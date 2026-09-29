@@ -32,10 +32,10 @@ import (
 // con sus handlers, más las que declare el usuario en `.localcli/tools/`.
 func registroDeHerramientas(ad *Adaptador, carpeta string, cambios *store.Cambios, todos *store.Todos, externo *lcexec.Ejecutor) (*tools.Registro, error) {
 	handlers := map[string]tools.Ejecutar{
-		"leer_archivo":       herramientaLeerArchivo(carpeta),
-		"listar_carpeta":     herramientaListarCarpeta(carpeta),
-		"buscar_archivos":    herramientaBuscarArchivos(carpeta),
-		"buscar_en_archivos": herramientaBuscarEnArchivos(carpeta),
+		"leer_archivo":       herramientaLeerArchivo(carpeta, ad),
+		"listar_carpeta":     herramientaListarCarpeta(carpeta, ad),
+		"buscar_archivos":    herramientaBuscarArchivos(carpeta, ad),
+		"buscar_en_archivos": herramientaBuscarEnArchivos(carpeta, ad),
 		"crear_archivo":      herramientaEscritura(carpeta, cambios, ad, "crear_archivo"),
 		"escribir_archivo":   herramientaEscritura(carpeta, cambios, ad, "escribir_archivo"),
 		"editar_archivo":     herramientaEscritura(carpeta, cambios, ad, "editar_archivo"),
@@ -179,13 +179,25 @@ func opsDe(carpeta string, cambios *store.Cambios, ad *Adaptador, c tools.Contex
 	}
 }
 
-func herramientaLeerArchivo(carpeta string) tools.Ejecutar {
-	return func(ctx context.Context, args any, _ tools.Contexto) (tools.Resultado, error) {
+// opsLectura es el `Ops` de las herramientas que leen: sin historial (leer no
+// registra cambios) y con el aprobador del contexto, que es lo que permite
+// pedir permiso cuando la ruta sale de la carpeta del proyecto (SPEC-ARCHIVOS
+// §Reglas: fuera hace falta permiso).
+func opsLectura(carpeta string, ad *Adaptador, c tools.Contexto) *fileops.Ops {
+	return &fileops.Ops{
+		Proyecto:  carpeta,
+		SesionID:  ad.sesionActual(),
+		Aprobador: aprobadorDeContexto(c),
+	}
+}
+
+func herramientaLeerArchivo(carpeta string, ad *Adaptador) tools.Ejecutar {
+	return func(ctx context.Context, args any, c tools.Contexto) (tools.Resultado, error) {
 		p, ok := args.(*tools.PeticionLeerArchivo)
 		if !ok {
 			return tools.Resultado{}, fmt.Errorf("arranque: petición de lectura desconocida %T", args)
 		}
-		resp, err := fileops.LeerArchivo(carpeta, p.Ruta)
+		resp, err := opsLectura(carpeta, ad, c).LeerArchivo(ctx, p.Ruta)
 		if err != nil {
 			return corregible(err)
 		}
@@ -193,13 +205,13 @@ func herramientaLeerArchivo(carpeta string) tools.Ejecutar {
 	}
 }
 
-func herramientaListarCarpeta(carpeta string) tools.Ejecutar {
-	return func(ctx context.Context, args any, _ tools.Contexto) (tools.Resultado, error) {
+func herramientaListarCarpeta(carpeta string, ad *Adaptador) tools.Ejecutar {
+	return func(ctx context.Context, args any, c tools.Contexto) (tools.Resultado, error) {
 		p, ok := args.(*tools.PeticionListarCarpeta)
 		if !ok {
 			return tools.Resultado{}, fmt.Errorf("arranque: petición de listado desconocida %T", args)
 		}
-		resp, err := fileops.ListarCarpeta(carpeta, p.Ruta)
+		resp, err := opsLectura(carpeta, ad, c).ListarCarpeta(ctx, p.Ruta)
 		if err != nil {
 			return corregible(err)
 		}
@@ -207,13 +219,13 @@ func herramientaListarCarpeta(carpeta string) tools.Ejecutar {
 	}
 }
 
-func herramientaBuscarArchivos(carpeta string) tools.Ejecutar {
-	return func(ctx context.Context, args any, _ tools.Contexto) (tools.Resultado, error) {
+func herramientaBuscarArchivos(carpeta string, ad *Adaptador) tools.Ejecutar {
+	return func(ctx context.Context, args any, c tools.Contexto) (tools.Resultado, error) {
 		p, ok := args.(*tools.PeticionBuscarArchivos)
 		if !ok {
 			return tools.Resultado{}, fmt.Errorf("arranque: petición de búsqueda desconocida %T", args)
 		}
-		resp, err := fileops.BuscarArchivos(carpeta, p.Patron)
+		resp, err := opsLectura(carpeta, ad, c).BuscarArchivos(ctx, p.Patron)
 		if err != nil {
 			return corregible(err)
 		}
@@ -221,13 +233,13 @@ func herramientaBuscarArchivos(carpeta string) tools.Ejecutar {
 	}
 }
 
-func herramientaBuscarEnArchivos(carpeta string) tools.Ejecutar {
-	return func(ctx context.Context, args any, _ tools.Contexto) (tools.Resultado, error) {
+func herramientaBuscarEnArchivos(carpeta string, ad *Adaptador) tools.Ejecutar {
+	return func(ctx context.Context, args any, c tools.Contexto) (tools.Resultado, error) {
 		p, ok := args.(*tools.PeticionBuscarEnArchivos)
 		if !ok {
 			return tools.Resultado{}, fmt.Errorf("arranque: petición de búsqueda desconocida %T", args)
 		}
-		resp, err := fileops.BuscarEnArchivos(carpeta, p.Patron, p.Ruta)
+		resp, err := opsLectura(carpeta, ad, c).BuscarEnArchivos(ctx, p.Patron, p.Ruta)
 		if err != nil {
 			return corregible(err)
 		}

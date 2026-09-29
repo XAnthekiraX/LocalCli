@@ -1287,14 +1287,14 @@ func (a *App) bloqueInferior(anchoCol int) string {
 	if pal := a.Paleta.Render(); pal != "" {
 		partes = append(partes, pal)
 	}
-	// El indicador en vivo va justo encima de la caja: mientras hay un turno en
-	// camino gira el glifo y corre el tiempo —[⠋ Pensando], [⠋ Usando
-	// herramienta: X]—, que es lo que dice que el modelo sigue trabajando.
+	// El indicador en vivo va pegado a la caja: debajo del divisor y justo encima
+	// de la entrada. Mientras hay un turno en camino gira el glifo y corre el
+	// tiempo —[⠋ Pensando], [⠋ Usando herramienta: X]—, que es lo que dice que el
+	// modelo sigue trabajando.
+	partes = append(partes, a.divisorHorizontal(anchoCol))
 	if act := a.lineaDeActividad(); act != "" {
 		partes = append(partes, act)
 	}
-	// El divisor horizontal separa el chat de la caja de entrada.
-	partes = append(partes, a.divisorHorizontal(anchoCol))
 	// La caja de la línea de entrada, con su pie (agente, modelo y capacidades)
 	// y el indicador de líder pendiente (T-F012-06, T-F015-01).
 	pie := a.lineaPieEntrada()
@@ -1352,6 +1352,10 @@ func (a *App) lineaDeActividad() string {
 	}
 	etiqueta := "Pensando"
 	switch {
+	case a.Aprobs.Pendientes() > 0:
+		// Hay una decisión esperando: el turno no avanza hasta que se resuelva,
+		// así que el indicador lo dice en vez de fingir que sigue pensando.
+		etiqueta = "Esperando tu permiso"
 	case a.herramientaEnCurso != "":
 		etiqueta = "Usando herramienta: " + a.herramientaEnCurso
 	case a.Chat.EnCurso() != "":

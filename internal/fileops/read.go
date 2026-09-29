@@ -14,7 +14,9 @@ package fileops
 // silenciosos).
 
 import (
+	"context"
 	"os"
+	"strings"
 
 	"localcli/internal/tools"
 )
@@ -24,9 +26,39 @@ import (
 // harness por una petición del modelo.
 const LimiteLecturaBytes = 2 << 20 // 2 MiB
 
-// LeerArchivo devuelve el contenido de un archivo del proyecto.
+// LeerArchivo devuelve el contenido de un archivo del proyecto. Es el camino de
+// quien lee sin poder pedir permiso (el nodo de contexto): una ruta de fuera no
+// se toca.
 func LeerArchivo(proyecto, ruta string) (tools.RespuestaLeerArchivo, error) {
-	abs, err := Resolver(proyecto, ruta)
+	return (&Ops{Proyecto: proyecto}).LeerArchivo(context.Background(), ruta)
+}
+
+// extensionesImagen son las que la vista usa para adjuntar una imagen al turno
+// (internal/tui/adjuntos.go). Aquí sirven para no leer un binario: la imagen ya
+// viaja en el mensaje.
+var extensionesImagen = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".bmp": true,
+}
+
+// esRutaDeImagen mira solo la extensión, como el detector de adjuntos.
+func esRutaDeImagen(ruta string) bool {
+	i := strings.LastIndex(ruta, ".")
+	if i < 0 {
+		return false
+	}
+	return extensionesImagen[strings.ToLower(ruta[i:])]
+}
+
+// LeerArchivo devuelve el contenido de un archivo. Si la ruta sale de la carpeta
+// del proyecto, pide permiso antes de leerla (SPEC-ARCHIVOS §Reglas). Una imagen
+// no se lee: ya viaja adjunta en el turno, así que se devuelve una corrección en
+// vez de un binario —y nunca se pide permiso por ella—.
+func (o *Ops) LeerArchivo(ctx context.Context, ruta string) (tools.RespuestaLeerArchivo, error) {
+	if esRutaDeImagen(ruta) {
+		return tools.RespuestaLeerArchivo{}, nuevoError(CodigoArgumentosInvalidos,
+			"«"+ruta+"» es una imagen: viaja adjunta al turno, no hace falta leerla")
+	}
+	abs, err := o.rutaDeLectura(ctx, "leer_archivo", ruta)
 	if err != nil {
 		return tools.RespuestaLeerArchivo{}, err
 	}

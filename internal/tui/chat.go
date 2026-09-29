@@ -438,7 +438,9 @@ func (c *Chat) VentanaCon(ancho, alto int, enCurso string) string {
 	texto := c.Render(ancho)
 	if enCurso != "" {
 		if texto != "" {
-			texto += "\n"
+			// Una fila en blanco como entre dos mensajes: si no, el bloque en vivo
+			// se pega al último y parecen una sola respuesta.
+			texto += "\n\n"
 		}
 		texto += enCurso
 	}

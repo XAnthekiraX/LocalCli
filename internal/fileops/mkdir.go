@@ -22,7 +22,7 @@ import (
 
 // CrearCarpeta crea una carpeta. Falla si ya existe.
 func (o *Ops) CrearCarpeta(ctx context.Context, ruta string) (tools.RespuestaEscritura, error) {
-	abs, err := Resolver(o.Proyecto, ruta)
+	abs, fuera, err := Resolver(o.Proyecto, ruta)
 	if err != nil {
 		return tools.RespuestaEscritura{}, err
 	}
@@ -30,7 +30,7 @@ func (o *Ops) CrearCarpeta(ctx context.Context, ruta string) (tools.RespuestaEsc
 		return tools.RespuestaEscritura{}, nuevoError(CodigoRutaExiste,
 			"la carpeta "+ruta+" ya existe")
 	}
-	if err := o.aprobar(ctx, store.OpCrearCarpeta, ruta, false); err != nil {
+	if err := o.aprobar(ctx, store.OpCrearCarpeta, ruta, false, fuera); err != nil {
 		return tools.RespuestaEscritura{}, err
 	}
 	if err := os.MkdirAll(abs, 0o755); err != nil {
@@ -45,11 +45,11 @@ func (o *Ops) CrearCarpeta(ctx context.Context, ruta string) (tools.RespuestaEsc
 
 // EliminarCarpeta borra una carpeta tras confirmación explícita.
 func (o *Ops) EliminarCarpeta(ctx context.Context, ruta string) (tools.RespuestaEliminar, error) {
-	abs, err := Resolver(o.Proyecto, ruta)
+	abs, fuera, err := Resolver(o.Proyecto, ruta)
 	if err != nil {
 		return tools.RespuestaEliminar{}, err
 	}
-	raiz, err := Resolver(o.Proyecto, ".")
+	raiz, _, err := Resolver(o.Proyecto, ".")
 	if err != nil {
 		return tools.RespuestaEliminar{}, err
 	}
@@ -66,7 +66,7 @@ func (o *Ops) EliminarCarpeta(ctx context.Context, ruta string) (tools.Respuesta
 		return tools.RespuestaEliminar{}, nuevoError(CodigoArgumentosInvalidos,
 			ruta+" no es una carpeta")
 	}
-	if err := o.aprobar(ctx, store.OpEliminarCarpeta, ruta, true); err != nil {
+	if err := o.aprobar(ctx, store.OpEliminarCarpeta, ruta, true, fuera); err != nil {
 		return tools.RespuestaEliminar{}, err
 	}
 	if err := os.RemoveAll(abs); err != nil {

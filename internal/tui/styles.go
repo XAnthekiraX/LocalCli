@@ -412,9 +412,10 @@ func cajaConBorde(ancho int, lineas []string) string {
 	}
 	interno := ancho - 2
 	// Las filas de arriba y abajo de la caja son fondo de pantalla, no una banda
-	// de otro color: separan el componente del resto con el mismo fondo.
+	// de otro color: separan el componente del resto con el mismo fondo. Dentro
+	// queda una fila de aire sobre el texto y otra debajo, antes de las bandas:
+	// el contenido no toca lo que lo envuelve.
 	banda := pintarFondo("", ancho, fondoApp)
-	// Aire dentro de la caja: una fila en blanco arriba y otra abajo del texto.
 	vacia := pintarFondo("", ancho, fondoCaja)
 	var b strings.Builder
 	b.WriteString(banda)

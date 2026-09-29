@@ -42,7 +42,11 @@ El panel de aprobaciones **no es** el panel de datos. El de datos es de lectura 
 
 ## Formato de una línea del panel
 
-`nombre de la sesión | acción propuesta | aprobar | declinar | <opción por definir>`
+`sesión | acción propuesta | aprobar | declinar`
+
+La sesión va por su identificador abreviado (ocho caracteres) y la acción en corto —verbo y ruta, con la carpeta del usuario abreviada a `~`—, para que la línea quepa de un vistazo. La tercera opción de decisiones sigue por definir: no se reserva un hueco vacío que alargue la fila.
+
+Ejemplo: `24afd397 | leer ~/Imágenes/picture.jpeg (fuera) | aprobar | declinar`
 
 ## Flujos alternativos
 

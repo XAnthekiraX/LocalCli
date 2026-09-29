@@ -123,20 +123,40 @@ func (a *Aprobaciones) Resolver(id string) (Aprobacion, bool) {
 	return Aprobacion{}, false
 }
 
-// opcionesAprobarDeclinar es el hueco de opciones del formato documentado
-// (SPEC-INTERFAZ-ATAJOS §Formato de una línea del panel). La tercera opción
-// sigue por definir y sale como un hueco, no se inventa.
-const opcionesAprobarDeclinar = "aprobar | declinar | —"
+// opcionesAprobarDeclinar son las opciones de la línea (SPEC-INTERFAZ-ATAJOS
+// §Formato de una línea del panel). La tercera opción sigue por definir; no se
+// inventa ni se reserva un hueco vacío que alargue la fila.
+const opcionesAprobarDeclinar = "aprobar | declinar"
 
-// FilaDe compone la fila de una aprobación SIN el marcador de selección. La
-// usan `Lineas` (que le añade la marca) y el ratón, que localiza con ella la
-// línea pulsada en el marco pintado (selection.go).
+// idBreve acorta el identificador de la sesión: ocho caracteres bastan para
+// distinguirla a la vista y la línea no se va de largo.
+func idBreve(id string) string {
+	r := []rune(id)
+	if len(r) > 8 {
+		return string(r[:8])
+	}
+	return id
+}
+
+// descripcionBreve acorta el texto de la operación: la carpeta del usuario se
+// abrevia a `~`, como en el pie del panel.
+func descripcionBreve(d string) string {
+	if home := rutaDelUsuario(); home != "" {
+		d = strings.Replace(d, home, "~", 1)
+	}
+	return d
+}
+
+// FilaDe compone la fila de una aprobación SIN el marcador de selección: sesión
+// corta, operación y opciones. La usan `Lineas` (que le añade la marca) y el
+// ratón, que localiza con ella la línea pulsada en el marco pintado
+// (selection.go).
 func FilaDe(it Aprobacion) string {
 	opciones := opcionesAprobarDeclinar
 	if it.Obsoleta {
 		opciones = "obsoleta"
 	}
-	return it.Sesion + " | " + it.Descripcion + " | " + opciones
+	return idBreve(it.Sesion) + " | " + descripcionBreve(it.Descripcion) + " | " + opciones
 }
 
 // Lineas devuelve cada aprobación en el formato documentado, con la seleccionada

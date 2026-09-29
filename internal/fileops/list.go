@@ -10,6 +10,7 @@ package fileops
 
 import (
 	"bufio"
+	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,9 +25,16 @@ import (
 // contexto con miles de líneas.
 const MaxCoincidencias = 200
 
-// ListarCarpeta devuelve los nombres de las entradas de un nivel.
+// ListarCarpeta devuelve los nombres de las entradas de un nivel. Es el camino
+// de quien lista sin poder pedir permiso: una ruta de fuera no se toca.
 func ListarCarpeta(proyecto, ruta string) (tools.RespuestaListarCarpeta, error) {
-	abs, err := Resolver(proyecto, ruta)
+	return (&Ops{Proyecto: proyecto}).ListarCarpeta(context.Background(), ruta)
+}
+
+// ListarCarpeta devuelve los nombres de las entradas de un nivel. Si la ruta
+// sale de la carpeta del proyecto, pide permiso antes de listarla.
+func (o *Ops) ListarCarpeta(ctx context.Context, ruta string) (tools.RespuestaListarCarpeta, error) {
+	abs, err := o.rutaDeLectura(ctx, "listar_carpeta", ruta)
 	if err != nil {
 		return tools.RespuestaListarCarpeta{}, err
 	}
@@ -47,7 +55,13 @@ func ListarCarpeta(proyecto, ruta string) (tools.RespuestaListarCarpeta, error) 
 // BuscarArchivos devuelve las rutas (relativas) cuyo nombre de archivo coincide
 // con el patrón. El patrón es de `filepath.Match`.
 func BuscarArchivos(proyecto, patron string) (tools.RespuestaBuscarArchivos, error) {
-	raiz, err := Resolver(proyecto, ".")
+	return (&Ops{Proyecto: proyecto}).BuscarArchivos(context.Background(), patron)
+}
+
+// BuscarArchivos recorre el proyecto entero: la búsqueda siempre empieza dentro
+// de la carpeta abierta, así que no hay permiso que pedir.
+func (o *Ops) BuscarArchivos(ctx context.Context, patron string) (tools.RespuestaBuscarArchivos, error) {
+	raiz, _, err := Resolver(o.Proyecto, ".")
 	if err != nil {
 		return tools.RespuestaBuscarArchivos{}, err
 	}
@@ -67,7 +81,7 @@ func BuscarArchivos(proyecto, patron string) (tools.RespuestaBuscarArchivos, err
 		}
 		ok, mErr := filepath.Match(patron, d.Name())
 		if mErr == nil && ok {
-			if rel, rErr := Relativa(proyecto, abs); rErr == nil {
+			if rel, rErr := Relativa(o.Proyecto, abs); rErr == nil {
 				rutas = append(rutas, rel)
 			}
 		}
@@ -84,6 +98,12 @@ func BuscarArchivos(proyecto, patron string) (tools.RespuestaBuscarArchivos, err
 // BuscarEnArchivos busca el patrón en el contenido. Sin `ruta`, recorre el
 // proyecto entero; con `ruta`, solo esa subcarpeta o archivo.
 func BuscarEnArchivos(proyecto, patron, ruta string) (tools.RespuestaBuscarEnArchivos, error) {
+	return (&Ops{Proyecto: proyecto}).BuscarEnArchivos(context.Background(), patron, ruta)
+}
+
+// BuscarEnArchivos busca el patrón en el contenido. Si la ruta sale de la
+// carpeta del proyecto, pide permiso antes de recorrerla.
+func (o *Ops) BuscarEnArchivos(ctx context.Context, patron, ruta string) (tools.RespuestaBuscarEnArchivos, error) {
 	if strings.TrimSpace(patron) == "" {
 		return tools.RespuestaBuscarEnArchivos{}, nuevoError(CodigoArgumentosInvalidos, "falta el patrón")
 	}
@@ -92,13 +112,13 @@ func BuscarEnArchivos(proyecto, patron, ruta string) (tools.RespuestaBuscarEnArc
 		return tools.RespuestaBuscarEnArchivos{}, nuevoError(CodigoArgumentosInvalidos,
 			"el patrón no es válido: "+err.Error())
 	}
-	raiz, err := Resolver(proyecto, ".")
+	raiz, _, err := Resolver(o.Proyecto, ".")
 	if err != nil {
 		return tools.RespuestaBuscarEnArchivos{}, err
 	}
 	objetivo := raiz
 	if strings.TrimSpace(ruta) != "" {
-		if objetivo, err = Resolver(proyecto, ruta); err != nil {
+		if objetivo, err = o.rutaDeLectura(ctx, "buscar_en_archivos", ruta); err != nil {
 			return tools.RespuestaBuscarEnArchivos{}, err
 		}
 	}
@@ -111,14 +131,14 @@ func BuscarEnArchivos(proyecto, patron, ruta string) (tools.RespuestaBuscarEnArc
 		if len(out) >= MaxCoincidencias {
 			return filepath.SkipAll
 		}
-		coincidencias, cErr := coincidenciasEnArchivo(proyecto, abs, re, MaxCoincidencias-len(out))
+		coincidencias, cErr := coincidenciasEnArchivo(o.Proyecto, abs, re, MaxCoincidencias-len(out))
 		if cErr == nil {
 			out = append(out, coincidencias...)
 		}
 		return nil
 	}
 	if info, statErr := os.Stat(objetivo); statErr == nil && !info.IsDir() {
-		coincidencias, cErr := coincidenciasEnArchivo(proyecto, objetivo, re, MaxCoincidencias)
+		coincidencias, cErr := coincidenciasEnArchivo(o.Proyecto, objetivo, re, MaxCoincidencias)
 		if cErr == nil {
 			out = append(out, coincidencias...)
 		}

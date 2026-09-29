@@ -20,20 +20,23 @@ import (
 	"strings"
 )
 
-// Resolver normaliza una ruta relativa y devuelve su ruta absoluta dentro del
-// proyecto. Devuelve E_PATH_OUTSIDE si la ruta es absoluta, si escapa con `..`
-// o si un enlace simbólico la lleva fuera.
-func Resolver(proyecto, ruta string) (string, error) {
+// Resolver normaliza la ruta contra la carpeta del proyecto y dice si queda
+// fuera de ella. Fuera NO es un error: es una operación que necesita aprobación
+// —y la explicación del agente, si la trae— (SPEC-ARCHIVOS §Reglas); quien
+// decide es quien puede pedir permiso. Solo la ruta vacía o un proyecto
+// irresoluble son error.
+//
+// Una ruta absoluta se respeta tal cual: si no cuelga del proyecto, sale fuera.
+// Una relativa cuelga de la carpeta abierta. Los enlaces simbólicos se resuelven
+// para que un enlace de dentro que apunte fuera exija aprobación y no sea una
+// puerta trasera.
+func Resolver(proyecto, ruta string) (abs string, fuera bool, err error) {
 	if strings.TrimSpace(ruta) == "" {
-		return "", nuevoError(CodigoArgumentosInvalidos, "falta la ruta")
-	}
-	if filepath.IsAbs(ruta) {
-		return "", nuevoError(CodigoRutaFuera,
-			"la ruta "+ruta+" es absoluta; toda ruta es relativa a la carpeta del proyecto")
+		return "", false, nuevoError(CodigoArgumentosInvalidos, "falta la ruta")
 	}
 	proyectoAbs, err := filepath.Abs(proyecto)
 	if err != nil {
-		return "", nuevoError(CodigoRutaFuera,
+		return "", false, nuevoError(CodigoArgumentosInvalidos,
 			"no se pudo resolver la carpeta del proyecto: "+err.Error())
 	}
 	proyectoReal := proyectoAbs
@@ -41,15 +44,17 @@ func Resolver(proyecto, ruta string) (string, error) {
 		proyectoReal = real
 	}
 
-	destino := filepath.Clean(filepath.Join(proyectoAbs, ruta))
+	destino := filepath.Clean(ruta)
+	if !filepath.IsAbs(ruta) {
+		destino = filepath.Clean(filepath.Join(proyectoAbs, ruta))
+	}
 	if !DentroDe(proyectoAbs, destino) {
-		return "", nuevoError(CodigoRutaFuera,
-			"la ruta "+ruta+" sale de la carpeta del proyecto")
+		return destino, true, nil
 	}
-	if err := comprobarEnlaces(proyectoReal, destino); err != nil {
-		return "", err
+	if comprobarEnlaces(proyectoReal, destino) {
+		return destino, true, nil
 	}
-	return destino, nil
+	return destino, false, nil
 }
 
 // DentroDe informa si destino está dentro de raíz o es la propia raíz. No
@@ -68,10 +73,11 @@ func DentroDe(raiz, destino string) bool {
 	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// comprobarEnlaces resuelve el ancestro existente más profundo de destino y
-// comprueba que su ruta real sigue estando dentro del proyecto real. Así un
-// enlace simbólico intermedio o final que apunte fuera se detecta.
-func comprobarEnlaces(proyectoReal, destino string) error {
+// comprobarEnlaces resuelve el ancestro existente más profundo de destino y dice
+// si su ruta real cae fuera del proyecto real. Así un enlace simbólico
+// intermedio o final que apunte fuera se detecta y exige aprobación. Si no se
+// puede resolver, se trata como fuera: mejor pedir permiso que colar una ruta.
+func comprobarEnlaces(proyectoReal, destino string) bool {
 	actual := destino
 	for {
 		if _, err := os.Lstat(actual); err == nil {
@@ -79,21 +85,15 @@ func comprobarEnlaces(proyectoReal, destino string) error {
 		}
 		padre := filepath.Dir(actual)
 		if padre == actual {
-			return nuevoError(CodigoRutaFuera,
-				"no se pudo situar "+destino+" dentro del proyecto")
+			return true
 		}
 		actual = padre
 	}
 	real, err := filepath.EvalSymlinks(actual)
 	if err != nil {
-		return nuevoError(CodigoRutaFuera,
-			"no se pudo resolver "+actual+": "+err.Error())
+		return true
 	}
-	if !DentroDe(proyectoReal, real) {
-		return nuevoError(CodigoRutaFuera,
-			"la ruta apunta fuera de la carpeta del proyecto")
-	}
-	return nil
+	return !DentroDe(proyectoReal, real)
 }
 
 // Relativa devuelve la ruta tal como se guarda en el historial: relativa a la

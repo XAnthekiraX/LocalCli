@@ -49,7 +49,7 @@ func partirEdicion(cambio string) (buscar, reemplazar string, err error) {
 // CrearArchivo crea un archivo nuevo. Falla si ya existe (E_PATH_EXISTS): no
 // sobrescribe, para no destruir algo por accidente cuando se pretendía crear.
 func (o *Ops) CrearArchivo(ctx context.Context, ruta, contenido string) (tools.RespuestaEscritura, error) {
-	abs, err := Resolver(o.Proyecto, ruta)
+	abs, fuera, err := Resolver(o.Proyecto, ruta)
 	if err != nil {
 		return tools.RespuestaEscritura{}, err
 	}
@@ -57,7 +57,7 @@ func (o *Ops) CrearArchivo(ctx context.Context, ruta, contenido string) (tools.R
 		return tools.RespuestaEscritura{}, nuevoError(CodigoRutaExiste,
 			"el archivo "+ruta+" ya existe; usa escribir_archivo para sobrescribirlo")
 	}
-	if err := o.aprobar(ctx, store.OpCrearArchivo, ruta, false); err != nil {
+	if err := o.aprobar(ctx, store.OpCrearArchivo, ruta, false, fuera); err != nil {
 		return tools.RespuestaEscritura{}, err
 	}
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
@@ -77,7 +77,7 @@ func (o *Ops) CrearArchivo(ctx context.Context, ruta, contenido string) (tools.R
 // EscribirArchivo sobrescribe el contenido entero. Antes de aprobar ya se sabe
 // qué contenido va a quedar, que es sobre lo que decide la persona.
 func (o *Ops) EscribirArchivo(ctx context.Context, ruta, contenido string) (tools.RespuestaEscritura, error) {
-	abs, err := Resolver(o.Proyecto, ruta)
+	abs, fuera, err := Resolver(o.Proyecto, ruta)
 	if err != nil {
 		return tools.RespuestaEscritura{}, err
 	}
@@ -87,7 +87,7 @@ func (o *Ops) EscribirArchivo(ctx context.Context, ruta, contenido string) (tool
 		before = string(datos)
 		existia = true
 	}
-	if err := o.aprobar(ctx, store.OpEscribirArchivo, ruta, false); err != nil {
+	if err := o.aprobar(ctx, store.OpEscribirArchivo, ruta, false, fuera); err != nil {
 		return tools.RespuestaEscritura{}, err
 	}
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
@@ -105,7 +105,7 @@ func (o *Ops) EscribirArchivo(ctx context.Context, ruta, contenido string) (tool
 
 // EditarArchivo aplica una edición parcial (reemplazo exacto de un texto).
 func (o *Ops) EditarArchivo(ctx context.Context, ruta, cambio string) (tools.RespuestaEscritura, error) {
-	abs, err := Resolver(o.Proyecto, ruta)
+	abs, fuera, err := Resolver(o.Proyecto, ruta)
 	if err != nil {
 		return tools.RespuestaEscritura{}, err
 	}
@@ -125,7 +125,7 @@ func (o *Ops) EditarArchivo(ctx context.Context, ruta, cambio string) (tools.Res
 	}
 	after := strings.Replace(before, buscar, reemplazar, 1)
 
-	if err := o.aprobar(ctx, store.OpEditarArchivo, ruta, false); err != nil {
+	if err := o.aprobar(ctx, store.OpEditarArchivo, ruta, false, fuera); err != nil {
 		return tools.RespuestaEscritura{}, err
 	}
 	if err := os.WriteFile(abs, []byte(after), 0o644); err != nil {
@@ -141,7 +141,7 @@ func (o *Ops) EditarArchivo(ctx context.Context, ruta, cambio string) (tools.Res
 // EliminarArchivo borra un archivo tras confirmación explícita. El antes se
 // guarda para poder revertir y auditar; el después es nulo porque ya no existe.
 func (o *Ops) EliminarArchivo(ctx context.Context, ruta string) (tools.RespuestaEliminar, error) {
-	abs, err := Resolver(o.Proyecto, ruta)
+	abs, fuera, err := Resolver(o.Proyecto, ruta)
 	if err != nil {
 		return tools.RespuestaEliminar{}, err
 	}
@@ -157,7 +157,7 @@ func (o *Ops) EliminarArchivo(ctx context.Context, ruta string) (tools.Respuesta
 	datos, _ := os.ReadFile(abs)
 	before := string(datos)
 
-	if err := o.aprobar(ctx, store.OpEliminarArchivo, ruta, true); err != nil {
+	if err := o.aprobar(ctx, store.OpEliminarArchivo, ruta, true, fuera); err != nil {
 		return tools.RespuestaEliminar{}, err
 	}
 	if err := os.Remove(abs); err != nil {
