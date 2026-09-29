@@ -58,12 +58,18 @@ func (a *App) raton(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 		fin := posicion{X: m.X, Y: m.Y}
 		a.finEnChat = a.enChat(fin.X, fin.Y)
 		// Un clic (pulsar y soltar sin arrastrar) sobre «aprobar» o «declinar»
-		// de una fila de aprobaciones resuelve ESA aprobación. Un arrastre sigue
-		// siendo una selección de texto.
+		// de una fila de aprobaciones resuelve ESA aprobación, y sobre el
+		// interruptor del pie cambia el razonamiento. Un arrastre sigue siendo
+		// una selección de texto.
 		if a.ratonIni == fin {
 			if ap, aprobar, ok := a.decisionEnCelda(fin); ok {
 				a.limpiarSeleccion()
 				return a, a.decidirAprobacion(ap, aprobar)
+			}
+			if a.toggleEnCelda(fin) {
+				a.limpiarSeleccion()
+				a.alternarRazonamiento()
+				return a, nil
 			}
 		}
 		a.ratonFin = fin
@@ -225,6 +231,34 @@ func (a *App) decisionEnCelda(pos posicion) (Aprobacion, bool, bool) {
 		return Aprobacion{}, false, false
 	}
 	return Aprobacion{}, false, false
+}
+
+// El interruptor de razonamiento del pie (`pensar [x]` / `pensar [ ]`): el
+// prefijo identifica la chapa en la fila y el ancho es la zona pulsable entera.
+const (
+	tokenRazonamiento      = "pensar ["
+	tokenRazonamientoAncho = len("pensar [x]")
+)
+
+// toggleEnCelda mira si la celda pulsada cae sobre el interruptor de
+// razonamiento del pie (`pensar [x]`). Se apoya en el texto pintado, como el
+// panel de aprobaciones: localiza el token en la fila y compara columnas. El pie
+// vive debajo del chat, así que una fila del historial no lo imita.
+func (a *App) toggleEnCelda(pos posicion) bool {
+	if a.ultimaVista == "" || pos.Y < a.chatFilaFin {
+		return false
+	}
+	lineas := strings.Split(a.ultimaVista, "\n")
+	if pos.Y < 0 || pos.Y >= len(lineas) {
+		return false
+	}
+	fila := sinANSI(lineas[pos.Y])
+	col, ok := columnaDe(fila, tokenRazonamiento)
+	if !ok {
+		return false
+	}
+	// La zona pulsable es el token entero: `pensar [x]` o `pensar [ ]`.
+	return pos.X >= col && pos.X < col+tokenRazonamientoAncho
 }
 
 // columnaDe devuelve la columna (en runas) donde empieza `palabra` en la fila.

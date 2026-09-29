@@ -89,6 +89,7 @@ La consecuencia de diseño que importa: una sesión que está esperando al usuar
 - Las imágenes adjuntas son efímeras: no se persisten ni se replican en el historial. Un turno posterior que no vuelva a mencionar la imagen no la ve.
 - Si el modelo en uso no declara capacidad de visión (`vision` en `/api/show`) y el turno lleva imágenes, la interfaz avisa sin bloquear el envío; no se le impide usarlo.
 - Bajo la línea de entrada se muestra el modelo en uso y si tiene acceso a herramientas y a la visión (`sí`/`no`/`?` mientras se desconoce). Cuando el modelo no puede usar herramientas, se indica que el agente va a conversar sin ellas.
+- El **razonamiento** de un modelo que lo declara (`thinking` en `/api/show`) llega apagado: se manda `think: false` en cada petición. Ollama lo deja encendido por defecto en esos modelos y, en local, razonar cuesta minutos hasta para lo trivial. El usuario lo enciende por turno con el interruptor del pie (`pensar [x]`), que se pulsa con el ratón y se recuerda entre ejecuciones. A un modelo que no declara la capacidad no se le manda `think` —no entiende la opción— y sin ficha tampoco: no saberlo no es «no puede».
 - Todo el modelo y toda la conversación ocurren en la máquina local: no se envía nada fuera.
 - La única excepción es la búsqueda en internet de [[specs/SPEC-TOOLS]], y solo sale la consulta, nunca contenido del proyecto.
 - El tamaño de contexto disponible se tiene en cuenta al decidir cuánto contexto entregar.
@@ -109,6 +110,8 @@ La consecuencia de diseño que importa: una sesión que está esperando al usuar
 - [ ] Dos sesiones que piden a la vez se atienden por orden de llegada.
 - [ ] Las imágenes de un turno de chat viajan al modelo en el campo `images` de `/api/chat`, codificadas en base64.
 - [ ] Un modelo que no declara visión avisa, sin bloquear, al adjuntar una imagen.
+- [ ] Un modelo que declara `thinking` recibe `think: false` si el interruptor del pie está apagado, y `true` si el usuario lo enciende.
+- [ ] Un modelo que no declara `thinking` no recibe el campo `think`.
 - [ ] Bajo la entrada se ve el modelo en uso y si tiene acceso a herramientas y a la visión.
 - [ ] La herramienta sigue funcionando con 16 GB de RAM sin agotar la memoria.
 - [ ] Si Ollama no está disponible, avisa con una instrucción clara.

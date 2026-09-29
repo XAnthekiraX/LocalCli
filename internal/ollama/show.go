@@ -23,6 +23,13 @@ const CapacidadHerramientas = "tools"
 // se adjuntan igual, y es Ollama quien decide si el modelo las aprovecha.
 const CapacidadVision = "vision"
 
+// CapacidadPensar es el nombre de la capacidad que declara un modelo que razona
+// antes de responder (qwen3, deepseek-r1, gpt-oss…). Ollama deja el razonamiento
+// ENCENDIDO por defecto en esos modelos, así que el harness manda `think`
+// explícito cuando el usuario lo decide. Solo se le manda a quien declara esta
+// capacidad: a un modelo que no razona, `think` le pide algo que no entiende.
+const CapacidadPensar = "thinking"
+
 // FichaModelo es la parte de la respuesta de /api/show que nos interesa:
 // `capabilities` (Ollama moderno) y `details.families`, que es el respaldo
 // cuando el servidor no declara capacidades.
@@ -105,6 +112,12 @@ func PuedeUsarHerramientas(capacidades []string) bool {
 // herramientas, una ficha vacía no la declara y el aviso lo decide el llamante.
 func PuedeVer(capacidades []string) bool {
 	return tieneCapacidad(capacidades, CapacidadVision)
+}
+
+// PuedePensar dice si el modelo razona antes de responder. Un modelo que no la
+// declara no admite `think`: mandárselo sería pedirle algo que no entiende.
+func PuedePensar(capacidades []string) bool {
+	return tieneCapacidad(capacidades, CapacidadPensar)
 }
 
 func tieneCapacidad(capacidades []string, buscada string) bool {

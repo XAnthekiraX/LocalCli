@@ -63,8 +63,13 @@ type puertoStub struct {
 	comandos        []ComandoFlujo
 	capHerramientas bool
 	capVision       bool
+	// capPensar es si el modelo declara que razona; pensarRecordado es el estado
+	// del interruptor y pensarLlamadas cuántas veces lo pulsó la vista.
+	capPensar       bool
 	capErr          error
 	capConsultas    int
+	pensarRecordado bool
+	pensarLlamadas  int
 	// imagenesEnviadas guarda, por envío, las imágenes (base64) que la vista
 	// detectó en el texto, en el mismo orden que `enviados`.
 	imagenesEnviadas  [][]string
@@ -241,7 +246,15 @@ func (p *puertoStub) Comandos() []ComandoFlujo { return p.comandos }
 // CapacidadesModelo simula la consulta de capacidades del modelo en uso.
 func (p *puertoStub) CapacidadesModelo(nombre string) (Capacidades, error) {
 	p.capConsultas++
-	return Capacidades{Herramientas: p.capHerramientas, Vision: p.capVision}, p.capErr
+	return Capacidades{Herramientas: p.capHerramientas, Vision: p.capVision, Pensar: p.capPensar}, p.capErr
+}
+
+// PensarRecordado y Pensar simulan el interruptor de razonamiento del pie.
+func (p *puertoStub) PensarRecordado() bool { return p.pensarRecordado }
+
+func (p *puertoStub) Pensar(v bool) {
+	p.pensarRecordado = v
+	p.pensarLlamadas++
 }
 
 func (p *puertoStub) FijarModelo(nombre string) {

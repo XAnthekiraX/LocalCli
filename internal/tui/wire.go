@@ -83,10 +83,13 @@ type ModeloLocal struct {
 }
 
 // Capacidades es lo que la vista conoce del modelo en uso para su línea de
-// estado. Los dos campos son «sí puede»: la vista solo los pinta y avisa.
+// estado. Los tres campos son «sí puede»: la vista solo los pinta y avisa.
 type Capacidades struct {
 	Herramientas bool
 	Vision       bool
+	// Pensar dice si el modelo razona antes de responder. Solo estos modelos
+	// enseñan la chapa `pensar [x]`: a los demás no se les puede mandar `think`.
+	Pensar bool
 }
 
 // TareaPanel es un paso de la lista de la sesión tal como lo pinta el panel
@@ -142,6 +145,14 @@ type Puerto interface {
 	// `.localcli/agents/*.json`: el usuario añade un agente dejando su JSON ahí, sin
 	// tocar el código. La vista cicla por esta lista con `Tab`.
 	Agentes() []string
+	// PensarRecordado es el estado con el que arranca el interruptor de
+	// razonamiento del pie: la última elección del usuario, o apagado. Sin él,
+	// razonar costaría minutos en cada turno de un modelo local
+	// (SPEC-OLLAMA-PERFIL).
+	PensarRecordado() bool
+	// Pensar aplica el interruptor: a partir de aquí los turnos mandan `think`
+	// con ese valor, si el modelo declara que razona.
+	Pensar(v bool)
 	// Comandos devuelve los comandos de flujo disponibles en el proyecto: los
 	// oficiales más los que declara `.localcli/flows/*.json`
 	// ([[specs/SPEC-FLUJO-PERSONALIZADO]]). La vista los lista en la paleta y
@@ -219,6 +230,7 @@ type (
 		Nombre       string
 		Herramientas bool
 		Vision       bool
+		Pensar       bool
 		Err          error
 	}
 	aprobacionesMsg struct{ Items []Aprobacion }

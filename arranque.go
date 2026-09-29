@@ -115,6 +115,15 @@ type Adaptador struct {
 	// calcular `num_ctx` en cada turno. Un 0 cacheado significa «el modelo no la
 	// declara»: se guarda igual para no volver a listar.
 	contextos map[string]int
+	// capacidades cachea, por modelo, la ficha de `/api/show`: qué declara capaz
+	// de hacer. Una ficha no cambia mientras Ollama sirve el mismo modelo, y con
+	// ella se decide si se le manda `think` y si se le presentan herramientas. Un
+	// modelo sin ficha NO se cachea: un fallo de red no debe fijar «no puede».
+	capacidades map[string][]string
+	// pensar es el interruptor de razonamiento —apagado por defecto— que el
+	// usuario cambia con un clic en el pie. Lo lee el turno que corre en otra
+	// goroutine, así que va bajo `mu`, como la sesión activa.
+	pensar bool
 }
 
 // modeloElegido es la lectura con mutex del modelo activo.
@@ -206,9 +215,11 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	// montarse), así que el registro puede construirse antes de que el gestor
 	// exista.
 	cambios := store.NuevosCambios(conexion)
-	ad := &Adaptador{aprobar: aprobar, cerrar: turnos, auditar: store.NuevasAuditorias(conexion), todos: store.NuevosTodos(conexion), bloques: store.NuevosBloques(conexion), chat: store.NuevoChat(conexion), bus: bus, dir: carpeta, pendientas: map[string]chan string{}, contextos: map[string]int{}, cliente: cliente}
+	ad := &Adaptador{aprobar: aprobar, cerrar: turnos, auditar: store.NuevasAuditorias(conexion), todos: store.NuevosTodos(conexion), bloques: store.NuevosBloques(conexion), chat: store.NuevoChat(conexion), bus: bus, dir: carpeta, pendientas: map[string]chan string{}, contextos: map[string]int{}, capacidades: map[string][]string{}, cliente: cliente}
 	ad.modelo = modelo
 	ad.agenteRecordado = prefs.Agente
+	// El razonamiento arranca donde lo dejó el usuario; sin preferencia, apagado.
+	ad.pensar = prefs.Pensar
 	// El ejecutor externo corre las herramientas del usuario: el mismo módulo
 	// `exec` con la misma frontera (Landlock, límites y recorte).
 	ejecutorExterno := &lcexec.Ejecutor{Proyecto: carpeta}
@@ -295,15 +306,25 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 			return infer.Encolar(ctx, ollama.OpcionesEncolar{IdSesion: ad.sesionActual()}, fn)
 		},
 		PuedeHerramientas: func(m string) bool {
-			ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
-			defer cancel()
-			caps, cErr := cliente.Capacidades(ctx, m)
-			if cErr != nil {
+			caps, ok := ad.fichaDe(m)
+			if !ok {
 				// Sin dato no se degrada: mejor conversar con herramientas que
 				// quitarle el trabajo al modelo por una ficha que no llegó.
 				return true
 			}
 			return ollama.PuedeUsarHerramientas(caps)
+		},
+		// Qué se le manda al modelo sobre su razonamiento. Solo lo recibe quien
+		// declara la capacidad: a los demás, `think` les pide algo que no
+		// entienden. Sin ficha tampoco se manda nada — el harness no decide que un
+		// modelo piense.
+		Pensar: func(m string) *bool {
+			caps, ok := ad.fichaDe(m)
+			if !ok || !ollama.PuedePensar(caps) {
+				return nil
+			}
+			v := ad.razonar()
+			return &v
 		},
 	}
 	agentes := agenteBase(carpeta)
@@ -453,6 +474,53 @@ func (ad *Adaptador) capacidadesDe(ctx context.Context, nombre string) ([]string
 	return caps, true
 }
 
+// fichaDe devuelve la ficha del modelo —qué declara capaz de hacer— leída una vez
+// y cacheada. Es la consulta que decide si se le manda `think` y si se le
+// presentan herramientas, y se hace por turno: sin caché sería un `/api/show` por
+// respuesta. Un fallo NO se cachea, para que un Ollama que aún no está listo no
+// fije «no puede».
+func (ad *Adaptador) fichaDe(modelo string) ([]string, bool) {
+	ad.mu.Lock()
+	if caps, ok := ad.capacidades[modelo]; ok {
+		ad.mu.Unlock()
+		return caps, true
+	}
+	ad.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
+	defer cancel()
+	caps, err := ad.cliente.Capacidades(ctx, modelo)
+	if err != nil {
+		return nil, false
+	}
+	ad.mu.Lock()
+	ad.capacidades[modelo] = caps
+	ad.mu.Unlock()
+	return caps, true
+}
+
+// razonar dice si el usuario quiere que el modelo razone en sus turnos. Es el
+// estado del interruptor del pie (SPEC-OLLAMA-PERFIL).
+func (ad *Adaptador) razonar() bool {
+	ad.mu.Lock()
+	defer ad.mu.Unlock()
+	return ad.pensar
+}
+
+// Pensar es el interruptor del pie: lo pulsa la vista con un clic y vale para
+// los turnos siguientes, no para el que ya está corriendo. Quien lo recuerda
+// entre ejecuciones es la vista, que es la dueña del archivo de preferencias
+// (tui.guardarPreferencias).
+func (ad *Adaptador) Pensar(v bool) {
+	ad.mu.Lock()
+	ad.pensar = v
+	ad.mu.Unlock()
+}
+
+// PensarRecordado es el estado con el que arranca el interruptor: la última
+// elección del usuario, o apagado si no hay ninguna.
+func (ad *Adaptador) PensarRecordado() bool { return ad.razonar() }
+
 // ModeloActual devuelve el modelo con el que trabaja el motor ahora mismo: el
 // que detectó el arranque o el último que eligió el usuario en el modal de
 // modelos. Es lo que la línea de modelo de la bienvenida muestra
@@ -489,6 +557,7 @@ func (ad *Adaptador) CapacidadesModelo(nombre string) (tui.Capacidades, error) {
 	return tui.Capacidades{
 		Herramientas: ollama.PuedeUsarHerramientas(caps),
 		Vision:       ollama.PuedeVer(caps),
+		Pensar:       ollama.PuedePensar(caps),
 	}, nil
 }
 

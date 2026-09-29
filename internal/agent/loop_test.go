@@ -18,12 +18,16 @@ type generadorGuion struct {
 	ultimos             []ollama.Mensaje
 	ultimasHerramientas []ollama.Herramienta
 	ultimoNumCtx        int
+	// ultimoPensar es el `think` de la última pasada: nil quiere decir que el
+	// campo no viajó.
+	ultimoPensar *bool
 }
 
-func (g *generadorGuion) Generar(ctx context.Context, a Agente, modelo string, mensajes []ollama.Mensaje, herramientas []ollama.Herramienta, numCtx int) (<-chan ollama.Evento, error) {
+func (g *generadorGuion) Generar(ctx context.Context, a Agente, modelo string, mensajes []ollama.Mensaje, herramientas []ollama.Herramienta, numCtx int, pensar *bool) (<-chan ollama.Evento, error) {
 	g.ultimos = append([]ollama.Mensaje(nil), mensajes...)
 	g.ultimasHerramientas = append([]ollama.Herramienta(nil), herramientas...)
 	g.ultimoNumCtx = numCtx
+	g.ultimoPensar = pensar
 	var evs []ollama.Evento
 	if g.llamadas < len(g.pasadas) {
 		evs = g.pasadas[g.llamadas]
@@ -118,6 +122,62 @@ func TestElBucleRespondeSinHerramientasEnUnaPasada(t *testing.T) {
 	}
 	if strings.Join(sink.partes, "") != "hola mundo" {
 		t.Errorf("el sink recibió %v", sink.partes)
+	}
+}
+
+// El razonamiento del turno se resuelve una vez y viaja en la pasada: es lo que
+// hace que el interruptor del pie llegue al modelo.
+func TestElTurnoMandaElRazonamientoQueLePiden(t *testing.T) {
+	si := true
+	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("ok")}}
+	e := &Ejecutor{Runner: g, Pensar: func(modelo string) *bool { return &si }}
+	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "chat"}, "qwen3:4b", "ctx", nil, nil, 0, false, nil); err != nil {
+		t.Fatalf("Ejecutar: %v", err)
+	}
+	if g.ultimoPensar == nil || !*g.ultimoPensar {
+		t.Errorf("la pasada debe llevar el razonamiento encendido: %v", g.ultimoPensar)
+	}
+}
+
+// Sin función que lo decida no se manda nada: el harness no decide por su cuenta
+// que un modelo razone.
+func TestSinDecisionDeRazonamientoNoSeMandaNada(t *testing.T) {
+	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("ok")}}
+	e := &Ejecutor{Runner: g}
+	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "chat"}, "llama3.2", "ctx", nil, nil, 0, false, nil); err != nil {
+		t.Fatalf("Ejecutar: %v", err)
+	}
+	if g.ultimoPensar != nil {
+		t.Errorf("sin decisión, `think` no viaja: %v", *g.ultimoPensar)
+	}
+}
+
+// El razonamiento se decide UNA vez por turno: todas las pasadas llevan lo mismo,
+// aunque el modelo pida herramientas por el camino.
+func TestElRazonamientoNoCambiaEntrePasadas(t *testing.T) {
+	no := false
+	consultas := 0
+	g := &generadorGuion{pasadas: [][]ollama.Evento{
+		pedido("voy", llamada("leer_archivo", `{"ruta":"a.md"}`)),
+		respuesta("listo"),
+	}}
+	e := &Ejecutor{
+		Runner:     g,
+		Despachar:  NuevoDespachador(registroStub(nil)),
+		MaxPasadas: 2,
+		Pensar: func(string) *bool {
+			consultas++
+			return &no
+		},
+	}
+	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "build"}, "qwen3:4b", "ctx", nil, nil, 0, false, nil); err != nil {
+		t.Fatalf("Ejecutar: %v", err)
+	}
+	if consultas != 1 {
+		t.Errorf("la decisión se consulta una vez, no %d", consultas)
+	}
+	if g.ultimoPensar == nil || *g.ultimoPensar {
+		t.Errorf("la última pasada lleva el mismo valor: %v", g.ultimoPensar)
 	}
 }
 

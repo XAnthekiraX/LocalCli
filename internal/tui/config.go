@@ -29,6 +29,10 @@ type Preferencias struct {
 	// que se le envía al modelo (SPEC-HISTORIAL-CONVERSACION). 0 = el arranque
 	// usa LOCALCLI_CONTEXT_LIMIT o su valor por defecto.
 	HistorialTokens int `json:"historial_tokens,omitempty"`
+	// Pensar recuerda el interruptor de razonamiento del pie. Falso —el valor
+	// cero— es el estado por defecto: un modelo local que razona tarda minutos
+	// hasta para lo trivial (SPEC-OLLAMA-PERFIL).
+	Pensar bool `json:"pensar,omitempty"`
 }
 
 // RutaConfig resuelve la ruta del archivo de preferencias, en la misma carpeta

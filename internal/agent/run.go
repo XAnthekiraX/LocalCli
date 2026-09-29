@@ -29,16 +29,29 @@ const RolSistema = "system"
 // sin ninguna. `numCtx` es la ventana de contexto a pedir (0 = la del
 // servidor): sin ella, Ollama usa un valor pequeño que corta los turnos con
 // herramientas.
-func ConstruirPeticion(a Agente, modelo string, mensajes []ollama.Mensaje, herramientas []ollama.Herramienta, numCtx int) ollama.GenerarRequest {
+//
+// `pensar` decide si el modelo razona antes de responder: nil NO manda el campo
+// —Ollama decide, que es lo que quiere un modelo sin razonamiento— y un puntero
+// manda ese valor. En Ollama el razonamiento viene encendido por defecto en los
+// modelos que lo declaran, así que apagarlo es una decisión explícita del
+// usuario (SPEC-OLLAMA-PERFIL).
+func ConstruirPeticion(a Agente, modelo string, mensajes []ollama.Mensaje, herramientas []ollama.Herramienta, numCtx int, pensar *bool) ollama.GenerarRequest {
 	msgs := make([]ollama.Mensaje, 0, len(mensajes)+1)
 	msgs = append(msgs, ollama.Mensaje{Role: RolSistema, Content: PromptDeSistema(a)})
 	msgs = append(msgs, mensajes...)
-	return ollama.GenerarRequest{
+	req := ollama.GenerarRequest{
 		Model:    modelo,
 		Messages: msgs,
 		Tools:    herramientas,
 		NumCtx:   numCtx,
 	}
+	// Se asigna el valor desnudo: un puntero nil dentro de `any` NO queda vacío al
+	// serializar (`omitempty` mira la interfaz, no lo apuntado) y mandaría
+	// `"think": null`.
+	if pensar != nil {
+		req.Think = *pensar
+	}
+	return req
 }
 
 // PromptDeSistema devuelve el mensaje de sistema del agente: su prompt. El
@@ -50,7 +63,7 @@ func PromptDeSistema(a Agente) string { return a.Prompt }
 // eventos. Lo implementa Runner (producción); existe como interfaz para poder
 // probar el bucle con un doble sin Ollama.
 type Generador interface {
-	Generar(ctx context.Context, a Agente, modelo string, mensajes []ollama.Mensaje, herramientas []ollama.Herramienta, numCtx int) (<-chan ollama.Evento, error)
+	Generar(ctx context.Context, a Agente, modelo string, mensajes []ollama.Mensaje, herramientas []ollama.Herramienta, numCtx int, pensar *bool) (<-chan ollama.Evento, error)
 }
 
 // Runner envía la petición de un agente al modelo. Es la frontera de `agent`
@@ -60,6 +73,6 @@ type Runner struct {
 }
 
 // Generar construye la petición del agente y la lanza en streaming.
-func (r Runner) Generar(ctx context.Context, a Agente, modelo string, mensajes []ollama.Mensaje, herramientas []ollama.Herramienta, numCtx int) (<-chan ollama.Evento, error) {
-	return r.Cliente.Chat(ctx, ConstruirPeticion(a, modelo, mensajes, herramientas, numCtx))
+func (r Runner) Generar(ctx context.Context, a Agente, modelo string, mensajes []ollama.Mensaje, herramientas []ollama.Herramienta, numCtx int, pensar *bool) (<-chan ollama.Evento, error) {
+	return r.Cliente.Chat(ctx, ConstruirPeticion(a, modelo, mensajes, herramientas, numCtx, pensar))
 }

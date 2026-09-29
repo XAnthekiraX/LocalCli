@@ -55,6 +55,20 @@ func TestPuedeVerDetectaLaCapacidadDeVision(t *testing.T) {
 	}
 }
 
+// PuedePensar reconoce la capacidad «thinking»: solo a estos modelos se les
+// puede mandar `think` (SPEC-OLLAMA-PERFIL).
+func TestPuedePensarDetectaLaCapacidadDeRazonar(t *testing.T) {
+	if !PuedePensar([]string{"completion", "tools", "thinking"}) {
+		t.Error("thinking está entre las capacidades")
+	}
+	if PuedePensar([]string{"completion", "tools", "vision"}) {
+		t.Error("sin thinking el modelo no razona")
+	}
+	if PuedePensar(nil) {
+		t.Error("sin capacidades no se le manda `think`")
+	}
+}
+
 // Ficha que no trae `capabilities` (Ollama antiguo): la visión se deduce de las
 // familias, para no dejar sin reconocer a un modelo multimodal.
 func TestCapacidadesDeduceLaVisionDeLasFamilias(t *testing.T) {

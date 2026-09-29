@@ -69,6 +69,22 @@ type Ejecutor struct {
 	// pedir herramientas. nil —o una función que devuelve true— deja el turno
 	// como está; false degrada el agente a modo conversación.
 	PuedeHerramientas func(modelo string) bool
+	// Pensar decide qué se le manda al modelo sobre su razonamiento: nil deja
+	// que decida Ollama (no se manda `think`) y un puntero manda ese valor. Sin
+	// esta función no se manda nada. Es una función y no un campo para que el
+	// interruptor del usuario valga en el turno siguiente, no en el que se
+	// construyó el ejecutor.
+	Pensar func(modelo string) *bool
+}
+
+// pensarDelTurno resuelve, una vez por turno, qué se le manda al modelo sobre su
+// razonamiento. Sin función no se manda nada: el harness no decide por su cuenta
+// que un modelo piense.
+func (e *Ejecutor) pensarDelTurno(modelo string) *bool {
+	if e.Pensar == nil {
+		return nil
+	}
+	return e.Pensar(modelo)
 }
 
 // Ejecutar responde una petición: arma los mensajes con el historial de la
@@ -105,9 +121,13 @@ func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto stri
 	mensajes = append(mensajes, historial...)
 	mensajes = append(mensajes, ollama.Mensaje{Role: "user", Content: contexto, Images: imagenes})
 
+	// El razonamiento se decide una vez por turno: todas las pasadas llevan lo
+	// mismo, y el interruptor no cambia a mitad de una respuesta.
+	pensar := e.pensarDelTurno(modelo)
+
 	var tokensIn, tokensOut uint64
 	for pasada := 0; pasada < max; pasada++ {
-		texto, razon, pedidos, err := e.unaPasada(ctx, a, modelo, mensajes, herramientas, numCtx, sink, &tokensIn, &tokensOut)
+		texto, razon, pedidos, err := e.unaPasada(ctx, a, modelo, mensajes, herramientas, numCtx, pensar, sink, &tokensIn, &tokensOut)
 		if err != nil {
 			if sink != nil {
 				sink.Token("[sin respuesta del modelo]", false)
@@ -160,7 +180,7 @@ func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto stri
 	// resultado. Es lo que cierra una etapa con texto real y lo que garantiza
 	// que la entrega final de un flujo no dependa de que el modelo deje de pedir
 	// herramientas por sí solo.
-	texto, razon, _, err := e.unaPasada(ctx, a, modelo, mensajes, nil, numCtx, sink, &tokensIn, &tokensOut)
+	texto, razon, _, err := e.unaPasada(ctx, a, modelo, mensajes, nil, numCtx, pensar, sink, &tokensIn, &tokensOut)
 	if err != nil {
 		if sink != nil {
 			sink.Token("[sin respuesta del modelo]", false)
@@ -180,12 +200,12 @@ func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto stri
 // su texto, su razonamiento y las peticiones de herramienta de la señal de fin.
 // Suma los tokens del turno en los contadores recibidos. Es el bloque que
 // comparten las rondas con herramientas y la síntesis final sin herramientas.
-func (e *Ejecutor) unaPasada(ctx context.Context, a Agente, modelo string, mensajes []ollama.Mensaje, herramientas []ollama.Herramienta, numCtx int, sink Sink, tokensIn, tokensOut *uint64) (string, string, []ollama.ToolCall, error) {
+func (e *Ejecutor) unaPasada(ctx context.Context, a Agente, modelo string, mensajes []ollama.Mensaje, herramientas []ollama.Herramienta, numCtx int, pensar *bool, sink Sink, tokensIn, tokensOut *uint64) (string, string, []ollama.ToolCall, error) {
 	var texto, razon strings.Builder
 	var pedidos []ollama.ToolCall
 
 	err := e.conTestigo(ctx, func(c context.Context) error {
-		ch, gErr := e.Runner.Generar(c, a, modelo, mensajes, herramientas, numCtx)
+		ch, gErr := e.Runner.Generar(c, a, modelo, mensajes, herramientas, numCtx, pensar)
 		if gErr != nil {
 			return gErr
 		}

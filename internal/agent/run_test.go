@@ -34,7 +34,7 @@ func TestPeticionLlevaElPromptYElCanalDeHerramientas(t *testing.T) {
 	})
 	a := Agente{Nombre: "lector", Prompt: "PROMPT-DEL-JSON"}
 	runner := Runner{Cliente: ollama.NewClient(srv.URL)}
-	ch, err := runner.Generar(context.Background(), a, "m", []ollama.Mensaje{{Role: "user", Content: "hola"}}, defs, 0)
+	ch, err := runner.Generar(context.Background(), a, "m", []ollama.Mensaje{{Role: "user", Content: "hola"}}, defs, 0, nil)
 	if err != nil {
 		t.Fatalf("Generar: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestPromptNoLlevaCatalogo(t *testing.T) {
 // slice del llamador.
 func TestConstruirPeticionNoMutaLosMensajes(t *testing.T) {
 	mensajes := []ollama.Mensaje{{Role: "user", Content: "hola"}}
-	_ = ConstruirPeticion(Agente{Nombre: "x", Prompt: "p"}, "m", mensajes, nil, 0)
+	_ = ConstruirPeticion(Agente{Nombre: "x", Prompt: "p"}, "m", mensajes, nil, 0, nil)
 	if len(mensajes) != 1 || mensajes[0].Content != "hola" {
 		t.Errorf("la petición mutó los mensajes de entrada: %+v", mensajes)
 	}
@@ -103,9 +103,46 @@ func TestConstruirPeticionNoMutaLosMensajes(t *testing.T) {
 // en la petición al modelo: sin ella, Ollama usa un valor pequeño y corta los
 // turnos con herramientas.
 func TestConstruirPeticionLlevaLaVentana(t *testing.T) {
-	req := ConstruirPeticion(Agente{Nombre: "x", Prompt: "p"}, "m", nil, nil, 16384)
+	req := ConstruirPeticion(Agente{Nombre: "x", Prompt: "p"}, "m", nil, nil, 16384, nil)
 	if req.NumCtx != 16384 {
 		t.Errorf("NumCtx = %d, quiero 16384", req.NumCtx)
+	}
+}
+
+// Sin decisión sobre el razonamiento, el campo `think` NO se manda: Ollama
+// decide, que es lo que quiere un modelo que no razona.
+func TestConstruirPeticionSinRazonamientoNoMandaThink(t *testing.T) {
+	req := ConstruirPeticion(Agente{Nombre: "x", Prompt: "p"}, "m", nil, nil, 0, nil)
+	bruto, err := json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(bruto), "think") {
+		t.Errorf("sin decisión no viaja `think`: %s", bruto)
+	}
+}
+
+// Con decisión, el valor viaja tal cual: es lo que apaga el razonamiento de un
+// modelo local, que Ollama deja encendido por defecto.
+func TestConstruirPeticionMandaElRazonamientoDecidido(t *testing.T) {
+	no, si := false, true
+	casos := []struct {
+		nombre string
+		pensar *bool
+		quiere string
+	}{
+		{"apagado", &no, `"think":false`},
+		{"encendido", &si, `"think":true`},
+	}
+	for _, tc := range casos {
+		req := ConstruirPeticion(Agente{Nombre: "x", Prompt: "p"}, "m", nil, nil, 0, tc.pensar)
+		bruto, err := json.Marshal(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(bruto), tc.quiere) {
+			t.Errorf("%s: %s debe llevar %s", tc.nombre, bruto, tc.quiere)
+		}
 	}
 }
 

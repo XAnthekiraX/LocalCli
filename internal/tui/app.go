@@ -100,6 +100,14 @@ type App struct {
 	// aviso al enviar una imagen con un modelo que no la declara.
 	ModeloVision      bool
 	CapVisionConocida bool
+	// Pensar es el interruptor de razonamiento del pie: apagado por defecto, se
+	// cambia con un clic y vale para los turnos siguientes. ModeloPensar y
+	// CapPensarConocida dicen si el modelo en uso razona: sin eso la chapa no se
+	// enseña, porque a un modelo que no razona no se le puede mandar `think`
+	// (SPEC-OLLAMA-PERFIL).
+	Pensar            bool
+	ModeloPensar      bool
+	CapPensarConocida bool
 
 	// PidiendoCancelarEsc es la confirmación de doble `esc` cuando la sesión
 	// está trabajando: el primer esc pregunta, el segundo cancela.
@@ -227,7 +235,11 @@ func Nuevo(p Puerto) *App {
 		Agente:   ValidarAgente(p.AgenteRecordado(), agentes),
 		Agentes:  agentes,
 		Comandos: comandos,
-		ctx:      context.Background(),
+		// El interruptor de razonamiento arranca donde lo dejó el usuario: la
+		// vista es la dueña de la preferencia, pero el valor vigente lo tiene el
+		// motor, que es quien lo aplica a cada turno.
+		Pensar: p.PensarRecordado(),
+		ctx:    context.Background(),
 	}
 	a.Paleta.FijarComandos(comandos)
 	// La carpeta del proyecto y el estado de su repositorio son datos fijos del
@@ -262,7 +274,7 @@ func (a *App) cmdCapacidades() tea.Cmd {
 	nombre := a.Modelo
 	return func() tea.Msg {
 		caps, err := a.Puerto.CapacidadesModelo(nombre)
-		return capacidadesMsg{Nombre: nombre, Herramientas: caps.Herramientas, Vision: caps.Vision, Err: err}
+		return capacidadesMsg{Nombre: nombre, Herramientas: caps.Herramientas, Vision: caps.Vision, Pensar: caps.Pensar, Err: err}
 	}
 }
 
@@ -354,6 +366,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.ModeloHerramientas = m.Herramientas
 			a.CapVisionConocida = m.Err == nil
 			a.ModeloVision = m.Vision
+			a.CapPensarConocida = m.Err == nil
+			a.ModeloPensar = m.Pensar
 		}
 		return a, nil
 	case aprobacionesMsg:
@@ -958,6 +972,7 @@ func (a *App) guardarPreferencias() {
 	previas, _ := CargarPreferencias()
 	previas.Modelo = a.Modelo
 	previas.Agente = a.Agente
+	previas.Pensar = a.Pensar
 	_ = GuardarPreferencias(previas)
 }
 
@@ -1402,9 +1417,10 @@ func (a *App) lineaPieEntrada() string {
 	return strings.Join(partes, " · ")
 }
 
-// capacidadesPie compone las chapas de capacidad del modelo: `tool [*]` en verde
-// si usa herramientas y en rojo si no (atenuada mientras no se sabe), `[v]` si
-// acepta visión y `[T]` siempre (texto).
+// capacidadesPie compone las chapas del pie: `tool [*]` en verde si usa
+// herramientas y en rojo si no (atenuada mientras no se sabe), el interruptor de
+// razonamiento si el modelo lo declara, `[v]` si acepta visión y `[T]` siempre
+// (texto).
 func (a *App) capacidadesPie() string {
 	var herramienta string
 	switch {
@@ -1415,12 +1431,43 @@ func (a *App) capacidadesPie() string {
 	default:
 		herramienta = estiloBlanco.Render("tool ") + estiloIncapaz.Render("[*]")
 	}
+	piezas := []string{herramienta}
+	if chapa := a.chapaRazonamiento(); chapa != "" {
+		piezas = append(piezas, chapa)
+	}
 	entradas := make([]string, 0, 2)
 	if a.CapVisionConocida && a.ModeloVision {
 		entradas = append(entradas, estiloCapaz.Render("[v]"))
 	}
 	entradas = append(entradas, estiloCapaz.Render("[T]"))
-	return herramienta + "  " + strings.Join(entradas, " ")
+	piezas = append(piezas, strings.Join(entradas, " "))
+	return strings.Join(piezas, "  ")
+}
+
+// chapaRazonamiento compone el interruptor de razonamiento: `pensar [x]`
+// encendido y `pensar [ ]` apagado. Solo se enseña si el modelo declara que
+// razona —a los demás no se les puede mandar `think`— y está apagado por
+// defecto: en un modelo local, razonar cuesta minutos hasta para lo trivial
+// (SPEC-OLLAMA-PERFIL). Se pulsa con el ratón (selection.go, `toggleEnCelda`).
+func (a *App) chapaRazonamiento() string {
+	if !a.CapPensarConocida || !a.ModeloPensar {
+		return ""
+	}
+	if a.Pensar {
+		return estiloBlanco.Render("pensar ") + estiloCapaz.Render("[x]")
+	}
+	return estiloSutil.Render("pensar [ ]")
+}
+
+// alternarRazonamiento cambia el interruptor del pie. Vale para los turnos
+// siguientes —el que esté corriendo ya salió con lo que decidió— y se recuerda
+// entre ejecuciones, como el modelo y el agente.
+func (a *App) alternarRazonamiento() {
+	a.Pensar = !a.Pensar
+	if a.Puerto != nil {
+		a.Puerto.Pensar(a.Pensar)
+	}
+	a.guardarPreferencias()
 }
 
 // viewPrincipal pinta chat, razonamiento, respuesta en curso, aprobaciones y
