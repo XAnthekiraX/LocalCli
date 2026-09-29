@@ -71,7 +71,7 @@ Lo que cada módulo expone a los que dependen de él. El detalle de payloads est
 | `session` | Crear, cambiar, retomar, cerrar sesión; mandar mensaje (con las imágenes del turno); decidir si es chat o comando de flujo; aprobar o declinar | `tui` |
 | `flow` | Lanzar un flujo oficial pedido por el usuario; detectar trabajo ordenado y proponer el TODO; pausar, cancelar, reanudar | `session`, `queue` |
 | `context` | Pedir contexto para una etapa y un objetivo; devolver documentos seleccionados y auditados (la etapa viaja con la petición para que `context_audit` distinga una de otra) | `flow` |
-| `agent` | Cargar y validar los agentes de `ai/agents/*.json` (los base y los propios); construir la llamada de uno; llevar el bucle de pedir al modelo, ejecutar herramientas y volver a pedir; montar los esquemas de las herramientas del agente | `flow`, `arranque` |
+| `agent` | Cargar y validar los agentes de `.localcli/agents/*.json` (los base y los propios); construir la llamada de uno; llevar el bucle de pedir al modelo, ejecutar herramientas y volver a pedir; montar los esquemas de las herramientas del agente | `flow`, `arranque` |
 | `ollama` | Enviar una petición en streaming con el canal de herramientas (las imágenes del chat viajan en base64, solo aquí se conoce ese formato); devolver tokens, razonamiento y peticiones de herramienta; serializar y limitar la inferencia | `agent`, `context` |
 | `tools` | Registrar el catálogo; exponer el esquema de las herramientas de un agente; **envolver toda ejecución** con permiso, validación, recorte y eventos; cargar las herramientas del usuario | `agent` |
 | `fileops` | Aplicar una operación de archivo o carpeta; registrar el cambio. **Inyectado** como handler, no importado | `arranque` |

@@ -59,7 +59,7 @@ Cada componente tiene una responsabilidad y un límite. Ninguno contiene reglas 
 ## 3. Reglas de la bienvenida
 
 - Es la primera vista al ejecutar `localcli`. Hay logotipo, nombre con versión, una línea que muestra el modelo en uso y una línea de entrada con el indicador del agente a su izquierda (`[plan] > …`); el bloque completo va centrado en la terminal. Sin paneles ni aprobaciones y sin lista de modelos visible.
-- `Tab` recorre los agentes disponibles (los base `plan` y `build` y los propios de `ai/agents/*.json`) también en la bienvenida; el indicador junto al input se actualiza al instante.
+- `Tab` recorre los agentes disponibles (los base `plan` y `build` y los propios de `.localcli/agents/*.json`) también en la bienvenida; el indicador junto al input se actualiza al instante.
 - La línea de entrada se edita en cualquier punto, como la de la vista principal: flechas, `home`/`end` y `ctrl+b`/`ctrl+e` mueven el cursor.
 - La línea de entrada despliega también la paleta de comandos al escribir `/`; ejecutar un comando crea la sesión y lleva a la vista principal, igual que una primera petición.
 - `Ctrl+X m` abre un modal con los modelos locales que reporta Ollama (se piden al abrir, no en el arranque); `↑`/`↓` cambian el resaltado, `Enter` aplica y cierra, `Esc` cierra sin cambios. Lo aplicado viaja con la primera petición y se ve en la línea de modelo. Si Ollama no responde, el modal muestra «sin modelos». La bienvenida nunca espera a nada externo y sin modal abierto no hay navegación de modelos: las flechas escriben/historial según su componente.

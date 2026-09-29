@@ -43,7 +43,7 @@ type Permiso struct {
 // cerrada del contrato; sirve para documentar y para los tests.
 var CamposDelAgente = []string{"nombre", "descripcion", "prompt", "permisos", "skills"}
 
-// Agente es una definición cargada desde `ai/agents/*.json`. El prompt es su
+// Agente es una definición cargada desde `.localcli/agents/*.json`. El prompt es su
 // identidad; `Permisos` es su política y `Herramientas` el catálogo efectivo
 // que de él se deriva en la carga.
 type Agente struct {

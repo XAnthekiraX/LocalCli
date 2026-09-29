@@ -48,7 +48,7 @@ func TestEstadoTrasDecisionRechazaInvalida(t *testing.T) {
 
 // TestFlujoValidar — un flujo sin etapas o con una etapa sin agente no es
 // encadenable; un agente propio (no plan/build) sí vale: el reparto lo carga el
-// arranque de `ai/agents/*.json`.
+// arranque de `.localcli/agents/*.json`.
 func TestFlujoValidar(t *testing.T) {
 	if err := (Flujo{Nombre: "x"}).Validar(); err == nil {
 		t.Error("un flujo sin etapas no es válido")

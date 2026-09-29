@@ -1,8 +1,8 @@
 .agents
 .commandcode
 .frebuff
-.localcli
 .serena
 .commandcode/taste
+.localcli/state.db
 .localcli/state.db-shm
 .localcli/state.db-wal

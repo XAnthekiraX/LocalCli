@@ -104,7 +104,7 @@ type Adaptador struct {
 	agenteRecordado string
 	// agentes son los nombres de los agentes disponibles, en orden estable
 	// (`plan`, `build` y el resto alfabético). Los carga `agenteBase` de
-	// `ai/agents/*.json`; la vista cicla por esta lista.
+	// `.localcli/agents/*.json`; la vista cicla por esta lista.
 	agentes []string
 
 	mu         sync.Mutex
@@ -498,7 +498,7 @@ func (ad *Adaptador) AgenteRecordado() string { return ad.agenteRecordado }
 
 // Agentes devuelve los nombres de los agentes disponibles, en orden estable
 // (`plan`, `build` y el resto alfabético). Los carga el arranque de
-// `ai/agents/*.json`; la vista cicla por esta lista y el motor rechaza cualquier
+// `.localcli/agents/*.json`; la vista cicla por esta lista y el motor rechaza cualquier
 // nombre que no esté en ella.
 func (ad *Adaptador) Agentes() []string { return ad.agentes }
 
@@ -1040,7 +1040,7 @@ func (n *nodoPorTurno) ContextoPara(ctx context.Context, etapa, objetivo string)
 }
 
 // ejecutorPorTurno implementa flow.Agente: corre la etapa con el agente base
-// (`plan` o `build`) cargado de ai/agents. Serializa la inferencia en la FIFO,
+// (`plan` o `build`) cargado de .localcli/agents. Serializa la inferencia en la FIFO,
 // delega el ciclo conversacional (LLM → herramienta → resultado → LLM) en
 // `agent.Ejecutor` —el bucle único que comparten los dos agentes—, traduce los
 // tokens a eventos de la TUI (EVENTS.md §1, DECISIONS.md [25]) y guarda el
@@ -1271,7 +1271,7 @@ func agenteBase(raiz string) map[string]agent.Agente {
 
 // agenteDeRespaldo es el agente mínimo que se usa cuando falta o no carga su
 // JSON: prompt de identidad y sin permisos (solo conversación). No inventa
-// herramientas; si el usuario quiere que las tenga, escribe su `ai/agents`.
+// herramientas; si el usuario quiere que las tenga, escribe su `.localcli/agents`.
 func agenteDeRespaldo(nombre string) agent.Agente {
 	return agent.Agente{
 		Nombre: nombre,

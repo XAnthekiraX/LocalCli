@@ -26,8 +26,9 @@ localcli/                       → proyecto Go (binario único)
 │   ├── docs/                   → documentación (PROJECT.md, specs/, frontend/, backend/, database/)
 │   └── tasks/                  → tareas de implementación (backend/: MAIN-TASKS.md + NNN-task-*.md)
 ├── .agents/                    → comandos, skills y agents del harness
-├── .localcli/                  → estado de ejecución (state.db), no versionado
+├── .localcli/                  → agents/ (agentes base y propios, versionado)
 │                                 + tools/ (herramientas del usuario, versionado)
+│                                 + state.db* (estado de ejecución, no versionado)
 ├── go.mod / go.sum
 └── AGENTS.md                   → este archivo
 ```

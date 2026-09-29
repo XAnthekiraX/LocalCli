@@ -368,7 +368,7 @@ func (m *Motor) bloqueParaComposicion(ctx context.Context, f Flujo, acumulado []
 // de ESTE turno; solo el chat las lleva —las etapas van sin imágenes—.
 func (m *Motor) Conversar(ctx context.Context, agente, objetivo string, historial []Mensaje, imagenes []string) (Resultado, error) {
 	// El motor no decide qué agentes existen: los carga el arranque de
-	// `ai/agents/*.json`. Solo exige que la petición nombre uno; el ejecutor
+	// `.localcli/agents/*.json`. Solo exige que la petición nombre uno; el ejecutor
 	// rechaza un nombre desconocido al correr el turno.
 	if strings.TrimSpace(agente) == "" {
 		return Resultado{}, fmt.Errorf("flow: el chat necesita un agente")

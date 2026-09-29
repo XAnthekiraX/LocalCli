@@ -81,7 +81,7 @@ type Flujo struct {
 
 // Validar comprueba que el flujo es encadenable: nombre, al menos una etapa y
 // cada etapa con identificador y un agente con nombre. Qué agentes existen lo
-// sabe el arranque (los carga de `ai/agents/*.json`); aquí solo se exige que la
+// sabe el arranque (los carga de `.localcli/agents/*.json`); aquí solo se exige que la
 // etapa declare uno, y el ejecutor rechaza un nombre desconocido al correrla.
 func (f Flujo) Validar() error {
 	if f.Nombre == "" {

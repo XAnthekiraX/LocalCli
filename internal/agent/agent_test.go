@@ -117,9 +117,9 @@ func TestAgenteSinHerramientasEsSoloConversacion(t *testing.T) {
 }
 
 // TestAgentesBaseDocumentados — T-B006-04: los dos agentes base cargan desde
-// `ai/agents/` y `plan` no contiene ninguna herramienta de escritura.
+// `.localcli/agents/` y `plan` no contiene ninguna herramienta de escritura.
 func TestAgentesBaseDocumentados(t *testing.T) {
-	dir := filepath.Join("..", "..", "ai", "agents")
+	dir := filepath.Join("..", "..", ".localcli", "agents")
 	agentes, err := CargarCarpeta(dir)
 	if err != nil {
 		t.Fatalf("CargarCarpeta: %v", err)

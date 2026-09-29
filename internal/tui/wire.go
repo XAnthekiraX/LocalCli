@@ -54,7 +54,7 @@ const (
 )
 
 // Agentes base que conoce la vista de fábrica. El puerto ofrece la lista real
-// de agentes disponibles (`Agentes`, cargada de `ai/agents/*.json`); si no
+// de agentes disponibles (`Agentes`, cargada de `.localcli/agents/*.json`); si no
 // ofrece ninguna, la vista cae en estos dos. La vista no puede importar `tools`
 // (tests/arquitectura_test.go §TestLimitesDeImporteEntreModulos), así que los
 // recibe como texto.
@@ -135,7 +135,7 @@ type Puerto interface {
 	AgenteRecordado() string
 	// Agentes devuelve los nombres de los agentes disponibles, en orden estable
 	// (los base primero y el resto alfabético). Los carga el arranque de
-	// `ai/agents/*.json`: el usuario añade un agente dejando su JSON ahí, sin
+	// `.localcli/agents/*.json`: el usuario añade un agente dejando su JSON ahí, sin
 	// tocar el código. La vista cicla por esta lista con `Tab`.
 	Agentes() []string
 	// Comandos devuelve los comandos de flujo disponibles en el proyecto: los

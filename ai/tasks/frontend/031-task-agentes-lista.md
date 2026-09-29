@@ -5,7 +5,7 @@
 
 - [[specs/SPEC-INTERFAZ]] — §Zonas 2: el indicador muestra el agente activo y `Tab` recorre los disponibles.
 - [[specs/SPEC-KEYBINDS]] — §Acción `agent_cycle`.
-- [[specs/SPEC-AGENTE-BASE]] — los agentes se cargan de `ai/agents/*.json`.
+- [[specs/SPEC-AGENTE-BASE]] — los agentes se cargan de `.localcli/agents/*.json`.
 - [[frontend/01-domain/DOMAIN]] — §3: la vista cicla el agente y actualiza el indicador.
 
 ## Tareas pequeñas

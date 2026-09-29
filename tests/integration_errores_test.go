@@ -178,7 +178,7 @@ func TestUnAgenteBaseTieneSuCatalogo(t *testing.T) {
 	}
 	// Y los agentes JSON documentados cargan con ese reparto. La ruta es
 	// relativa a este paquete (tests/): el proyecto vive un nivel arriba.
-	agentes, err := agent.CargarCarpeta(filepath.Join("..", "ai", "agents"))
+	agentes, err := agent.CargarCarpeta(filepath.Join("..", ".localcli", "agents"))
 	if err != nil {
 		t.Fatalf("CargarCarpeta: %v", err)
 	}

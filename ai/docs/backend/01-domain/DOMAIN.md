@@ -50,7 +50,7 @@ Dos planos. Ver [[database/02-rules/DATA_FLOW]].
 |---|---|---|
 | Documento del proyecto | `ai/docs/**/*.md` | Frontmatter con `depende_de` (lo que hay que leer) y `relacionado` (lo que toca). Convención en [[PROJECT]] |
 | TODO de la ejecución | `ai/tasks/**/MAIN-TASKS.md` | Elementos en orden: fases, tareas o pasos. Es la cola |
-| Agente base y derivados | `ai/agents/*.json` | Estructura fija, aún por confirmar |
+| Agente base y derivados | `.localcli/agents/*.json` | Estructura fija, aún por confirmar |
 | Skill | `ai/skills/**/*.md` | Instrucciones en markdown con frontmatter |
 
 **El TODO no viene dado: se propone.** Cuando una petición tuya implica una lista ordenada de trabajo, el sistema la detecta y **propone** el TODO; no lo ejecuta hasta que tú lo confirmas o escribes `/ejecutar`. Por eso la cola no es global: cada petición ordenada tiene el suyo. Ver [[backend/01-domain/BUSINESS_RULES]].

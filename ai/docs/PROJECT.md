@@ -72,7 +72,7 @@ cmd/localcli/      punto de entrada
 internal/
   tui/             chat, panel de datos, selector de sesiones, aprobaciones
   session/         creación, cambio, memoria de conversación y ejecución en segundo plano de sesiones
-  agent/           carga de agentes (ai/agents/*.json: nombres, prompts, permisos y relevo)
+  agent/           carga de agentes (.localcli/agents/*.json: nombres, prompts, permisos y relevo)
   ollama/          cliente HTTP, streaming, razonamiento, canal de herramientas, perfil y capacidades del modelo
   context/         grafo de frontmatter, selección, recorte y auditoría
   flow/            motor de etapas y encadenamiento

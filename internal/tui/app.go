@@ -83,7 +83,7 @@ type App struct {
 	// llega a cambiarlo.
 	Agente string
 	// Agentes es la lista de agentes disponibles, en orden, que ofrece el motor
-	// (cargados de `ai/agents/*.json`). `Tab` recorre esta lista; con una lista
+	// (cargados de `.localcli/agents/*.json`). `Tab` recorre esta lista; con una lista
 	// vacía la vista cae en los base (`plan`, `build`).
 	Agentes []string
 	// Aviso es la línea transitoria de la vista (por ahora, el modelo elegido
@@ -198,7 +198,7 @@ func Nuevo(p Puerto) *App {
 		comandos = comandosDeFlujo()
 	}
 	// La lista de agentes sale del puerto (los base + los propios de
-	// `ai/agents/*.json`); sin lista, quedan los base. El agente activo arranca
+	// `.localcli/agents/*.json`); sin lista, quedan los base. El agente activo arranca
 	// en el último recordado si sigue disponible, o en el primero.
 	agentes := p.Agentes()
 	if len(agentes) == 0 {
@@ -923,7 +923,7 @@ func (a *App) ejecutarComando(c ComandoFlujo, escrito string) tea.Cmd {
 // a lo único que lo pinta y a lo único que lo consume: el indicador de las dos
 // vistas y la fila del panel. No toca el motor: qué hace cada agente lo decide
 // él (DOMAIN §2, el input no valida reglas de negocio). La lista la ofrece el
-// puerto (los agentes de `ai/agents/*.json`).
+// puerto (los agentes de `.localcli/agents/*.json`).
 func (a *App) ciclarAgente() {
 	a.Agente = siguienteAgente(a.Agentes, a.Agente)
 	a.Panel.Agente = a.Agente

@@ -64,11 +64,18 @@ Todo se deriva de la carpeta desde la que se ejecuta `localcli`:
 | Documentación | `ai/docs/` dentro del proyecto |
 | TODO de trabajo | `ai/tasks/` dentro del proyecto |
 | Herramientas del usuario | `.localcli/tools/*.json` dentro del proyecto |
+| Agentes del proyecto | `.localcli/agents/*.json` dentro del proyecto |
 | Archivos y carpetas | Todo lo que cuelgue de la carpeta del proyecto |
 
 El proyecto es la carpeta abierta. El chat de una carpeta nunca aparece en otra. Ver [[specs/SPEC-SESIONES]].
 
-El archivo SQLite va en `.localcli/state.db` dentro del proyecto, y `.localcli/` está fuera de git. La ruta se deriva de la carpeta abierta y no necesita variables; `LOCALCLI_DB_PATH` existe solo para los casos raros, como trabajar con la base en otro sitio. Ver [[backend/DECISIONS]].
+El archivo SQLite va en `.localcli/state.db` dentro del proyecto, y ese archivo está fuera de git. La ruta se deriva de la carpeta abierta y no necesita variables; `LOCALCLI_DB_PATH` existe solo para los casos raros, como trabajar con la base en otro sitio. Ver [[backend/DECISIONS]].
+
+De `.localcli/` solo se ignora el estado: `state.db` y sus archivos `-shm` y `-wal` son de la máquina. `tools/` y `agents/` son contenido del proyecto y se versionan con él, que es lo que permite que cada clon traiga los mismos agentes base.
+
+### Agentes del proyecto
+
+Cada archivo `.json` de `.localcli/agents/` declara un agente; los dos base, `plan` y `build`, se versionan con el proyecto. No hay nada que activar: si el archivo está, el agente existe y `Tab` lo recorre. Un archivo mal formado se avisa y se salta, y `plan` y `build` quedan disponibles con un prompt de respaldo aunque falten, porque los flujos oficiales los referencian. Ver [[specs/SPEC-AGENTE-BASE]] y [[backend/02-interfaces/INTERFACES-GENERAL]].
 
 ### Herramientas del usuario
 

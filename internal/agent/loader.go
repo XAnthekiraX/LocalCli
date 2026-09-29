@@ -1,10 +1,10 @@
 package agent
 
-// loader.go — T-B006-02: cargar los JSON de `ai/agents/*.json` validando
+// loader.go — T-B006-02: cargar los JSON de `.localcli/agents/*.json` validando
 // estructura y tipos.
 //
 // Fuente de verdad: ai/docs/specs/SPEC-AGENTE-BASE.md §Dónde se definen (cada
-// agente es un `ai/agents/*.json`) y ai/docs/backend/01-domain/DOMAIN.md ("El
+// agente es un `.localcli/agents/*.json`) y ai/docs/backend/01-domain/DOMAIN.md ("El
 // agente base existe, pero no está hardcodeado. No está en Go: vive en un
 // JSON"). Los agentes son datos: este módulo solo los lee.
 //

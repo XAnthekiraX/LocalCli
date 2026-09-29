@@ -54,11 +54,11 @@ func TestElegirModeloIgnoraUnPreferidoDesinstalado(t *testing.T) {
 }
 
 // agenteBase carga los agentes base y cualquier agente propio de
-// `ai/agents/*.json`; un archivo roto se ignora sin tumbar el arranque, y los
+// `.localcli/agents/*.json`; un archivo roto se ignora sin tumbar el arranque, y los
 // base siguen disponibles aunque falte su JSON.
 func TestAgenteBaseCargaAgentesPropios(t *testing.T) {
 	raiz := t.TempDir()
-	dir := filepath.Join(raiz, "ai", "agents")
+	dir := filepath.Join(raiz, ".localcli", "agents")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestAgenteBaseCargaAgentesPropios(t *testing.T) {
 		t.Error("plan debe estar")
 	}
 	if _, ok := agentes["revisor"]; !ok {
-		t.Error("el agente propio de ai/agents se carga")
+		t.Error("el agente propio de .localcli/agents se carga")
 	}
 	if _, ok := agentes["roto"]; ok {
 		t.Error("un JSON de agente roto se ignora")
