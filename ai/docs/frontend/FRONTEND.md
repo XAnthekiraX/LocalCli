@@ -2,19 +2,20 @@
 title: LocalCli — capa de interfaz
 tags: [frontend, indice]
 depende_de:
-  - "[[PROJECT]]"
-  - "[[backend/BACKEND]]"
-  - "[[specs/SPEC-INTERFAZ]]"
+    - "[[PROJECT]]"
+    - "[[backend/BACKEND]]"
+    - "[[specs/SPEC-INTERFAZ]]"
 relacionado:
-  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
-  - "[[database/DATABASE]]"
-  - "[[backend/01-domain/DOMAIN]]"
-  - "[[backend/04-infrastructure/EVENTS]]"
-  - "[[database/03-operations/QUERIES]]"
-  - "[[frontend/01-domain/DOMAIN]]"
-  - "[[frontend/02-interfaces/INTERFACES]]"
-  - "[[frontend/05-quality/TESTING]]"
+    - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+    - "[[database/DATABASE]]"
+    - "[[backend/01-domain/DOMAIN]]"
+    - "[[backend/04-infrastructure/EVENTS]]"
+    - "[[database/03-operations/QUERIES]]"
+    - "[[frontend/01-domain/DOMAIN]]"
+    - "[[frontend/02-interfaces/INTERFACES]]"
+    - "[[frontend/05-quality/TESTING]]"
 ---
+
 # FRONTEND — LocalCli
 
 La capa de interfaz: una TUI en terminal construida con Bubble Tea y Lip Gloss. Es el único consumidor del motor y su único trabajo es pintar lo que llega y enviar lo que pulsas. No ejecuta nada por su cuenta: no habla con Ollama, no escribe en SQLite y no toca archivos.
@@ -32,9 +33,9 @@ Este documento es el mapa de navegación del frontend. El motor está en [[backe
 ```
 internal/tui/
   app.go        modelo raíz, enrutado de eventos y suscripciones
-  welcome.go    pantalla de bienvenida: logotipo ASCII, línea de modelo y primera petición
+  welcome.go    pantalla de bienvenida estilo opencode: logotipo sobre el fondo, caja de entrada con línea de estado y pistas de teclado
   chat.go       historial de la sesión activa: respuesta, líneas compactas de herramienta y razonamiento revelable
-  input.go      caja de entrada con borde: línea de texto y pie con el agente y el modelo
+  input.go      caja de entrada con fondo: línea de texto y pie con el agente y el modelo
   comandos.go   paleta de comandos de flujo: catálogo del motor, filtro y render sobre el input
   panel.go      sidebar de datos plegable: título, contexto, TODO, tareas, estado y pie
                (git, ruta y firma del harness)
@@ -51,6 +52,7 @@ internal/tui/
   adjuntos.go   tokens de archivo, carpeta o texto pegados o arrastrados ([nombre.ext], [CARPETA N elementos], [PEGADO N líneas]) y su expansión al valor real
   selection.go  selección con el ratón y copia al portapapeles
   styles.go     estilos Lip Gloss y render de bloques
+  marco.go      capa común de render: normaliza el marco a Ancho×Alto celdas con fondo (superficie rectangular continua)
   wire.go       Puerto: la frontera de la tui con el motor (eventos y peticiones)
   doc.go        documentación del paquete
   testdata/     salidas doradas: logo.txt (logotipo canónico de la bienvenida) y *.golden
@@ -65,14 +67,14 @@ internal/tui/
 
 ## 4. Decisiones
 
-| Decisión | Por qué | Alternativa descartada |
-|---|---|---|
-| Presentación pura, sin lógica de negocio | Todo lo que la TUI decidiera habría que auditarlo dos veces: en el módulo y en la pantalla | Repartir decisiones entre pantalla y motor |
-| Estado de vista en memoria, nada persistido por la TUI | Lo que vale está en SQLite o en archivos; lo que muere con el proceso es solo vista (scroll, plegado, foco) | Persistir el estado de vista, que añadiría una cuarta fuente de verdad |
-| Mapa de teclas en `~/.config/localcli/keys.json` | El atajo es del usuario, no del proyecto; ubicación XDG estándar, editable a mano o desde la ayuda | Guardarlo dentro del proyecto, que mezclaría preferencia personal con contenido versionado |
-| Preferencias en `~/.config/localcli/config.json` | El último modelo y el último agente son preferencia del usuario, no estado del proyecto | Persistirlos en SQLite, que los ataría a un solo proyecto |
-| Ratón capturado en la TUI | Permite seleccionar y copiar texto con el ratón y desplazar con la rueda | No capturarlo, que deja a la app sin poder copiar al instante |
-| Paleta de comandos alimentada por el catálogo del motor | Un solo origen de verdad: los flujos oficiales y los propios de `ai/flows/*.json` se descubren sin mantener una segunda lista en la vista | Cablear los comandos en la TUI, que se desincronizaría de los flujos reales |
+| Decisión                                                | Por qué                                                                                                                                          | Alternativa descartada                                                                     |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| Presentación pura, sin lógica de negocio                | Todo lo que la TUI decidiera habría que auditarlo dos veces: en el módulo y en la pantalla                                                       | Repartir decisiones entre pantalla y motor                                                 |
+| Estado de vista en memoria, nada persistido por la TUI  | Lo que vale está en SQLite o en archivos; lo que muere con el proceso es solo vista (scroll, plegado, foco)                                      | Persistir el estado de vista, que añadiría una cuarta fuente de verdad                     |
+| Mapa de teclas en `~/.config/localcli/keys.json`        | El atajo es del usuario, no del proyecto; ubicación XDG estándar, editable a mano o desde la ayuda                                               | Guardarlo dentro del proyecto, que mezclaría preferencia personal con contenido versionado |
+| Preferencias en `~/.config/localcli/config.json`        | El último modelo y el último agente son preferencia del usuario, no estado del proyecto                                                          | Persistirlos en SQLite, que los ataría a un solo proyecto                                  |
+| Ratón capturado en la TUI                               | Permite seleccionar y copiar texto con el ratón y desplazar con la rueda                                                                         | No capturarlo, que deja a la app sin poder copiar al instante                              |
+| Paleta de comandos alimentada por el catálogo del motor | Un solo origen de verdad: los flujos oficiales y los propios de `.localcli/flows/*.json` se descubren sin mantener una segunda lista en la vista | Cablear los comandos en la TUI, que se desincronizaría de los flujos reales                |
 
 ## Mapa de Navegación
 

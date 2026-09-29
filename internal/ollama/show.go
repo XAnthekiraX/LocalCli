@@ -23,14 +23,35 @@ const CapacidadHerramientas = "tools"
 // se adjuntan igual, y es Ollama quien decide si el modelo las aprovecha.
 const CapacidadVision = "vision"
 
-// FichaModelo es la parte de la respuesta de /api/show que nos interesa.
+// FichaModelo es la parte de la respuesta de /api/show que nos interesa:
+// `capabilities` (Ollama moderno) y `details.families`, que es el respaldo
+// cuando el servidor no declara capacidades.
 type FichaModelo struct {
 	Capacidades []string `json:"capabilities"`
+	Detalles    struct {
+		Familia  string   `json:"family"`
+		Familias []string `json:"families"`
+	} `json:"details"`
+}
+
+// familiasConVision son las arquitecturas que Ollama reporta para modelos
+// multimodales. Se usan solo como respaldo: cuando la ficha trae `capabilities`,
+// esa es la fuente de verdad.
+var familiasConVision = map[string]bool{
+	"clip":      true,
+	"mllama":    true,
+	"llava":     true,
+	"qwen2vl":   true,
+	"moondream": true,
+	"minicpmv":  true,
+	"pixtral":   true,
 }
 
 // Capacidades consulta POST /api/show y devuelve las capacidades declaradas por
-// el modelo. Un fallo de conexión llega como *ErrorOllama; una ficha ilegible
-// también se reporta, porque de ella depende el aviso al usuario.
+// el modelo. Un fallo de conexión llega como *ErrorOllama. Si la ficha no trae
+// `capabilities` se deduce la visión de las familias del modelo; si tampoco hay
+// familias, se devuelve error: no saberlo NO es lo mismo que «no puede», y quien
+// avisa necesita distinguirlos.
 func (c *Client) Capacidades(ctx context.Context, nombre string) ([]string, error) {
 	payload := struct {
 		Model string `json:"model"`
@@ -49,7 +70,28 @@ func (c *Client) Capacidades(ctx context.Context, nombre string) ([]string, erro
 			sentinel: ErrOllamaNoDisponible,
 		}
 	}
-	return ficha.Capacidades, nil
+	if len(ficha.Capacidades) > 0 {
+		return ficha.Capacidades, nil
+	}
+	familias := ficha.Detalles.Familias
+	if len(familias) == 0 && ficha.Detalles.Familia != "" {
+		familias = []string{ficha.Detalles.Familia}
+	}
+	if len(familias) == 0 {
+		return nil, &ErrorOllama{
+			Codigo:   CodigoOllamaNoDisponible,
+			Mensaje:  "la ficha del modelo no declara capacidades",
+			sentinel: ErrOllamaNoDisponible,
+		}
+	}
+	caps := make([]string, 0, 1)
+	for _, f := range familias {
+		if familiasConVision[f] {
+			caps = append(caps, CapacidadVision)
+			break
+		}
+	}
+	return caps, nil
 }
 
 // PuedeUsarHerramientas dice si el modelo declara la capacidad "tools". Un

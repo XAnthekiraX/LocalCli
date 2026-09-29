@@ -2,19 +2,15 @@ package flow
 
 // catalogo.go — el conjunto de flujos disponibles, indexados por su comando.
 //
-// Fuente de verdad: [[specs/SPEC-MOTOR-FLUJOS]] ("los flujos oficiales vienen
-// con la herramienta y funcionan sin configuración") y
-// [[specs/SPEC-FLUJO-PERSONALIZADO]] ("un flujo propio se define con nombre,
-// etapas y orden; solo se ve dentro de su proyecto"). Los oficiales se arman
-// con los constructores de este paquete; los propios —y las personalizaciones
-// de los oficiales— se cargan de `ai/flows/*.json` (flujo.go) y se aplican
-// encima por `comando`: mismo comando sobreescribe, comando nuevo añade.
+// Fuente de verdad: [[specs/SPEC-MOTOR-FLUJOS]] ("un flujo no arranca solo: lo
+// solicita el usuario con un comando explícito") y
+// [[specs/SPEC-FLUJO-PERSONALIZADO]]. Los flujos del proyecto son **los que
+// declara `.localcli/flows/*.json`**: el catálogo los carga al arrancar y no
+// registra ninguno cableado. Un comando sin archivo no existe y no se lista.
 
 import (
 	"path/filepath"
 	"strings"
-
-	"localcli/internal/task"
 )
 
 // comandoEjecutar es el único comando que no corre etapas: consume la cola del
@@ -27,25 +23,19 @@ type Catalogo struct {
 	orden      []string // comandos en orden de registro
 }
 
-// CatalogoPorDefecto arma el catálogo con los flujos oficiales. Es el respaldo
-// cuando el proyecto no tiene `ai/flows/`: los flujos oficiales funcionan sin
-// configuración.
+// CatalogoPorDefecto devuelve un catálogo vacío. Los flujos son archivos, no
+// una lista cableada, así que no hay oficiales que registrar; se mantiene para
+// quien necesita un catálogo sin proyecto y como respaldo del arranque.
 func CatalogoPorDefecto() *Catalogo {
-	c := &Catalogo{porComando: map[string]Flujo{}}
-	c.registrar(FlujoPlanificacion())
-	c.registrar(FlujoTrabajo(task.AccionCrear))
-	c.registrar(FlujoTrabajo(task.AccionActualizar))
-	c.registrar(FlujoTrabajo(task.AccionEliminar))
-	c.registrar(FlujoResolver())
-	return c
+	return &Catalogo{porComando: map[string]Flujo{}}
 }
 
-// CargarFlujos carga los flujos del proyecto: parte de los oficiales y aplica
-// encima los `ai/flows/*.json`. Devuelve error si algún JSON está roto; quien
-// llame decide si cae al catálogo por defecto (el arranque lo hace y avisa).
+// CargarFlujos carga los flujos del proyecto desde `.localcli/flows/*.json` y
+// los indexa por comando. Devuelve error si algún JSON está roto; quien llame
+// decide si avisa y arranca con el catálogo vacío.
 func CargarFlujos(raiz string) (*Catalogo, error) {
 	c := CatalogoPorDefecto()
-	flujos, err := CargarFlujosCarpeta(filepath.Join(raiz, "ai", "flows"))
+	flujos, err := CargarFlujosCarpeta(filepath.Join(raiz, ".localcli", "flows"))
 	if err != nil {
 		return nil, err
 	}

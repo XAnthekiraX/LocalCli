@@ -11,7 +11,7 @@ package tui
 // Escribir `/` despliega la lista encima del input; las flechas la recorren, Tab
 // autocompleta el comando resaltado —dejando la línea lista para escribir la
 // petición detrás— y Enter lo ejecuta. El catálogo que se ofrece sale del puerto
-// (los flujos oficiales más los que declara `ai/flows/*.json`, [[specs/SPEC-FLUJO-PERSONALIZADO]]);
+// (los flujos oficiales más los que declara `.localcli/flows/*.json`, [[specs/SPEC-FLUJO-PERSONALIZADO]]);
 // sin lista, cae al respaldo oficial de este paquete.
 //
 // El respaldo se repite aquí a propósito: `tui` no puede importar `flow`

@@ -3,10 +3,9 @@ package flow
 // flujo.go — cargar la definición de un flujo desde un JSON.
 //
 // Fuente de verdad: [[specs/SPEC-FLUJO-PERSONALIZADO]] (definir flujos propios
-// con nombre, etapas y orden) y [[specs/SPEC-MOTOR-FLUJOS]]. Los flujos
-// oficiales vienen con la herramienta (los constructores de este paquete); un
-// proyecto puede declarar los suyos —o personalizar los oficiales— en
-// `ai/flows/*.json`.
+// con nombre, etapas y orden) y [[specs/SPEC-MOTOR-FLUJOS]]. Los flujos del
+// proyecto son los que declara `.localcli/flows/*.json`; los constructores de
+// este paquete quedan como valor por defecto interno, no como catálogo.
 //
 // La definición es DATO: aquí solo se lee y se valida. El contrato es cerrado
 // (json.Decoder con DisallowUnknownFields): un campo de más no se carga, para
@@ -25,29 +24,33 @@ import (
 
 // definicionFlujo es el contrato JSON de un flujo.
 type definicionFlujo struct {
-	Comando        string            `json:"comando"`
-	Nombre         string            `json:"nombre"`
-	Descripcion    string            `json:"descripcion"`
-	Peticion       string            `json:"peticion"`
-	BloqueContexto bool              `json:"bloque_contexto"`
-	Reglas         []string          `json:"reglas"`
-	Etapas         []definicionEtapa `json:"etapas"`
+	Comando     string            `json:"comando"`
+	Nombre      string            `json:"nombre"`
+	Descripcion string            `json:"descripcion"`
+	Peticion    string            `json:"peticion"`
+	Pregunta    string            `json:"pregunta"`
+	Reglas      []string          `json:"reglas"`
+	Etapas      []definicionEtapa `json:"etapas"`
 }
 
 // definicionEtapa es el contrato JSON de una etapa del flujo.
 type definicionEtapa struct {
-	ID          string `json:"id"`
-	Nombre      string `json:"nombre"`
-	Agente      string `json:"agente"`
-	Aprobacion  bool   `json:"aprobacion"`
-	Instruccion string `json:"instruccion"`
+	ID              string `json:"id"`
+	Nombre          string `json:"nombre"`
+	Agente          string `json:"agente"`
+	Pregunta        string `json:"pregunta"`
+	Instruccion     string `json:"instruccion"`
+	Continuacion    bool   `json:"continuacion"`
+	Entrega         bool   `json:"entrega"`
+	RespuestaEnChat bool   `json:"respuesta_en_chat"`
+	Aprobacion      bool   `json:"aprobacion"`
 }
 
 // CamposDelFlujo y CamposDeLaEtapa son los nombres de campo admitidos. Son la
 // lista cerrada del contrato; sirven para documentar y para los tests.
 var (
-	CamposDelFlujo  = []string{"comando", "nombre", "descripcion", "peticion", "bloque_contexto", "reglas", "etapas"}
-	CamposDeLaEtapa = []string{"id", "nombre", "agente", "aprobacion", "instruccion"}
+	CamposDelFlujo  = []string{"comando", "nombre", "descripcion", "peticion", "pregunta", "reglas", "etapas"}
+	CamposDeLaEtapa = []string{"id", "nombre", "agente", "pregunta", "instruccion", "continuacion", "entrega", "respuesta_en_chat", "aprobacion"}
 )
 
 // errFlujo construye un error localizado de carga de flujo. No usa un código
@@ -70,21 +73,25 @@ func DecodificarFlujo(datos []byte) (Flujo, error) {
 	}
 
 	f := Flujo{
-		Nombre:         strings.TrimSpace(d.Nombre),
-		Comando:        strings.TrimSpace(d.Comando),
-		Descripcion:    strings.TrimSpace(d.Descripcion),
-		Peticion:       strings.TrimSpace(d.Peticion),
-		BloqueContexto: d.BloqueContexto,
-		Reglas:         limpiarLista(d.Reglas),
-		Etapas:         make([]Etapa, 0, len(d.Etapas)),
+		Nombre:      strings.TrimSpace(d.Nombre),
+		Comando:     strings.TrimSpace(d.Comando),
+		Descripcion: strings.TrimSpace(d.Descripcion),
+		Peticion:    strings.TrimSpace(d.Peticion),
+		Pregunta:    strings.TrimSpace(d.Pregunta),
+		Reglas:      limpiarLista(d.Reglas),
+		Etapas:      make([]Etapa, 0, len(d.Etapas)),
 	}
 	for _, e := range d.Etapas {
 		f.Etapas = append(f.Etapas, Etapa{
-			ID:          strings.TrimSpace(e.ID),
-			Nombre:      strings.TrimSpace(e.Nombre),
-			Agente:      strings.TrimSpace(e.Agente),
-			Aprobacion:  e.Aprobacion,
-			Instruccion: strings.TrimSpace(e.Instruccion),
+			ID:              strings.TrimSpace(e.ID),
+			Nombre:          strings.TrimSpace(e.Nombre),
+			Agente:          strings.TrimSpace(e.Agente),
+			Pregunta:        strings.TrimSpace(e.Pregunta),
+			Instruccion:     strings.TrimSpace(e.Instruccion),
+			Continuacion:    e.Continuacion,
+			Aprobacion:      e.Aprobacion,
+			Entrega:         e.Entrega,
+			RespuestaEnChat: e.RespuestaEnChat,
 		})
 	}
 	if f.Comando == "" {

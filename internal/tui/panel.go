@@ -57,9 +57,9 @@ type Panel struct {
 	Tareas []TareaPanel
 
 	// Ruta y git
-	Ruta      string
-	GitRama   string
-	GitLimpio bool
+	Ruta       string
+	GitRama    string
+	GitCambios int
 
 	// Aprobaciones y agente
 	Aprobaciones int
@@ -74,7 +74,7 @@ type Panel struct {
 // proyecto: son los dos datos que no dependen de ninguna sesión. Se pliega con
 // `Ctrl+D` (SPEC-INTERFAZ §Disposición).
 func NuevoPanel() Panel {
-	return Panel{Abierto: true, Proyecto: Nombre, Version: Version, GitLimpio: true, Agente: "plan"}
+	return Panel{Abierto: true, Proyecto: Nombre, Version: Version, Agente: "plan"}
 }
 
 // PorcentajeContexto devuelve qué parte del límite está ocupada por el contexto
@@ -118,18 +118,16 @@ func (p Panel) textoContexto() string {
 	return t
 }
 
-// textoGit compone el estado del repositorio: la rama activa y si el árbol tiene
-// cambios sin confirmar. Sin rama no hay repositorio —el proyecto sin git
-// inicializar, o sin git instalado—, y eso se dice en vez de dejar un hueco:
-// «sin iniciar» es un dato, no un «no sé» (SPEC-INTERFAZ §Zonas 3).
+// textoGit compone el estado del repositorio: la rama activa y el número de
+// cambios sin confirmar (0 si el árbol está limpio), sin texto de por medio. Sin
+// rama no hay repositorio —el proyecto sin git inicializar, o sin git
+// instalado—, y eso se dice en vez de dejar un hueco: «sin iniciar» es un dato,
+// no un «no sé» (SPEC-INTERFAZ §Zonas 3).
 func (p Panel) textoGit() string {
 	if p.GitRama == "" {
 		return "sin iniciar"
 	}
-	if p.GitLimpio {
-		return p.GitRama + " · sin cambios"
-	}
-	return p.GitRama + " · con cambios sin confirmar"
+	return fmt.Sprintf("%s · %d", p.GitRama, p.GitCambios)
 }
 
 // firmaHarness compone la última fila del pie: el nombre de la herramienta y su
@@ -174,6 +172,13 @@ func (p Panel) Render(ancho, alto int) string {
 	if ancho < 1 {
 		ancho = 1
 	}
+	// El texto del sidebar deja dos columnas de separación a cada lado: se
+	// compone sobre el ancho interior y luego se sangra.
+	sangria := 2
+	ancho -= 2 * sangria
+	if ancho < 1 {
+		ancho = 1
+	}
 
 	// El pie, de arriba abajo: git, ruta y harness. La ruta va con el home
 	// abreviado y recortada por la izquierda, porque el final es la parte que
@@ -183,9 +188,15 @@ func (p Panel) Render(ancho, alto int) string {
 		estiloSistema.Render(truncarPorLaIzquierda("["+rutaBreve(valorODefecto(p.Ruta))+"]", ancho)),
 		estiloEtiqueta.Render(truncar(p.firmaHarness(), ancho)),
 	}
-	// `disponible` son las filas que quedan por encima del pie, y es el
-	// presupuesto de la lista de tareas. Si no cabe, vale cero: el pie manda.
-	disponible := max(alto-len(pie), 0)
+	// `disponible` son las filas que quedan por encima del pie, descontando el
+	// aire de arriba y el de abajo, y es el presupuesto de la lista de tareas. Si
+	// no cabe, vale cero: el pie manda. En una columna más baja que el pie no
+	// cabe nada de aire.
+	aireAbajo := 1
+	if alto < len(pie)+2 {
+		aireAbajo = 0
+	}
+	disponible := max(alto-len(pie)-1-aireAbajo, 0)
 
 	// PARTES FIJAS: su altura no depende de los datos, así que se componen
 	// enteras y son las que el recorte final puede llegar a comerse.
@@ -253,11 +264,24 @@ func (p Panel) Render(ancho, alto int) string {
 	}
 	lineas = append(lineas, pie...)
 
+	// Aire vertical: una fila en blanco arriba del título y —si la columna tiene
+	// sitio— otra debajo del pie, para que el texto no toque los bordes.
+	lineas = append([]string{""}, lineas...)
+	if aireAbajo > 0 {
+		lineas = append(lineas, "")
+	}
+
 	// Una columna más baja que el pie entero es el único caso en que no hay
 	// recorte limpio: se van las primeras filas del panel, porque lo que no
 	// puede caerse es la ruta y la firma. Sin geometría no se toca nada.
 	if alto > 0 && len(lineas) > alto {
 		lineas = lineas[len(lineas)-alto:]
+	}
+	// Dos columnas de separación a la izquierda; a la derecha las deja libres el
+	// relleno del layout (componerColumnas completa la fila a AnchoPanel).
+	sangrado := strings.Repeat(" ", sangria)
+	for i, l := range lineas {
+		lineas[i] = sangrado + l
 	}
 	return strings.Join(lineas, "\n")
 }
@@ -359,8 +383,9 @@ func (p Panel) AvisoAprobaciones() string {
 	return estiloAviso.Render(aviso)
 }
 
-// AnchoPanel es el ancho fijo del sidebar cuando está abierto.
-const AnchoPanel = 38
+// AnchoPanel es el ancho fijo del sidebar cuando está abierto: 38 columnas de
+// contenido más las dos de separación a cada lado (ver Render).
+const AnchoPanel = 42
 
 // Los estilos de la vista viven en styles.go (T-F002): un solo sitio para que
 // la pantalla no tenga colores sueltos por los archivos.

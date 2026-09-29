@@ -6,48 +6,36 @@ import (
 	"testing"
 )
 
-func TestCatalogoPorDefectoReconoceLosSeis(t *testing.T) {
+// El catálogo por defecto no registra flujos: los flujos son los archivos de
+// `.localcli/flows/`. `/ejecutar` no es un flujo —consume la cola— y se
+// reconoce igual.
+func TestCatalogoPorDefectoEstaVacio(t *testing.T) {
 	c := CatalogoPorDefecto()
-	for comando, nombre := range map[string]string{
-		"/planificar": "planificacion",
-		"/crear":      "trabajo/crear",
-		"/actualizar": "trabajo/actualizar",
-		"/eliminar":   "trabajo/eliminar",
-		"/resolver":   "resolver",
-	} {
-		cmd, ok := c.De(comando)
-		if !ok {
-			t.Errorf("%s debe reconocerse", comando)
-			continue
-		}
-		if cmd.Consumir {
-			t.Errorf("%s no consume la cola", comando)
-		}
-		if cmd.Flujo.Nombre != nombre {
-			t.Errorf("%s: flujo = %q, quiero %q", comando, cmd.Flujo.Nombre, nombre)
-		}
+	if len(c.Flujos()) != 0 {
+		t.Errorf("el catálogo por defecto no registra flujos: %v", c.Flujos())
 	}
 	if cmd, ok := c.De("/ejecutar"); !ok || !cmd.Consumir {
 		t.Errorf("/ejecutar debe reconocerse y consumir la cola: %+v, %v", cmd, ok)
 	}
-	if _, ok := c.De("/otro"); ok {
-		t.Error("un comando fuera del catálogo no debe reconocerse")
+	if _, ok := c.De("/resolver"); ok {
+		t.Error("un comando sin JSON en la carpeta no debe reconocerse")
 	}
 }
 
-func TestCargarFlujosAnadeYReescribe(t *testing.T) {
+// CargarFlujos lee `.localcli/flows/*.json`: los flujos del proyecto son los
+// archivos que hay, y los que no tienen archivo no existen.
+func TestCargarFlujosLeeLaCarpetaDelProyecto(t *testing.T) {
 	raiz := t.TempDir()
-	dir := filepath.Join(raiz, "ai", "flows")
+	dir := filepath.Join(raiz, ".localcli", "flows")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Un flujo propio nuevo y una personalización de uno oficial.
-	propio := `{"comando":"/demo","nombre":"demo","etapas":[{"id":"p","nombre":"P","agente":"plan"}]}`
-	override := `{"comando":"/crear","nombre":"crear-custom","etapas":[{"id":"p","nombre":"P","agente":"plan"}]}`
-	if err := os.WriteFile(filepath.Join(dir, "demo.json"), []byte(propio), 0o644); err != nil {
+	demo := `{"comando":"/demo","nombre":"demo","pregunta":"algo","etapas":[{"id":"p","nombre":"P","agente":"plan","pregunta":"¿p?","entrega":true}]}`
+	otro := `{"comando":"/otro","nombre":"otro","pregunta":"algo","etapas":[{"id":"p","nombre":"P","agente":"plan","pregunta":"¿p?","entrega":true}]}`
+	if err := os.WriteFile(filepath.Join(dir, "demo.json"), []byte(demo), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "crear.json"), []byte(override), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "otro.json"), []byte(otro), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -56,20 +44,44 @@ func TestCargarFlujosAnadeYReescribe(t *testing.T) {
 		t.Fatalf("CargarFlujos: %v", err)
 	}
 	if _, ok := c.De("/demo"); !ok {
-		t.Error("el flujo propio /demo debe estar en el catálogo")
+		t.Error("/demo debe estar en el catálogo")
 	}
-	if f, _ := c.PorNombre("crear-custom"); f.Nombre == "" {
-		t.Error("la personalización de /crear debe reemplazar al oficial")
+	if _, ok := c.De("/otro"); !ok {
+		t.Error("/otro debe estar en el catálogo")
 	}
-	// Los oficiales no tocados siguen ahí.
-	if _, ok := c.De("/resolver"); !ok {
-		t.Error("/resolver debe seguir en el catálogo")
+	if _, ok := c.De("/resolver"); ok {
+		t.Error("sin archivo, /resolver no debe existir en el catálogo")
+	}
+}
+
+// Un comando repetido en dos archivos: gana el último en orden alfabético.
+func TestCargarFlujosUnComandoRepetidoSeReemplaza(t *testing.T) {
+	raiz := t.TempDir()
+	dir := filepath.Join(raiz, ".localcli", "flows")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	primero := `{"comando":"/demo","nombre":"demo-uno","pregunta":"algo","etapas":[{"id":"p","nombre":"P","agente":"plan","pregunta":"¿p?","entrega":true}]}`
+	segundo := `{"comando":"/demo","nombre":"demo-dos","pregunta":"algo","etapas":[{"id":"p","nombre":"P","agente":"plan","pregunta":"¿p?","entrega":true}]}`
+	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(primero), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.json"), []byte(segundo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := CargarFlujos(raiz)
+	if err != nil {
+		t.Fatalf("CargarFlujos: %v", err)
+	}
+	if f, _ := c.PorNombre("demo-dos"); f.Nombre == "" {
+		t.Errorf("el último archivo debe ganar por comando: %+v", c.Flujos())
 	}
 }
 
 func TestCargarFlujosJSONRotoDevuelveError(t *testing.T) {
 	raiz := t.TempDir()
-	dir := filepath.Join(raiz, "ai", "flows")
+	dir := filepath.Join(raiz, ".localcli", "flows")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

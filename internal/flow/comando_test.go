@@ -9,37 +9,17 @@ import (
 
 // --- T-B016-02: comandos explícitos ----------------------------------------
 
-func TestComandoDeReconoceLosSeisComandos(t *testing.T) {
-	casos := map[string]struct {
-		flujo string
-		cola  bool
-	}{
-		"/planificar": {"planificacion", false},
-		"/crear":      {"trabajo/crear", false},
-		"/actualizar": {"trabajo/actualizar", false},
-		"/eliminar":   {"trabajo/eliminar", false},
-		"/resolver":   {"resolver", false},
-		"/ejecutar":   {"", true},
-	}
-	for texto, quiere := range casos {
-		cmd, ok := ComandoDe(texto)
-		if !ok {
-			t.Errorf("%q debe reconocerse como comando", texto)
-			continue
-		}
-		if cmd.Consumir != quiere.cola {
-			t.Errorf("%q: consumir = %v, quería %v", texto, cmd.Consumir, quiere.cola)
-		}
-		if !quiere.cola && cmd.Flujo.Nombre != quiere.flujo {
-			t.Errorf("%q: flujo = %q, quería %q", texto, cmd.Flujo.Nombre, quiere.flujo)
+// Un comando es una línea que empieza por `/`. Qué comandos existen de verdad
+// lo decide el catálogo cargado de `.localcli/flows/`, no esta función.
+func TestEsComandoReconoceLaBarraInicial(t *testing.T) {
+	for _, texto := range []string{"/resolver", "  /crear x", "/ejecutar"} {
+		if !esComando(texto) {
+			t.Errorf("%q debe ser un comando", texto)
 		}
 	}
-}
-
-func TestTextoDesconocidoNoEsComando(t *testing.T) {
-	for _, texto := range []string{"", "hola", "/otro", "dime de qué se trata este proyecto", "/planificarx"} {
-		if _, ok := ComandoDe(texto); ok {
-			t.Errorf("%q no debe ser un comando de flujo", texto)
+	for _, texto := range []string{"", "hola", "dime de qué se trata este proyecto"} {
+		if esComando(texto) {
+			t.Errorf("%q no debe ser un comando", texto)
 		}
 	}
 }

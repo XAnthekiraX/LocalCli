@@ -7,7 +7,7 @@ import (
 )
 
 // TestElFlujoResolverDelProyectoCoincideConElRespaldo — el proyecto define
-// /resolver en `ai/flows/resolver.json`. Debe coincidir con el respaldo Go
+// /resolver en `.localcli/flows/resolver.json`. Debe coincidir con el respaldo Go
 // (FlujoResolver), para que borrar el JSON no cambie el flujo y para que la
 // definición del proyecto no derive en silencio de la oficial.
 func TestElFlujoResolverDelProyectoCoincideConElRespaldo(t *testing.T) {
@@ -22,6 +22,6 @@ func TestElFlujoResolverDelProyectoCoincideConElRespaldo(t *testing.T) {
 	}
 	quiero := FlujoResolver()
 	if !reflect.DeepEqual(got, quiero) {
-		t.Fatalf("ai/flows/resolver.json y FlujoResolver() difieren:\njson = %+v\ngo   = %+v", got, quiero)
+		t.Fatalf(".localcli/flows/resolver.json y FlujoResolver() difieren:\njson = %+v\ngo   = %+v", got, quiero)
 	}
 }

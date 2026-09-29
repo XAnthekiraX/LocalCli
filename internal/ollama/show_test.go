@@ -54,3 +54,46 @@ func TestPuedeVerDetectaLaCapacidadDeVision(t *testing.T) {
 		t.Error("sin capacidades no puede interpretar imágenes")
 	}
 }
+
+// Ficha que no trae `capabilities` (Ollama antiguo): la visión se deduce de las
+// familias, para no dejar sin reconocer a un modelo multimodal.
+func TestCapacidadesDeduceLaVisionDeLasFamilias(t *testing.T) {
+	c := nuevoServidorOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"details":{"family":"llava","families":["llava","clip"]}}`))
+	})
+	caps, err := c.Capacidades(context.Background(), "llava")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !PuedeVer(caps) {
+		t.Errorf("un modelo de familia multimodal tiene visión: %v", caps)
+	}
+}
+
+// Una familia solo-texto sí dice algo: no tiene visión, y eso se sabe.
+func TestCapacidadesDeUnaFamiliaSinVision(t *testing.T) {
+	c := nuevoServidorOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"details":{"family":"llama","families":["llama"]}}`))
+	})
+	caps, err := c.Capacidades(context.Background(), "llama3")
+	if err != nil {
+		t.Fatalf("una familia conocida no es un «no se sabe»: %v", err)
+	}
+	if PuedeVer(caps) {
+		t.Errorf("una familia solo-texto no tiene visión: %v", caps)
+	}
+}
+
+// Sin capacidades ni familias no se puede afirmar nada: es un error, no un «no
+// puede». Quien avisa necesita distinguir «no tiene» de «no se sabe».
+func TestCapacidadesSinDatosEsUnError(t *testing.T) {
+	c := nuevoServidorOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"details":{}}`))
+	})
+	if _, err := c.Capacidades(context.Background(), "m"); err == nil {
+		t.Error("sin capacidades ni familias no se puede afirmar nada")
+	}
+}

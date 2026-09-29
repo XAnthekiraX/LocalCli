@@ -29,7 +29,7 @@ func TestElSidebarEstaAbiertoPorDefectoYPlegarloDevuelveElAncho(t *testing.T) {
 	if !a.Panel.Abierto || !strings.Contains(sinEstilo(a.View()), "CONTEXTO") {
 		t.Fatal("el sidebar está visible por defecto")
 	}
-	if a.Entrada.Ancho != 100-AnchoPanel-1 {
+	if a.Entrada.Ancho != 100-AnchoPanel-2 {
 		t.Errorf("con el sidebar abierto la entrada cede su ancho: %d", a.Entrada.Ancho)
 	}
 	tecla(t, a, tea.KeyCtrlD)
@@ -43,16 +43,22 @@ func TestElSidebarEstaAbiertoPorDefectoYPlegarloDevuelveElAncho(t *testing.T) {
 
 // --- T-F006-06: los eventos que alimentan el panel ------------------------------
 
-func TestElCambioAplicadoDejaElGitConCambios(t *testing.T) {
+func TestElCambioAplicadoSumaUnCambioAlGit(t *testing.T) {
 	a := Nuevo(&puertoStub{})
 	a.Vista = VistaPrincipal
-	a.Panel.GitLimpio = true
 	pulsa(t, a, eventoMsg{Evento: Evento{
 		Nombre: EventoCambioAplicado,
 		Datos:  map[string]string{"archivo": "main.go"},
 	}})
-	if a.Panel.GitLimpio {
-		t.Error("un cambio aplicado deja el árbol con cambios sin confirmar")
+	if a.Panel.GitCambios != 1 {
+		t.Errorf("un cambio aplicado suma un cambio al árbol: %d", a.Panel.GitCambios)
+	}
+	pulsa(t, a, eventoMsg{Evento: Evento{
+		Nombre: EventoCambioAplicado,
+		Datos:  map[string]string{"archivo": "otro.go"},
+	}})
+	if a.Panel.GitCambios != 2 {
+		t.Errorf("los cambios se acumulan: %d", a.Panel.GitCambios)
 	}
 }
 
@@ -203,13 +209,14 @@ func TestElPieDelPanelMuestraLaCarpetaDelProyecto(t *testing.T) {
 }
 
 func TestElPieSonGitRutaYFirmaEnEseOrden(t *testing.T) {
-	p := Panel{Ruta: "/home/dev/mi-api", GitRama: "main", GitLimpio: true, Proyecto: Nombre, Version: Version}
+	p := Panel{Ruta: "/home/dev/mi-api", GitRama: "main", GitCambios: 0, Proyecto: Nombre, Version: Version}
 	lineas := strings.Split(sinEstilo(p.Render(AnchoPanel, 30)), "\n")
-	pie := lineas[len(lineas)-3:]
+	// Las tres filas del pie; debajo va la fila de aire del borde inferior.
+	pie := lineas[len(lineas)-4 : len(lineas)-1]
 
-	esperado := []string{"Git main · sin cambios", "[/home/dev/mi-api]", Nombre + " · " + Version}
+	esperado := []string{"Git main · 0", "[/home/dev/mi-api]", Nombre + " · " + Version}
 	for i, e := range esperado {
-		if strings.TrimRight(pie[i], " ") != e {
+		if strings.TrimSpace(pie[i]) != e {
 			t.Errorf("fila %d del pie = %q, se esperaba %q", i, pie[i], e)
 		}
 	}
@@ -253,8 +260,8 @@ func TestLaFilaDeGitDistingueElArbolSucio(t *testing.T) {
 		panel Panel
 		fila  string
 	}{
-		{Panel{GitRama: "main", GitLimpio: true}, "Git main · sin cambios"},
-		{Panel{GitRama: "main", GitLimpio: false}, "Git main · con cambios sin confirmar"},
+		{Panel{GitRama: "main", GitCambios: 0}, "Git main · 0"},
+		{Panel{GitRama: "main", GitCambios: 3}, "Git main · 3"},
 		{Panel{}, "Git sin iniciar"},
 	}
 	for _, c := range casos {
@@ -311,7 +318,7 @@ func TestElPieNoDesapareceConMuchasTareas(t *testing.T) {
 	}
 	// El pie son tres filas y se quedan abajo enteras: con una lista que no cabe
 	// lo que cede es la lista, nunca el pie.
-	pie := strings.Join(lineas[len(lineas)-3:], "\n")
+	pie := strings.Join(lineas[len(lineas)-4:len(lineas)-1], "\n")
 	for _, esperado := range []string{"Git", "[/home/dev/mi-api]", Nombre + " · " + Version} {
 		if !strings.Contains(pie, esperado) {
 			t.Errorf("el pie conserva %q:\n%s", esperado, strings.Join(lineas, "\n"))
@@ -325,7 +332,7 @@ func TestElPieNoDesapareceConMuchasTareas(t *testing.T) {
 func TestElPieNoDesapareceConUnaTerminalMasBajaQueElPanel(t *testing.T) {
 	// Menos filas que el pie: no cabe nada, pero el pie entero se sigue viendo
 	// porque es lo último que se compone y lo único que no se recorta.
-	p := Panel{Ruta: "/home/dev/mi-api", GitRama: "main", GitLimpio: true, Proyecto: Nombre, Version: Version}
+	p := Panel{Ruta: "/home/dev/mi-api", GitRama: "main", GitCambios: 0, Proyecto: Nombre, Version: Version}
 	lineas := strings.Split(sinEstilo(p.Render(AnchoPanel, 3)), "\n")
 
 	if len(lineas) != 3 {

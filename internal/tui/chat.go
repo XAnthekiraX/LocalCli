@@ -20,8 +20,6 @@ package tui
 import (
 	"strings"
 	"time"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 // Rol es quién produjo un mensaje del chat.
@@ -338,45 +336,47 @@ func (c *Chat) Cargar(ms []MensajeHistorial) {
 	}
 }
 
-// Render pinta solo el historial cerrado. Lo escrito por el usuario y lo que
-// responde el agente van cada uno en su globo de color (burbuja, styles.go):
-// azul lo tuyo, verde lo del agente/terminal (T-F036). Cada intercambio de
+// Render pinta solo el historial cerrado. Cada mensaje ocupa una fila de ancho
+// completo sobre el fondo del chat (bloqueChat, styles.go): el color del rol va
+// detrás del texto —azul lo tuyo, verde lo del agente/terminal (T-F036)—, a la
+// derecha el usuario y a la izquierda el agente, sin icono. Cada intercambio de
 // agente se compone con renderIntercambio: razonamiento arriba de la respuesta
 // y separado de ella, igual que en vivo (T-F005-03); el razonamiento nunca se
 // mezcla visualmente con la respuesta final (SPEC-INTERFAZ §Reglas). Las líneas
 // del sistema (herramientas, avisos) no son un turno: se pintan sueltas.
 func (c *Chat) Render(ancho int) string {
-	// Los globos dejan un margen a cada lado para no quedar pegados al borde de
-	// la columna (ni al divisor con el sidebar).
-	interno := anchoGlobo(ancho - anchoIcono - 2*margenChat)
+	// El contenido de cada mensaje dispone del ancho del chat menos la franja de
+	// color del rol (dos columnas) y el relleno de un espacio a cada lado.
+	interno := ancho - 4
+	if interno < 1 {
+		interno = 1
+	}
 	var b strings.Builder
 	for _, m := range c.mensajes {
 		var bloque string
 		switch m.Rol {
 		case RolAgente:
-			if contenido := renderIntercambio(m.Razonamiento, m.Texto, c.MostrarRazonamiento, false, interno); contenido != "" {
-				globo := burbuja(RolAgente, contenido)
+			contenido := renderIntercambio(m.Razonamiento, m.Texto, c.MostrarRazonamiento, false, interno)
+			if contenido != "" {
 				// El tiempo de la respuesta se cuelga al final, atenuado, para no
 				// confundirse con lo que dijo el modelo. Sin medición no se pinta.
 				if s := sufijoDuracion(m.Duracion); s != "" {
-					globo += " " + s
+					contenido += " " + s
 				}
-				// El icono del agente precede a su globo; el margen lo separa del
-				// borde izquierdo.
-				bloque = strings.Repeat(" ", margenChat) + lipgloss.JoinHorizontal(lipgloss.Top, iconoDeRol(RolAgente), " ", globo)
+				bloque = bloqueChat(RolAgente, contenido, ancho)
 			}
 		case RolUsuario:
-			// El globo del usuario se pega a la derecha (con su margen) y su icono
-			// va detrás.
-			globo := burbuja(RolUsuario, recortar(m.Texto, interno))
-			bloque = lineasALaDerecha(lipgloss.JoinHorizontal(lipgloss.Top, globo, " ", iconoDeRol(RolUsuario)), ancho-margenChat)
+			bloque = bloqueChat(RolUsuario, estiloBlanco.Render(recortar(m.Texto, interno)), ancho)
 		default:
-			bloque = strings.Repeat(" ", margenChat) + estiloSistema.Render("· ") + m.Texto
+			// Las líneas del sistema no son un turno: se pintan sueltas. El fondo
+			// del área del chat lo pone la vista al componer la columna.
+			bloque = " " + estiloSistema.Render("· ") + m.Texto
 		}
 		if bloque == "" {
 			continue
 		}
 		b.WriteString(bloque)
+		// Un salto en blanco separa un mensaje del siguiente.
 		b.WriteString("\n\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -427,7 +427,21 @@ func (c *Chat) RenderPropuestas() string {
 // bandera de seguimiento evita que la vista salte mientras el modelo genera un
 // token detrás de otro.
 func (c *Chat) Ventana(ancho, alto int) string {
+	return c.VentanaCon(ancho, alto, "")
+}
+
+// VentanaCon es la ventana del historial más un bloque extra al final —el
+// intercambio del turno en vivo—. El bloque entra en la misma ventana que el
+// historial, así que un razonamiento o una respuesta largos crecen y se recorren
+// con el scroll en vez de empujar la caja de entrada fuera de la pantalla.
+func (c *Chat) VentanaCon(ancho, alto int, enCurso string) string {
 	texto := c.Render(ancho)
+	if enCurso != "" {
+		if texto != "" {
+			texto += "\n"
+		}
+		texto += enCurso
+	}
 	c.altoUltimo = alto
 	if alto <= 0 || texto == "" {
 		c.offset, c.maxOffset, c.scrolleado = 0, 0, false

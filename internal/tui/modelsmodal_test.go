@@ -153,11 +153,11 @@ func TestLaBienvenidaMuestraElModeloEnUsoYElAtajoParaCambiarlo(t *testing.T) {
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 
 	v := sinEstilo(a.View())
-	if !strings.Contains(v, "modelo: llama3.2") {
-		t.Errorf("la línea de modelo enseña el modelo en uso:\n%s", v)
+	if !strings.Contains(v, "• llama3.2") {
+		t.Errorf("la línea de estado de la caja enseña el modelo en uso:\n%s", v)
 	}
-	if !strings.Contains(v, "Ctrl+X m cambiar") {
-		t.Errorf("la línea recuerda el atajo que la cambia:\n%s", v)
+	if !strings.Contains(v, "Ctrl+X M") {
+		t.Errorf("la barra de pistas recuerda el atajo que cambia el modelo:\n%s", v)
 	}
 }
 
@@ -174,7 +174,7 @@ func TestLaBienvenidaNoListaLosModelos(t *testing.T) {
 			t.Errorf("la bienvenida no lista modelos (%q):\n%s", nombre, v)
 		}
 	}
-	if !strings.Contains(v, "modelo: llama3.2") {
+	if !strings.Contains(v, "• llama3.2") {
 		t.Errorf("y sigue enseñando el modelo en uso:\n%s", v)
 	}
 }
@@ -419,8 +419,8 @@ func TestLaEleccionDelModalPrevaleceSobreLaAutodetección(t *testing.T) {
 	if a.Modelo != "llama3.2" {
 		t.Errorf("la línea de modelo refleja la elección: %q", a.Modelo)
 	}
-	if !strings.Contains(sinEstilo(a.View()), "modelo: llama3.2") {
-		t.Error("la línea de modelo muestra lo elegido, no la autodetección")
+	if !strings.Contains(sinEstilo(a.View()), "• llama3.2") {
+		t.Error("la línea de estado muestra lo elegido, no la autodetección")
 	}
 }
 

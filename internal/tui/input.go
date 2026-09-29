@@ -30,6 +30,11 @@ import (
 // tamaño real de la terminal (o si nunca llega una `WindowSizeMsg`).
 const anchoEntradaPorDefecto = 80
 
+// placeholderEntrada es el texto de ejemplo que se muestra cuando la entrada
+// está vacía. Lo comparten la caja de la bienvenida (entre comillas) y la de la
+// vista principal.
+const placeholderEntrada = "Escribe para iniciar la conversacion"
+
 // altoMáximoEntrada es el tope de filas que la entrada ocupa en pantalla: al
 // alcanzarlo, el texto se desplaza dentro de la ventana en vez de seguir
 // comiendo el chat.
@@ -47,16 +52,17 @@ type Entrada struct {
 	adjuntos adjuntos
 }
 
-// anchoCajaInterno es lo que consume la caja de la entrada entre bordes y
-// relleno horizontal: dos columnas de borde y dos de relleno. El texto dispone
-// del ancho de la columna menos esto.
-const anchoCajaInterno = 4
+// anchoCajaInterno es lo que consume la caja de la entrada entre su relleno
+// horizontal: una columna a cada lado. La caja ya no dibuja bordes con glifos
+// (styles.go, `cajaConBorde`), así que el ancho disponible para el texto es el
+// de la columna menos estas dos columnas.
+const anchoCajaInterno = 2
 
 // NuevaEntrada crea la línea enfocada, con su placeholder, sin numeración ni
 // prompt propio (el indicador del agente ya compone el `> `, T-F015-01).
 func NuevaEntrada() Entrada {
 	campo := textarea.New()
-	campo.Placeholder = "Escribe tu petición…"
+	campo.Placeholder = placeholderEntrada
 	campo.Prompt = ""
 	campo.ShowLineNumbers = false
 	campo.CharLimit = 0
@@ -64,7 +70,7 @@ func NuevaEntrada() Entrada {
 	campo.EndOfBufferCharacter = ' '
 	// Estilos planos: el `textarea` trae por defecto una banda de fondo sobre la
 	// línea del cursor; aquí la entrada es una sola pieza sin resaltado de línea,
-	// como el input de una fila que era.
+	// como el input de una fila que era. El placeholder lleva el tono sutil.
 	plano := estiloCampoPlano()
 	campo.FocusedStyle = plano
 	campo.BlurredStyle = plano
@@ -85,7 +91,7 @@ func estiloCampoPlano() textarea.Style {
 		CursorLineNumber: base,
 		EndOfBuffer:      base,
 		LineNumber:       base,
-		Placeholder:      base,
+		Placeholder:      estiloSutil,
 		Prompt:           base,
 		Text:             base,
 	}
@@ -268,7 +274,8 @@ func (e *Entrada) Caja(ancho int, pie string) string {
 	}
 	lineas := strings.Split(e.campo.View(), "\n")
 	if strings.TrimSpace(pie) != "" {
-		lineas = append(lineas, pie)
+		// Una línea en blanco separa el texto escrito del pie con el modelo.
+		lineas = append(lineas, "", pie)
 	}
 	return e.adjuntos.Resaltar(cajaConBorde(ancho, lineas))
 }

@@ -53,12 +53,12 @@ func TestEstadoDevuelveLaRamaYElArbolLimpio(t *testing.T) {
 	escribe(t, dir, "main.go", "package main\n")
 	commit(t, dir)
 
-	rama, limpio := Estado(dir)
+	rama, cambios := Estado(dir)
 	if rama != "main" {
 		t.Errorf("la rama activa es la que sale de git, no un valor inventado: %q", rama)
 	}
-	if !limpio {
-		t.Error("un árbol sin cambios pendientes está limpio")
+	if cambios != 0 {
+		t.Errorf("un árbol sin cambios pendientes tiene cero cambios: %d", cambios)
 	}
 }
 
@@ -70,8 +70,8 @@ func TestEstadoDetectaLosCambiosSinConfirmar(t *testing.T) {
 	// Un archivo sin confirmar: lo acaba de escribir el agente, no hay commit.
 	escribe(t, dir, "main.go", "package main\n\n// cambio\n")
 
-	if _, limpio := Estado(dir); limpio {
-		t.Error("un archivo modificado sin commit son cambios sin confirmar")
+	if _, cambios := Estado(dir); cambios == 0 {
+		t.Error("un archivo modificado sin commit cuenta como un cambio")
 	}
 }
 

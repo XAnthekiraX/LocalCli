@@ -55,7 +55,9 @@ func TestElHistorialCierraElIntercambioRazonamientoArribaDeLaRespuesta(t *testin
 	}
 	separados := false
 	for i := iRaz + 1; i < iResp; i++ {
-		if strings.Contains(lineas[i], "│") && strings.Trim(lineas[i], "│ ") == "" {
+		// El razonamiento y la respuesta se separan con una línea en blanco
+		// (renderIntercambio los une con \n\n); no hay glifos de adorno.
+		if strings.TrimSpace(lineas[i]) == "" {
 			separados = true
 		}
 	}
@@ -349,6 +351,34 @@ func TestElScrollAlcanzaElPrincipioDeLaConversación(t *testing.T) {
 	}
 }
 
+// Un razonamiento en vivo enorme no puede empujar el chat fuera de la pantalla
+// —y con él bloquear su scroll—: el bloque en curso se acota.
+func TestElRazonamientoEnVivoNoBloqueaElScroll(t *testing.T) {
+	a := Nuevo(&puertoStub{})
+	a.Vista = VistaPrincipal
+	a.Panel.SesionID = "s1"
+	pulsa(t, a, tea.WindowSizeMsg{Width: 80, Height: 24})
+	for i := 1; i <= 40; i++ {
+		a.Chat.AñadirSistema(fmt.Sprintf("mensaje %d", i))
+	}
+	// El razonamiento se pinta por defecto; llega en cantidades enormes.
+	for i := 0; i < 80; i++ {
+		pulsa(t, a, eventoMsg{Evento: Evento{Nombre: EventoToken, Datos: map[string]string{
+			"texto": fmt.Sprintf("razón %d\n", i), "razonamiento": "true"}}})
+	}
+	if n := altoDe(a.View()); n != a.Alto {
+		t.Fatalf("el marco tiene %d filas y la terminal %d", n, a.Alto)
+	}
+	// El historial se sigue pudiendo recorrer.
+	a.Chat.Subir(10)
+	if !a.Chat.HayArriba() {
+		t.Fatal("el scroll del historial sigue vivo con el razonamiento en curso")
+	}
+	if strings.Contains(sinEstilo(a.View()), "mensaje 40") {
+		t.Error("al subir, el final del historial sale de la ventana")
+	}
+}
+
 func TestLasFlechasRecorrenElHistorialDelChat(t *testing.T) {
 	a := Nuevo(&puertoStub{})
 	a.Vista = VistaPrincipal
@@ -387,26 +417,36 @@ func TestElChatPintaCadaMensajeEnSuGlobo(t *testing.T) {
 	c.Token("lo que responde")
 	c.CerrarTurno("")
 
-	lineas := strings.Split(sinEstilo(c.Render(60)), "\n")
-	inicioUsuario, inicioAgente := -1, -1
+	crudo := c.Render(60)
+	lineas := strings.Split(sinEstilo(crudo), "\n")
+	iUsuario, iAgente := -1, -1
 	for i, l := range lineas {
-		if !strings.Contains(l, "╭") {
-			continue
-		}
-		if inicioUsuario < 0 {
-			inicioUsuario = i
-		} else if inicioAgente < 0 {
-			inicioAgente = i
+		switch {
+		case iUsuario < 0 && strings.Contains(l, "lo que escribo"):
+			iUsuario = i
+		case iAgente < 0 && strings.Contains(l, "lo que responde"):
+			iAgente = i
 		}
 	}
-	if inicioUsuario < 0 || inicioAgente < 0 {
-		t.Fatalf("cada mensaje va dentro de su globo:\n%s", strings.Join(lineas, "\n"))
+	if iUsuario < 0 || iAgente < 0 {
+		t.Fatalf("cada mensaje va en su bloque:\n%s", strings.Join(lineas, "\n"))
 	}
-	if bloque := strings.Join(lineas[inicioUsuario:inicioAgente], "\n"); !strings.Contains(bloque, "lo que escribo") {
-		t.Errorf("lo escrito va en el globo del usuario:\n%s", bloque)
+	if iUsuario >= iAgente {
+		t.Errorf("el mensaje del usuario va antes de la respuesta: %d, %d", iUsuario, iAgente)
 	}
-	if bloque := strings.Join(lineas[inicioAgente:], "\n"); !strings.Contains(bloque, "lo que responde") {
-		t.Errorf("la respuesta va en el globo del agente:\n%s", bloque)
+	// Cada mensaje ocupa el ancho del chat y no lleva icono: el usuario va pegado
+	// a la derecha y el agente a la izquierda.
+	if !strings.HasSuffix(strings.TrimRight(lineas[iUsuario], " "), "lo que escribo") {
+		t.Errorf("el mensaje del usuario va a la derecha: %q", lineas[iUsuario])
+	}
+	if !strings.HasPrefix(strings.TrimLeft(lineas[iAgente], " "), "lo que responde") {
+		t.Errorf("la respuesta va a la izquierda: %q", lineas[iAgente])
+	}
+	if strings.Contains(sinEstilo(crudo), "▣") {
+		t.Error("los mensajes ya no llevan icono")
+	}
+	if strings.ContainsAny(sinEstilo(crudo), "╭╮╰╯│─") {
+		t.Errorf("los globos no llevan glifos de borde:\n%s", sinEstilo(crudo))
 	}
 }
 

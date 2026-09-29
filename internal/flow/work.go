@@ -28,17 +28,27 @@ func FlujoTrabajo(accion task.Accion) Flujo {
 		Comando:     "/" + string(accion),
 		Descripcion: descripcionDeAccion(accion),
 		Peticion:    descripcionDeAccion(accion),
+		Pregunta:    "el resultado de " + descripcionDeAccion(accion),
 		Etapas: []Etapa{
 			// 1-2. Impacto: qué funcionalidades, entidades y datos se ven afectados.
-			{ID: "impacto", Nombre: "Analizar el impacto", Agente: tools.AgentePlan},
+			{ID: "impacto", Nombre: "Analizar el impacto", Agente: tools.AgentePlan,
+				Pregunta: "¿qué funcionalidades, entidades y datos se ven afectados?"},
 			// 3. `plan` presenta el plan y espera confirmación.
-			{ID: "plan", Nombre: "Presentar el plan", Agente: tools.AgentePlan, Aprobacion: true},
+			{ID: "plan", Nombre: "Presentar el plan", Agente: tools.AgentePlan, Aprobacion: true,
+				Pregunta: "¿cuál es el plan de trabajo?"},
 			// 4. Documentación por archivo, con `build` escribiendo tras aprobar.
-			{ID: "documentacion", Nombre: "Actualizar la documentación", Agente: tools.AgentePlan, Aprobacion: true},
+			{ID: "documentacion", Nombre: "Actualizar la documentación", Agente: tools.AgentePlan, Aprobacion: true,
+				Pregunta: "¿qué documentación hay que actualizar?"},
 			// 5. La tarea (o el elemento del TODO) con su acción y su contexto.
-			{ID: "tarea", Nombre: "Crear o actualizar la tarea", Agente: tools.AgenteBuild, Aprobacion: true},
+			{ID: "tarea", Nombre: "Crear o actualizar la tarea", Agente: tools.AgenteBuild, Aprobacion: true,
+				Pregunta: "¿cuál es la tarea, con su acción y su contexto?"},
 			// 7. La ejecución del elemento, un elemento por iteración.
-			{ID: "ejecutar", Nombre: "Ejecutar el elemento", Agente: tools.AgenteBuild, Aprobacion: true},
+			{ID: "ejecutar", Nombre: "Ejecutar el elemento", Agente: tools.AgenteBuild, Aprobacion: true,
+				Pregunta: "¿qué se ejecutó y con qué resultado?"},
+			// 8. La entrega: cierra el flujo con un resumen, sin herramientas.
+			{ID: "entregar", Nombre: "Entregar", Agente: tools.AgentePlan,
+				Pregunta: "¿qué se hizo y cómo quedó?",
+				Entrega:  true},
 		},
 	}
 }

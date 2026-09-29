@@ -1,13 +1,13 @@
 package flow
 
-// bloque.go — el bloque de contexto de un flujo con `BloqueContexto`.
+// bloque.go — el bloque de contexto de un flujo.
 //
 // Fuente de verdad: [[specs/SPEC-MOTOR-FLUJOS]] §Bloque de contexto y
-// [[specs/SPEC-RESOLVER]]. Un flujo con el flag `bloque_contexto` no descarta el
-// resultado de sus etapas: cada una lo entrega, el modelo lo condensa y queda
-// guardado en el bloque; la última etapa compone la salida a partir de TODO el
-// bloque, sin herramientas. El estado del bloque vive en `store` (una fila por
-// etapa y sesión), no en la memoria del motor.
+// [[specs/SPEC-RESOLVER]]. El bloque es universal: no se descarta el resultado de
+// las etapas; cada una lo entrega, el modelo lo condensa y queda guardado. La
+// etapa `entrega` compone la salida a partir de TODO el bloque, sin herramientas.
+// El estado del bloque vive en `store` (una fila por etapa y sesión), no en la
+// memoria del motor.
 
 import (
 	"context"

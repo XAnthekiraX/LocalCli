@@ -1,0 +1,13 @@
+{
+    "nombre": "chat",
+    "descripcion": "",
+    "prompt": "Eres un chat con acceso a diferentes herramientas, respondes de manera amigable y directa",
+    "permisos": [
+        { "accion": "leer", "efecto": "permitir" },
+        { "accion": "editar", "efecto": "permitir" },
+        { "accion": "ejecutar", "efecto": "permitir" },
+        { "accion": "internet", "efecto": "permitir" },
+        { "accion": "tareas", "efecto": "permitir" }
+    ],
+    "skills": []
+}

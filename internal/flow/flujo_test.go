@@ -13,10 +13,11 @@ const demoJSON = `{
   "nombre": "demo",
   "descripcion": "un flujo de prueba",
   "peticion": "hacer la demo",
+  "pregunta": "la demo hecha",
   "reglas": ["una regla", "  "],
   "etapas": [
-    {"id": "p1", "nombre": "Paso 1", "agente": "plan", "aprobacion": false, "instruccion": "haz algo"},
-    {"id": "p2", "nombre": "Paso 2", "agente": "build", "aprobacion": true}
+    {"id": "p1", "nombre": "Paso 1", "agente": "plan", "pregunta": "¿paso 1?", "aprobacion": false, "instruccion": "haz algo"},
+    {"id": "p2", "nombre": "Paso 2", "agente": "build", "pregunta": "¿paso 2?", "entrega": true, "aprobacion": true}
   ]
 }`
 

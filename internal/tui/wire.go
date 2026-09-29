@@ -76,6 +76,10 @@ type ModeloLocal struct {
 	// SinVision marca los modelos que Ollama no declara capaces de interpretar
 	// imágenes. Mismo criterio: el valor cero es «sí puede» y un fallo no alarma.
 	SinVision bool
+	// CapacidadesSinDato marca las fichas que no se pudieron leer: no se sabe si
+	// el modelo puede o no, así que la vista ni avisa ni asegura nada. El valor
+	// cero es «sí se sabe».
+	CapacidadesSinDato bool
 }
 
 // Capacidades es lo que la vista conoce del modelo en uso para su línea de
@@ -123,7 +127,7 @@ type Puerto interface {
 	// lo pinta como «sin iniciar» (SPEC-INTERFAZ §Zonas 3, dato «Git»). Es
 	// lectura del arranque, como la carpeta: la pantalla no llama a git ni
 	// calcula nada con lo que llega.
-	Git() (rama string, limpio bool)
+	Git() (rama string, cambios int)
 	// CapacidadesModelo dice qué declara capaz de hacer el modelo indicado, para
 	// la línea de estado bajo el input (SPEC-OLLAMA-PERFIL). La vista no importa
 	// `ollama`: los booleanos llegan ya resueltos.
@@ -139,7 +143,7 @@ type Puerto interface {
 	// tocar el código. La vista cicla por esta lista con `Tab`.
 	Agentes() []string
 	// Comandos devuelve los comandos de flujo disponibles en el proyecto: los
-	// oficiales más los que declara `ai/flows/*.json`
+	// oficiales más los que declara `.localcli/flows/*.json`
 	// ([[specs/SPEC-FLUJO-PERSONALIZADO]]). La vista los lista en la paleta y
 	// reconoce los que se escriben; no decide cuáles existen. Es un dato en
 	// memoria —el catálogo cargado al arrancar—, así que la bienvenida lo puede
@@ -411,8 +415,8 @@ func (a *App) AplicarEvento(e Evento) {
 		a.cerrarSegmentoEnVivo()
 		a.Chat.AñadirSistema("cambio aplicado en " + e.Datos["archivo"])
 		// El cambio ya está en change_history (EVENTS.md §4): el dato de git del
-		// panel pasa a mostrar el árbol con cambios.
-		a.Panel.GitLimpio = false
+		// panel suma un cambio al árbol.
+		a.Panel.GitCambios++
 	case EventoElementoBloqueado:
 		a.cerrarSegmentoEnVivo()
 		a.Chat.AñadirSistema("elemento bloqueado: " + e.Datos["elemento"])

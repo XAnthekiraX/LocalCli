@@ -135,10 +135,10 @@ type Motor struct {
 	Aprobador Aprobador
 	// Eventos es opcional: sin emisor, el motor trabaja igual.
 	Eventos Emisor
-	// Bloque y Optimizador son opcionales: sin ellos, un flujo con
-	// `BloqueContexto` cae al encadenado de resúmenes mecánicos y el bloque vive
-	// solo en memoria. Con ellos se activa el pipeline del bloque de contexto
-	// (persistencia + optimización por etapa). Ver bloque.go.
+	// Bloque y Optimizador son opcionales: sin ellos, el flujo cae al encadenado
+	// de resúmenes mecánicos y el bloque vive solo en memoria. Con ellos se activa
+	// el pipeline del bloque de contexto (persistencia + optimización por etapa).
+	// Ver bloque.go.
 	Bloque      Bloque
 	Optimizador Optimizador
 	// Registro es opcional: con él, el sub-proceso de cada etapa queda guardado
@@ -187,9 +187,9 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 	// ya optimizada por el modelo.
 	var acumulado []string
 
-	// Un flujo con bloque de contexto empieza con el bloque vacío: la ejecución
-	// nueva no hereda las aportaciones de la anterior.
-	if f.BloqueContexto && m.Bloque != nil {
+	// Toda ejecución empieza con el bloque vacío: no hereda las aportaciones de
+	// la anterior (el bloque es universal).
+	if m.Bloque != nil {
 		if err := m.Bloque.Limpiar(ctx, f.Nombre); err != nil {
 			return EstadoConError, fmt.Errorf("flow: no se pudo limpiar el bloque del flujo %s: %w", f.Nombre, err)
 		}
@@ -197,10 +197,10 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 
 	for i, etapa := range f.Etapas {
 		ultima := i == len(f.Etapas)-1
-		// La etapa de composición de un flujo con bloque corre sin herramientas:
-		// solo redacta la entrega a partir del bloque, así el cierre es
-		// determinista y no depende de que el modelo deje de pedir herramientas.
-		composicion := f.BloqueContexto && ultima
+		// La etapa de entrega corre sin herramientas: solo redacta a partir del
+		// bloque, así el cierre es determinista y no depende de que el modelo deje
+		// de pedir herramientas.
+		composicion := etapa.Entrega
 		if cerr := ctx.Err(); cerr != nil {
 			m.emitir(EventoFlujoCancelado, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 			return EstadoDetenido, nuevoError(CodigoFlujoCancelado,
@@ -228,11 +228,11 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 		} else if len(acumulado) > 0 {
 			contexto += "\n\n## Resultados de los pasos anteriores\n" + strings.Join(acumulado, "\n\n")
 		}
-		// Una etapa intermedia que no pide aprobación corre en silencio: su texto
-		// no se muestra en el chat ni se guarda, solo alimenta la cadena. La
-		// última etapa y las que piden aprobación se muestran: la entrega final y
-		// lo que el usuario debe ver para poder aprobar.
-		silenciosa := !ultima && !etapa.Aprobacion
+		// Una etapa intermedia que no pide aprobación ni respuesta en el chat corre
+		// en silencio: su texto no se muestra en el chat ni se guarda, solo alimenta
+		// la cadena. La última etapa y las que piden aprobación o respuesta se
+		// muestran: la entrega final y lo que el usuario debe ver.
+		silenciosa := !ultima && !etapa.Aprobacion && !etapa.RespuestaEnChat
 		res, aErr := m.Agente.Ejecutar(ctx, PeticionEtapa{
 			Agente:          etapa.Agente,
 			Contexto:        contexto,
@@ -273,7 +273,7 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 			m.emitir(EventoFlujoReanudado, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 		}
 
-		if f.BloqueContexto && !ultima {
+		if m.Bloque != nil && !ultima {
 			// Cada etapa intermedia deja su aportación optimizada en el bloque.
 			aportacion := m.optimizarEtapa(ctx, f, etapa, res.Texto)
 			if err := m.guardarAportacion(ctx, f, etapa, i, aportacion); err != nil {

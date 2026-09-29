@@ -179,3 +179,45 @@ func TestEnviarVacioDesdeLaBienvenidaNoHaceNada(t *testing.T) {
 		t.Errorf("vacío no crea sesión ni envía: %d, %d, %v", p.creadas, p.activasResueltas, p.enviados)
 	}
 }
+
+// --- la bienvenida estilo opencode -------------------------------------------
+
+// Con geometría conocida la bienvenida muestra sus bloques: la caja del
+// logotipo, la caja de entrada con el placeholder y la línea de estado, la barra
+// de pistas y la versión.
+func TestLaBienvenidaEstiloOpencodeMuestraSusBloques(t *testing.T) {
+	a := Nuevo(&puertoStub{modelo: "llama3.2"})
+	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	v := sinEstilo(a.View())
+	for _, esperado := range []string{
+		`"Escribe para iniciar la conversacion"`,
+		"[plan] • llama3.2",
+		"TAB agentes",
+		"Ctrl+P comandos",
+		"Ctrl+X M modelos",
+		Version,
+	} {
+		if !strings.Contains(v, esperado) {
+			t.Errorf("la bienvenida debe mostrar %q:\n%s", esperado, v)
+		}
+	}
+	// El logotipo sigue pintándose tal cual, ahora dentro de su caja.
+	for _, l := range strings.Split(strings.TrimRight(LogoCanonico, "\n"), "\n") {
+		if !strings.Contains(v, l) {
+			t.Errorf("la bienvenida lleva el logotipo canónico (falta %q)", l)
+		}
+	}
+}
+
+// La línea de estado de la caja refleja el agente activo al instante.
+func TestTabCambiaLaLineaDeEstadoDeLaBienvenida(t *testing.T) {
+	a := Nuevo(&puertoStub{modelo: "m"})
+	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	if v := sinEstilo(a.View()); !strings.Contains(v, "[plan] • m") {
+		t.Errorf("la línea de estado arranca en plan:\n%s", v)
+	}
+	tecla(t, a, tea.KeyTab)
+	if v := sinEstilo(a.View()); !strings.Contains(v, "[build] • m") {
+		t.Errorf("Tab cambia la línea de estado a build:\n%s", v)
+	}
+}

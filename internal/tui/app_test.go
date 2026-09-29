@@ -106,7 +106,7 @@ func TestElModalDeAtajosListaLosAtajosYSeCierraConEsc(t *testing.T) {
 	p := &puertoStub{}
 	a := Nuevo(p)
 	a.Vista = VistaPrincipal
-	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 100})
 
 	tecla(t, a, tea.KeyCtrlP)
 	if !a.AtajosModal.Abierto {
@@ -146,7 +146,7 @@ func TestLaVistaComponeChatEntradaPanelYAviso(t *testing.T) {
 	for _, esperado := range []string{
 		"una pregunta de prueba",
 		"una respuesta de prueba",
-		"Escribe tu petición…",
+		"Escribe para iniciar la conversacion",
 		"2 aprobaciones esperando tu decisión",
 	} {
 		if !strings.Contains(v, esperado) {

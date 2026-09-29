@@ -23,7 +23,7 @@ func appConModales(t *testing.T) (*App, *puertoStub) {
 	a := Nuevo(p)
 	a.Vista = VistaPrincipal
 	a.Panel.SesionID = "s1"
-	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 100})
 	return a, p
 }
 

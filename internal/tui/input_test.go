@@ -24,7 +24,7 @@ func TestLaEntradaNaceEnfocadaConSuPlaceholder(t *testing.T) {
 	if e.Texto() != "" {
 		t.Errorf("la línea nace vacía: %q", e.Texto())
 	}
-	if v := e.Caja(e.Ancho, ""); !strings.Contains(sinEstilo(v), "Escribe tu petición…") {
+	if v := e.Caja(e.Ancho, ""); !strings.Contains(sinEstilo(v), "Escribe para iniciar la conversacion") {
 		t.Errorf("vacía muestra su placeholder: %q", v)
 	}
 }
@@ -151,12 +151,12 @@ func TestElAnchoDeLaEntradaSeAdaptaAlLayout(t *testing.T) {
 	}
 	a.Panel.Abierto = true
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
-	if a.Entrada.Ancho != 100-AnchoPanel-1 {
+	if a.Entrada.Ancho != 100-AnchoPanel-2 {
 		t.Errorf("con el panel abierto la línea cede su ancho: %d", a.Entrada.Ancho)
 	}
 	// Un ancho desconocido no resetea la medida anterior.
 	a.Entrada.FijarAncho(0)
-	if a.Entrada.Ancho != 100-AnchoPanel-1 {
+	if a.Entrada.Ancho != 100-AnchoPanel-2 {
 		t.Errorf("ancho 0 no debe tocar la medida: %d", a.Entrada.Ancho)
 	}
 }

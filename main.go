@@ -35,8 +35,10 @@ func main() {
 
 	// Se captura el ratón para poder seleccionar texto y copiarlo al portapapeles
 	// (selection.go) y para desplazar el chat con la rueda. La selección nativa
-	// de la terminal sigue disponible manteniendo Shift.
-	p := tea.NewProgram(nuevaApp(a), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// de la terminal sigue disponible manteniendo Shift. El compresor ANSI funde
+	// las secuencias de color consecutivas: la superficie continua (marco.go)
+	// repite el fondo en cada celda y así el repintado viaja más compacto.
+	p := tea.NewProgram(nuevaApp(a), tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithANSICompressor())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error en la interfaz:", err)
 		os.Exit(1)

@@ -1,0 +1,118 @@
+{
+    "comando": "/resolver",
+    "nombre": "resolver",
+    "descripcion": "resolver un problema",
+    "peticion": "diagnosticar un problema y entregar un plan de solución",
+    "pregunta": "un diagnóstico del problema y un plan de solución",
+    "reglas": [
+        "AGENTS.md (en la raíz del proyecto, no en ai/docs) es la puerta de entrada: identifica las capas y el flujo aplicable antes de nada.",
+        "ai/docs/PROJECT.md es el índice: úsalo para orientarte.",
+        "No cargues todo ai/docs: pide solo los documentos relevantes siguiendo las dependencias declaradas en el frontmatter.",
+        "No afirmes nada sin evidencia: cita el archivo y la línea.",
+        "El resolver NO implementa: investiga, diagnostica y entrega un plan de solución.",
+        "Antes de terminar debes poder responder estas seis preguntas: qué está pasando, qué debería pasar, dónde está el problema, por qué ocurre, qué archivos están involucrados y qué hay que hacer para solucionarlo.",
+        "Cada paso devuelve solo lo suyo, en pocas líneas; el último compone la salida estándar con lo que devolvieron los pasos anteriores.",
+        "Cierra siempre con la salida estándar: Diagnóstico; Archivos involucrados (Modificar, Consultar, No modificar); Solución; Plan; Resultado esperado."
+    ],
+    "etapas": [
+        {
+            "id": "recibir_tarea",
+            "nombre": "Recibir la tarea",
+            "agente": "plan",
+            "pregunta": "¿cuál es la tarea a resolver?",
+            "instruccion": "Toma la petición del usuario como la tarea a resolver.",
+            "continuacion": false,
+            "entrega": false,
+            "respuesta_en_chat": true,
+            "aprobacion": false
+        },
+        {
+            "id": "entender_problema",
+            "nombre": "Entender el problema",
+            "agente": "plan",
+            "pregunta": "¿qué se pidió y qué comportamiento se espera?",
+            "instruccion": "Aclara qué se pidió y qué comportamiento se espera.",
+            "continuacion": false,
+            "entrega": false,
+            "respuesta_en_chat": true,
+            "aprobacion": false
+        },
+        {
+            "id": "buscar_contexto",
+            "nombre": "Buscar contexto",
+            "agente": "plan",
+            "pregunta": "¿qué documentación y archivos son relevantes?",
+            "instruccion": "Reúne la documentación, la estructura del código, los archivos relacionados, los tests y la configuración relevantes; solo lo necesario.",
+            "continuacion": false,
+            "entrega": false,
+            "respuesta_en_chat": true,
+            "aprobacion": false
+        },
+        {
+            "id": "investigar",
+            "nombre": "Investigar el problema",
+            "agente": "plan",
+            "pregunta": "¿dónde ocurre el problema y qué lo confirma?",
+            "instruccion": "Sigue el flujo real, localiza dónde ocurre, verifica hipótesis y ejecuta pruebas si hace falta.",
+            "continuacion": false,
+            "entrega": false,
+            "respuesta_en_chat": true,
+            "aprobacion": false
+        },
+        {
+            "id": "diagnosticar",
+            "nombre": "Diagnosticar",
+            "agente": "plan",
+            "pregunta": "¿cuál es la causa y qué comportamiento se espera?",
+            "instruccion": "Determina la causa, el comportamiento actual y el comportamiento esperado.",
+            "continuacion": false,
+            "entrega": false,
+            "respuesta_en_chat": true,
+            "aprobacion": false
+        },
+        {
+            "id": "archivos_afectados",
+            "nombre": "Identificar los archivos afectados",
+            "agente": "plan",
+            "pregunta": "¿qué archivos se modifican, se consultan o no se tocan?",
+            "instruccion": "Clasifica los archivos en MODIFICAR, CONSULTAR y NO TOCAR, con el motivo de cada uno.",
+            "continuacion": false,
+            "entrega": false,
+            "respuesta_en_chat": true,
+            "aprobacion": false
+        },
+        {
+            "id": "diseno",
+            "nombre": "Diseñar la solución",
+            "agente": "plan",
+            "pregunta": "¿qué hay que cambiar y cómo se relacionan los cambios?",
+            "instruccion": "Define qué cambiar, dónde cambiarlo y cómo se relacionan los cambios.",
+            "continuacion": false,
+            "entrega": false,
+            "respuesta_en_chat": true,
+            "aprobacion": false
+        },
+        {
+            "id": "plan_ejecucion",
+            "nombre": "Crear el plan de ejecución",
+            "agente": "plan",
+            "pregunta": "¿cuáles son los pasos concretos, en orden, con su validación?",
+            "instruccion": "Escribe los pasos concretos, en orden, con su validación.",
+            "continuacion": false,
+            "entrega": false,
+            "respuesta_en_chat": true,
+            "aprobacion": false
+        },
+        {
+            "id": "entregar_plan",
+            "nombre": "Entregar el PLAN",
+            "agente": "plan",
+            "pregunta": "¿cuál es el PLAN de solución con la salida estándar?",
+            "instruccion": "Entrega el PLAN con la salida estándar, componiéndola con lo que devolvieron los pasos anteriores. No implementes nada.",
+            "continuacion": true,
+            "entrega": true,
+            "respuesta_en_chat": true,
+            "aprobacion": false
+        }
+    ]
+}

@@ -46,16 +46,16 @@ func (s *stubBloque) Leer(ctx context.Context, flujo string) ([]EntradaBloque, e
 	return out, nil
 }
 
-// flujoDePruebaBloque es un flujo mínimo con bloque: dos fases y una composición.
+// flujoDePruebaBloque es un flujo mínimo con bloque: dos fases y una entrega.
 func flujoDePruebaBloque() Flujo {
 	return Flujo{
-		Nombre:         "prueba",
-		Comando:        "/prueba",
-		BloqueContexto: true,
+		Nombre:   "prueba",
+		Comando:  "/prueba",
+		Pregunta: "el resultado de la prueba",
 		Etapas: []Etapa{
-			{ID: "a", Nombre: "Fase A", Agente: tools.AgentePlan, Instruccion: "haz A"},
-			{ID: "b", Nombre: "Fase B", Agente: tools.AgentePlan, Instruccion: "haz B"},
-			{ID: "final", Nombre: "Componer", Agente: tools.AgentePlan, Instruccion: "compón"},
+			{ID: "a", Nombre: "Fase A", Agente: tools.AgentePlan, Pregunta: "¿A?", Instruccion: "haz A"},
+			{ID: "b", Nombre: "Fase B", Agente: tools.AgentePlan, Pregunta: "¿B?", Instruccion: "haz B"},
+			{ID: "final", Nombre: "Componer", Agente: tools.AgentePlan, Pregunta: "¿final?", Instruccion: "compón", Entrega: true},
 		},
 	}
 }

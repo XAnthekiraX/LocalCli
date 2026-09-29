@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Bienvenida es el modelo de la primera pantalla: lo escrito, que será la
@@ -320,14 +321,168 @@ func (a *App) fijarModeloEnPuerto() {
 // bienvenida, entre el indicador del agente y la línea de entrada.
 const etiquetaBienvenida = "En qué te ayudo hoy: "
 
-// viewBienvenida compone la pantalla completa: el bloque «logotipo + nombre con
-// versión + línea de modelo + línea de entrada» se centra en la ventana. El
-// arte se pinta tal cual —sin reescalar: cada línea conserva sus 53 columnas
-// doradas; lo que cambia es solo su posición dentro de la pantalla
-// (SPEC-INTERFAZ §Pantalla de bienvenida, donde el render canónico ya muestra el
-// bloque centrado)—. Antes de la primera WindowSizeMsg no hay geometría conocida:
-// se pinta pegado al margen, como siempre.
+// anchoMaxBienvenida acota el ancho de las tarjetas de la bienvenida estilo
+// opencode: en terminales muy anchas, una caja de lado a lado se ve desierta.
+const anchoMaxBienvenida = 72
+
+// placeholderPeticion es el texto de ejemplo que muestra la caja de la
+// bienvenida mientras no se ha escrito nada. Va entre comillas, como en la
+// maqueta de la pantalla.
+const placeholderPeticion = `"` + placeholderEntrada + `"`
+
+// viewBienvenida compone la pantalla completa. Con geometría conocida se pinta
+// el diseño estilo opencode —logotipo sobre el fondo, caja de entrada con su
+// línea de agente y modelo, barra de pistas de teclado y la versión abajo a la
+// derecha—, sin glifos de adorno. Sin geometría (antes de la primera
+// WindowSizeMsg) no hay con qué medir ni centrar los bloques: se pinta el bloque
+// llano de siempre, que además nunca recorta el arte.
 func (a *App) viewBienvenida() string {
+	if a.Ancho <= 0 || a.Alto <= 0 {
+		return a.bienvenidaLlana()
+	}
+	return a.bienvenidaTarjetas()
+}
+
+// bienvenidaTarjetas pinta la bienvenida: el logotipo sobre el fondo, la caja de
+// entrada (una superficie de fondo, sin glifos de borde) y su barra de pistas.
+// Así la selección con el ratón cubre el área de la caja y la copia trae solo el
+// texto.
+func (a *App) bienvenidaTarjetas() string {
+	// El ancho de las cajas se acota, pero nunca por debajo del arte: así el
+	// estilo de la bienvenida no cambia al estrechar la terminal. El arte se
+	// pinta íntegro (la terminal recorta lo que no quepa, sin reescalarlo).
+	anchoCaja := max(min(a.Ancho-4, anchoMaxBienvenida), lipgloss.Width(LogoCanonico)+2)
+
+	// El logotipo va directo sobre el fondo: el espacio que lo rodea es parte de
+	// la pantalla, no una caja aparte. `centrar` lo alinea con el resto.
+	arte := strings.TrimRight(LogoCanonico, "\n")
+	cajaEntrada := cajaEntradaBienvenida(anchoCaja, a.lineasEntradaBienvenida(anchoCaja-2))
+
+	partes := []string{arte}
+	// La paleta de comandos se despliega encima de la caja de entrada.
+	if pal := a.Paleta.Render(); pal != "" {
+		partes = append(partes, pal)
+	}
+	partes = append(partes, cajaEntrada, a.pistasBienvenida())
+	// El aviso transitorio (p. ej. el modelo sin herramientas) se ve aquí: la
+	// bienvenida es donde primero se elige modelo.
+	if a.Aviso != "" {
+		partes = append(partes, estiloAviso.Render(a.Aviso))
+	}
+
+	cuerpo := centrar(strings.Join(partes, "\n\n"), a.Ancho, a.Alto)
+	lineas := strings.Split(cuerpo, "\n")
+	// La firma con la versión va abajo a la derecha, como en la maqueta, con el
+	// texto en el tono de la caja de entrada (#222436). Solo se pisa la última
+	// fila si está vacía: en una terminal diminuta podría ser contenido.
+	if n := len(lineas); n > 0 && strings.TrimSpace(sinANSI(lineas[n-1])) == "" {
+		version := lipgloss.NewStyle().Foreground(fondoBienvenida).Render(Version)
+		lineas[n-1] = lineasALaDerecha(version, a.Ancho)
+	}
+	return strings.Join(lineas, "\n")
+}
+
+// lineasEntradaBienvenida compone el contenido de la caja de entrada: el
+// placeholder entre comillas mientras está vacía, o lo escrito con su cursor, y
+// debajo la línea de estado con el agente y el modelo en uso.
+func (a *App) lineasEntradaBienvenida(anchoInterno int) []string {
+	var lineas []string
+	if strings.TrimSpace(a.Bienvenida.Texto) == "" {
+		lineas = append(lineas, estiloSutil.Render(placeholderPeticion))
+	} else {
+		envueltas, fila, col := envolverConCursor(a.Bienvenida.Texto, a.Bienvenida.Pos, anchoInterno)
+		for i, l := range envueltas {
+			if a.Bienvenida.Foco && i == fila {
+				rr := []rune(l)
+				lineas = append(lineas,
+					a.Bienvenida.Resaltar(string(rr[:col]))+"▌"+a.Bienvenida.Resaltar(string(rr[col:])))
+			} else {
+				lineas = append(lineas, a.Bienvenida.Resaltar(l))
+			}
+		}
+	}
+	// Una línea en blanco separa el texto escrito del modelo en uso.
+	lineas = append(lineas, "", a.lineaEstadoBienvenida())
+	return lineas
+}
+
+// lineaEstadoBienvenida pinta la línea de estado de la caja: el agente activo y
+// el modelo en uso («[plan] • llama3.2»).
+func (a *App) lineaEstadoBienvenida() string {
+	modelo := a.Modelo
+	if modelo == "" {
+		modelo = "—"
+	}
+	return estiloIndicador.Render("["+a.Agente+"]") + estiloBlanco.Render(" • "+modelo)
+}
+
+// pistasBienvenida compone la barra de pistas de teclado bajo la caja de
+// entrada. Se genera desde el mapa vigente, no se escribe a mano: si el usuario
+// reasigna un atajo, la pista cambia con él.
+func (a *App) pistasBienvenida() string {
+	var partes []string
+	for _, p := range []struct {
+		accion   Accion
+		etiqueta string
+	}{
+		{AccionCiclarAgente, "agentes"},
+		{AccionAyuda, "comandos"},
+		{AccionModalModelos, "modelos"},
+	} {
+		if pista := a.pistaDeAccion(p.accion, p.etiqueta); pista != "" {
+			partes = append(partes, pista)
+		}
+	}
+	return strings.Join(partes, "   ")
+}
+
+// pistaDeAccion devuelve «Tecla etiqueta» para la acción dada, con la tecla en su
+// forma legible; vacío si la acción no tiene atajo en el mapa.
+func (a *App) pistaDeAccion(accion Accion, etiqueta string) string {
+	for _, at := range a.Atajos {
+		if at.Accion != accion || len(at.Secuencias) == 0 {
+			continue
+		}
+		return estiloBlanco.Render(etiquetaDeSecuencia(at.Secuencias[0])) + " " + estiloSutil.Render(etiqueta)
+	}
+	return ""
+}
+
+// etiquetaDeSecuencia da la forma legible de un atajo: «TAB», «Ctrl+P» o
+// «Ctrl+X M» (con la tecla líder ya expandida en Paso1).
+func etiquetaDeSecuencia(s Secuencia) string {
+	if s.Paso2 != "" {
+		return etiquetaDeTecla(s.Paso1) + " " + strings.ToUpper(s.Paso2)
+	}
+	return etiquetaDeTecla(s.Paso1)
+}
+
+// etiquetaDeTecla pone en forma legible un literal de una sola tecla:
+// «ctrl+p» → «Ctrl+P», «tab» → «TAB».
+func etiquetaDeTecla(lit string) string {
+	partes := strings.Split(lit, "+")
+	for i, p := range partes {
+		switch strings.ToLower(p) {
+		case "ctrl":
+			partes[i] = "Ctrl"
+		case "alt":
+			partes[i] = "Alt"
+		case "shift":
+			partes[i] = "Shift"
+		case "tab":
+			partes[i] = "TAB"
+		default:
+			partes[i] = strings.ToUpper(p)
+		}
+	}
+	return strings.Join(partes, "+")
+}
+
+// bienvenidaLlana es el bloque sin tarjetas: logotipo, nombre con versión, línea
+// de modelo y línea de entrada, centrado. Se pinta cuando aún no hay geometría o
+// cuando la terminal es demasiado estrecha para enmarcar el arte sin recortarlo.
+// El arte se pinta tal cual, sin reescalar: cada línea conserva sus 53 columnas.
+func (a *App) bienvenidaLlana() string {
 	var b strings.Builder
 	b.WriteString(strings.TrimRight(LogoCanonico, "\n"))
 	b.WriteString("\n\n")
@@ -341,12 +496,9 @@ func (a *App) viewBienvenida() string {
 		b.WriteString("\n\n")
 	}
 	// El indicador del agente precede a la línea de entrada, igual que en la
-	// interfaz principal: el render canónico de SPEC-INTERFAZ §Pantalla de
-	// bienvenida es `[plan] > En qué te ayudo hoy: █╚` (T-F015-02).
-	// El texto salta de renglón al desbordar el ancho en vez de recortarse
-	// (T-F035): las filas de continuación se sangran al ancho del prefijo y el
-	// cursor se pinta en su sitio dentro de la línea envuelta, como en cualquier
-	// editor de una línea.
+	// interfaz principal. El texto salta de renglón al desbordar el ancho en vez
+	// de recortarse (T-F035): las filas de continuación se sangran al ancho del
+	// prefijo y el cursor se pinta en su sitio dentro de la línea envuelta.
 	prefijo := IndicadorAgente(a.Agente) + etiquetaBienvenida
 	anchoPrefijo := anchoIndicador(a.Agente) + len([]rune(etiquetaBienvenida))
 	anchoTexto := a.Ancho - anchoPrefijo

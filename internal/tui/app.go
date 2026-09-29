@@ -22,7 +22,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"localcli/internal/session"
 )
@@ -138,7 +137,7 @@ type App struct {
 	Entrada Entrada
 
 	// Comandos es el catálogo de comandos de flujo disponibles: los del proyecto
-	// —oficiales más los de `ai/flows/*.json`— que entrega el puerto. La paleta
+	// —oficiales más los de `.localcli/flows/*.json`— que entrega el puerto. La paleta
 	// lo lista y la entrada reconoce contra él (comandos.go).
 	Comandos []ComandoFlujo
 
@@ -236,7 +235,7 @@ func Nuevo(p Puerto) *App {
 	// una vez aquí y se pintan en el pie del panel (SPEC-INTERFAZ §Zonas 3). La
 	// pantalla no pregunta nada: no llama a git ni al disco.
 	a.Panel.Ruta = p.Carpeta()
-	a.Panel.GitRama, a.Panel.GitLimpio = p.Git()
+	a.Panel.GitRama, a.Panel.GitCambios = p.Git()
 	return a
 }
 
@@ -913,6 +912,11 @@ func (a *App) ejecutarComando(c ComandoFlujo, escrito string) tea.Cmd {
 	a.Bienvenida.Limpiar()
 	a.Paleta.Filtrar("")
 	a.fijarModeloEnPuerto()
+	// Las etapas de un flujo van sin imágenes: si el usuario adjuntó alguna, se
+	// avisa en vez de perderla en silencio.
+	if imagenes, _ := AdjuntosDe(texto); len(imagenes) > 0 {
+		a.Chat.AñadirSistema("las imágenes no viajan con un comando de flujo; adjúntalas en una petición normal")
+	}
 	a.Chat.AñadirUsuario(texto)
 	a.iniciarTurno()
 	a.Vista = VistaPrincipal
@@ -1084,15 +1088,16 @@ func (a *App) aplicarModelo() tea.Cmd {
 	a.Modelo = m.Nombre
 	a.fijarModeloEnPuerto()
 	// La línea de estado bajo el input ya sabe si el modelo tiene herramientas:
-	// lo eligió el usuario desde la lista, que trae esa marca.
-	a.CapHerramientasConocida = true
+	// lo eligió el usuario desde la lista, que trae esa marca. Si la ficha no se
+	// pudo leer, la capacidad queda como desconocida y no se avisa de más.
+	a.CapHerramientasConocida = !m.CapacidadesSinDato
 	a.ModeloHerramientas = !m.SinHerramientas
-	a.CapVisionConocida = true
+	a.CapVisionConocida = !m.CapacidadesSinDato
 	a.ModeloVision = !m.SinVision
 	// El modelo elegido que no declara herramientas avisa sin bloquear: el
 	// usuario decide si cambia (SPEC-OLLAMA-PERFIL). Al elegir uno capaz, el
 	// aviso se retira.
-	if m.SinHerramientas {
+	if !m.CapacidadesSinDato && m.SinHerramientas {
 		a.Aviso = "el modelo «" + m.Nombre + "» no puede usar herramientas; cámbialo con Ctrl+X m"
 	} else {
 		a.Aviso = ""
@@ -1182,11 +1187,17 @@ func (a *App) pausar() tea.Cmd {
 // extracción del texto que se copia no dependa del realce. Encima va el aviso
 // transitorio [Copiado] cuando toca.
 func (a *App) View() string {
-	v := a.view()
+	// La capa común (marco.go) convierte lo que pintan los componentes en una
+	// superficie rectangular continua: exactamente Ancho×Alto celdas, cada una
+	// con fondo. Se normaliza ANTES de guardar el marco, de modo que la
+	// selección y la copia trabajen sobre celdas reales (incluidos los espacios
+	// del padding y del fondo), no sobre líneas de ancho cero.
+	v := marcoCompleto(a.view(), a.Ancho, a.Alto)
 	a.ultimaVista = v
 	out := v
 	if a.ratonIni != a.ratonFin {
-		out = resaltarSeleccion(v, a.ratonIni, a.ratonFin)
+		ini, fin := a.limitarSeleccion(a.ratonIni, a.ratonFin)
+		out = resaltarSeleccion(v, ini, fin)
 	}
 	if a.copiado {
 		out = superponerDerecha(out, estiloCopiado.Render("[Copiado]"), a.Ancho)
@@ -1239,24 +1250,27 @@ func (a *App) viewConfirmarEliminar() string {
 	return centrar(texto, a.Ancho, a.Alto)
 }
 
+// bloqueEnCurso pinta el intercambio del turno en vivo —razonamiento revelado y
+// respuesta que va llegando— como un bloque más del chat: vive dentro de la
+// ventana del historial, así crece sin empujar la entrada y se recorre con el
+// scroll como cualquier mensaje.
+func (a *App) bloqueEnCurso(ancho int) string {
+	x := renderIntercambio(a.Razon.Texto(), a.Chat.EnCurso(), a.Razon.Visible, a.Razon.NoDisponible, ancho-4)
+	if x == "" {
+		return ""
+	}
+	return bloqueChat(RolAgente, x, ancho)
+}
+
 // bloqueInferior compone todo lo que va pegado al pie de la vista principal: el
 // intercambio en curso, el contador, las propuestas, las aprobaciones, la línea
 // de entrada, la línea de estado del modelo y los avisos. Se mide para
 // reservarle su alto exacto y que el chat no empuje el marco fuera de pantalla.
 func (a *App) bloqueInferior(anchoCol int) string {
-	// Lo que se pinta como parte del hilo, arriba del divisor: el intercambio en
-	// curso (razonamiento arriba de la respuesta), el indicador en vivo, las
-	// propuestas y las aprobaciones pendientes. El dibujo vive en styles.go.
+	// Lo que se pinta como parte del hilo, arriba del divisor: las propuestas y
+	// las aprobaciones pendientes. El intercambio en vivo va dentro del chat
+	// (`Chat.VentanaCon`) y el indicador de actividad, justo encima de la caja.
 	var cuerpo []string
-	if x := renderIntercambio(a.Razon.Texto(), a.Chat.EnCurso(), a.Razon.Visible, a.Razon.NoDisponible, anchoGlobo(anchoCol-anchoIcono-2*margenChat)); x != "" {
-		cuerpo = append(cuerpo, strings.Repeat(" ", margenChat)+lipgloss.JoinHorizontal(lipgloss.Top, iconoDeRol(RolAgente), " ", burbuja(RolAgente, x)))
-	}
-	// El indicador en vivo: mientras hay un turno en camino gira el glifo y
-	// corre el tiempo —[⠋ Pensando], [⠋ Usando herramienta: X]—, que es lo que
-	// dice que el modelo sigue trabajando aunque aún no emita nada.
-	if act := a.lineaDeActividad(); act != "" {
-		cuerpo = append(cuerpo, act)
-	}
 	// Las propuestas pendientes de esta sesión se ven dentro del chat.
 	if prop := a.Chat.RenderPropuestas(); prop != "" {
 		cuerpo = append(cuerpo, prop)
@@ -1272,6 +1286,12 @@ func (a *App) bloqueInferior(anchoCol int) string {
 	// La paleta de comandos se despliega encima de la caja (comandos.go).
 	if pal := a.Paleta.Render(); pal != "" {
 		partes = append(partes, pal)
+	}
+	// El indicador en vivo va justo encima de la caja: mientras hay un turno en
+	// camino gira el glifo y corre el tiempo —[⠋ Pensando], [⠋ Usando
+	// herramienta: X]—, que es lo que dice que el modelo sigue trabajando.
+	if act := a.lineaDeActividad(); act != "" {
+		partes = append(partes, act)
 	}
 	// El divisor horizontal separa el chat de la caja de entrada.
 	partes = append(partes, a.divisorHorizontal(anchoCol))
@@ -1311,12 +1331,14 @@ func (a *App) bloqueInferior(anchoCol int) string {
 	return strings.Join(partes, "\n")
 }
 
-// divisorHorizontal pinta la línea que separa el chat de la caja de entrada.
+// divisorHorizontal separa el chat de la caja de entrada con el fondo de la
+// pantalla: una fila de celdas sin glifos que, junto al borde superior de la
+// caja, deja dos espacios de separación.
 func (a *App) divisorHorizontal(ancho int) string {
 	if ancho < 1 {
 		ancho = 1
 	}
-	return estiloDivisor.Render(strings.Repeat("─", ancho))
+	return pintarFondo("", ancho, fondoApp)
 }
 
 // lineaDeActividad pinta el indicador en vivo mientras hay un turno en camino:
@@ -1367,28 +1389,34 @@ func (a *App) iniciarTurno() {
 }
 
 // lineaPieEntrada compone el pie de la caja de entrada: el agente activo, el
-// modelo en uso y sus capacidades. Sin modelo muestra solo el agente; sin dato
-// conocido, la capacidad se marca «?».
+// modelo en uso y sus capacidades. Sin modelo muestra solo el agente.
 func (a *App) lineaPieEntrada() string {
 	partes := []string{estiloIndicador.Render("[" + a.Agente + "]")}
 	if a.Modelo != "" {
-		partes = append(partes, "* "+a.Modelo,
-			"herramientas: "+siNoConocido(a.CapHerramientasConocida, a.ModeloHerramientas),
-			"visión: "+siNoConocido(a.CapVisionConocida, a.ModeloVision))
+		partes = append(partes, estiloBlanco.Render("* "+a.Modelo), a.capacidadesPie())
 	}
 	return strings.Join(partes, " · ")
 }
 
-// siNoConocido traduce una capacidad a la marca de la línea de estado: «?» si no
-// se sabe, «sí» o «no» si se conoce.
-func siNoConocido(conocida, valor bool) string {
-	if !conocida {
-		return "?"
+// capacidadesPie compone las chapas de capacidad del modelo: `tool [*]` en verde
+// si usa herramientas y en rojo si no (atenuada mientras no se sabe), `[v]` si
+// acepta visión y `[T]` siempre (texto).
+func (a *App) capacidadesPie() string {
+	var herramienta string
+	switch {
+	case !a.CapHerramientasConocida:
+		herramienta = estiloSutil.Render("tool [?]")
+	case a.ModeloHerramientas:
+		herramienta = estiloBlanco.Render("tool ") + estiloCapaz.Render("[*]")
+	default:
+		herramienta = estiloBlanco.Render("tool ") + estiloIncapaz.Render("[*]")
 	}
-	if valor {
-		return "sí"
+	entradas := make([]string, 0, 2)
+	if a.CapVisionConocida && a.ModeloVision {
+		entradas = append(entradas, estiloCapaz.Render("[v]"))
 	}
-	return "no"
+	entradas = append(entradas, estiloCapaz.Render("[T]"))
+	return herramienta + "  " + strings.Join(entradas, " ")
 }
 
 // viewPrincipal pinta chat, razonamiento, respuesta en curso, aprobaciones y
@@ -1401,7 +1429,7 @@ func (a *App) viewPrincipal() string {
 
 	construir := func(alto int) string {
 		var lineas []string
-		if h := a.Chat.Ventana(anchoCol, alto); h != "" {
+		if h := a.Chat.VentanaCon(anchoCol, alto, a.bloqueEnCurso(anchoCol)); h != "" {
 			if oa := a.Chat.OcultasArriba(); oa > 0 {
 				lineas = append(lineas, estiloSistema.Render(fmt.Sprintf("↑ %d líneas arriba", oa)))
 			}
@@ -1412,26 +1440,22 @@ func (a *App) viewPrincipal() string {
 		}
 		// El chat ocupa todo el alto que quede hasta el pie: con un historial
 		// corto se rellena de líneas en blanco, de modo que la caja de entrada
-		// queda pegada abajo en vez de flotar en medio de la pantalla.
-		objetivo := a.Alto - altoDe(abajo) - 1
+		// queda pegada abajo en vez de flotar en medio de la pantalla. Después va
+		// el bloque inferior, sin salto final, para que el marco tenga exactamente
+		// `Alto` filas.
+		objetivo := a.Alto - altoDe(abajo)
 		for len(lineas) < objetivo {
 			lineas = append(lineas, "")
 		}
-		var b strings.Builder
-		for _, l := range lineas {
-			b.WriteString(l + "\n")
-		}
-		b.WriteString("\n")
-		b.WriteString(abajo)
-		b.WriteString("\n")
-		return b.String()
+		lineas = append(lineas, strings.Split(abajo, "\n")...)
+		return strings.Join(lineas, "\n")
 	}
 
-	// Alto para el chat: lo que queda tras el pie, una línea de separación y
-	// hasta dos de indicadores de scroll. Reservar los indicadores siempre
-	// (aunque no se pinten) mantiene el alto del chat estable: si cambiara al
-	// subir, la posición del scroll saltaría.
-	altoChat := a.Alto - altoDe(abajo) - 1 - 2
+	// Alto para el chat: lo que queda tras el pie y hasta dos líneas de
+	// indicadores de scroll. Reservar los indicadores siempre (aunque no se
+	// pinten) mantiene el alto del chat estable: si cambiara al subir, la
+	// posición del scroll saltaría.
+	altoChat := a.Alto - altoDe(abajo) - 2
 	if altoChat < 3 {
 		altoChat = 3
 	}
@@ -1446,16 +1470,17 @@ func (a *App) viewPrincipal() string {
 	if !a.Panel.Abierto {
 		return cuerpo
 	}
-	panel := a.Panel.Render(AnchoPanel, a.Alto)
-	return a.componerColumnas(cuerpo, anchoCol, panel)
+	panel := a.Panel.Render(a.anchoPanel(), a.Alto)
+	return a.componerColumnas(cuerpo, anchoCol, a.anchoPanel(), panel)
 }
 
-// componerColumnas une la columna principal con el sidebar poniendo el divisor
-// vertical en cada fila. Rellena la columna izquierda a su ancho y ambos bloques
-// al alto de la terminal, de modo que el divisor quede recto y el marco siga
-// siendo UNA sola cadena: la selección con el ratón lo recorre entero (chat y
-// sidebar a la vez).
-func (a *App) componerColumnas(izquierda string, anchoIzq int, derecha string) string {
+// componerColumnas une la columna principal con el sidebar dejando una banda de
+// fondo como separación (una columna de celdas con un tono distinto, sin el
+// glifo `│`). Rellena cada columna a su ancho y con su fondo, de modo que la
+// separación quede recta y el marco siga siendo UNA sola cadena: la selección
+// con el ratón lo recorre entero (chat y sidebar a la vez) sin arrastrar el
+// carácter del divisor.
+func (a *App) componerColumnas(izquierda string, anchoIzq, anchoDer int, derecha string) string {
 	alto := a.Alto
 	if alto <= 0 {
 		// Sin geometría conocida no se recorta el sidebar: se toma el alto del
@@ -1467,6 +1492,9 @@ func (a *App) componerColumnas(izquierda string, anchoIzq int, derecha string) s
 	}
 	izq := strings.Split(izquierda, "\n")
 	der := strings.Split(derecha, "\n")
+	// Dos columnas de fondo separan el chat del sidebar: la separación es la de
+	// la pantalla, no una línea de otro color.
+	banda := pintarFondo("", 2, fondoApp)
 	lineas := make([]string, alto)
 	for i := 0; i < alto; i++ {
 		l, r := "", ""
@@ -1476,7 +1504,8 @@ func (a *App) componerColumnas(izquierda string, anchoIzq int, derecha string) s
 		if i < len(der) {
 			r = der[i]
 		}
-		lineas[i] = recortarColumnas(l, anchoIzq) + estiloDivisor.Render("│") + r
+		lineas[i] = pintarFondo(recortarColumnas(l, anchoIzq), anchoIzq, fondoApp) + banda +
+			pintarFondo(recortarColumnas(r, anchoDer), anchoDer, fondoPanel)
 	}
 	return strings.Join(lineas, "\n")
 }
@@ -1499,15 +1528,32 @@ func (a *App) trabajando() bool {
 	return a.Chat.HayTurno() || a.Panel.Estado == session.EstadoTrabajando
 }
 
+// anchoColMin es el ancho que la columna principal conserva siempre: si la
+// terminal es estrecha, quien cede es el sidebar, nunca el chat.
+const anchoColMin = 20
+
+// anchoPanel es el ancho del sidebar cuando está abierto, recortado si la
+// terminal no da para el ancho fijo más la columna principal mínima.
+func (a *App) anchoPanel() int {
+	if a.Ancho <= 0 {
+		return AnchoPanel
+	}
+	disponible := a.Ancho - anchoColMin - 2
+	if disponible < 1 {
+		disponible = 1
+	}
+	return min(AnchoPanel, disponible)
+}
+
 // anchoColumna es el ancho disponible para la columna principal (el chat y su
-// caja de entrada): el total menos el sidebar y el divisor vertical cuando el
-// panel está abierto.
+// caja de entrada): el total menos el sidebar y las dos columnas de separación
+// cuando el panel está abierto.
 func (a *App) anchoColumna() int {
 	if a.Ancho <= 0 {
 		return 80
 	}
 	if a.Panel.Abierto {
-		return a.Ancho - AnchoPanel - 1
+		return a.Ancho - a.anchoPanel() - 2
 	}
 	return a.Ancho
 }

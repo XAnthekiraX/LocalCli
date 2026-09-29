@@ -3,9 +3,9 @@ package store
 // flowcontext.go — el bloque de contexto de un flujo (migración 003).
 //
 // Fuente de verdad: ai/docs/specs/SPEC-MOTOR-FLUJOS.md §Bloque de contexto y
-// ai/docs/database/01-schema/TABLES.md §flow_context. Cada etapa de un flujo con
-// `bloque_contexto` deja aquí su aportación optimizada; la última etapa compone
-// la entrega a partir de todo el bloque. Es estado de ejecución de la sesión: se
+// ai/docs/database/01-schema/TABLES.md §flow_context. Cada etapa de un flujo deja
+// aquí su aportación optimizada; la etapa `entrega` la lee entera para redactar.
+// Es estado de ejecución de la sesión: se
 // reemplaza en cada ejecución del flujo y cae en cascada con su sesión.
 //
 // El orden es la `position`, que es el índice de la etapa en la secuencia del

@@ -35,50 +35,63 @@ func TestLasColumnasQuedanAlineadasConAnchoDePantalla(t *testing.T) {
 		a.Chat.AñadirAgente(texto)
 		_ = a.View()
 
+		// La superficie es continua: cada fila mide exactamente el ancho de la
+		// terminal. El panel arranca en su columna, tras los dos espacios de
+		// separación.
+		filas := strings.Split(sinANSI(a.ultimaVista), "\n")
+		for i, l := range filas {
+			if w := runewidth.StringWidth(l); w != a.Ancho {
+				t.Errorf("texto %q: la fila %d mide %d columnas y debería medir %d: %q",
+					texto, i, w, a.Ancho, l)
+			}
+		}
 		col := a.anchoColumna()
-		for i, l := range strings.Split(a.ultimaVista, "\n") {
-			plano := sinANSI(l)
-			j := strings.LastIndex(plano, "│")
-			if j < 0 {
-				t.Fatalf("texto %q: la fila %d no tiene divisor: %q", texto, i, plano)
+		inicio := -1
+		for _, l := range filas {
+			if j := strings.Index(l, "una sesión"); j >= 0 {
+				inicio = runewidth.StringWidth(l[:j])
+				break
 			}
-			if w := runewidth.StringWidth(plano[:j]); w != col {
-				t.Errorf("texto %q: en la fila %d el divisor cae en la columna %d y debería caer en la %d: %q",
-					texto, i, w, col, plano)
-			}
+		}
+		if inicio != col+4 {
+			t.Errorf("texto %q: el sidebar debe empezar en la columna %d y empieza en la %d",
+				texto, col+4, inicio)
 		}
 	}
 }
 
-// Los globos dejan un margen a cada lado: el del agente no toca el borde
-// izquierdo y el del usuario no toca el derecho.
-func TestLosGlobosDejanMargenALosLados(t *testing.T) {
+// Cada mensaje ocupa el ancho del chat, sin icono: el del usuario pegado a la
+// derecha (su color termina en el borde de la columna) y el del agente a la
+// izquierda.
+func TestLosMensajesOcupanElAnchoDelChat(t *testing.T) {
 	a := Nuevo(&puertoStub{})
 	a.Vista = VistaPrincipal
 	a.Panel.SesionID = "s1"
-	pulsa(t, a, tea.WindowSizeMsg{Width: 60, Height: 16})
+	pulsa(t, a, tea.WindowSizeMsg{Width: 80, Height: 24})
 	a.Chat.AñadirUsuario("hola")
 	a.Chat.AñadirAgente("buenas")
 	v := sinEstilo(a.View())
 
 	var agente, usuario string
 	for _, l := range strings.Split(v, "\n") {
-		icono, abre, cierra := strings.Index(l, "▣"), strings.Index(l, "╭"), strings.Index(l, "╮")
-		if icono >= 0 && abre > icono {
+		if strings.Contains(l, "buenas") {
 			agente = l
 		}
-		if icono >= 0 && cierra >= 0 && cierra < icono {
+		if strings.Contains(l, "hola") {
 			usuario = l
 		}
 	}
 	if agente == "" || usuario == "" {
-		t.Fatalf("no encontré los globos:\n%s", v)
+		t.Fatalf("no encontré los mensajes:\n%s", v)
 	}
-	if !strings.HasPrefix(agente, " ") || strings.HasPrefix(agente, "  ") {
-		t.Errorf("el globo del agente deja margen a la izquierda: %q", agente)
+	if strings.Contains(v, "▣") {
+		t.Error("los mensajes ya no llevan icono")
 	}
-	if w := runewidth.StringWidth(usuario); w > 60-margenChat {
-		t.Errorf("el globo del usuario deja margen a la derecha (ancho %d): %q", w, usuario)
+	if got := columnaPrincipal(a, agente); !strings.HasPrefix(strings.TrimLeft(got, " "), "buenas") {
+		t.Errorf("el mensaje del agente va pegado a la izquierda: %q", got)
+	}
+	if got := columnaPrincipal(a, usuario); !strings.HasSuffix(got, "hola") {
+		t.Errorf("el mensaje del usuario va pegado a la derecha: %q", got)
 	}
 }
 
@@ -97,7 +110,7 @@ func TestLaCajaDeEntradaQuedaPegadaAbajo(t *testing.T) {
 		}
 		fila := -1
 		for i, l := range lineas {
-			if strings.Contains(l, "Escribe tu petición") {
+			if strings.Contains(l, "Escribe") {
 				fila = i
 				break
 			}

@@ -26,27 +26,27 @@ import (
 // iniciar» es mejor que colgar el arranque.
 const limite = 3 * time.Second
 
-// Estado devuelve la rama activa del repositorio que contiene `dir` y si el
-// árbol tiene cambios sin confirmar.
+// Estado devuelve la rama activa del repositorio que contiene `dir` y cuántos
+// cambios sin confirmar tiene el árbol (0 si está limpio).
 //
 // La rama vacía es el caso de «no hay git aquí»: o el binario no está
 // instalado, o `dir` no está dentro de un repositorio, o git no responde a
-// tiempo. Quien llama la muestra como «sin iniciar». `limpio` solo significa algo
-// cuando la rama no viene vacía.
-func Estado(dir string) (rama string, limpio bool) {
+// tiempo. Quien llama la muestra como «sin iniciar». `cambios` solo significa
+// algo cuando la rama no viene vacía.
+func Estado(dir string) (rama string, cambios int) {
 	// `--is-inside-work-tree` responde «true» dentro de un repositorio y sale
 	// con error fuera de él, que incluye el caso de que git no esté instalado.
 	if salida, err := correr(dir, "rev-parse", "--is-inside-work-tree"); err != nil ||
 		strings.TrimSpace(salida) != "true" {
-		return "", false
+		return "", 0
 	}
 	// `status --porcelain --branch` da las dos cosas de una vez: la primera
 	// línea es la cabecera `## rama...` y el resto son los cambios pendientes.
 	salida, err := correr(dir, "status", "--porcelain", "--branch")
 	if err != nil {
-		return "", false
+		return "", 0
 	}
-	var cambios int
+	var n int
 	visto := false
 	for _, l := range strings.Split(salida, "\n") {
 		l = strings.TrimRight(l, "\r")
@@ -59,12 +59,12 @@ func Estado(dir string) (rama string, limpio bool) {
 			rama, visto = ramaDeCabecera(l), true
 			continue
 		}
-		cambios++
+		n++
 	}
 	if rama == "" {
-		return "", false
+		return "", 0
 	}
-	return rama, cambios == 0
+	return rama, n
 }
 
 // ramaDeCabecera saca la rama de la línea `##` que pone `status --porcelain

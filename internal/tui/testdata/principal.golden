@@ -1,24 +1,24 @@
-                                      ╭──────────────────╮ ▣ │api de pedidos (trabajando)
-                                      │ arregla el login │   │
-                                      ╰──────────────────╯   │CONTEXTO
-                                                             │  1234 tokens (estimado)
- ▣ ╭─────────────────╮                                       │  61% usada
-  │ voy a revisarlo │                                        │
-  ╰─────────────────╯                                        │▾ TODO
-                                                             │  T-B014 · quedan 3
-                                                             │
-                                                             │LISTA DE TAREAS
-                                                             │  [•] migrar la tabla
-                                                             │
-                                                             │ESTADO
-                                                             │Capa y cola backend · 2 tareas grandes
-                                                             │Aprobaciones 0 esperando decisión
-                                                             │Agente plan
-                                                             │
-                                                             │
-─────────────────────────────────────────────────────────────│
-╭───────────────────────────────────────────────────────────╮│
-│ Escribe tu petición…                                      ││
-│ [plan] · * llama3.2 · herramientas: ? · visión: ?         ││Git master · sin cambios
-╰───────────────────────────────────────────────────────────╯│[/tmp/proyecto]
-tokens: 1.2k                                                 │LocalCli · v0.1 alpha
+                                                                                                    
+ arregla el login                                           api de pedidos (trabajando)             
+                                                                                                    
+                                                            CONTEXTO                                
+                                                              1234 tokens (estimado)                
+  voy a revisarlo                                             61% usada                             
+                                                                                                    
+                                                            ▾ TODO                                  
+                                                              T-B014 · quedan 3                     
+                                                                                                    
+                                                            LISTA DE TAREAS                         
+                                                              [•] migrar la tabla                   
+                                                                                                    
+                                                            ESTADO                                  
+                                                            Capa y cola backend · 2 tareas grandes  
+                                                            Aprobaciones 0 esperando decisión       
+                                                            Agente plan                             
+                                                                                                    
+ Escribe para iniciar la conversacion                                                               
+                                                                                                    
+ [plan] · * llama3.2 · tool [?]  [T]                        Git master · 0                          
+                                                            [/tmp/proyecto]                         
+                                                            LocalCli · v0.1 alpha                   
+tokens: 1.2k                                                                                        

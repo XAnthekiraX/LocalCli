@@ -78,17 +78,17 @@ type Adaptador struct {
 	auditar *store.Auditorias
 	// todos es el repositorio de la lista de pasos de la sesión (SPEC-TOOLS).
 	todos *store.Todos
-	// bloques es el repositorio del bloque de contexto de un flujo con
-	// `bloque_contexto` (SPEC-MOTOR-FLUJOS).
+	// bloques es el repositorio del bloque de contexto de un flujo
+	// (SPEC-MOTOR-FLUJOS).
 	bloques *store.Bloques
 	// chat es el repositorio del hilo de procesamiento (chat_evento): las líneas
 	// de sub-proceso y de herramienta que se guardan como parte del chat.
 	chat *store.Chat
 	bus  *session.Bus
 	dir  string
-	// catalogo son los flujos del proyecto: los oficiales más los que declara
-	// `ai/flows/*.json`. Lo arma el arranque; `Enviar` reconoce los comandos
-	// contra él.
+	// catalogo son los flujos del proyecto: los que declara
+	// `.localcli/flows/*.json`. Lo arma el arranque; `Enviar` reconoce los
+	// comandos contra él.
 	catalogo *flow.Catalogo
 
 	// cliente es Ollama: solo se usa para la lista del selector de modelos de
@@ -227,11 +227,12 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 		fmt.Fprintln(os.Stderr, "aviso: sin grafo de documentos:", gErr)
 	}
 
-	// Los flujos del proyecto: oficiales + los de `ai/flows/*.json`. Un JSON
-	// roto no tumba el arranque; se cae a los oficiales y se avisa.
+	// Los flujos del proyecto son los archivos de `.localcli/flows/*.json`. Un
+	// JSON roto no tumba el arranque; se arranca sin flujos (catálogo vacío) y se
+	// avisa.
 	catalogo, catErr := flow.CargarFlujos(carpeta)
 	if catErr != nil {
-		fmt.Fprintln(os.Stderr, "aviso: no se pudieron cargar los flujos de ai/flows:", catErr)
+		fmt.Fprintln(os.Stderr, "aviso: no se pudieron cargar los flujos de .localcli/flows:", catErr)
 		catalogo = flow.CatalogoPorDefecto()
 	}
 	ad.catalogo = catalogo
@@ -309,8 +310,8 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	ad.agentes = agent.OrdenarNombres(agentes)
 	motorFlows.Agente = &ejecutorPorTurno{ad: ad, ejecutor: ejecutor, agente: agentes}
 	motorFlows.Aprobador = &aprobadorPorTurno{ad: ad}
-	// El bloque de contexto de un flujo con `bloque_contexto`: cada etapa guarda
-	// su aportación optimizada en `store` y la composición final la lee entera
+	// El bloque de contexto de un flujo: cada etapa guarda su aportación
+	// optimizada en `store` y la etapa `entrega` la lee entera
 	// (SPEC-MOTOR-FLUJOS §Bloque de contexto).
 	motorFlows.Bloque = &bloquePorTurno{ad: ad}
 	motorFlows.Optimizador = &optimizadorPorTurno{ad: ad, infer: infer}
@@ -429,11 +430,11 @@ func (ad *Adaptador) Modelos() ([]tui.ModeloLocal, error) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			caps := ad.capacidadesDe(ctx, nombre)
-			out[i] = tui.ModeloLocal{
-				Nombre:          nombre,
-				SinHerramientas: !ollama.PuedeUsarHerramientas(caps),
-				SinVision:       !ollama.PuedeVer(caps),
+			caps, conocido := ad.capacidadesDe(ctx, nombre)
+			out[i] = tui.ModeloLocal{Nombre: nombre, CapacidadesSinDato: !conocido}
+			if conocido {
+				out[i].SinHerramientas = !ollama.PuedeUsarHerramientas(caps)
+				out[i].SinVision = !ollama.PuedeVer(caps)
 			}
 		}(i, m.Nombre)
 	}
@@ -441,15 +442,15 @@ func (ad *Adaptador) Modelos() ([]tui.ModeloLocal, error) {
 	return out, nil
 }
 
-// capacidadesDe pide la ficha del modelo (/api/show). Ante un fallo devuelve
-// nil: sin ficha no se declara ninguna capacidad, así que la vista no avisa de
-// más (mejor callar que alarmar).
-func (ad *Adaptador) capacidadesDe(ctx context.Context, nombre string) []string {
+// capacidadesDe pide la ficha del modelo (/api/show) y dice si se pudo leer. Sin
+// ficha no se declara ninguna capacidad: la vista no avisa ni asegura nada
+// (mejor callar que alarmar), y por eso el «conocido» viaja aparte.
+func (ad *Adaptador) capacidadesDe(ctx context.Context, nombre string) ([]string, bool) {
 	caps, err := ad.cliente.Capacidades(ctx, nombre)
 	if err != nil {
-		return nil
+		return nil, false
 	}
-	return caps
+	return caps, true
 }
 
 // ModeloActual devuelve el modelo con el que trabaja el motor ahora mismo: el
@@ -472,7 +473,7 @@ func (ad *Adaptador) Carpeta() string { return ad.dir }
 // «sin iniciar». La lectura la hace `internal/git`, que llama al binario: aquí
 // no hay aprobación porque el harness lee su propio repositorio, no ejecuta
 // nada del proyecto.
-func (ad *Adaptador) Git() (string, bool) { return gitrepo.Estado(ad.dir) }
+func (ad *Adaptador) Git() (string, int) { return gitrepo.Estado(ad.dir) }
 
 // CapacidadesModelo dice qué declara capaz de hacer el modelo indicado (usar
 // herramientas e interpretar imágenes), para la línea de estado bajo el input
@@ -604,9 +605,9 @@ func (ad *Adaptador) Enviar(ctx context.Context, sesionID, agente, texto string,
 }
 
 // Comandos devuelve los comandos de flujo del proyecto para la paleta de la
-// vista: los oficiales más los que declara `ai/flows/*.json`, y `/ejecutar` al
-// final (que no es un flujo: consume la cola). La vista no importa `flow`; el
-// catálogo llega ya traducido a su tipo.
+// vista: los que declara `.localcli/flows/*.json`, y `/ejecutar` al final (que no
+// es un flujo: consume la cola). La vista no importa `flow`; el catálogo llega
+// ya traducido a su tipo.
 func (ad *Adaptador) Comandos() []tui.ComandoFlujo {
 	if ad.catalogo == nil {
 		return nil

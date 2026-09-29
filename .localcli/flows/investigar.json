@@ -1,0 +1,35 @@
+{
+    "comando": "/investigar",
+    "nombre": "Investigar",
+    "descripcion": "investigar un problema",
+    "peticion": "diagnosticar un problema y entregar un plan de solución",
+    "pregunta": "un diagnóstico del problema y un plan de solución",
+    "reglas": ["Solo investiga la documentacion necesariapara solucionar el problema del usuario"],
+    "etapas": [
+        {
+            "id": "0001",
+            "nombre": "Listar archivos",
+            "agente": "plan",
+            "pregunta": "¿qué archivos tiene el proyecto?",
+            "instruccion": "Lista los archivos actuales del proyecto usando tools de lectura y retorna el árbol de carpeta y archivos de manera estructurada ",
+            "aprobacion": false
+        },
+        {
+            "id": "0002",
+            "nombre": "Buscar documentación",
+            "agente": "plan",
+            "pregunta": "¿qué documentación es relevante para el problema?",
+            "instruccion": "con la información del árbol de archivos, busca la documentación necesaria usando tools para solucionar el problema del usuario y retorna un resumen de la documentación encontrada",
+            "aprobacion": false
+        },
+        {
+            "id": "0003",
+            "nombre": "Entregar",
+            "agente": "plan",
+            "pregunta": "¿cuál es el plan de solución?",
+            "instruccion": "Redacta el plan de solución a partir de lo que devolvieron los pasos anteriores.",
+            "entrega": true,
+            "aprobacion": false
+        }
+    ]
+}

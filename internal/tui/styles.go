@@ -26,7 +26,6 @@ import (
 // sueltos por los archivos.
 var (
 	estiloUsuario      = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
-	estiloAgente       = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 	estiloIndicador    = lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true)
 	estiloSistema      = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	estiloRazonamiento = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
@@ -45,35 +44,49 @@ var (
 	// derecha tras copiar una selección con el ratón (selection.go).
 	estiloCopiado = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true)
 
-	// estiloGloboUsuario y estiloGloboAgente dibujan los globos del chat (T-F036):
-	// borde redondeado con el color de cada interlocutor —azul para lo que escribes,
-	// verde para lo que responde el agente/terminal— y un relleno de una columna a
-	// cada lado. Ver `burbuja`.
-	estiloGloboUsuario = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("12")).
-				Padding(0, 1)
-	estiloGloboAgente = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("10")).
-				Padding(0, 1)
+	// estiloSutil pinta el texto de apoyo con un gris azulado propio: el
+	// placeholder de la entrada y el modelo/proveedor de la línea de estado.
+	estiloSutil = lipgloss.NewStyle().Foreground(lipgloss.Color("#828BB8"))
+
+	// estiloBlanco destaca lo que se lee de un vistazo: el texto de los mensajes
+	// del chat, las teclas de la barra de pistas y el modelo en uso en la línea
+	// de estado de la entrada.
+	estiloBlanco = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+
+	// estiloCapaz y estiloIncapaz marcan las capacidades del modelo en el pie del
+	// input: en verde lo que tiene, en rojo lo que no.
+	estiloCapaz   = lipgloss.NewStyle().Foreground(lipgloss.Color("#4CEE75"))
+	estiloIncapaz = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5F5F"))
 
 	// Estilos del rediseño de la vista principal (sidebar, caja de entrada y
 	// iconos de las burbujas).
 	//
-	// estiloDivisor pinta la línea vertical entre la columna principal y el
-	// sidebar y la horizontal entre el chat y la caja de entrada.
-	estiloDivisor = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	// estiloSeccion titula los bloques del sidebar (CONTEXTO, TODO, LISTA DE
 	// TAREAS).
 	estiloSeccion = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
-	// estiloCajaBorde pinta el borde de la caja que envuelve la línea de
-	// escritura.
-	estiloCajaBorde = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	// estiloIconoAgente y estiloIconoUsuario colorean la cajita que precede
-	// (agente) o sigue (usuario) a cada globo del chat.
-	estiloIconoAgente  = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
-	estiloIconoUsuario = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))
+)
+
+// Paleta de fondos de las superficies de la TUI. Se declaran aparte de los
+// estilos porque no son «estilos de texto» sino el color del área de cada zona:
+// la capa común (marco.go) los usa para que cada celda del layout tenga fondo y
+// el área visual sea continua. Son colores hex; el perfil de color vigente los
+// degrada solo si la terminal no soporta color verdadero.
+var (
+	fondoApp   = lipgloss.Color("#17191F")
+	fondoPanel = lipgloss.Color("#1E2030")
+	fondoCaja  = lipgloss.Color("#1E2030")
+	// fondoChat es el fondo del área del chat: cada fila de mensaje es una
+	// superficie de ancho completo sobre este color, con el color del rol detrás
+	// del texto y sin icono (ver `bloqueChat`).
+	fondoChat = lipgloss.Color("#1E2030")
+	// Los mensajes del chat son filas de ancho completo con una franja del color
+	// de cada rol: azul la del usuario (en su borde derecho) y verde la del
+	// agente (en el izquierdo); sin icono ni glifos de adorno (ver `bloqueChat`).
+	franjaUsuario = lipgloss.Color("#606CD5")
+	franjaAgente  = lipgloss.Color("#4CEE75")
+	// fondoBienvenida es el fondo de la caja de entrada de la bienvenida: la caja
+	// entera —cuerpo y bandas— comparte un solo color.
+	fondoBienvenida = lipgloss.Color("#222436")
 )
 
 // Códigos del realce de la selección con el ratón (selection.go). No se usa
@@ -327,7 +340,7 @@ func renderIntercambio(razonamiento, respuesta string, revelar bool, noDisponibl
 		partes = append(partes, r)
 	}
 	if respuesta != "" {
-		partes = append(partes, estiloAgente.Render(recortar(respuesta, ancho)))
+		partes = append(partes, estiloBlanco.Render(recortar(respuesta, ancho)))
 	}
 	if len(partes) == 0 {
 		return ""
@@ -335,56 +348,51 @@ func renderIntercambio(razonamiento, respuesta string, revelar bool, noDisponibl
 	return strings.Join(partes, "\n\n")
 }
 
-// anchoGlobo es el ancho disponible para el CONTENIDO del globo: el ancho total
-// menos el borde (dos columnas) y el relleno horizontal (dos más). Quien compone
-// el texto de dentro envuelve a esta medida.
-func anchoGlobo(ancho int) int {
-	n := ancho - 4
-	if n < 1 {
-		n = 1
-	}
-	return n
-}
-
-// burbuja envuelve en el globo de un rol un contenido que YA viene envuelto y
-// pintado (razonamiento, respuesta). No vuelve a medir el texto: solo pone el
-// borde y el color del interlocutor, que lipgloss aplica sobre el ancho visible
-// aunque el contenido traiga estilos. Un contenido vacío no deja globo.
-func burbuja(rol Rol, contenido string) string {
+// bloqueChat pinta un mensaje del chat como una fila de ancho completo sobre el
+// fondo del chat (#1E2030): una franja de dos columnas con el color del rol en
+// su lado —el usuario a la derecha, el agente a la izquierda— y el texto dentro,
+// con aire de una celda arriba, abajo y a cada lado. No lleva icono. Un contenido
+// vacío no deja bloque.
+func bloqueChat(rol Rol, contenido string, ancho int) string {
 	if strings.TrimSpace(contenido) == "" {
 		return ""
 	}
-	if rol == RolUsuario {
-		return estiloGloboUsuario.Render(contenido)
+	if ancho < 4 {
+		ancho = 4
 	}
-	return estiloGloboAgente.Render(contenido)
-}
-
-// glifoIcono es el avatar que precede (agente) o sigue (usuario) a cada globo
-// del chat.
-const glifoIcono = "▣"
-
-// anchoIcono es lo que ocupa el icono más su separación del globo: las columnas
-// que hay que descontar del ancho del chat al medir una burbuja.
-const anchoIcono = 2
-
-// margenChat son las columnas que los globos y las líneas del chat dejan libres
-// a cada lado, para no quedar pegados al borde de la columna.
-const margenChat = 1
-
-// iconoDeRol dibuja el avatar de un rol: el glifo con el color de quien habla.
-// Es una función pura.
-func iconoDeRol(rol Rol) string {
+	franjaColor := franjaAgente
 	if rol == RolUsuario {
-		return estiloIconoUsuario.Render(glifoIcono)
+		franjaColor = franjaUsuario
 	}
-	return estiloIconoAgente.Render(glifoIcono)
+	// La franja de color del rol (una columna); el resto de la fila es fondo del
+	// chat. El texto dispone del ancho menos la franja y el relleno de una columna
+	// a cada lado.
+	const franja = 1
+	interno := ancho - franja - 2
+	if interno < 1 {
+		interno = 1
+	}
+	tira := pintarFondo("", franja, franjaColor)
+	vacia := pintarFondo("", interno+2, fondoChat)
+	// La franja va siempre en el lado del rol.
+	fila := func(centro string) string {
+		if rol == RolUsuario {
+			return centro + tira
+		}
+		return tira + centro
+	}
+	// Aire arriba y abajo: una fila en blanco antes y después del texto.
+	out := []string{fila(vacia)}
+	for _, l := range strings.Split(contenido, "\n") {
+		linea := " " + recortarColumnas(l, interno) + " "
+		out = append(out, fila(pintarFondo(linea, interno+2, fondoChat)))
+	}
+	out = append(out, fila(vacia))
+	return strings.Join(out, "\n")
 }
 
 // lineasALaDerecha coloca un bloque pegado al borde derecho de un ancho dado,
-// rellenando con espacios a su izquierda. Es lo que alinea el globo del usuario
-// (con su icono detrás) contra el margen derecho del chat. Sin ancho conocido
-// no mueve nada.
+// rellenando con espacios a su izquierda. Sin ancho conocido no mueve nada.
 func lineasALaDerecha(bloque string, ancho int) string {
 	if ancho <= 0 {
 		return bloque
@@ -392,22 +400,49 @@ func lineasALaDerecha(bloque string, ancho int) string {
 	return lipgloss.PlaceHorizontal(ancho, lipgloss.Right, bloque)
 }
 
-// cajaConBorde envuelve las líneas dadas en una caja de borde redondeado con una
-// columna de relleno a cada lado, de ancho total EXACTO `ancho`: cada línea se
-// recorta (contando ANSI) al ancho interno. Se dibuja a mano —en vez de con el
-// borde de Lip Gloss— para que el ancho no dependa de cómo reparte el estilo el
-// relleno y el borde, y las columnas del layout queden rectas. Es pura.
+// cajaConBorde envuelve las líneas dadas en la caja de la línea de entrada: una
+// superficie de ancho total EXACTO `ancho`, con fondo propio, una columna de
+// relleno a cada lado y una banda de separación arriba y abajo. No usa glifos de
+// borde (nada de ╭╮╰╯│): la caja se lee por su fondo, y así la selección con el
+// ratón cubre el área completa y la copia no arrastra caracteres de adorno. Cada
+// línea se recorta (contando ANSI) al ancho interno. Es pura.
 func cajaConBorde(ancho int, lineas []string) string {
-	if ancho < 5 {
+	if ancho < 3 {
 		return strings.Join(lineas, "\n")
 	}
-	interno := ancho - 4
-	barra := estiloCajaBorde.Render("│")
+	interno := ancho - 2
+	// Las filas de arriba y abajo de la caja son fondo de pantalla, no una banda
+	// de otro color: separan el componente del resto con el mismo fondo.
+	banda := pintarFondo("", ancho, fondoApp)
+	// Aire dentro de la caja: una fila en blanco arriba y otra abajo del texto.
+	vacia := pintarFondo("", ancho, fondoCaja)
 	var b strings.Builder
-	b.WriteString(estiloCajaBorde.Render("╭" + strings.Repeat("─", ancho-2) + "╮"))
+	b.WriteString(banda)
+	b.WriteString("\n" + vacia)
 	for _, l := range lineas {
-		b.WriteString("\n" + barra + " " + recortarColumnas(l, interno) + " " + barra)
+		b.WriteString("\n" + pintarFondo(" "+recortarColumnas(l, interno), ancho, fondoCaja))
 	}
-	b.WriteString("\n" + estiloCajaBorde.Render("╰"+strings.Repeat("─", ancho-2)+"╯"))
+	b.WriteString("\n" + vacia)
+	b.WriteString("\n" + banda)
+	return b.String()
+}
+
+// cajaEntradaBienvenida envuelve el contenido de la caja de entrada de la
+// bienvenida. Es la misma forma que `cajaConBorde` —relleno de una columna a
+// cada lado y una banda de separación arriba y abajo, sin glifos—, pero con un
+// solo color de fondo (#222436) para la caja entera: cuerpo y bandas. Cada línea
+// se recorta (contando ANSI) al ancho interno. Es pura.
+func cajaEntradaBienvenida(ancho int, lineas []string) string {
+	if ancho < 3 {
+		return strings.Join(lineas, "\n")
+	}
+	interno := ancho - 2
+	banda := pintarFondo("", ancho, fondoBienvenida)
+	var b strings.Builder
+	b.WriteString(banda)
+	for _, l := range lineas {
+		b.WriteString("\n" + pintarFondo(" "+recortarColumnas(l, interno), ancho, fondoBienvenida))
+	}
+	b.WriteString("\n" + banda)
 	return b.String()
 }

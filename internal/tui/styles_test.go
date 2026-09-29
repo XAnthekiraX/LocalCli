@@ -188,7 +188,7 @@ func TestRenderIntercambioRazonamientoAntesQueRespuesta(t *testing.T) {
 func TestLosEstilosDelBloqueEstanDefinidos(t *testing.T) {
 	for nombre, estilo := range map[string]lipgloss.Style{
 		"razonamiento": estiloRazonamiento,
-		"respuesta":    estiloAgente,
+		"respuesta":    estiloBlanco,
 	} {
 		if estilo.Render("x") == "" {
 			t.Errorf("el estilo %s debe estar definido", nombre)
@@ -222,35 +222,97 @@ func TestEnvolverConCursorReparteElTextoYUbicaElCursor(t *testing.T) {
 
 // --- T-F036: los globos del chat --------------------------------------------
 
-func TestLosGlobosDistinguenAlUsuarioDelAgente(t *testing.T) {
-	u := burbuja(RolUsuario, "hola")
-	g := burbuja(RolAgente, "hola")
+func TestLosBloquesDeChatDistinguenAlUsuarioDelAgente(t *testing.T) {
+	u := bloqueChat(RolUsuario, "hola", 40)
+	g := bloqueChat(RolAgente, "hola", 40)
 	if u == "" || g == "" {
-		t.Fatal("los dos globos deben pintarse")
+		t.Fatal("los dos bloques deben pintarse")
 	}
 	if u == g {
-		t.Error("el globo del usuario y el del agente no pueden verse iguales")
+		t.Error("el bloque del usuario y el del agente no pueden verse iguales")
 	}
 	for nombre, b := range map[string]string{"usuario": u, "agente": g} {
 		plano := sinEstilo(b)
 		if !strings.Contains(plano, "hola") {
-			t.Errorf("el globo %s contiene su texto: %q", nombre, plano)
+			t.Errorf("el bloque %s contiene su texto: %q", nombre, plano)
 		}
-		if !strings.ContainsAny(plano, "╭╰│") {
-			t.Errorf("el globo %s lleva borde redondeado: %q", nombre, plano)
+		// El bloque ocupa todo el ancho del chat, con aire arriba y abajo.
+		filas := strings.Split(plano, "\n")
+		if len(filas) < 3 {
+			t.Errorf("el bloque %s lleva aire arriba y abajo del texto: %q", nombre, plano)
+		}
+		for i, l := range filas {
+			if n := len([]rune(l)); n != 40 {
+				t.Errorf("el bloque %s: la fila %d mide %d y debería medir 40: %q", nombre, i, n, l)
+			}
+		}
+		if !strings.Contains(b, "\x1b[") {
+			t.Errorf("el bloque %s lleva la franja de su rol: %q", nombre, b)
+		}
+		if strings.ContainsAny(plano, "▣╭╮╰╯│─") {
+			t.Errorf("el bloque %s no debe llevar icono ni glifos: %q", nombre, plano)
 		}
 	}
-	// Un contenido vacío no deja globo vacío.
-	if got := burbuja(RolUsuario, "   "); got != "" {
-		t.Errorf("un globo sin contenido no se pinta: %q", got)
+	// El usuario va pegado a la derecha y el agente a la izquierda (el texto va
+	// junto a su franja de color).
+	lineaCon := func(b, marca string) string {
+		for _, l := range strings.Split(sinEstilo(b), "\n") {
+			if strings.Contains(l, marca) {
+				return l
+			}
+		}
+		return ""
+	}
+	if l := lineaCon(u, "hola"); !strings.HasSuffix(strings.TrimRight(l, " "), "hola") {
+		t.Errorf("el bloque del usuario va a la derecha: %q", l)
+	}
+	if l := lineaCon(g, "hola"); !strings.HasPrefix(strings.TrimLeft(l, " "), "hola") {
+		t.Errorf("el bloque del agente va a la izquierda: %q", l)
+	}
+	// Un contenido vacío no deja bloque.
+	if got := bloqueChat(RolUsuario, "   ", 40); got != "" {
+		t.Errorf("un bloque sin contenido no se pinta: %q", got)
 	}
 }
 
-func TestElAnchoDelGloboReservaBordeYRelleno(t *testing.T) {
-	if got := anchoGlobo(40); got != 36 {
-		t.Errorf("el contenido dispone de ancho-4 columnas: %d", got)
+func TestElBloqueDeChatRespetaElAnchoDado(t *testing.T) {
+	for _, ancho := range []int{6, 10, 40} {
+		for _, rol := range []Rol{RolUsuario, RolAgente} {
+			b := bloqueChat(rol, "hola", ancho)
+			for i, l := range strings.Split(sinEstilo(b), "\n") {
+				if n := len([]rune(l)); n != ancho {
+					t.Errorf("rol %s, ancho %d: la fila %d mide %d", rol, ancho, i, n)
+				}
+			}
+		}
 	}
-	if got := anchoGlobo(2); got != 1 {
-		t.Errorf("el globo no se queda sin ancho interior: %d", got)
+}
+
+// --- la caja de entrada de la bienvenida -------------------------------------
+
+// La caja de la bienvenida pinta la caja entera —cuerpo y bandas— con el mismo
+// fondo (#222436) y deja una columna de relleno a cada lado del texto. El ancho
+// total se conserva exacto para que la superficie quede recta.
+func TestLaCajaDeBienvenidaEsDeUnSoloColorConRelleno(t *testing.T) {
+	caja := cajaEntradaBienvenida(20, []string{"hola"})
+	codigo := codigoFondo(fondoBienvenida)
+	if codigo == "" {
+		t.Fatal("el perfil de prueba debe pintar color")
+	}
+	lineas := strings.Split(caja, "\n")
+	if len(lineas) != 3 {
+		t.Fatalf("la caja lleva banda, contenido y banda: %q", lineas)
+	}
+	for i, l := range lineas {
+		if !strings.Contains(l, codigo) {
+			t.Errorf("la línea %d no lleva el fondo de la bienvenida: %q", i, l)
+		}
+		if n := len([]rune(sinEstilo(l))); n != 20 {
+			t.Errorf("la línea %d mide %d columnas, quiero 20: %q", i, n, sinEstilo(l))
+		}
+	}
+	contenido := sinEstilo(lineas[1])
+	if !strings.HasPrefix(contenido, " ") || !strings.HasSuffix(contenido, " ") {
+		t.Errorf("el texto va con una columna de relleno a cada lado: %q", contenido)
 	}
 }

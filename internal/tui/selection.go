@@ -67,7 +67,8 @@ func (a *App) raton(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		a.ratonFin = fin
-		texto := textoSeleccionado(a.ultimaVista, a.ratonIni, a.ratonFin)
+		ini, finSel := a.limitarSeleccion(a.ratonIni, a.ratonFin)
+		texto := textoSeleccionado(a.ultimaVista, ini, finSel)
 		// Al soltar termina la selección: el realce desaparece (solo vivía en el
 		// arrastre). Si había algo, se copia y se avisa.
 		a.limpiarSeleccion()
@@ -80,6 +81,39 @@ func (a *App) raton(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return a, a.avisarCopiado()
 	}
 	return a, nil
+}
+
+// limitarSeleccion recorta la selección a la zona donde empezó: la columna del
+// chat o la del sidebar. Un arrastre no debe mezclar las dos —seleccionar el
+// chat y llevarse el sidebar de paso, o al revés—, así que el extremo que se
+// salga de su columna se pega a su borde. La separación (dos columnas) no es de
+// ninguna de las dos.
+func (a *App) limitarSeleccion(ini, fin posicion) (posicion, posicion) {
+	if !a.Panel.Abierto || a.Ancho <= 0 {
+		return ini, fin
+	}
+	col := a.anchoColumna()
+	esChat := ini.X < col
+	limitar := func(p posicion) posicion {
+		if esChat {
+			if p.X >= col {
+				p.X = col - 1
+			}
+			if p.X < 0 {
+				p.X = 0
+			}
+			return p
+		}
+		inicio := col + 2
+		if p.X < inicio {
+			p.X = inicio
+		}
+		if p.X >= a.Ancho {
+			p.X = a.Ancho - 1
+		}
+		return p
+	}
+	return limitar(ini), limitar(fin)
 }
 
 // limpiarSeleccion descarta la selección vigente (extremos a cero). Se llama
@@ -353,9 +387,10 @@ func superponerDerecha(vista, texto string, ancho int) string {
 		return strings.Join(lineas, "\n")
 	}
 	lineas := strings.Split(vista, "\n")
-	// El relleno hasta el borde y un reset antes del aviso: no debe heredar el
-	// color de lo que tuviera debajo.
-	lineas[0] = recortarColumnas(lineas[0], ancho-anchoTexto) + sgrReset + texto
+	// El relleno hasta el borde con el fondo de la app: el aviso no debe dejar
+	// un hueco sin pintar en la primera fila. `pintarFondo` cierra con un reset,
+	// así que el aviso no hereda el color de lo que tuviera debajo.
+	lineas[0] = pintarFondo(recortarColumnas(lineas[0], ancho-anchoTexto), ancho-anchoTexto, fondoApp) + texto
 	return strings.Join(lineas, "\n")
 }
 

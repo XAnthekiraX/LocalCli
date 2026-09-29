@@ -46,22 +46,45 @@ func TestEstadoTrasDecisionRechazaInvalida(t *testing.T) {
 	}
 }
 
-// TestFlujoValidar — un flujo sin etapas o con una etapa sin agente no es
-// encadenable; un agente propio (no plan/build) sí vale: el reparto lo carga el
-// arranque de `.localcli/agents/*.json`.
+// TestFlujoValidar — un flujo sin etapas, con una etapa sin agente o sin
+// `pregunta`, o sin una única `entrega` al final, no es encadenable; un agente
+// propio (no plan/build) sí vale: el reparto lo carga el arranque de
+// `.localcli/agents/*.json`.
 func TestFlujoValidar(t *testing.T) {
 	if err := (Flujo{Nombre: "x"}).Validar(); err == nil {
 		t.Error("un flujo sin etapas no es válido")
 	}
-	malo := Flujo{Nombre: "x", Etapas: []Etapa{{ID: "a", Nombre: "A"}}}
+	malo := Flujo{Nombre: "x", Pregunta: "algo", Etapas: []Etapa{{ID: "a", Nombre: "A", Pregunta: "¿a?"}}}
 	if err := malo.Validar(); err == nil {
 		t.Error("una etapa sin agente debe rechazarse")
 	}
-	bueno := Flujo{Nombre: "x", Etapas: []Etapa{{ID: "a", Nombre: "A", Agente: tools.AgentePlan}}}
+	sinPregunta := Flujo{Nombre: "x", Pregunta: "algo", Etapas: []Etapa{{ID: "a", Nombre: "A", Agente: tools.AgentePlan}}}
+	if err := sinPregunta.Validar(); err == nil {
+		t.Error("una etapa sin pregunta debe rechazarse")
+	}
+	sinFlujoPregunta := Flujo{Nombre: "x", Etapas: []Etapa{{ID: "a", Nombre: "A", Agente: tools.AgentePlan, Pregunta: "¿a?"}}}
+	if err := sinFlujoPregunta.Validar(); err == nil {
+		t.Error("un flujo sin pregunta debe rechazarse")
+	}
+	dosEntregas := Flujo{Nombre: "x", Pregunta: "algo", Etapas: []Etapa{
+		{ID: "a", Nombre: "A", Agente: tools.AgentePlan, Pregunta: "¿a?", Entrega: true},
+		{ID: "b", Nombre: "B", Agente: tools.AgentePlan, Pregunta: "¿b?", Entrega: true},
+	}}
+	if err := dosEntregas.Validar(); err == nil {
+		t.Error("dos etapas entrega deben rechazarse")
+	}
+	entregaNoUltima := Flujo{Nombre: "x", Pregunta: "algo", Etapas: []Etapa{
+		{ID: "a", Nombre: "A", Agente: tools.AgentePlan, Pregunta: "¿a?", Entrega: true},
+		{ID: "b", Nombre: "B", Agente: tools.AgentePlan, Pregunta: "¿b?"},
+	}}
+	if err := entregaNoUltima.Validar(); err == nil {
+		t.Error("la entrega debe ser la última etapa")
+	}
+	bueno := Flujo{Nombre: "x", Pregunta: "algo", Etapas: []Etapa{{ID: "a", Nombre: "A", Agente: tools.AgentePlan, Pregunta: "¿a?", Entrega: true}}}
 	if err := bueno.Validar(); err != nil {
 		t.Errorf("flujo válido rechazado: %v", err)
 	}
-	propio := Flujo{Nombre: "x", Etapas: []Etapa{{ID: "a", Nombre: "A", Agente: "revisor"}}}
+	propio := Flujo{Nombre: "x", Pregunta: "algo", Etapas: []Etapa{{ID: "a", Nombre: "A", Agente: "revisor", Pregunta: "¿a?", Entrega: true}}}
 	if err := propio.Validar(); err != nil {
 		t.Errorf("un agente propio debe aceptarse: %v", err)
 	}

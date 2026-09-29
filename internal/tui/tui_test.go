@@ -51,10 +51,10 @@ type puertoStub struct {
 	// carpeta es la carpeta del proyecto que el arranque resolvió; es lo que la
 	// vista pinta en el pie del panel.
 	carpeta string
-	// gitRama y gitLimpio son el estado del repositorio que el arranque leyó;
+	// gitRama y gitCambios son el estado del repositorio que el arranque leyó;
 	// gitRama vacía es el proyecto sin git inicializado.
-	gitRama   string
-	gitLimpio bool
+	gitRama    string
+	gitCambios int
 	// agentesDisponibles es la lista que ofrece el puerto; vacía deja los base
 	// plan/build.
 	agentesDisponibles []string
@@ -226,7 +226,7 @@ func (p *puertoStub) Carpeta() string { return p.carpeta }
 
 // Git simula el estado del repositorio del proyecto: rama vacía = sin git
 // inicializado, que el pie pinta como «sin iniciar».
-func (p *puertoStub) Git() (string, bool) { return p.gitRama, p.gitLimpio }
+func (p *puertoStub) Git() (string, int) { return p.gitRama, p.gitCambios }
 
 // AgenteRecordado simula la preferencia leída al arrancar; vacío = sin
 // preferencia (la vista cae en plan).
@@ -495,7 +495,7 @@ func TestElPanelMuestraLosNueveDatos(t *testing.T) {
 		"CONTEXTO", "1234 tokens", "(estimado)", "61% usada",
 		"TODO", "T-B014", "quedan 3",
 		"/tmp/proyecto",
-		"Git", "master", "con cambios sin confirmar",
+		"Git", "master · 0",
 		"Capa y cola", "backend", "2 tareas grandes",
 		"Aprobaciones", "1 esperando decisión",
 		"Agente", "build",

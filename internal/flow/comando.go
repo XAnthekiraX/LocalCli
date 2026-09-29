@@ -14,7 +14,6 @@ package flow
 
 import (
 	"strings"
-	"sync"
 )
 
 // Comando es un comando explícito que arranca un flujo. `Consumir` distingue
@@ -24,18 +23,6 @@ type Comando struct {
 	Nombre   string
 	Flujo    Flujo
 	Consumir bool
-}
-
-// catalogoPorDefecto es el catálogo de los flujos oficiales, armado una vez.
-// El arranque usa el catálogo cargado del proyecto (con los flujos propios de
-// `ai/flows/`); esta función cubre a quien solo necesita los oficiales.
-var catalogoPorDefecto = sync.OnceValue(CatalogoPorDefecto)
-
-// ComandoDe reconoce un comando explícito contra los flujos oficiales. Devuelve
-// el comando y true solo para los seis nombres de la spec; cualquier otro texto
-// (incluido otro `/…`) es chat.
-func ComandoDe(texto string) (Comando, bool) {
-	return catalogoPorDefecto().De(texto)
 }
 
 // Objetivo devuelve la petición que acompaña al comando. Sin texto, usa la
@@ -75,13 +62,21 @@ func quitarComando(texto string) string {
 
 // SugerenciaTrabajo propone ejecutar un flujo cuando la petición parece trabajo
 // ordenado, sin arrancarlo. Devuelve el aviso y true solo si hay algo que
-// proponer; un comando explícito ya no es una sugerencia.
+// proponer; una línea que empieza por `/` es un comando explícito, no una
+// sugerencia.
 func SugerenciaTrabajo(texto string) (string, bool) {
-	if _, ok := ComandoDe(texto); ok {
+	if esComando(texto) {
 		return "", false
 	}
 	if !EsTrabajoOrdenado(texto) {
 		return "", false
 	}
 	return "Esta petición parece trabajo ordenado. Se responde como chat; escribe `/ejecutar` para ejecutar la cola.", true
+}
+
+// esComando dice si la línea empieza por un comando (`/…`). No consulta el
+// catálogo: qué comandos existen lo sabe el motor, que es quien lo carga de
+// `.localcli/flows/`.
+func esComando(texto string) bool {
+	return strings.HasPrefix(strings.TrimSpace(texto), "/")
 }

@@ -91,7 +91,7 @@ func TestLasDoradasDeVistaSeMantienen(t *testing.T) {
 	// modelo y capacidades) dentro de la caja con borde.
 	e := NuevaEntrada()
 	e.FijarAncho(60)
-	compararDorada(t, "entrada.golden", sinEstilo(e.Caja(60, "[plan] · * llama3.2 · herramientas: sí · visión: sí"))+"\n")
+	compararDorada(t, "entrada.golden", sinEstilo(e.Caja(60, "[plan] · * llama3.2 · tool [*]  [v] [T]"))+"\n")
 
 	// Vista principal completa: chat con globos e iconos, divisor, caja de
 	// entrada y sidebar con los datos de la sesión activa.
@@ -109,7 +109,7 @@ func TestLasDoradasDeVistaSeMantienen(t *testing.T) {
 		ElementosRestantes: 3,
 		Ruta:               "/tmp/proyecto",
 		GitRama:            "master",
-		GitLimpio:          true,
+		GitCambios:         0,
 		Capa:               "backend",
 		TareasGrandes:      2,
 		Agente:             "plan",

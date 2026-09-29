@@ -6,7 +6,6 @@
                                                                                                     
                                                                                                     
                                                                                                     
-                                                                                                    
                  ██╗      ██████╗  ██████╗  █████╗  ██╗       ██████╗ ██╗      ██╗                  
                  ██║     ██╔═══██╗██╔════╝ ██╔══██╗ ██║      ██╔════╝ ██║      ██║                  
                  ██║     ██║   ██║██║      ███████║ ██║      ██║      ██║      ██║                  
@@ -14,17 +13,18 @@
                  ███████╗╚██████╔╝╚██████╗ ██║  ██║ ███████╗ ╚██████╗ ███████╗ ██║                  
                  ╚══════╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝ ╚══════╝  ╚═════╝ ╚══════╝ ╚═╝                  
                                                                                                     
-                                       LocalCli · v0.1 alpha                                        
                                                                                                     
-                                modelo: llama3.2  (Ctrl+X m cambiar)                                
+               "Escribe para iniciar la conversacion"                                               
                                                                                                     
-                                  [plan] > En qué te ayudo hoy: ▌                                   
-                                                                                                    
+               [plan] • llama3.2                                                                    
                                                                                                     
                                                                                                     
-                                                                                                    
+                          TAB agentes   Ctrl+P comandos   Ctrl+X M modelos                          
                                                                                                     
                                                                                                     
                                                                                                     
                                                                                                     
                                                                                                     
+                                                                                                    
+                                                                                                    
+                                                                                          v0.1 alpha

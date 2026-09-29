@@ -2,16 +2,17 @@
 title: LocalCli — entradas y salidas de la TUI
 tags: [frontend, interfaces]
 depende_de:
-  - "[[frontend/FRONTEND]]"
-  - "[[backend/04-infrastructure/EVENTS]]"
-  - "[[specs/SPEC-INTERFAZ]]"
+    - "[[frontend/FRONTEND]]"
+    - "[[backend/04-infrastructure/EVENTS]]"
+    - "[[specs/SPEC-INTERFAZ]]"
 relacionado:
-  - "[[specs/SPEC-SESIONES]]"
-  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
-  - "[[specs/SPEC-TOOLS]]"
-  - "[[specs/SPEC-OLLAMA-PERFIL]]"
-  - "[[database/03-operations/QUERIES]]"
+    - "[[specs/SPEC-SESIONES]]"
+    - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+    - "[[specs/SPEC-TOOLS]]"
+    - "[[specs/SPEC-OLLAMA-PERFIL]]"
+    - "[[database/03-operations/QUERIES]]"
 ---
+
 # INTERFACES — Entradas y salidas de la TUI
 
 La TUI no tiene red ni API: su frontera son dos entradas (teclado y eventos) y dos salidas (peticiones a `session` y lecturas a `store`).
@@ -22,23 +23,23 @@ No importa `tools`. Recibe lo que llega por el bus, que es lo que la prohibició
 
 De [[backend/04-infrastructure/EVENTS]] llega cada evento y así reacciona la pantalla:
 
-| Evento | Qué hace la TUI |
-|---|---|
-| `token` | Añade el fragmento al bloque de razonamiento o a la respuesta, en vivo |
-| `herramienta_invocada` | Abre la línea de herramienta en el chat con su verbo y su tema (la ruta, el patrón o el comando) |
-| `herramienta_resultado` | Completa esa misma línea: la marca, la medida del resultado y si se recortó |
-| `estado_sesion` | Actualiza el estado en el selector y en el panel |
-| `titulo_sesion` | Renombra la sesión en el panel (si es la activa) y en su fila del modal de sesiones |
-| `notificacion` | Marca el aviso de esa sesión aunque no sea la activa |
-| `peticion_aprobacion` | Añade la línea al panel de aprobaciones y actualiza el contador |
-| `aprobacion_resuelta` | Retira o marca la línea y actualiza el contador |
-| `etapa_iniciada` | Pinta en el chat la línea `[Sub Proceso] <nombre>` de la etapa que empieza |
-| `etapa_terminada` / `etapa_fallida` | Sin línea propia: la entrega final del flujo la escribe su último paso; `fallida` deja aviso |
-| `flujo_pausado` / `reanudado` / `cancelado` | Refleja el estado del flujo |
-| `cola_actualizada` / `elemento_bloqueado` | Actualiza la zona de capa y cola del panel |
-| `todo_actualizada` | Repinta la lista de pasos de la sesión activa en el panel |
-| `cambio_aplicado` | Hoy no cambia nada en pantalla: el estado de git se leyó al arrancar y el panel no lo vuelve a consultar. El evento queda reservado para cuando la lectura deje de ser solo de arranque |
-| `contexto_auditado` | Queda disponible para consulta; no se pinta por defecto |
+| Evento                                      | Qué hace la TUI                                                                                                                                                                         |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `token`                                     | Añade el fragmento al bloque de razonamiento o a la respuesta, en vivo                                                                                                                  |
+| `herramienta_invocada`                      | Abre la línea de herramienta en el chat con su verbo y su tema (la ruta, el patrón o el comando)                                                                                        |
+| `herramienta_resultado`                     | Completa esa misma línea: la marca, la medida del resultado y si se recortó                                                                                                             |
+| `estado_sesion`                             | Actualiza el estado en el selector y en el panel                                                                                                                                        |
+| `titulo_sesion`                             | Renombra la sesión en el panel (si es la activa) y en su fila del modal de sesiones                                                                                                     |
+| `notificacion`                              | Marca el aviso de esa sesión aunque no sea la activa                                                                                                                                    |
+| `peticion_aprobacion`                       | Añade la línea al panel de aprobaciones y actualiza el contador                                                                                                                         |
+| `aprobacion_resuelta`                       | Retira o marca la línea y actualiza el contador                                                                                                                                         |
+| `etapa_iniciada`                            | Pinta en el chat la línea `[Sub Proceso] <nombre>` de la etapa que empieza                                                                                                              |
+| `etapa_terminada` / `etapa_fallida`         | Sin línea propia: la entrega final del flujo la escribe su último paso; `fallida` deja aviso                                                                                            |
+| `flujo_pausado` / `reanudado` / `cancelado` | Refleja el estado del flujo                                                                                                                                                             |
+| `cola_actualizada` / `elemento_bloqueado`   | Actualiza la zona de capa y cola del panel                                                                                                                                              |
+| `todo_actualizada`                          | Repinta la lista de pasos de la sesión activa en el panel                                                                                                                               |
+| `cambio_aplicado`                           | Hoy no cambia nada en pantalla: el estado de git se leyó al arrancar y el panel no lo vuelve a consultar. El evento queda reservado para cuando la lectura deje de ser solo de arranque |
+| `contexto_auditado`                         | Queda disponible para consulta; no se pinta por defecto                                                                                                                                 |
 
 ## 1.1 La línea de herramienta
 
@@ -83,14 +84,14 @@ El texto de un paso intermedio **no** se pinta: el motor lo corre en silencio y 
 
 Todas van a `session`, la única puerta del motor:
 
-| Petición | Cuándo |
-|---|---|
-| Enviar mensaje | El usuario escribe y confirma, tanto en la bienvenida (primera petición) como en el chat |
+| Petición                  | Cuándo                                                                                                                                                                                                                |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enviar mensaje            | El usuario escribe y confirma, tanto en la bienvenida (primera petición) como en el chat                                                                                                                              |
 | Ejecutar comando de flujo | El usuario escribe un comando explícito (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`) y confirma, o lo elige en la paleta y pulsa `Enter`; el motor lo reconoce y arranca el flujo |
-| Crear sesión | Al enviar desde la bienvenida (o con `Ctrl+X n`): nace una sesión nueva con nombre provisional «Nueva sesión» y va el mensaje; el modelo le pondrá título con esa primera petición |
-| Cambiar de sesión | Elige en el selector momentáneo; también desde la bienvenida, donde al elegir la vista pasa a la principal con el historial de esa sesión |
-| Aprobar / declinar | Resuelve una línea del panel de aprobaciones |
-| Cancelar flujo | Lo pide con su atajo; si había flujo en marcha, `session` pregunta qué hacer, según [[specs/SPEC-SESIONES]] |
+| Crear sesión              | Al enviar desde la bienvenida (o con `Ctrl+X n`): nace una sesión nueva con nombre provisional «Nueva sesión» y va el mensaje; el modelo le pondrá título con esa primera petición                                    |
+| Cambiar de sesión         | Elige en el selector momentáneo; también desde la bienvenida, donde al elegir la vista pasa a la principal con el historial de esa sesión                                                                             |
+| Aprobar / declinar        | Resuelve una línea del panel de aprobaciones                                                                                                                                                                          |
+| Cancelar flujo            | Lo pide con su atajo; si había flujo en marcha, `session` pregunta qué hacer, según [[specs/SPEC-SESIONES]]                                                                                                           |
 
 ## 3. Lecturas a `store`
 
@@ -100,10 +101,10 @@ Solo lectura, con las consultas de [[database/03-operations/QUERIES]]: historial
 
 Dos datos del panel son fijos mientras la sesión vive, así que se leen **una sola vez**, al arrancar, y se pintan en el pie del sidebar. La pantalla no los consulta ni los revalida:
 
-| Lectura | Qué trae | Nota |
-|---|---|---|
-| `Carpeta()` | La carpeta del proyecto | Se abrevia con `~` y se recorta por la izquierda |
-| `Git()` | La rama activa y si el árbol tiene cambios sin confirmar | Se llama al binario `git`; rama vacía = proyecto sin git inicializado o sin git instalado, y el pie lo dice `sin iniciar` |
+| Lectura     | Qué trae                                                 | Nota                                                                                                                      |
+| ----------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `Carpeta()` | La carpeta del proyecto                                  | Se abrevia con `~` y se recorta por la izquierda                                                                          |
+| `Git()`     | La rama activa y si el árbol tiene cambios sin confirmar | Se llama al binario `git`; rama vacía = proyecto sin git inicializado o sin git instalado, y el pie lo dice `sin iniciar` |
 
 Que no se revalide es una decisión, no un descuido: una sesión trabaja siempre en la misma
 rama y llamar a git en cada repintado costaría un proceso por frame. El precio es que un
@@ -114,32 +115,32 @@ siguiente.
 
 Atajos por defecto, reasignables desde la ayuda y guardados en `~/.config/localcli/keys.json`. El último modelo y el último agente usados se recuerdan en `~/.config/localcli/config.json`. El teclado pasa por un resolver central (`KeyResolver`, ver [[specs/SPEC-KEYBINDS]]): acciones con ID estable, múltiples bindings por acción, tecla líder `Ctrl+X` con timeout 2000 ms y resolución por contexto (modal → input → vista → global). Los componentes reciben acciones, nunca teclas:
 
-| Atajo | Acción | Contexto |
-|---|---|---|
-| `Ctrl+C` | Salir (`app_exit`) | global, también con modales abiertos |
-| `Ctrl+X m` | Abrir el modal de modelos (`model_picker`) | global |
-| `Ctrl+X l` | Abrir el modal de sesiones; al elegir una con `Enter` se abre esa sesión (`session_picker`) | global |
-| `Ctrl+X n` | Crear una sesión nueva y dejarla activa (`session_new`) | vista principal |
-| `Ctrl+D` | Eliminar la sesión resaltada en el modal; si trabaja, pide confirmación (`session_delete`) | modal de sesiones |
-| `Ctrl+P` | Abrir el modal con la lista de atajos existentes (`command_palette`) | global |
-| `Tab` | Cambiar de agente: recorre los disponibles (`agent_cycle`); el agente activo se pinta en el pie de la caja de entrada | vista y bienvenida (no con modal abierto) |
-| `Esc` | Cerrar cualquier modal (`dismiss`) | modal |
-| `Esc` | Cancelar el trabajo en curso: el primero pide confirmación, el segundo cancela (doble `esc`) | vista, sesión trabajando |
-| `↑` / `↓` | Navegar la lista del modal abierto | modal |
-| `↑` / `↓` | Recorrer el historial del chat (`chat_scroll_up`/`chat_scroll_down`) | vista principal |
-| `PgUp` / `PgDn` | Página arriba / abajo en el historial (`chat_page_up`/`chat_page_down`) | vista principal |
-| `←` / `→`, `Home` / `End` | Mover el cursor del input y editar en cualquier punto | input |
-| `Enter` | Aplicar lo resaltado en el modal y cerrarlo | modal |
-| `Enter` | Enviar la petición | input |
-| `Ctrl+D` | Plegar o desplegar el sidebar de datos, que arranca visible (`panel_toggle`) | vista |
-| `Ctrl+R` | Mostrar u ocultar el razonamiento | vista |
-| `Ctrl+A` | Abrir el panel de aprobaciones | vista |
-| `Ctrl+F` | Cancelar el flujo en curso (pide confirmación) | vista |
-| `a` / `d` | Aprobar / declinar la línea seleccionada | panel de aprobaciones |
+| Atajo                     | Acción                                                                                                                | Contexto                                  |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `Ctrl+C`                  | Salir (`app_exit`)                                                                                                    | global, también con modales abiertos      |
+| `Ctrl+X m`                | Abrir el modal de modelos (`model_picker`)                                                                            | global                                    |
+| `Ctrl+X l`                | Abrir el modal de sesiones; al elegir una con `Enter` se abre esa sesión (`session_picker`)                           | global                                    |
+| `Ctrl+X n`                | Crear una sesión nueva y dejarla activa (`session_new`)                                                               | vista principal                           |
+| `Ctrl+D`                  | Eliminar la sesión resaltada en el modal; si trabaja, pide confirmación (`session_delete`)                            | modal de sesiones                         |
+| `Ctrl+P`                  | Abrir el modal con la lista de atajos existentes (`command_palette`)                                                  | global                                    |
+| `Tab`                     | Cambiar de agente: recorre los disponibles (`agent_cycle`); el agente activo se pinta en el pie de la caja de entrada | vista y bienvenida (no con modal abierto) |
+| `Esc`                     | Cerrar cualquier modal (`dismiss`)                                                                                    | modal                                     |
+| `Esc`                     | Cancelar el trabajo en curso: el primero pide confirmación, el segundo cancela (doble `esc`)                          | vista, sesión trabajando                  |
+| `↑` / `↓`                 | Navegar la lista del modal abierto                                                                                    | modal                                     |
+| `↑` / `↓`                 | Recorrer el historial del chat (`chat_scroll_up`/`chat_scroll_down`)                                                  | vista principal                           |
+| `PgUp` / `PgDn`           | Página arriba / abajo en el historial (`chat_page_up`/`chat_page_down`)                                               | vista principal                           |
+| `←` / `→`, `Home` / `End` | Mover el cursor del input y editar en cualquier punto                                                                 | input                                     |
+| `Enter`                   | Aplicar lo resaltado en el modal y cerrarlo                                                                           | modal                                     |
+| `Enter`                   | Enviar la petición                                                                                                    | input                                     |
+| `Ctrl+D`                  | Plegar o desplegar el sidebar de datos, que arranca visible (`panel_toggle`)                                          | vista                                     |
+| `Ctrl+R`                  | Mostrar u ocultar el razonamiento                                                                                     | vista                                     |
+| `Ctrl+A`                  | Abrir el panel de aprobaciones                                                                                        | vista                                     |
+| `Ctrl+F`                  | Cancelar el flujo en curso (pide confirmación)                                                                        | vista                                     |
+| `a` / `d`                 | Aprobar / declinar la línea seleccionada                                                                              | panel de aprobaciones                     |
 
 Las sesiones se crean con `Ctrl+X n` desde la vista principal o enviando la primera petición desde la bienvenida. No hay ayuda por `?`: el listado de atajos es el modal de `Ctrl+P`.
 
-**Paleta de comandos de flujo.** Al escribir `/` en la entrada —principal o bienvenida— se despliega encima la lista de comandos que sirve el motor (los oficiales y los propios de `ai/flows/*.json`). Mientras está desplegada, `↑`/`↓` la recorren, `Tab` autocompleta el comando resaltado dejando la línea lista para la petición (`/comando [petición]`) y `Enter` lo ejecuta; un espacio retira la paleta y lo escrito pasa a ser la petición. Lo que no coincide con ningún comando —aunque empiece por `/`— se responde como chat.
+**Paleta de comandos de flujo.** Al escribir `/` en la entrada —principal o bienvenida— se despliega encima la lista de comandos que sirve el motor (los oficiales y los propios de `.localcli/flows/*.json`). Mientras está desplegada, `↑`/`↓` la recorren, `Tab` autocompleta el comando resaltado dejando la línea lista para la petición (`/comando [petición]`) y `Enter` lo ejecuta; un espacio retira la paleta y lo escrito pasa a ser la petición. Lo que no coincide con ningún comando —aunque empiece por `/`— se responde como chat.
 
 **Ratón.** La rueda desplaza el historial del chat. Arrastrar con el botón izquierdo selecciona texto, que se **resalta en video inverso** mientras se elige, y al soltar se copia al portapapeles —el realce desaparece y aparece el aviso transitorio `[Copiado]` arriba a la derecha, que se apaga solo—. Al capturar el ratón —necesario para poder copiar—, la selección nativa de la terminal queda disponible manteniendo `Shift`. La selección queda **anclada al texto**: la rueda puede usarse mientras se selecciona y no la cancela, así que en un chat largo se puede seguir eligiendo al desplazarse. Con el panel de aprobaciones visible, un clic sobre «aprobar» o «declinar» de una línea resuelve esa aprobación, sin necesidad de darle el foco con el teclado (un clic, no un arrastre: arrastrar sigue seleccionando texto).
 

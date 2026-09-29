@@ -323,10 +323,10 @@ func TestElAvisoDeCopiadoSeVeArribaALaDerechaYSeApagaSolo(t *testing.T) {
 	}
 }
 
-// El chat y el sidebar son UNA sola columna compuesta, así que un arrastre puede
-// cruzar del chat al sidebar y copiar las dos zonas: la selección vive en la
-// raíz, sobre el marco entero (no dentro de cada componente).
-func TestLaSeleccionCruzaChatYSidebar(t *testing.T) {
+// La selección no sale de su zona: un arrastre que empieza en el chat y termina
+// en el sidebar copia solo el chat (y al revés), porque cada columna es su
+// propio componente.
+func TestLaSeleccionNoMezclaChatYSidebar(t *testing.T) {
 	var copiado []string
 	original := copiarFunc
 	copiarFunc = func(s string) { copiado = append(copiado, s) }
@@ -341,9 +341,9 @@ func TestLaSeleccionCruzaChatYSidebar(t *testing.T) {
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 20})
 	a.Chat.AñadirUsuario("hola chat")
 
+	// Empieza en el chat y el puntero termina dentro del sidebar.
 	y, x := filaDe(t, a.View(), "hola chat")
-	// El arrastre termina a la derecha del divisor vertical, dentro del sidebar.
-	xs := a.anchoColumna() + 3
+	xs := a.anchoColumna() + 20
 	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: x, Y: y})
 	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion, X: xs, Y: y})
 	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease, X: xs, Y: y})
@@ -351,9 +351,38 @@ func TestLaSeleccionCruzaChatYSidebar(t *testing.T) {
 	if len(copiado) != 1 {
 		t.Fatalf("al soltar se copia la selección: %v", copiado)
 	}
-	// La misma fila copiada trae el texto del chat y el del sidebar, con el
-	// divisor en medio: prueba de que la selección atraviesa las dos zonas.
-	if !strings.Contains(copiado[0], "hola chat") || !strings.Contains(copiado[0], "│") {
-		t.Errorf("la selección debe cruzar del chat al sidebar: %q", copiado[0])
+	if !strings.Contains(copiado[0], "hola chat") {
+		t.Errorf("la selección copia el chat: %q", copiado[0])
+	}
+	if strings.Contains(copiado[0], "sesion") {
+		t.Errorf("la selección del chat no debe llevarse el sidebar: %q", copiado[0])
+	}
+}
+
+// Recorte a la zona de origen: el ancla manda y el otro extremo se pega al borde
+// de su columna.
+func TestLaSeleccionSeLimitaASuZona(t *testing.T) {
+	a := Nuevo(&puertoStub{})
+	a.Vista = VistaPrincipal
+	a.Panel = NuevoPanel()
+	a.Panel.Abierto = true
+	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 20})
+	col := a.anchoColumna()
+
+	// Ancla en el chat, puntero en el sidebar: se recorta al chat.
+	ini, fin := a.limitarSeleccion(posicion{X: 3, Y: 1}, posicion{X: col + 20, Y: 1})
+	if ini.X != 3 || fin.X != col-1 {
+		t.Errorf("la selección del chat se queda en el chat: %+v %+v", ini, fin)
+	}
+	// Ancla en el sidebar, puntero en el chat: se recorta al sidebar.
+	ini, fin = a.limitarSeleccion(posicion{X: col + 5, Y: 1}, posicion{X: 0, Y: 1})
+	if ini.X != col+5 || fin.X != col+2 {
+		t.Errorf("la selección del sidebar se queda en el sidebar: %+v %+v", ini, fin)
+	}
+	// Con el panel cerrado no hay dos zonas que separar.
+	a.Panel.Abierto = false
+	ini, fin = a.limitarSeleccion(posicion{X: 3, Y: 1}, posicion{X: 90, Y: 1})
+	if ini.X != 3 || fin.X != 90 {
+		t.Errorf("sin panel no se recorta: %+v %+v", ini, fin)
 	}
 }

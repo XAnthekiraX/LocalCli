@@ -2,25 +2,26 @@
 title: LocalCli — pruebas de la TUI
 tags: [frontend, calidad]
 depende_de:
-  - "[[backend/05-quality/TESTING]]"
-  - "[[frontend/FRONTEND]]"
+    - "[[backend/05-quality/TESTING]]"
+    - "[[frontend/FRONTEND]]"
 relacionado:
-  - "[[frontend/02-interfaces/INTERFACES]]"
-  - "[[database/01-schema/ENUMS]]"
-  - "[[specs/SPEC-INTERFAZ]]"
-  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+    - "[[frontend/02-interfaces/INTERFACES]]"
+    - "[[database/01-schema/ENUMS]]"
+    - "[[specs/SPEC-INTERFAZ]]"
+    - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
 ---
+
 # TESTING — Pruebas de la TUI
 
 Qué se prueba en la capa de presentación y cómo. La estrategia global está en [[backend/05-quality/TESTING]]; esto la complementa para la interfaz.
 
 ## 1. Estrategia
 
-| Nivel | Qué cubre | Cómo |
-|---|---|---|
-| Unitario | Funciones puras de render: recorte de líneas, formato del bloque de razonamiento, formato del contador, formato del tiempo de respuesta, detección de atajos duplicados | Funciones aisladas, sin bucle de Bubble Tea |
-| De componente | `update` y `view` de cada componente ante secuencias fijas de eventos | Bubble Tea en proceso, con el arnés de pruebas de la librería, inyectando mensajes sintéticos |
-| De integración | El recorrido completo: tecla → petición a `session` → evento de vuelta → pantalla | `session` real con base temporal y un doble de `ollama` que emita tokens fijos |
+| Nivel          | Qué cubre                                                                                                                                                               | Cómo                                                                                          |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Unitario       | Funciones puras de render: recorte de líneas, formato del bloque de razonamiento, formato del contador, formato del tiempo de respuesta, detección de atajos duplicados | Funciones aisladas, sin bucle de Bubble Tea                                                   |
+| De componente  | `update` y `view` de cada componente ante secuencias fijas de eventos                                                                                                   | Bubble Tea en proceso, con el arnés de pruebas de la librería, inyectando mensajes sintéticos |
+| De integración | El recorrido completo: tecla → petición a `session` → evento de vuelta → pantalla                                                                                       | `session` real con base temporal y un doble de `ollama` que emita tokens fijos                |
 
 ## 2. Qué debe probarse
 
@@ -33,7 +34,7 @@ Qué se prueba en la capa de presentación y cómo. La estrategia global está e
 - `Ctrl+X l` abre el modal de sesiones con todas las del proyecto y su estado, incluidas las de segundo plano; elegir una con `Enter` abre esa sesión (el chat cambia a su historial) sin detener nada.
 - `Ctrl+P` abre el modal de atajos: cada línea muestra la acción y su tecla; es de solo lectura. `Esc` cierra los tres modales sin cambiar nada.
 - `Tab` alterna el agente `plan`/`build`; el indicador `[plan]`/`[build]` aparece a la izquierda del input en bienvenida y vista principal, y no cicla con un modal abierto.
-- Escribir `/` despliega la paleta de comandos de flujo encima de la entrada —también en la bienvenida—; el filtro y las flechas la recorren, `Tab` autocompleta el comando resaltado y `Enter` lo ejecuta. El catálogo sale del puerto (oficiales y propios de `ai/flows/*.json`) y lo que no es comando, aunque empiece por `/`, se responde como chat.
+- Escribir `/` despliega la paleta de comandos de flujo encima de la entrada —también en la bienvenida—; el filtro y las flechas la recorren, `Tab` autocompleta el comando resaltado y `Enter` lo ejecuta. El catálogo sale del puerto (oficiales y propios de `.localcli/flows/*.json`) y lo que no es comando, aunque empiece por `/`, se responde como chat.
 - El panel de aprobaciones lista pendientes de cualquier sesión y resuelve cada línea por separado.
 - Los estados pintados coinciden con [[database/01-schema/ENUMS]]; ningún estado inventado.
 - Un atajo duplicado se rechaza al guardar el mapa de teclas, y el cambio queda persistido.

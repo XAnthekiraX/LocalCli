@@ -44,14 +44,26 @@ func (d Decision) String() string {
 
 // Etapa es un paso encadenable de un flujo.
 type Etapa struct {
-	ID         string
-	Nombre     string
-	Agente     string // nombre del agente que la corre (p. ej. `plan` o `build`)
-	Aprobacion bool   // el efecto de la etapa pasa por aprobación
+	ID       string
+	Nombre   string
+	Agente   string // nombre del agente que la corre (p. ej. `plan` o `build`)
+	Pregunta string // lo que la etapa responde; obligatoria
 	// Instruccion es lo que la etapa pide al agente. Se une a las Reglas del
 	// flujo y viaja con el contexto de la etapa: es cómo un flujo declara sus
 	// reglas (por ejemplo, cómo descubrir la documentación) sin tocar el código.
 	Instruccion string
+	// Continuacion detiene el flujo ANTES de correr la etapa para preguntar si
+	// se sigue. El usuario puede cambiar de modelo mientras decide.
+	Continuacion bool
+	// Aprobacion detiene el flujo DESPUÉS de correr la etapa: el usuario aprueba
+	// su resultado.
+	Aprobacion bool
+	// Entrega marca la etapa de cierre: corre sin herramientas y su respuesta es
+	// la que el chat muestra como conversación. Exactamente una, y es la última.
+	Entrega bool
+	// RespuestaEnChat pinta la respuesta de la etapa en la pantalla y la guarda,
+	// sin que su texto entre al contexto que recibe el modelo.
+	RespuestaEnChat bool
 }
 
 // Flujo es una secuencia ordenada de etapas con nombre. Puede venir de los
@@ -67,22 +79,19 @@ type Flujo struct {
 	// Peticion es la petición por defecto del flujo: el objetivo que se usa
 	// cuando el comando se escribe sin texto detrás.
 	Peticion string
+	// Pregunta es qué entrega el flujo: obligatoria.
+	Pregunta string
 	// Reglas son las reglas del flujo (no del agente): se anteponen al contexto
 	// de cada etapa. Aquí viven las reglas de descubrimiento de documentación.
 	Reglas []string
-	// BloqueContexto activa el pipeline del bloque de contexto: cada etapa
-	// guarda su resultado optimizado (persistido, ver [[specs/SPEC-MOTOR-FLUJOS]])
-	// y la ÚLTIMA etapa compone la entrega a partir de todo el bloque, sin
-	// herramientas. Sin este flag el flujo encadena resúmenes cortos en memoria,
-	// como antes.
-	BloqueContexto bool
-	Etapas         []Etapa
+	Etapas []Etapa
 }
 
-// Validar comprueba que el flujo es encadenable: nombre, al menos una etapa y
-// cada etapa con identificador y un agente con nombre. Qué agentes existen lo
-// sabe el arranque (los carga de `.localcli/agents/*.json`); aquí solo se exige que la
-// etapa declare uno, y el ejecutor rechaza un nombre desconocido al correrla.
+// Validar comprueba que el flujo es encadenable: nombre, al menos una etapa,
+// cada etapa con identificador, agente y pregunta, y exactamente una etapa
+// `entrega`, que es la última. Qué agentes existen lo sabe el arranque (los
+// carga de `.localcli/agents/*.json`); aquí solo se exige que la etapa declare
+// uno, y el ejecutor rechaza un nombre desconocido al correrla.
 func (f Flujo) Validar() error {
 	if f.Nombre == "" {
 		return fmt.Errorf("flow: el flujo no tiene nombre")
@@ -90,9 +99,13 @@ func (f Flujo) Validar() error {
 	if f.Comando != "" && !strings.HasPrefix(f.Comando, "/") {
 		return fmt.Errorf("flow: el comando del flujo %s no empieza por / (%q)", f.Nombre, f.Comando)
 	}
+	if strings.TrimSpace(f.Pregunta) == "" {
+		return fmt.Errorf("flow: el flujo %s no declara `pregunta` (qué entrega)", f.Nombre)
+	}
 	if len(f.Etapas) == 0 {
 		return fmt.Errorf("flow: el flujo %s no tiene etapas", f.Nombre)
 	}
+	entregas := 0
 	for i, e := range f.Etapas {
 		if e.ID == "" {
 			return fmt.Errorf("flow: la etapa %d del flujo %s no tiene id", i, f.Nombre)
@@ -100,6 +113,18 @@ func (f Flujo) Validar() error {
 		if strings.TrimSpace(e.Agente) == "" {
 			return fmt.Errorf("flow: la etapa %s no declara agente", e.ID)
 		}
+		if strings.TrimSpace(e.Pregunta) == "" {
+			return fmt.Errorf("flow: la etapa %s del flujo %s no declara `pregunta`", e.ID, f.Nombre)
+		}
+		if e.Entrega {
+			entregas++
+		}
+	}
+	if entregas != 1 {
+		return fmt.Errorf("flow: el flujo %s declara %d etapas `entrega`, quiero exactamente una", f.Nombre, entregas)
+	}
+	if !f.Etapas[len(f.Etapas)-1].Entrega {
+		return fmt.Errorf("flow: en el flujo %s la etapa `entrega` debe ser la última", f.Nombre)
 	}
 	return nil
 }
