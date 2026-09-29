@@ -34,8 +34,9 @@ type Almacen interface {
 	// EscribirMensaje inserta un turno de conversación.
 	EscribirMensaje(m *store.Message) error
 	// CerrarTurno cierra la respuesta del agente: mensaje, razonamiento y
-	// estado de la sesión, en la misma transacción.
-	CerrarTurno(sessionID, contenido string, inputTokens, outputTokens int, razonamiento, estadoSesion string) (*store.Message, error)
+	// estado de la sesión, en la misma transacción. Los tokens y la duración
+	// llegan como -1 cuando no se midieron.
+	CerrarTurno(sessionID, contenido string, inputTokens, outputTokens, duracionMs int, razonamiento, estadoSesion string) (*store.Message, error)
 	// PendientesDeAprobacion devuelve lo que espera decisión, de cualquier
 	// sesión del proyecto.
 	PendientesDeAprobacion() ([]store.AprobacionPendiente, error)

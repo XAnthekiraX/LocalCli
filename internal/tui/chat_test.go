@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -173,6 +174,35 @@ func TestUnHistorialQueLlegaTardeSeDescarta(t *testing.T) {
 	pulsa(t, a, historialMsg{Sesion: "s2", Mensajes: []MensajeHistorial{{Rol: "user", Texto: "de otra sesión"}}})
 	if len(a.Chat.Mensajes()) != 0 {
 		t.Error("el chat nunca muestra el historial de otra sesión")
+	}
+}
+
+// El historial guardado incluye las líneas de procesamiento (sub-procesos y
+// herramientas) y el tiempo de cada respuesta: al recargar una sesión se ven,
+// aunque no formen parte del contexto del modelo.
+func TestCargarPintaElProcesamientoYElTiempoGuardado(t *testing.T) {
+	c := Chat{}
+	c.Cargar([]MensajeHistorial{
+		{Rol: "user", Texto: "hola"},
+		{Rol: "proceso", Texto: "✓ LEER [a] · 1 línea"},
+		{Rol: "agent", Texto: "respuesta", Duracion: 2400 * time.Millisecond},
+	})
+	msgs := c.Mensajes()
+	if len(msgs) != 3 {
+		t.Fatalf("esperaba usuario + proceso + agente: %+v", msgs)
+	}
+	if msgs[1].Rol != RolSistema {
+		t.Errorf("una línea de proceso se pinta como el sistema: %q", msgs[1].Rol)
+	}
+	if msgs[2].Duracion != 2400*time.Millisecond {
+		t.Errorf("el tiempo guardado se recupera: %v", msgs[2].Duracion)
+	}
+	plano := sinEstilo(c.Render(80))
+	if !strings.Contains(plano, "✓ LEER [a] · 1 línea") {
+		t.Errorf("la línea de procesamiento se pinta:\n%s", plano)
+	}
+	if !strings.Contains(plano, formatearDuracion(2400*time.Millisecond)) {
+		t.Errorf("el tiempo guardado se pinta junto a la respuesta:\n%s", plano)
 	}
 }
 

@@ -111,6 +111,19 @@ type Puerto interface {
 	// modelo de la bienvenida (SPEC-INTERFAZ §Línea de modelo), y lo lee la
 	// pantalla una vez al construirse, sin llamar a Ollama.
 	ModeloActual() string
+	// Carpeta devuelve la carpeta del proyecto —la desde la que se ejecutó la
+	// herramienta—, que el arranque ya resolvió al abrir la base. Es el dato de
+	// «Ruta» del panel (SPEC-INTERFAZ §Zonas 3): lo lee la pantalla una vez al
+	// construirse, porque no cambia mientras la sesión vive. No va por la base:
+	// es un dato en memoria del arranque, como el modelo o el agente.
+	Carpeta() string
+	// Git devuelve el estado del repositorio del proyecto: la rama activa y si
+	// el árbol tiene cambios sin confirmar. La rama vacía es el caso de «no hay
+	// git aquí» —el proyecto sin inicializar, o sin git instalado—, y la vista
+	// lo pinta como «sin iniciar» (SPEC-INTERFAZ §Zonas 3, dato «Git»). Es
+	// lectura del arranque, como la carpeta: la pantalla no llama a git ni
+	// calcula nada con lo que llega.
+	Git() (rama string, limpio bool)
 	// CapacidadesModelo dice qué declara capaz de hacer el modelo indicado, para
 	// la línea de estado bajo el input (SPEC-OLLAMA-PERFIL). La vista no importa
 	// `ollama`: los booleanos llegan ya resueltos.
@@ -147,10 +160,11 @@ type Puerto interface {
 	// sesiones con `Ctrl+D` (SPEC-SESIONES). Si está trabajando, la vista
 	// pide confirmación antes de llamar aquí.
 	Eliminar(sesionID string) error
-	// Historial devuelve la conversación de una sesión, ya con su razonamiento
-	// cerrado, para pintarla al cambiar de sesión (INTERFACES §3). Es una
+	// Historial devuelve la conversación de una sesión —turnos y líneas de
+	// procesamiento, con su razonamiento y su tiempo— más los números del panel
+	// de contexto, para pintarlos al cambiar de sesión (INTERFACES §3). Es una
 	// lectura que llega como dato; la vista nunca consulta la base.
-	Historial(sesionID string) ([]MensajeHistorial, error)
+	Historial(sesionID string) (HistorialSesion, error)
 	// Tareas devuelve la lista de pasos de una sesión, para pintarla al cargarla
 	// (SPEC-TOOLS). Igual que el historial, es una lectura que llega como dato;
 	// la vista nunca consulta la base.
@@ -210,6 +224,10 @@ type (
 		// Tareas es la lista de pasos de la sesión, que llega en la misma carga
 		// que el historial (SPEC-TOOLS).
 		Tareas []TareaPanel
+		// ContextoTokens y LimiteTokens son los números del panel de contexto
+		// de la sesión cargada (SPEC-PANEL-CONTEXTO).
+		ContextoTokens int
+		LimiteTokens   int
 	}
 	enviadoMsg struct{ Sesion, Texto string }
 	errorMsg   struct{ err error }
@@ -257,7 +275,6 @@ func (a *App) AplicarEvento(e Evento) {
 		// (SPEC-PANEL-CONTEXTO).
 		if texto != "" {
 			a.Panel.Tokens++
-			a.Panel.TokensEstimados = false
 		}
 		if e.Datos["razonamiento"] == "true" {
 			a.Razon.Añadir(texto)
@@ -336,13 +353,13 @@ func (a *App) AplicarEvento(e Evento) {
 		// su nombre. El texto de un paso intermedio no llega al chat (el motor lo
 		// corre en silencio); la entrega final sí.
 		a.cerrarSegmentoEnVivo()
-		a.Chat.AñadirSistema("[Sub Proceso] " + nombreDeEtapa(e.Datos))
+		a.Chat.AñadirSistema(LineaProceso(nombreDeEtapa(e.Datos), false))
 	case EventoEtapaTerminada:
 		// Sin línea: el último paso del flujo escribe la entrega final, y los
 		// intermedios no se muestran.
 	case EventoEtapaFallida:
 		a.cerrarSegmentoEnVivo()
-		a.Chat.AñadirSistema("[Sub Proceso] " + nombreDeEtapa(e.Datos) + ": falló")
+		a.Chat.AñadirSistema(LineaProceso(nombreDeEtapa(e.Datos), true))
 	case EventoFlujoPausado, EventoFlujoReanudado, EventoFlujoCancelado:
 		// El estado del flujo se refleja en el hilo (EVENTS.md §2, T-F010-05).
 		a.cerrarSegmentoEnVivo()
@@ -369,10 +386,19 @@ func (a *App) AplicarEvento(e Evento) {
 		a.Chat.CerrarHerramienta(e.Datos["herramienta"], e.Datos["ok"] == "true",
 			e.Datos["truncado"] == "true", e.Datos["medida"], e.Datos["error"])
 	case EventoTokensTurno:
-		// El consumo del turno alimenta el panel de contexto (SPEC-PANEL-CONTEXTO).
+		// El consumo del turno alimenta la línea bajo la entrada
+		// (SPEC-PANEL-CONTEXTO). El total del contexto del chat y su límite
+		// alimentan la fila CONTEXTO del panel: el contexto es una estimación
+		// sobre los mensajes de la sesión, no el consumo del turno.
 		if n, err := enteroDe(e.Datos["salida"]); err == nil {
 			a.Panel.Tokens = n
-			a.Panel.TokensEstimados = false
+		}
+		if n, err := enteroDe(e.Datos["contexto"]); err == nil {
+			a.Panel.ContextoTokens = n
+			a.Panel.TokensEstimados = true
+		}
+		if n, err := enteroDe(e.Datos["limite"]); err == nil {
+			a.Panel.LimiteTokens = n
 		}
 	case EventoTodoActualizada:
 		// La lista de pasos es de la sesión activa: la de otra no entra al panel

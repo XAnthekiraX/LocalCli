@@ -49,9 +49,9 @@ type Turnos struct{ db *sql.DB }
 func NuevosTurnos(db *sql.DB) *Turnos { return &Turnos{db: db} }
 
 // CerrarAgente persiste la respuesta del agente con su razonamiento en la
-// misma transacción (DATA_FLOW.md §2).
-func (t *Turnos) CerrarAgente(sessionID, contenido string, inputTokens, outputTokens int, razonamiento, estadoSesion string) (*Message, error) {
-	return CerrarTurnoAgente(t.db, sessionID, contenido, inputTokens, outputTokens, razonamiento, estadoSesion)
+// misma transacción (DATA_FLOW.md §2), con sus tokens y su duración.
+func (t *Turnos) CerrarAgente(sessionID, contenido string, inputTokens, outputTokens, duracionMs int, razonamiento, estadoSesion string) (*Message, error) {
+	return CerrarTurnoAgente(t.db, sessionID, contenido, inputTokens, outputTokens, duracionMs, razonamiento, estadoSesion)
 }
 
 // Cambios es el repositorio de change_history sobre una conexión viva: la

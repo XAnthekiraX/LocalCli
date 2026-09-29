@@ -273,7 +273,7 @@ func TestCerrarTurnoAgenteAtomico(t *testing.T) {
 	if err := ActualizarEstadoSesion(db, s.ID, StatusTrabajando); err != nil {
 		t.Fatal(err)
 	}
-	m, err := CerrarTurnoAgente(db, s.ID, "respuesta", 820, 140, "razonaba así", StatusInactiva)
+	m, err := CerrarTurnoAgente(db, s.ID, "respuesta", 820, 140, 1234, "razonaba así", StatusInactiva)
 	if err != nil {
 		t.Fatalf("CerrarTurnoAgente: %v", err)
 	}
@@ -284,9 +284,12 @@ func TestCerrarTurnoAgenteAtomico(t *testing.T) {
 	if h[0].InputTokens != 820 || h[0].OutputTokens != 140 {
 		t.Errorf("tokens: %+v", h[0])
 	}
+	if h[0].DurationMS != 1234 {
+		t.Errorf("duración = %d, queremos 1234", h[0].DurationMS)
+	}
 	_ = m
 	// transición ilegal dentro del turno: no debe quedar ni el mensaje
-	_, err = CerrarTurnoAgente(db, s.ID, "otra", -1, -1, "", StatusTerminada) // inactiva->terminada es ilegal
+	_, err = CerrarTurnoAgente(db, s.ID, "otra", -1, -1, -1, "", StatusTerminada) // inactiva->terminada es ilegal
 	if !errors.Is(err, ErrEstadoIlegal) {
 		t.Fatalf("err = %v, quería ErrEstadoIlegal", err)
 	}

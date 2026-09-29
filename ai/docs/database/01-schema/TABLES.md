@@ -18,20 +18,21 @@ relacionado:
 
 ## 1. Tablas
 
-El esquema tiene ocho tablas. La estructura de alto nivel está en [[database/01-schema/SCHEMA]]; aquí cada columna en detalle. Las relaciones entre tablas están en [[database/01-schema/RELATIONSHIPS]] y los valores cerrados, en [[database/01-schema/ENUMS]].
+El esquema tiene nueve tablas. La estructura de alto nivel está en [[database/01-schema/SCHEMA]]; aquí cada columna en detalle. Las relaciones entre tablas están en [[database/01-schema/RELATIONSHIPS]] y los valores cerrados, en [[database/01-schema/ENUMS]].
 
 Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TEXT` en ISO 8601 UTC, y los booleanos son enteros `0`/`1`. La única excepción es `todos`, que no tiene `id`: se identifica por `(session_id, position)`.
 
 ## 2. Propósito de cada tabla
 
 - **`sessions`** — Una sesión de trabajo. Es la unidad de la que cuelgan la conversación, las aprobaciones y la auditoría. Su campo `status` es lo que la interfaz muestra cuando cambias de sesión.
-- **`messages`** — Los turnos de la conversación. Guarda lo que escribió el usuario y lo que respondió el agente, más los tokens de cada turno para el panel de contexto. Un turno puede incluir llamadas a herramientas, pero **esas no se guardan**: viven mientras dura el turno y se descartan. Lo que queda es el mensaje final del agente. Ver [[database/02-rules/DATA_FLOW]].
+- **`messages`** — Los turnos de la conversación. Guarda lo que escribió el usuario y lo que respondió el agente, más los tokens de cada turno y su duración. Un turno puede incluir llamadas a herramientas, pero **esas no se guardan en `messages`**: el detalle de la ejecución vive mientras dura el turno y se descarta; lo que queda es el mensaje final del agente y, aparte, su línea en `chat_evento`. Ver [[database/02-rules/DATA_FLOW]].
 - **`reasoning`** — El razonamiento del modelo de un mensaje concreto. Va en tabla aparte porque llega token a token mientras se genera y porque se consulta y se mide por separado del texto final. El diseño está en [[specs/SPEC-AGENTE-BASE]].
 - **`approvals`** — Lo que una sesión necesita que decidas antes de seguir. El panel de aprobaciones las lee todas, de cualquier sesión. Ver [[specs/SPEC-INTERFAZ-ATAJOS]].
 - **`context_audit`** — La traza de qué documentación recibió el modelo en cada etapa y qué se descartó, con el motivo. Es lo que hace auditable el nodo de contexto. Ver [[specs/SPEC-NODO-CONTEXTO]].
 - **`change_history`** — Cada cambio aplicado a un archivo del proyecto, con lo que había antes y lo que quedó. Nunca se borra. Ver [[database/02-rules/BUSINESS_RULES]].
 - **`todos`** — La lista de pasos de una sesión: el plan que el agente mantiene con `actualizar_todo`. Es estado de ejecución de la sesión, no un documento del proyecto: se reescribe entera y cae con su sesión. Ver [[specs/SPEC-TOOLS]].
 - **`flow_context`** — El bloque de contexto de un flujo con `bloque_contexto`: una aportación por etapa, ya optimizada por el modelo. Es lo que permite que la composición final arme la entrega a partir de todo el trabajo de las etapas. Es estado de ejecución de la sesión: se reemplaza en cada ejecución del flujo y cae con su sesión. Ver [[specs/SPEC-MOTOR-FLUJOS]].
+- **`chat_evento`** — Las líneas de procesamiento del chat: el sub-proceso de cada etapa de un flujo y la línea de cada herramienta. Son parte del hilo que se muestra y se recuerdan al volver a una sesión, pero **no son contexto**: al modelo solo se le entregan los turnos de `messages`. Cae en cascada con su sesión. Ver [[database/02-rules/DATA_FLOW]].
 
 ## 3. Columnas
 
@@ -58,13 +59,12 @@ Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TE
 | `content` | Texto del mensaje | Texto libre | No | — |
 | `input_tokens` | Tokens consumidos en este turno | Entero ≥ 0 | Sí | `NULL` |
 | `output_tokens` | Tokens generados en este turno | Entero ≥ 0 | Sí | `NULL` |
+| `duration_ms` | Cuánto tardó el turno, en milisegundos | Entero ≥ 0 | Sí | `NULL` |
 | `created_at` | Cuándo se escribió el mensaje | ISO 8601 UTC | No | — |
 
-Los dos campos de tokens son `NULL` cuando el modelo no los reporta. Se distinguen del `0`: `NULL` significa "no lo sé", `0` significa "cero". El panel de contexto marca la estimación como tal. Ver [[specs/SPEC-PANEL-CONTEXTO]].
+Los dos campos de tokens son `NULL` cuando el modelo no los reporta. Se distinguen del `0`: `NULL` significa "no lo sé", `0` significa "cero". `duration_ms` sigue la misma convención: `NULL` es "no se midió". El panel de contexto marca la estimación como tal. Ver [[specs/SPEC-PANEL-CONTEXTO]].
 
-**Lo que no hay en esta tabla.** No hay columnas para las peticiones de herramientas ni para sus resultados, y `role` no tiene un valor de herramienta. Es una decisión, no un olvido: el detalle de las ejecuciones pertenece al turno en curso, y lo que el usuario relee al volver es la conclusión del agente, que ya está en `content`.
-
-Añadirlas obligaría a migrar el `CHECK` de `role` y a decidir qué se reinyecta al retomar una sesión. Ver [[database/01-schema/ENUMS]] y [[backend/DECISIONS]].
+**Lo que no hay en esta tabla.** No hay columnas para las peticiones de herramientas ni para sus resultados, y `role` no tiene un valor de herramienta. Es una decisión, no un olvido: el detalle de las ejecuciones pertenece al turno en curso, y lo que el usuario relee al volver es la conclusión del agente, que ya está en `content`. Lo que sí se conserva de una ejecución son sus **líneas de pantalla** —el sub-proceso y la línea de cada herramienta—, y esas viven aparte, en `chat_evento`, nunca en el contexto del modelo. Ver [[database/01-schema/ENUMS]] y [[backend/DECISIONS]].
 
 ### `reasoning`
 
@@ -148,6 +148,18 @@ La clave primaria es `(session_id, position)` y no hay `id` de fila: la lista ll
 
 Hay una aportación por etapa y flujo dentro de la sesión: el índice único `(session_id, flow, stage)` hace que volver a ejecutar el flujo **reemplace** la fila en vez de duplicarla. El motor vacía el bloque al arrancar cada ejecución. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su bloque. Ver [[specs/SPEC-MOTOR-FLUJOS]].
 
+### `chat_evento`
+
+| Columna | Qué representa | Valores permitidos | Nullable | Default |
+|---|---|---|---|---|
+| `id` | Identificador de la línea | UUID v4 | No | — |
+| `session_id` | Sesión a la que pertenece el hilo | UUID v4 de `sessions.id` | No | — |
+| `tipo` | Qué clase de línea es | `proceso`, `herramienta` | No | — |
+| `content` | La línea tal como se pinta | Texto libre | No | — |
+| `created_at` | Cuándo se añadió al hilo | ISO 8601 UTC | No | — |
+
+`tipo` distingue el sub-proceso de una etapa (`proceso`) de la línea de una herramienta (`herramienta`). `content` guarda el texto ya compuesto —«[Sub Proceso] Entender el problema» o «✓ LEER [AGENTS.md] · 93 líneas»—, para que al recargar la sesión el hilo se pinte igual que en vivo. Las líneas son inmutables una vez completas, como los mensajes: la línea de una herramienta se guarda cerrada, con su marca y su medida. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su hilo. Ver [[database/02-rules/DATA_FLOW]].
+
 ## 4. Relaciones
 
 - `sessions` 1:N `messages`; `messages` 1:1 opcional `reasoning`.
@@ -155,6 +167,7 @@ Hay una aportación por etapa y flujo dentro de la sesión: el índice único `(
 - `sessions` 1:N `context_audit`.
 - `sessions` 1:N `flow_context`.
 - `sessions` 1:N `todos`.
+- `sessions` 1:N `chat_evento`.
 - `sessions` 1:N opcional `change_history`, que sobrevive a la sesión.
 
 El detalle de cardinalidades, claves foráneas y cascadas está en [[database/01-schema/RELATIONSHIPS]].

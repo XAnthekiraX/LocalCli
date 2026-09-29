@@ -127,30 +127,31 @@ func (c *Chat) AnotarInvocacion(verbo, tema string) {
 	if verbo == "" {
 		return
 	}
+	c.mensajes = append(c.mensajes, Mensaje{Rol: RolSistema, Texto: LineaHerramientaAbierta(verbo, tema)})
+	c.pendientes = append(c.pendientes, len(c.mensajes)-1)
+}
+
+// LineaHerramientaAbierta compone la línea con la que se anuncia una
+// herramienta: su verbo de pantalla y su objetivo —«LEER [ruta]»—. La usa el
+// chat para pintarla y el arranque para guardarla en el hilo, así que la forma
+// de la línea vive en un solo sitio.
+func LineaHerramientaAbierta(verbo, tema string) string {
 	linea := verbo
 	if tema != "" {
 		linea += " [" + tema + "]"
 	}
-	c.mensajes = append(c.mensajes, Mensaje{Rol: RolSistema, Texto: linea})
-	c.pendientes = append(c.pendientes, len(c.mensajes)-1)
+	return linea
 }
 
-// CerrarHerramienta cierra la línea abierta por AnotarInvocacion con su marca
-// compacta: «✓» si terminó bien, «✗» si falló, más la medida del resultado
-// («70 líneas») y, si se recortó, el aviso. La salida cruda no se pinta: va al
-// modelo, no a la pantalla (EVENTS.md §3). Sin invocación pendiente —un
-// resultado suelto— se añade una línea nueva con el nombre de la herramienta.
-func (c *Chat) CerrarHerramienta(nombre string, ok, truncado bool, medida, err string) {
+// LineaHerramientaCerrada completa la línea de una herramienta: su marca
+// («✓»/«✗»), la medida del resultado y, si se recortó, el aviso. `base` es la
+// línea abierta —o el nombre de la herramienta si el resultado llegó suelto—.
+func LineaHerramientaCerrada(base string, ok, truncado bool, medida, err string) string {
 	marca := "✓ "
 	if !ok {
 		marca = "✗ "
 	}
-	idx := c.siguientePendiente()
-	linea := nombre
-	if idx >= 0 {
-		linea = c.mensajes[idx].Texto
-	}
-	linea = marca + linea
+	linea := marca + base
 	if medida != "" {
 		linea += " · " + medida
 	}
@@ -160,6 +161,31 @@ func (c *Chat) CerrarHerramienta(nombre string, ok, truncado bool, medida, err s
 	if !ok && err != "" {
 		linea += " · " + recortarError(err)
 	}
+	return linea
+}
+
+// LineaProceso compone la línea de un sub-proceso de un flujo: el nombre de la
+// etapa y, si falló, su desenlace. La comparte el chat con el arranque, que la
+// guarda en el hilo.
+func LineaProceso(nombre string, fallida bool) string {
+	if fallida {
+		return "[Sub Proceso] " + nombre + ": falló"
+	}
+	return "[Sub Proceso] " + nombre
+}
+
+// CerrarHerramienta cierra la línea abierta por AnotarInvocacion con su marca
+// compacta: «✓» si terminó bien, «✗» si falló, más la medida del resultado
+// («70 líneas») y, si se recortó, el aviso. La salida cruda no se pinta: va al
+// modelo, no a la pantalla (EVENTS.md §3). Sin invocación pendiente —un
+// resultado suelto— se añade una línea nueva con el nombre de la herramienta.
+func (c *Chat) CerrarHerramienta(nombre string, ok, truncado bool, medida, err string) {
+	idx := c.siguientePendiente()
+	base := nombre
+	if idx >= 0 {
+		base = c.mensajes[idx].Texto
+	}
+	linea := LineaHerramientaCerrada(base, ok, truncado, medida, err)
 	if idx >= 0 {
 		c.mensajes[idx].Texto = linea
 		return
@@ -275,22 +301,40 @@ func (c *Chat) Vaciar() {
 // razonamiento cerrado. Llega como dato a través del puerto, igual que el resto
 // de lecturas (INTERFACES §3): la vista no consulta la base.
 type MensajeHistorial struct {
-	Rol          string // "user" | "agent"
+	Rol          string // "user" | "agent" | "proceso"
 	Texto        string
 	Razonamiento string
+	// Duracion es lo que tardó el turno del agente, tal como quedó guardado.
+	// Cero = no se midió (p. ej. un mensaje de usuario).
+	Duracion time.Duration
+}
+
+// HistorialSesion es lo que la vista recibe al cargar una sesión: su hilo ya
+// compuesto (turnos y líneas de procesamiento) y los números del panel de
+// contexto. Llega en una sola lectura, como dato.
+type HistorialSesion struct {
+	Mensajes       []MensajeHistorial
+	ContextoTokens int
+	LimiteTokens   int
 }
 
 // Cargar reemplaza el historial mostrado por el de la sesión activa (T-F005-05).
 // Solo cambia lo que se pinta: no toca nada de las ejecuciones en segundo
-// plano, que viven en `session`.
+// plano, que viven en `session`. Una línea de proceso ("proceso") se pinta como
+// el sistema; los turnos del agente recuperan el tiempo guardado.
 func (c *Chat) Cargar(ms []MensajeHistorial) {
 	c.Vaciar()
 	for _, m := range ms {
-		r := RolAgente
-		if m.Rol == "user" {
+		var r Rol
+		switch m.Rol {
+		case "user":
 			r = RolUsuario
+		case "agent":
+			r = RolAgente
+		default:
+			r = RolSistema
 		}
-		c.mensajes = append(c.mensajes, Mensaje{Rol: r, Texto: m.Texto, Razonamiento: m.Razonamiento})
+		c.mensajes = append(c.mensajes, Mensaje{Rol: r, Texto: m.Texto, Razonamiento: m.Razonamiento, Duracion: m.Duracion})
 	}
 }
 

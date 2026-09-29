@@ -38,7 +38,7 @@ Subir una migración aplicada no es lo mismo que tener un esquema válido: `user
 - Cada migración tiene un número y un nombre corto: `001-crear-schema`, `002-agregar-indice-approvals`, y así sucesivamente.
 - El número es correlativo y de tres dígitos. El nombre describe qué hace, no dónde.
 - El orden de los números es el orden de ejecución. No se reutiliza un número ni se renumera una migración ya publicada.
-- La versión del esquema es el número de la última migración aplicada. `user_version = 3` significa que se aplicaron `001`, `002` y `003`.
+- La versión del esquema es el número de la última migración aplicada. `user_version = 4` significa que se aplicaron `001`, `002`, `003` y `004`.
 
 ## 4. Datos existentes
 
@@ -60,11 +60,13 @@ Reglas:
 
 ## Nota sobre el esquema actual
 
-La base se crea ya en su versión actual (v3): las seis tablas de [[database/01-schema/SCHEMA]] más `todos`, la lista de pasos de la sesión, y `flow_context`, el bloque de contexto de un flujo. La creación del archivo, su esquema inicial y las migraciones `002-crear-todo` y `003-crear-flow-context` ocurren en el mismo paso de apertura, así que `user_version` arranca en 3. Los índices de [[database/01-schema/INDEXES]] se aplican junto con la creación, no después.
+La base se crea ya en su versión actual (v4): las seis tablas de [[database/01-schema/SCHEMA]] más `todos`, la lista de pasos de la sesión, `flow_context`, el bloque de contexto de un flujo, y `chat_evento`, las líneas de procesamiento del chat, además de la columna `messages.duration_ms`. La creación del archivo, su esquema inicial y las migraciones `002-crear-todo`, `003-crear-flow-context` y `004-crear-chat-evento` ocurren en el mismo paso de apertura, así que `user_version` arranca en 4. Los índices de [[database/01-schema/INDEXES]] se aplican junto con la creación, no después.
 
 La migración `002-crear-todo` es aditiva: añade la tabla `todos` y su clave primaria `(session_id, position)`, sin tocar ninguna fila existente. Una base en `user_version = 1` la recibe al abrirse y pasa a la 2 sin perder nada.
 
 La migración `003-crear-flow-context` también es aditiva: añade la tabla `flow_context` y su índice único `(session_id, flow, stage)`, sin tocar ninguna fila existente. Una base en `user_version = 2` la recibe al abrirse y pasa a la 3 sin perder nada.
+
+La migración `004-crear-chat-evento` también es aditiva: añade la tabla `chat_evento` con su índice `(session_id, created_at)` y la columna `messages.duration_ms` (nullable, sin valor por defecto: las filas anteriores quedan con `NULL`, que es "no se midió"). No toca ninguna fila existente. Una base en `user_version = 3` la recibe al abrirse y pasa a la 4 sin perder nada.
 
 ### Un `user_version` correcto no basta para saber que el esquema es el de la versión
 
@@ -101,28 +103,31 @@ constante sin actualizar el documento salga en rojo.
 
 ## Nota sobre el canal de herramientas
 
-La incorporación del canal nativo de herramientas **no genera migración**, y esa
-ausencia es una decisión documentada, no un descuido.
+El canal nativo de herramientas **no añade filas a `messages`** y `messages.role`
+sigue cerrado a `user` y `agent`. Eso no cambia con la 004: un turno con
+herramientas no se guarda como conversación.
 
-Lo que añadiría el canal son mensajes con rol de herramienta en la conversación.
-Esos mensajes viven solo durante el turno: no se insertan, no hay tabla para
-ellos y `messages.role` sigue cerrado a `user` y `agent`.
+Lo que sí añadió la `004-crear-chat-evento` es una tabla para las **líneas de
+pantalla** de ese canal: el sub-proceso de cada etapa (`chat_evento.tipo =
+proceso`) y la línea de cada herramienta (`tipo = herramienta`). Son lo que el
+chat muestra y lo que se recupera al volver a una sesión, pero **no son
+contexto**: al modelo solo se le entregan los turnos de `messages`.
 
-Las razones para no persistirlos:
+Se eligió una tabla nueva en vez de crecer `messages.role` por dos razones:
 
-- El `CHECK` de `role` no cambia, así que no hay DDL que migrar.
-- Al retomar una sesión, lo que el usuario necesita es qué se hizo y qué quedó,
-  y eso ya está en el texto del mensaje final del agente. Reinyectar peticiones
-  de herramientas de hace tres sesiones no aporta nada y multiplica el contexto.
-- Una migración que cambiara `role` y añadiera columnas de argumentos y
-  resultados obligaría además a decidir qué se reconstruye y qué se descarta al
-  cargar una sesión, que es una política, no un problema de esquema.
+- La separación «se muestra / se envía al modelo» queda en la frontera de la
+  tabla, no en un filtro que alguien pueda olvidar: `session.historialPara` arma
+  el contexto solo de `messages`. Con un rol nuevo en `messages`, cada lectura
+  del contexto tendría que acordarse de excluirlo.
+- La migración es **aditiva**. Cambiar el `CHECK` de `role` en SQLite obliga a
+  reconstruir `messages`, y `reasoning` tiene una clave foránea hacia ella
+  (`ON DELETE CASCADE`): una reconstrucción mal hecha arrastraría el
+  razonamiento guardado. Añadir una tabla no toca ninguna fila existente
+  (MIGRATIONS.md §4 y §5).
 
-El rastro de las ejecuciones existe, pero en otro sitio: los eventos de la capa
-universal y `change_history`, que son efímeros y permanentes respectivamente. Ver
-[[database/02-rules/DATA_FLOW]] y [[database/01-schema/ENUMS]].
-
-Si en el futuro se quisiera persistir los turnos con herramientas, sería una migración completa: `CHECK` de `role`, columnas nuevas y la política de reconstrucción. No se hace ahora.
+El rastro permanente de las ejecuciones sigue estando, además, en los eventos de
+la capa universal y en `change_history`. Ver [[database/02-rules/DATA_FLOW]],
+[[database/01-schema/ENUMS]] y [[backend/DECISIONS]].
 
 ## Referencias
 

@@ -199,6 +199,37 @@ func truncar(texto string, ancho int) string {
 	return texto[:corteAncho(texto, ancho-1)] + "…"
 }
 
+// truncarPorLaIzquierda deja el final del texto, que es la parte que lo
+// identifica, y pone «…» delante de lo que no cabe. Es el espejo de `truncar` y
+// existe para las rutas: `/home/user/Documentos/LocalCli` recortado por la
+// derecha deja `/home/user/Documentos/Lo…`, que no dice nada, mientras que por
+// la izquierda queda `[…/Documentos/LocalCli]`, que sí. Mide por columnas de
+// pantalla, igual que su espejo, y es una función pura.
+func truncarPorLaIzquierda(texto string, ancho int) string {
+	if ancho <= 0 {
+		return ""
+	}
+	if runewidth.StringWidth(texto) <= ancho {
+		return texto
+	}
+	if ancho == 1 {
+		return "…"
+	}
+	// Se recorre desde el final acumulando el ancho hasta que ya no quepa la
+	// runa siguiente; desde `i` hacia abajo es el sufijo que se queda.
+	r := []rune(texto)
+	i, w := len(r), 0
+	for i > 0 {
+		rw := runewidth.RuneWidth(r[i-1])
+		if w+rw > ancho-1 {
+			break
+		}
+		w += rw
+		i--
+	}
+	return "…" + string(r[i:])
+}
+
 // envolverConCursor reparte el texto en líneas de a lo sumo `ancho` columnas
 // (recorte por runas, igual que `recortar`) y devuelve además en qué línea y en
 // qué columna —en runas— cae la posición `pos` del cursor. Es lo que permite

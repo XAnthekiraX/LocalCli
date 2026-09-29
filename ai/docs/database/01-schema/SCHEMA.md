@@ -21,7 +21,7 @@ La base de datos de LocalCli es un archivo SQLite por proyecto, en la carpeta de
 
 El esquema tiene dos naturalezas y conviene no confundirlas:
 
-- **Estado en SQLite.** Sesiones, conversaciones, aprobaciones, auditoría de contexto, historial de cambios, la lista de pasos de la sesión y el bloque de contexto de un flujo. Son datos que nacen y mueren con la ejecución.
+- **Estado en SQLite.** Sesiones, conversaciones, aprobaciones, auditoría de contexto, historial de cambios, la lista de pasos de la sesión, el bloque de contexto de un flujo y las líneas de procesamiento del chat. Son datos que nacen y mueren con la ejecución.
 - **Datos en archivos.** La documentación del proyecto y los archivos de tarea son la fuente de verdad y viven fuera de SQLite. El grafo de documentos y el orden de la cola se derivan de ellos y se reconstruyen al arrancar, sin tabla propia.
 
 SQLite solo modela el primer grupo. El segundo se documenta en [[database/02-rules/DATA_FLOW]].
@@ -49,6 +49,7 @@ La versión del esquema no ocupa tabla: se guarda en el `PRAGMA user_version` de
 | `change_history` | Qué archivo se cambió, qué había antes y qué quedó |
 | `todos` | La lista de pasos de una sesión, mantenida con `actualizar_todo` |
 | `flow_context` | El bloque de contexto de un flujo: una aportación optimizada por etapa |
+| `chat_evento` | Las líneas de procesamiento del chat: sub-procesos y herramientas, que se pintan pero no entran al contexto |
 
 El detalle de cada columna está en [[database/01-schema/TABLES]]. Las relaciones entre ellas, en [[database/01-schema/RELATIONSHIPS]]. Los valores cerrados, en [[database/01-schema/ENUMS]].
 
@@ -77,6 +78,7 @@ Resumen estructural. Los valores permitidos, los `NULL` y los valores por defect
 | `content` | TEXT | | Texto del mensaje |
 | `input_tokens` | INTEGER | | `NULL` si el modelo no lo reporta |
 | `output_tokens` | INTEGER | | `NULL` si el modelo no lo reporta |
+| `duration_ms` | INTEGER | | Duración del turno del agente, en ms. `NULL` si no se midió |
 | `created_at` | TEXT | | ISO 8601 UTC |
 
 ### `reasoning`
@@ -150,6 +152,18 @@ Resumen estructural. Los valores permitidos, los `NULL` y los valores por defect
 | `position` | INTEGER | | Orden de la etapa en el flujo |
 | `content` | TEXT | | Aportación ya optimizada |
 | `created_at` | TEXT | | ISO 8601 UTC |
+
+### `chat_evento`
+
+| Campo | Tipo | Clave | Notas |
+|---|---|---|---|
+| `id` | TEXT | PK | UUID v4 |
+| `session_id` | TEXT | FK → `sessions.id` | `ON DELETE CASCADE` |
+| `tipo` | TEXT | | `proceso` (sub-proceso de un flujo) o `herramienta` |
+| `content` | TEXT | | La línea tal como se pinta en el chat |
+| `created_at` | TEXT | | ISO 8601 UTC |
+
+`chat_evento` guarda las líneas que el chat muestra además de la conversación. Van en su propia tabla, y no en `messages`, porque son **líneas de pantalla**, no turnos: el contexto que recibe el modelo se arma solo de `messages`, así que una línea de procesamiento nunca entra al contexto. Ver [[database/01-schema/ENUMS]] y [[database/02-rules/DATA_FLOW]].
 
 ## Referencias
 

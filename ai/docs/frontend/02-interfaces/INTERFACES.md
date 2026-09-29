@@ -37,7 +37,7 @@ De [[backend/04-infrastructure/EVENTS]] llega cada evento y así reacciona la pa
 | `flujo_pausado` / `reanudado` / `cancelado` | Refleja el estado del flujo |
 | `cola_actualizada` / `elemento_bloqueado` | Actualiza la zona de capa y cola del panel |
 | `todo_actualizada` | Repinta la lista de pasos de la sesión activa en el panel |
-| `cambio_aplicado` | Refresca el dato de git en el panel |
+| `cambio_aplicado` | Hoy no cambia nada en pantalla: el estado de git se leyó al arrancar y el panel no lo vuelve a consultar. El evento queda reservado para cuando la lectura deje de ser solo de arranque |
 | `contexto_auditado` | Queda disponible para consulta; no se pinta por defecto |
 
 ## 1.1 La línea de herramienta
@@ -95,6 +95,20 @@ Todas van a `session`, la única puerta del motor:
 ## 3. Lecturas a `store`
 
 Solo lectura, con las consultas de [[database/03-operations/QUERIES]]: historial de la sesión activa, la lista de pasos de la sesión activa, aprobaciones pendientes de todas las sesiones, auditoría de una etapa y datos del panel. Nunca escribe: si algo cambia, es el motor quien lo persiste y notifica.
+
+### 3.1 Lecturas del arranque
+
+Dos datos del panel son fijos mientras la sesión vive, así que se leen **una sola vez**, al arrancar, y se pintan en el pie del sidebar. La pantalla no los consulta ni los revalida:
+
+| Lectura | Qué trae | Nota |
+|---|---|---|
+| `Carpeta()` | La carpeta del proyecto | Se abrevia con `~` y se recorta por la izquierda |
+| `Git()` | La rama activa y si el árbol tiene cambios sin confirmar | Se llama al binario `git`; rama vacía = proyecto sin git inicializado o sin git instalado, y el pie lo dice `sin iniciar` |
+
+Que no se revalide es una decisión, no un descuido: una sesión trabaja siempre en la misma
+rama y llamar a git en cada repintado costaría un proceso por frame. El precio es que un
+cambio hecho en la terminal con la sesión abierta no se refleja en el pie hasta la
+siguiente.
 
 ## 4. Teclado
 

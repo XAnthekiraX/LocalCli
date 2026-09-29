@@ -25,3 +25,12 @@ var todoSQL string
 //
 //go:embed flowcontext.sql
 var flowContextSQL string
+
+// chatEventoSQL es el DDL de las líneas de procesamiento del chat (migración
+// 004), embebido igual que el esquema base para que el binario siga siendo
+// portable.
+//
+// source: chatevento.sql — única copia del DDL del hilo de procesamiento.
+//
+//go:embed chatevento.sql
+var chatEventoSQL string

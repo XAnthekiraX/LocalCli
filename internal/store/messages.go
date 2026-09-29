@@ -16,12 +16,14 @@ type Message struct {
 	Content      string
 	InputTokens  int // -1 = NULL ("el modelo no lo reporta")
 	OutputTokens int // -1 = NULL
+	DurationMS   int // -1 = NULL ("no se midió")
 	CreatedAt    string
 }
 
 // InsertarMensaje inserta un turno de conversación. Los tokens llegan como -1
 // cuando el modelo no los reporta: se guardan NULL, nunca 0 ni cadena vacía
-// (TABLES.md: "NULL significa 'no lo sé', 0 significa 'cero'").
+// (TABLES.md: "NULL significa 'no lo sé', 0 significa 'cero'"). La duración
+// sigue la misma convención.
 func InsertarMensaje(db *sql.DB, m *Message) error {
 	return insertarMensaje(db, m)
 }
@@ -37,9 +39,9 @@ func insertarMensaje(e ejecutor, m *Message) error {
 		id = newID()
 	}
 	_, err := e.Exec(
-		`INSERT INTO messages (id, session_id, role, content, input_tokens, output_tokens, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, m.SessionID, m.Role, m.Content, nullInt(m.InputTokens), nullInt(m.OutputTokens), now,
+		`INSERT INTO messages (id, session_id, role, content, input_tokens, output_tokens, duration_ms, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, m.SessionID, m.Role, m.Content, nullInt(m.InputTokens), nullInt(m.OutputTokens), nullInt(m.DurationMS), now,
 	)
 	if err != nil {
 		return traducirError(err)
@@ -60,7 +62,8 @@ type MensajeConRazonamiento struct {
 
 func HistorialSesion(db *sql.DB, sessionID string) ([]MensajeConRazonamiento, error) {
 	rows, err := db.Query(
-		`SELECT m.id, m.session_id, m.role, m.content, m.input_tokens, m.output_tokens, m.created_at,
+		`SELECT m.id, m.session_id, m.role, m.content, m.input_tokens, m.output_tokens,
+		        COALESCE(m.duration_ms, -1), m.created_at,
 		        r.content
 		 FROM messages m
 		 LEFT JOIN reasoning r ON r.message_id = m.id
@@ -79,14 +82,16 @@ func HistorialSesion(db *sql.DB, sessionID string) ([]MensajeConRazonamiento, er
 			m    MensajeConRazonamiento
 			in   any
 			out_ any
+			dur  any
 			rz   sql.NullString
 		)
-		err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &in, &out_, &m.CreatedAt, &rz)
+		err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &in, &out_, &dur, &m.CreatedAt, &rz)
 		if err != nil {
 			return nil, traducirError(err)
 		}
 		m.InputTokens = intNull(in)
 		m.OutputTokens = intNull(out_)
+		m.DurationMS = intNull(dur)
 		m.Reasoning = rz.String
 		out = append(out, m)
 	}
@@ -99,18 +104,21 @@ func HistorialSesion(db *sql.DB, sessionID string) ([]MensajeConRazonamiento, er
 // razonamiento: §5 también prohíbe traerlo si no se va a mostrar.
 func UltimoMensaje(db *sql.DB, sessionID string) (*Message, error) {
 	row := db.QueryRow(
-		`SELECT id, session_id, role, content, input_tokens, output_tokens, created_at
+		`SELECT id, session_id, role, content, input_tokens, output_tokens,
+		        COALESCE(duration_ms, -1), created_at
 		 FROM messages WHERE session_id = ? ORDER BY created_at DESC LIMIT 1`, sessionID)
 	var (
 		m        Message
 		in, outV any
+		dur      any
 	)
-	err := row.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &in, &outV, &m.CreatedAt)
+	err := row.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &in, &outV, &dur, &m.CreatedAt)
 	if err != nil {
 		return nil, traducirError(err)
 	}
 	m.InputTokens = intNull(in)
 	m.OutputTokens = intNull(outV)
+	m.DurationMS = intNull(dur)
 	return &m, nil
 }
 
@@ -125,8 +133,8 @@ func (s Sesiones) EscribirMensaje(m *Message) error { return InsertarMensaje(s.D
 
 // CerrarTurno cierra la respuesta de un agente: razonamiento final, mensaje del
 // agente y estado de la sesión, en la misma transacción (DATA_FLOW.md).
-func (s Sesiones) CerrarTurno(sessionID, contenido string, inputTokens, outputTokens int, razonamiento, estadoSesion string) (*Message, error) {
-	return CerrarTurnoAgente(s.DB, sessionID, contenido, inputTokens, outputTokens, razonamiento, estadoSesion)
+func (s Sesiones) CerrarTurno(sessionID, contenido string, inputTokens, outputTokens, duracionMs int, razonamiento, estadoSesion string) (*Message, error) {
+	return CerrarTurnoAgente(s.DB, sessionID, contenido, inputTokens, outputTokens, duracionMs, razonamiento, estadoSesion)
 }
 
 // RazonamientoPersistido es el límite de frecuencia con que el streaming
@@ -183,14 +191,16 @@ func errorsIsNoRows(err error) bool {
 // ninguna de las tres (rollback en EjecutarTX).
 //
 // razonamiento vacío significa "el modelo no devolvió razonamiento": no se
-// crea fila en reasoning (BUSINESS_RULES.md).
-func CerrarTurnoAgente(db *sql.DB, sessionID, contenido string, inputTokens, outputTokens int, razonamiento string, estadoSesion string) (*Message, error) {
+// crea fila en reasoning (BUSINESS_RULES.md). duracionMs es lo que tardó el
+// turno (de la petición al cierre); -1 cuando no se midió.
+func CerrarTurnoAgente(db *sql.DB, sessionID, contenido string, inputTokens, outputTokens, duracionMs int, razonamiento string, estadoSesion string) (*Message, error) {
 	m := &Message{
 		SessionID:    sessionID,
 		Role:         "agent",
 		Content:      contenido,
 		InputTokens:  inputTokens,
 		OutputTokens: outputTokens,
+		DurationMS:   duracionMs,
 	}
 	err := EjecutarTX(db, func(tx *sql.Tx) error {
 		if err := insertarMensaje(tx, m); err != nil {

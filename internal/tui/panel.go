@@ -9,12 +9,18 @@
 // "El contexto se acerca al límite: se avisa antes de que la petición falle").
 //
 // El panel es una estructura de datos y un render, nada más: no calcula nada por
-// su cuenta ni consulta nada. Quien le pase un dato, manda.
+// su cuenta ni consulta nada. Quien le pase un dato, manda. La única lectura que
+// hace es la carpeta del usuario para abreviarla a `~` en el pie, y se lee una
+// sola vez: a partir de ahí es texto puro.
 package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 )
 
 // UmbralContexto es el porcentaje a partir del cual se avisa de que el contexto
@@ -31,6 +37,12 @@ type Panel struct {
 	Estado   string
 
 	// Contexto (SPEC-PANEL-CONTEXTO)
+	// ContextoTokens es el total de tokens del chat que pertenece al contexto
+	// (los mensajes del usuario y del agente de la sesión; las líneas de
+	// procesamiento no cuentan). Es una estimación, así que se marca como tal.
+	ContextoTokens int
+	// Tokens es el consumo del turno en curso, el que se pinta bajo la entrada
+	// («tokens: 54k»). No es el contexto.
 	Tokens          int
 	TokensEstimados bool
 	LimiteTokens    int
@@ -65,13 +77,13 @@ func NuevoPanel() Panel {
 	return Panel{Abierto: true, Proyecto: Nombre, Version: Version, GitLimpio: true, Agente: "plan"}
 }
 
-// PorcentajeContexto devuelve qué parte del límite está ocupada (0 si no hay
-// límite conocido).
+// PorcentajeContexto devuelve qué parte del límite está ocupada por el contexto
+// del chat (0 si no hay límite conocido).
 func (p Panel) PorcentajeContexto() int {
 	if p.LimiteTokens <= 0 {
 		return 0
 	}
-	pc := p.Tokens * 100 / p.LimiteTokens
+	pc := p.ContextoTokens * 100 / p.LimiteTokens
 	if pc > 100 {
 		return 100
 	}
@@ -95,23 +107,42 @@ func estadoEntreParentesis(estado string) string {
 	return " (" + estado + ")"
 }
 
-// textoContexto compone el dato del contexto: los tokens usados, marcados como
-// estimados cuando lo son. El porcentaje ocupado va en su propia línea.
+// textoContexto compone el dato del contexto: los tokens que ocupa el chat en
+// el contexto de la sesión, marcados como estimados cuando lo son. El
+// porcentaje ocupado va en su propia línea.
 func (p Panel) textoContexto() string {
-	t := fmt.Sprintf("%d tokens", p.Tokens)
+	t := fmt.Sprintf("%d tokens", p.ContextoTokens)
 	if p.TokensEstimados {
 		t += " (estimado)"
 	}
 	return t
 }
 
-// textoGit compone la rama activa y si el árbol tiene cambios sin confirmar.
+// textoGit compone el estado del repositorio: la rama activa y si el árbol tiene
+// cambios sin confirmar. Sin rama no hay repositorio —el proyecto sin git
+// inicializar, o sin git instalado—, y eso se dice en vez de dejar un hueco:
+// «sin iniciar» es un dato, no un «no sé» (SPEC-INTERFAZ §Zonas 3).
 func (p Panel) textoGit() string {
-	git := valorODefecto(p.GitRama)
-	if p.GitLimpio {
-		return git + " · sin cambios"
+	if p.GitRama == "" {
+		return "sin iniciar"
 	}
-	return git + " · con cambios sin confirmar"
+	if p.GitLimpio {
+		return p.GitRama + " · sin cambios"
+	}
+	return p.GitRama + " · con cambios sin confirmar"
+}
+
+// firmaHarness compone la última fila del pie: el nombre de la herramienta y su
+// versión. En producción siempre están los dos, pero si faltara alguno se pinta
+// el que haya en vez de dejar un separador colgando: el pie no inventa datos.
+func (p Panel) firmaHarness() string {
+	switch {
+	case p.Proyecto == "":
+		return p.Version
+	case p.Version == "":
+		return p.Proyecto
+	}
+	return p.Proyecto + " · " + p.Version
 }
 
 // textoCapa compone la capa en la que se trabaja y las tareas grandes que le
@@ -130,66 +161,116 @@ func filaDeDato(etiqueta, valor string, ancho int) string {
 }
 
 // Render pinta el sidebar de la sesión activa: el título de la conversación
-// arriba, los bloques CONTEXTO y TODO, la lista de tareas del agente, el estado
-// compacto (git, capa y cola, aprobaciones, agente y proyecto) y, pegado al pie,
-// la ruta del proyecto. Recibe el alto de la columna para que el pie quede abajo
-// aunque sobre espacio. Es de lectura: aquí no hay nada que pulsar.
+// arriba, los bloques CONTEXTO y TODO, la lista de tareas del agente y el estado
+// compacto (capa y cola, aprobaciones y agente). Abajo, pegado al suelo de la
+// columna, va el pie de tres filas: el estado de git, la ruta del proyecto y el
+// nombre y la versión del harness.
+//
+// Recibe el alto de la columna porque el pie ocupa sus filas siempre: si la
+// lista de tareas no cabe, se recorta y se resume, y si la terminal es más baja
+// que el pie entero, se recorta el panel por arriba. Es de lectura: aquí no hay
+// nada que pulsar.
 func (p Panel) Render(ancho, alto int) string {
 	if ancho < 1 {
 		ancho = 1
 	}
-	var lineas []string
-	add := func(l string) { lineas = append(lineas, l) }
 
+	// El pie, de arriba abajo: git, ruta y harness. La ruta va con el home
+	// abreviado y recortada por la izquierda, porque el final es la parte que
+	// la identifica.
+	pie := []string{
+		filaDeDato("Git", p.textoGit(), ancho),
+		estiloSistema.Render(truncarPorLaIzquierda("["+rutaBreve(valorODefecto(p.Ruta))+"]", ancho)),
+		estiloEtiqueta.Render(truncar(p.firmaHarness(), ancho)),
+	}
+	// `disponible` son las filas que quedan por encima del pie, y es el
+	// presupuesto de la lista de tareas. Si no cabe, vale cero: el pie manda.
+	disponible := max(alto-len(pie), 0)
+
+	// PARTES FIJAS: su altura no depende de los datos, así que se componen
+	// enteras y son las que el recorte final puede llegar a comerse.
 	// Título: la sesión activa, con su estado entre paréntesis.
-	add(estiloTitulo.Render(truncar(valorODefecto(p.Sesion)+estadoEntreParentesis(p.Estado), ancho)))
-	add("")
-
-	// CONTEXTO: tokens usados, porcentaje ocupado y, si toca, el aviso de límite.
-	add(estiloSeccion.Render("CONTEXTO"))
-	add("  " + truncar(p.textoContexto(), ancho-2))
-	add("  " + truncar(fmt.Sprintf("%d%% usada", p.PorcentajeContexto()), ancho-2))
+	cabeza := []string{
+		estiloTitulo.Render(truncar(valorODefecto(p.Sesion)+estadoEntreParentesis(p.Estado), ancho)),
+		"",
+		// CONTEXTO: tokens usados, porcentaje ocupado y, si toca, el aviso de
+		// límite.
+		estiloSeccion.Render("CONTEXTO"),
+		"  " + truncar(p.textoContexto(), ancho-2),
+		"  " + truncar(fmt.Sprintf("%d%% usada", p.PorcentajeContexto()), ancho-2),
+	}
 	if p.ContextoApretado() {
-		add("  " + estiloAviso.Render("cerca del límite"))
+		cabeza = append(cabeza, "  "+estiloAviso.Render("cerca del límite"))
 	}
-	add("")
-
 	// TODO: el elemento en curso y cuántos quedan.
-	add(estiloSeccion.Render("▾ TODO"))
-	add("  " + truncar(valorODefecto(p.ElementoActual)+fmt.Sprintf(" · quedan %d", p.ElementosRestantes), ancho-2))
-	add("")
+	cabeza = append(cabeza,
+		"",
+		estiloSeccion.Render("▾ TODO"),
+		"  "+truncar(valorODefecto(p.ElementoActual)+fmt.Sprintf(" · quedan %d", p.ElementosRestantes), ancho-2),
+		"",
+	)
 
-	// LISTA DE TAREAS: los pasos del agente, si queda alguno accionable.
-	if t := p.RenderTareas(ancho); t != "" {
-		for _, l := range strings.Split(t, "\n") {
-			add(l)
-		}
-		add("")
+	// ESTADO: el resto de los datos de la sesión, en filas etiqueta + valor. Git
+	// y proyecto no están aquí: viven en el pie, que es donde se leen de un
+	// vistazo sin tener que llegar hasta el bloque de arriba.
+	estado := []string{
+		estiloSeccion.Render("ESTADO"),
+		filaDeDato("Capa y cola", p.textoCapa(), ancho),
+		filaDeDato("Aprobaciones", fmt.Sprintf("%d esperando decisión", p.Aprobaciones), ancho),
+		filaDeDato("Agente", valorODefecto(p.Agente), ancho),
 	}
 
-	// ESTADO: el resto de los datos de la sesión, en filas etiqueta + valor.
-	add(estiloSeccion.Render("ESTADO"))
-	add(filaDeDato("Git", p.textoGit(), ancho))
-	add(filaDeDato("Capa y cola", p.textoCapa(), ancho))
-	add(filaDeDato("Aprobaciones", fmt.Sprintf("%d esperando decisión", p.Aprobaciones), ancho))
-	add(filaDeDato("Agente", valorODefecto(p.Agente), ancho))
-	add(filaDeDato("Proyecto", p.Proyecto+" · "+p.Version, ancho))
+	// LISTA DE TAREAS: los pasos del agente, si queda alguno accionable. Es lo
+	// único que crece sin límite, así que es lo que cede cuando la columna es
+	// baja. La línea en blanco que la separa de ESTADO se reserva siempre, se
+	// pinte lista o no, para que el presupuesto de filas sea el mismo.
+	lineas := append([]string{}, cabeza...)
+	// El presupuesto de filas de la lista es el hueco entre las dos partes fijas
+	// más su separador en blanco. Sin altura conocida no hay tope: se pintan
+	// todos los pasos.
+	tope := len(p.Tareas) + 1
+	if disponible > 0 {
+		tope = disponible - len(cabeza) - len(estado) - 1
+	}
+	tareas := p.lineasDeTareas(ancho, tope)
+	if len(tareas) > 0 {
+		lineas = append(lineas, tareas...)
+		lineas = append(lineas, "")
+	}
+	lineas = append(lineas, estado...)
 
-	// El pie va pegado abajo: la ruta del proyecto.
-	if alto > 1 {
-		for len(lineas) < alto-1 {
-			add("")
+	// El cuerpo se ajusta al hueco que deja el pie. Si sobran filas, el relleno
+	// va después de ESTADO, que es donde estorban menos, para que el contenido se
+	// quede arriba; si faltan, se recorta por abajo, que es donde está lo que
+	// menos pesa.
+	if disponible > 0 {
+		if len(lineas) > disponible {
+			lineas = lineas[:disponible]
+		}
+		for len(lineas) < disponible {
+			lineas = append(lineas, "")
 		}
 	}
-	add(estiloSistema.Render(truncar("["+valorODefecto(p.Ruta)+"]", ancho)))
+	lineas = append(lineas, pie...)
+
+	// Una columna más baja que el pie entero es el único caso en que no hay
+	// recorte limpio: se van las primeras filas del panel, porque lo que no
+	// puede caerse es la ruta y la firma. Sin geometría no se toca nada.
+	if alto > 0 && len(lineas) > alto {
+		lineas = lineas[len(lineas)-alto:]
+	}
 	return strings.Join(lineas, "\n")
 }
 
-// RenderTareas pinta la lista de pasos de la sesión: `[•]` en curso, `[✓]`
-// hecha, `[x]` cancelada y `[ ]` pendiente. Se oculta cuando no queda nada
+// lineasDeTareas pinta la lista de pasos de la sesión: `[•]` en curso, `[✓]`
+// hecha, `[x]` cancelada y `[ ]` pendiente. Devuelve nil cuando no queda nada
 // accionable —sin pasos, o todos completados o cancelados—, como el panel de
 // opencode: un checklist terminado solo estorba (SPEC-TOOLS).
-func (p Panel) RenderTareas(ancho int) string {
+//
+// `tope` es cuántas filas puede ocupar la lista como mucho, encabezado
+// incluido. Lo que no cabe no se pierde: se resume en «N más», porque el pie no
+// puede caerse por una lista larga.
+func (p Panel) lineasDeTareas(ancho, tope int) []string {
 	accionable := false
 	for _, t := range p.Tareas {
 		if t.Estado == "pendiente" || t.Estado == "en_progreso" {
@@ -197,15 +278,59 @@ func (p Panel) RenderTareas(ancho int) string {
 			break
 		}
 	}
-	if !accionable {
+	// Un tope de 1 o menos es que solo cabe el pie: ni siquiera el encabezado.
+	if !accionable || tope < 2 {
+		return nil
+	}
+	// El encabezado se queda con una de las filas del tope. Se pintan todos los
+	// pasos, no solo los accionables: el glifo de cada uno dice si está hecho,
+	// cancelado o pendiente.
+	caben := min(len(p.Tareas), tope-1)
+	lineas := make([]string, 0, tope)
+	lineas = append(lineas, estiloSeccion.Render("LISTA DE TAREAS"))
+	for _, t := range p.Tareas[:caben] {
+		lineas = append(lineas, "  "+glifoDeTarea(t.Estado)+" "+truncar(t.Contenido, ancho-4))
+	}
+	if fuera := len(p.Tareas) - caben; fuera > 0 {
+		if len(lineas) < tope {
+			lineas = append(lineas, "  … "+strconv.Itoa(fuera)+" más")
+		} else {
+			// No queda fila para el resumen: le cede la suya al último paso, que
+			// también cuenta como no pintado.
+			lineas[len(lineas)-1] = "  … " + strconv.Itoa(fuera+1) + " más"
+		}
+	}
+	return lineas
+}
+
+// rutaDelUsuario se lee la primera vez que hace falta y ya no cambia: el pie la
+// necesita en cada repintado y la carpeta del usuario no se mueve mientras la
+// sesión viva. Si el sistema no la dice, se queda vacía y cada ruta se pinta tal
+// cual.
+var rutaDelUsuario = sync.OnceValue(func() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
 		return ""
 	}
-	var b strings.Builder
-	b.WriteString(estiloSeccion.Render("LISTA DE TAREAS") + "\n")
-	for _, t := range p.Tareas {
-		b.WriteString("  " + glifoDeTarea(t.Estado) + " " + truncar(t.Contenido, ancho-4) + "\n")
+	return home
+})
+
+// rutaBreve abrevia la carpeta del usuario a `~`. La ruta del pie es la del
+// proyecto, y repetir el home en cada arranque solo le quita sitio a la parte que
+// dice en qué carpeta se está. Una ruta que no cuelga del home se devuelve tal
+// cual.
+func rutaBreve(ruta string) string {
+	home := rutaDelUsuario()
+	if ruta == "" || home == "" {
+		return ruta
 	}
-	return strings.TrimRight(b.String(), "\n")
+	if ruta == home {
+		return "~"
+	}
+	if prefijo := home + string(filepath.Separator); strings.HasPrefix(ruta, prefijo) {
+		return "~" + ruta[len(home):]
+	}
+	return ruta
 }
 
 // glifoDeTarea es la marca de cada estado en el panel.

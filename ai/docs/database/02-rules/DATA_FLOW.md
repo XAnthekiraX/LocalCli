@@ -60,34 +60,38 @@ Los dos se editan a mano y se versionan. Nada de esto se duplica en SQLite: si l
 | Dato | Quién lo escribe | Para qué |
 |---|---|---|
 | `sessions` | El módulo de sesión | Saber qué sesiones hay y en qué estado |
-| `messages` | El agente y el usuario, al conversar | Reconstruir el historial |
+| `messages` | El agente y el usuario, al conversar | Reconstruir el historial, con los tokens y la duración de cada turno |
 | `reasoning` | El modelo, token a token | Mostrar y auditar el razonamiento |
 | `approvals` | El agente, al pedir permiso | Saber qué espera tu decisión |
 | `context_audit` | El nodo de contexto | Saber qué documentación entró y qué se descartó |
+| `chat_evento` | El adaptador, al correr una etapa o una herramienta | Recordar el hilo de procesamiento que se pinta (sub-procesos y herramientas) |
 | `change_history` | Las herramientas de archivo | Poder revertir y auditar cambios |
 
 Nada de esto es fuente de verdad. Es estado que se puede perder y reconstruir, salvo `change_history`, que es permanente por decisión de diseño.
 
 ### Lo que un turno no deja escrito
 
-Un turno con el canal nativo de herramientas produce, por dentro, una secuencia de mensajes: la petición del modelo, la petición de una herramienta, su resultado, la siguiente petición, y así hasta la respuesta final. **De esa secuencia, en la base solo queda el primer mensaje y el último.**
+Un turno con el canal nativo de herramientas produce, por dentro, una secuencia de mensajes: la petición del modelo, la petición de una herramienta, su resultado, la siguiente petición, y así hasta la respuesta final. **De esa secuencia, en `messages` solo quedan el primer mensaje y el último; el hilo de pantalla de lo que pasó por medio queda en `chat_evento`.**
 
 | Mensaje | ¿Se guarda? |
 |---|---|
 | Lo que escribió el usuario | Sí, en `messages` con `role = user` |
-| La petición de una herramienta y su resultado | No |
+| La petición de una herramienta y su resultado (crudos) | No |
+| La línea de pantalla de una herramienta y el sub-proceso de una etapa | Sí, en `chat_evento`: se muestra, nunca entra al contexto |
 | La respuesta final del agente | Sí, en `messages` con `role = agent` |
 | El razonamiento del turno | Sí, en `reasoning` |
 
-La razón es que el detalle de las ejecuciones pertenece al momento en que ocurren. Al retomar una sesión, lo que interesa es qué se hizo y qué quedó, y eso ya está en el texto del agente: en su respuesta final dice qué archivos leyó, qué comandos corrió y qué cambió.
+La razón es que el detalle de las ejecuciones pertenece al momento en que ocurren. Al retomar una sesión, lo que interesa es qué se hizo y qué quedó, y eso ya está en el texto del agente: en su respuesta final dice qué archivos leyó, qué comandos corrió y qué cambió. Lo que se conserva además, en `chat_evento`, es la **línea** que se pintó —qué herramienta se usó, sobre qué y con qué medida—, no el contenido crudo que fue al modelo.
 
-Lo que se pierde es la posibilidad de reconstruir una ejecución concreta —qué argumento exacto se pasó a qué herramienta—. Para eso están los eventos de la capa universal y, cuando aplica, `change_history`, que sí son permanentes. Ver [[backend/04-infrastructure/EVENTS]] y [[backend/DECISIONS]].
+Lo que se pierde es la posibilidad de reconstruir una ejecución concreta —qué argumento exacto se pasó a qué herramienta y qué devolvió—. Para eso están los eventos de la capa universal y, cuando aplica, `change_history`, que sí son permanentes. Ver [[backend/04-infrastructure/EVENTS]] y [[backend/DECISIONS]].
 
 ## 3. Creación
 
-**Crear un mensaje.** El usuario escribe, la TUI lo entrega a la sesión y se inserta una fila en `messages` con `role = user`. Si la respuesta del modelo trae razonamiento, se inserta la fila correspondiente en `reasoning` y se va acumulando mientras llega. Al terminar, se inserta el mensaje del agente. Las dos inserciones van en la misma transacción que la actualización de `status` de la sesión.
+**Crear un mensaje.** El usuario escribe, la TUI lo entrega a la sesión y se inserta una fila en `messages` con `role = user`. Si la respuesta del modelo trae razonamiento, se inserta la fila correspondiente en `reasoning` y se va acumulando mientras llega. Al terminar, se inserta el mensaje del agente, con sus tokens de entrada y salida y la duración del turno. Las inserciones del turno del agente van en la misma transacción que la actualización de `status` de la sesión.
 
-Un turno con herramientas tiene más pasos por dentro, pero **ninguno escribe en la base**. El bucle pide al modelo, ejecuta lo que le pidió y vuelve a pedir, todo en memoria. Solo el primer y el último mensaje se insertan. Ver [[database/01-schema/ENUMS]].
+Un turno con herramientas tiene más pasos por dentro, pero **`messages` solo recibe el primer y el último mensaje**. El bucle pide al modelo, ejecuta lo que le pidió y vuelve a pedir, todo en memoria. Lo que queda del medio, en la base, es su línea de pantalla en `chat_evento` (ver abajo). Ver [[database/01-schema/ENUMS]].
+
+**Crear una línea de procesamiento.** Cada vez que una etapa de un flujo arranca se inserta en `chat_evento` una fila con `tipo = proceso` y la línea «[Sub Proceso] <nombre>». Cuando termina una herramienta se inserta una fila con `tipo = herramienta` y la línea cerrada —«✓ LEER [ruta] · 70 líneas»—. Son datos de pantalla: se recuperan al abrir la sesión y **nunca** se le entregan al modelo. La línea de la herramienta se guarda al cerrarse, porque es inmutable una vez completa.
 
 **Crear una aprobación.** Cuando el agente pide permiso, se inserta una fila en `approvals` con `status = pendiente` y `resolved_at` en `NULL`, y la sesión pasa a `esperando_permiso`. Es un flujo que puede quedar a medias, así que ambas escrituras van en la misma transacción.
 
@@ -106,7 +110,7 @@ Un turno puede necesitar varias aprobaciones, y se resuelven **una a una**: las 
 
 ## 5. Eliminación
 
-- **Borrar una sesión.** Es definitivo. En cascada se van `messages`, y con ellos `reasoning`, más `approvals` y `context_audit`. Las filas de `change_history` sobreviven con `session_id` en `NULL`. El detalle de las cascadas está en [[database/01-schema/RELATIONSHIPS]].
+- **Borrar una sesión.** Es definitivo. En cascada se van `messages`, y con ellos `reasoning`, más `approvals`, `context_audit`, `todos`, `flow_context` y `chat_evento`. Las filas de `change_history` sobreviven con `session_id` en `NULL`. El detalle de las cascadas está en [[database/01-schema/RELATIONSHIPS]].
 - **Nunca se borra `change_history`.** No hay ninguna operación que la borre. Es lo que permite revertir y auditar.
 - **No se borran filas sueltas de `messages` ni de `reasoning`.** El historial de una sesión se conserva mientras la sesión exista; si quieres quitártelo, borras la sesión entera.
 
@@ -135,7 +139,7 @@ El paso 7 nunca ocurre sin el 3 y el 4. La base no lo impide, pero la capa unive
 
 Los pasos 3 y 5 pueden repetirse hasta un máximo de rondas. Al agotarlo, el turno se cierra con lo conseguido: es un límite duro, no un detalle, porque un modelo puede pedir herramientas en bucle. Ver [[specs/SPEC-AGENTE-BASE]].
 
-**Lo que se escribe en la base en este ciclo es solo:** la auditoría de contexto, el mensaje del usuario, las aprobaciones que se abren y se resuelven, y el mensaje final del agente. El bucle de herramientas en sí no escribe nada.
+**Lo que se escribe en la base en este ciclo es solo:** la auditoría de contexto, el mensaje del usuario, las líneas de procesamiento (`chat_evento`), las aprobaciones que se abren y se resuelven, y el mensaje final del agente con sus tokens y su duración. El bucle de herramientas en sí no escribe en `messages`.
 
 ## Referencias
 

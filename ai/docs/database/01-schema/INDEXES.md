@@ -26,6 +26,7 @@ Los índices se crean en la definición del esquema y se gestionan con las migra
 | `idx_context_audit_session_stage` | `context_audit` | Compuesto |
 | `idx_context_audit_unico` | `context_audit` | Compuesto, `UNIQUE` |
 | `idx_flow_context_unico` | `flow_context` | Compuesto, `UNIQUE` |
+| `idx_chat_evento_session_created` | `chat_evento` | Compuesto |
 | `idx_change_history_file` | `change_history` | Simple |
 | `idx_sessions_status` | `sessions` | Simple |
 | `idx_sessions_updated` | `sessions` | Simple |
@@ -41,6 +42,7 @@ Los índices se crean en la definición del esquema y se gestionan con las migra
 | `idx_context_audit_session_stage` | Ver qué documentación recibió una etapa concreta | El usuario al auditar una etapa |
 | `idx_context_audit_unico` | Rechazar una segunda auditoría de la misma terna (documento en la misma etapa) | La base, al escribir en `context_audit` |
 | `idx_flow_context_unico` | Rechazar dos aportaciones de la misma etapa y reemplazar la del flujo al re-ejecutarlo | El motor, al guardar el bloque y al leerlo para la composición |
+| `idx_chat_evento_session_created` | Cargar las líneas de procesamiento de una sesión en orden cronológico | La interfaz al abrir o cambiar de sesión, al armar el hilo |
 | `idx_change_history_file` | Ver el historial de cambios de un archivo concreto | El usuario al revertir o auditar un archivo |
 | `idx_sessions_status` | Listar las sesiones por estado, para el selector | El selector de sesiones |
 | `idx_sessions_updated` | Listar las sesiones por actividad reciente | El selector, ordenado por última actividad |
@@ -58,6 +60,7 @@ El más importante es `idx_approvals_pending`. La consulta que cuenta las aproba
 | `idx_context_audit_session_stage` | `session_id`, `stage` | Agrupa la auditoría por etapa |
 | `idx_context_audit_unico` | `session_id`, `stage`, `document` | `UNIQUE`: la terna identifica la fila, así que las tres van en el índice |
 | `idx_flow_context_unico` | `session_id`, `flow`, `stage` | `UNIQUE`: identifica la aportación de una etapa y reemplaza al re-ejecutar |
+| `idx_chat_evento_session_created` | `session_id`, `created_at` | El orden del segundo campo da el orden del hilo sin `ORDER BY` extra |
 | `idx_change_history_file` | `file_path` | Historial de un archivo |
 | `idx_sessions_status` | `status` | Filtro por estado |
 | `idx_sessions_updated` | `updated_at` | Orden por actividad |

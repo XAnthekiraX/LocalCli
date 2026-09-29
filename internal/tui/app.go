@@ -231,6 +231,12 @@ func Nuevo(p Puerto) *App {
 		ctx:      context.Background(),
 	}
 	a.Paleta.FijarComandos(comandos)
+	// La carpeta del proyecto y el estado de su repositorio son datos fijos del
+	// arranque —una sesión trabaja siempre en la misma rama—, así que se leen
+	// una vez aquí y se pintan en el pie del panel (SPEC-INTERFAZ §Zonas 3). La
+	// pantalla no pregunta nada: no llama a git ni al disco.
+	a.Panel.Ruta = p.Carpeta()
+	a.Panel.GitRama, a.Panel.GitLimpio = p.Git()
 	return a
 }
 
@@ -364,6 +370,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.Sesion == a.Panel.SesionID {
 			a.Chat.Cargar(m.Mensajes)
 			a.Panel.Tareas = m.Tareas
+			// Los números del contexto son de la sesión cargada: el panel deja
+			// de mostrar los de la anterior (SPEC-PANEL-CONTEXTO).
+			a.Panel.ContextoTokens = m.ContextoTokens
+			a.Panel.LimiteTokens = m.LimiteTokens
+			a.Panel.TokensEstimados = true
 		}
 		return a, nil
 	case enviadoMsg:
@@ -976,14 +987,20 @@ func (a *App) activar(ses *session.Sesion) {
 // (INTERFACES §3).
 func (a *App) cmdHistorial(sesionID string) tea.Cmd {
 	return func() tea.Msg {
-		ms, err := a.Puerto.Historial(sesionID)
+		h, err := a.Puerto.Historial(sesionID)
 		if err != nil {
 			return errorMsg{err: err}
 		}
 		// La lista de pasos es secundaria: si falla su lectura, el chat se pinta
 		// igual y el panel queda sin checklist.
 		ts, _ := a.Puerto.Tareas(sesionID)
-		return historialMsg{Sesion: sesionID, Mensajes: ms, Tareas: ts}
+		return historialMsg{
+			Sesion:         sesionID,
+			Mensajes:       h.Mensajes,
+			Tareas:         ts,
+			ContextoTokens: h.ContextoTokens,
+			LimiteTokens:   h.LimiteTokens,
+		}
 	}
 }
 
@@ -1342,10 +1359,10 @@ func (a *App) lineaDeTokens() string {
 
 // iniciarTurno deja a cero lo que se acumula por turno: el consumo de tokens y
 // la herramienta en curso. El razonamiento y la respuesta en curso los limpia el
-// cierre del turno anterior; esto es lo que se cuenta de nuevo al enviar.
+// cierre del turno anterior; esto es lo que se cuenta de nuevo al enviar. El
+// contexto de la sesión (ContextoTokens) no se toca: es del chat, no del turno.
 func (a *App) iniciarTurno() {
 	a.Panel.Tokens = 0
-	a.Panel.TokensEstimados = false
 	a.herramientaEnCurso = ""
 }
 

@@ -307,7 +307,7 @@ func (g *Gestor) cerrarTurno(sesionID string, estadoFlujo flow.EstadoFlujo, err 
 	if store.ValidarTransicionSesion(actual.Status, estado) {
 		destino = estado
 	}
-	if _, cErr := g.Alcance.Almacen.CerrarTurno(sesionID, resumenDe(estado, motivo), -1, -1, "", destino); cErr != nil {
+	if _, cErr := g.Alcance.Almacen.CerrarTurno(sesionID, resumenDe(estado, motivo), -1, -1, -1, "", destino); cErr != nil {
 		return cErr
 	}
 	// Se avisa del estado en el que queda la sesión: el nuevo si la transición

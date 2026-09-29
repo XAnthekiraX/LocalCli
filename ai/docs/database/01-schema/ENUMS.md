@@ -15,12 +15,13 @@ relacionado:
 
 ## 1. Enums
 
-La base de datos tiene cuatro columnas con un conjunto cerrado de valores. Cada una se valida con `CHECK`, no solo por convención. Ver [[database/01-schema/CONSTRAINTS]].
+La base de datos tiene cinco columnas con un conjunto cerrado de valores. Cada una se valida con `CHECK`, no solo por convención. Ver [[database/01-schema/CONSTRAINTS]].
 
 | Enum | Columna | Valores |
 |---|---|---|
 | Estado de sesión | `sessions.status` | `inactiva`, `trabajando`, `esperando_permiso`, `terminada`, `error` |
 | Rol de mensaje | `messages.role` | `user`, `agent` |
+| Tipo de línea de chat | `chat_evento.tipo` | `proceso`, `herramienta` |
 | Estado de aprobación | `approvals.status` | `pendiente`, `aprobada`, `declinada`, `obsoleta` |
 | Operación de archivo | `change_history.operation` | `crear_archivo`, `escribir_archivo`, `editar_archivo`, `eliminar_archivo`, `crear_carpeta`, `eliminar_carpeta` |
 
@@ -47,11 +48,18 @@ La base de datos tiene cuatro columnas con un conjunto cerrado de valores. Cada 
 
 El razonamiento solo existe en mensajes con `role = agent`.
 
-**No hay un rol `tool`, y es deliberado.** Con el canal nativo de herramientas, cada turno puede incluir mensajes de herramienta: la petición del modelo y el resultado de cada ejecución. Esos mensajes existen **solo mientras dura el turno** y no se guardan.
+**No hay un rol `tool` en `messages`, y es deliberado.** Con el canal nativo de herramientas, cada turno puede incluir mensajes de herramienta: la petición del modelo y el resultado de cada ejecución. Esos mensajes existen **solo mientras dura el turno** y no entran a la conversación.
 
-Lo que sí se guarda es el mensaje `agent` final, que ya dice en su texto qué hizo y con qué resultado. Eso es lo que el usuario lee al volver a abrir la sesión, y lo que el modelo recibe como historial.
+Lo que sí se guarda del turno es el mensaje `agent` final, que ya dice en su texto qué hizo y con qué resultado —lo que el usuario lee y lo que el modelo recibe como historial—, y, aparte, las **líneas de pantalla** de la ejecución en `chat_evento`. Esa separación es la clave: `messages` es la conversación, que es lo que va al contexto; `chat_evento` es lo que se pinta. Ver «Tipo de línea de chat», [[database/02-rules/DATA_FLOW]] y [[backend/DECISIONS]].
 
-Añadir el rol habría obligado a migrar el `CHECK`, a decidir cómo se reconstruye un turno con herramientas al retomar la sesión, y a multiplicar el contexto de las sesiones largas con resultados de herramientas que hace turnos que ya no importan. El coste es que una sesión retomada no recuerda el detalle de las ejecuciones: recuerda la conclusión. Ver [[database/02-rules/DATA_FLOW]] y [[backend/DECISIONS]].
+### Tipo de línea de chat — `chat_evento.tipo`
+
+| Valor | Significado |
+|---|---|
+| `proceso` | El sub-proceso de una etapa de un flujo: «[Sub Proceso] Entender el problema» |
+| `herramienta` | La línea de una herramienta, ya cerrada: «✓ LEER [AGENTS.md] · 93 líneas» |
+
+Son líneas del hilo que se muestran al usuario, no turnos de conversación: al modelo no se le entregan. Viven en su propia tabla, `chat_evento`, para que esa frontera —se muestra / se envía al modelo— sea la frontera de la tabla y no un filtro que alguien pueda olvidar. Ver [[database/01-schema/TABLES]].
 
 ### Estado de aprobación — `approvals.status`
 

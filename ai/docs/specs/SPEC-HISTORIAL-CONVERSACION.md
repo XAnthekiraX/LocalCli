@@ -36,6 +36,7 @@ No incluye qué documentos entran al contexto, que está en [[specs/SPEC-NODO-CO
 ## Reglas de negocio
 
 - Solo la sesión activa aporta historial: el contexto de una sesión nunca se mezcla con el de otra.
+- El historial se arma solo de los mensajes de usuario y agente. Las **líneas de procesamiento** del hilo (sub-procesos y herramientas) se muestran al usuario y se recuperan al abrir una sesión, pero **no** viajan al modelo: viven en `chat_evento`, aparte de la conversación. Ver [[database/02-rules/DATA_FLOW]].
 - El historial es la conversación ya cerrada; el mensaje en curso viaja aparte, como contexto del turno, y no se duplica.
 - El historial que se entrega al modelo no supera el presupuesto de tokens configurado.
 - Cuando el historial no cabe, se resume lo antiguo y lo reciente viaja entero y literal.

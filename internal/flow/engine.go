@@ -118,6 +118,15 @@ type Aprobador interface {
 	Aprobar(ctx context.Context, descripcion string) (bool, error)
 }
 
+// Registro guarda en el hilo del chat las líneas de procesamiento que la vista
+// muestra —el sub-proceso de una etapa— para que sobrevivan al cambio de
+// sesión. Es opcional: sin él, la línea solo se ve en vivo. Lo implementa el
+// arranque; un fallo al registrar no detiene el flujo: es un dato de pantalla,
+// no una regla de negocio.
+type Registro interface {
+	ProcesoEtapa(nombre string, fallida bool)
+}
+
 // Motor encadena las etapas de un flujo.
 type Motor struct {
 	Contexto Contexto
@@ -132,6 +141,9 @@ type Motor struct {
 	// (persistencia + optimización por etapa). Ver bloque.go.
 	Bloque      Bloque
 	Optimizador Optimizador
+	// Registro es opcional: con él, el sub-proceso de cada etapa queda guardado
+	// en el hilo del chat además de verse en vivo.
+	Registro Registro
 }
 
 func (m *Motor) emitir(nombre string, datos map[string]string) {
@@ -139,6 +151,15 @@ func (m *Motor) emitir(nombre string, datos map[string]string) {
 		return
 	}
 	m.Eventos.Emitir(Evento{Nombre: nombre, Datos: datos})
+}
+
+// registrarProceso guarda la línea de procesamiento de una etapa. Sin registro
+// conectado no hace nada; un registro que falla no interrumpe el flujo.
+func (m *Motor) registrarProceso(nombre string, fallida bool) {
+	if m.Registro == nil {
+		return
+	}
+	m.Registro.ProcesoEtapa(nombre, fallida)
 }
 
 // EjecutarFlujo corre las etapas en orden. Devuelve el estado final y, si algo
@@ -189,10 +210,12 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 		m.emitir(EventoEtapaIniciada, map[string]string{
 			"flujo": f.Nombre, "etapa": etapa.ID, "nombre": etapa.Nombre,
 		})
+		m.registrarProceso(etapa.Nombre, false)
 
 		contexto, cErr := m.Contexto.ContextoPara(ctx, etapa.ID, objetivo)
 		if cErr != nil {
 			m.emitir(EventoEtapaFallida, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
+			m.registrarProceso(etapa.Nombre, true)
 			return EstadoConError, fmt.Errorf("%w: %s: %v", ErrEtapaFallida, etapa.ID, cErr)
 		}
 		contexto = componerBrief(f.Reglas, etapa.Instruccion, contexto)
@@ -219,6 +242,7 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 		})
 		if aErr != nil {
 			m.emitir(EventoEtapaFallida, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
+			m.registrarProceso(etapa.Nombre, true)
 			return EstadoConError, fmt.Errorf("%w: %s: %v", ErrEtapaFallida, etapa.ID, aErr)
 		}
 

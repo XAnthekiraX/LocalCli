@@ -37,6 +37,7 @@ import (
 	tcontext "localcli/internal/context"
 	lcexec "localcli/internal/exec"
 	"localcli/internal/flow"
+	gitrepo "localcli/internal/git"
 	"localcli/internal/ollama"
 	"localcli/internal/queue"
 	"localcli/internal/session"
@@ -80,8 +81,11 @@ type Adaptador struct {
 	// bloques es el repositorio del bloque de contexto de un flujo con
 	// `bloque_contexto` (SPEC-MOTOR-FLUJOS).
 	bloques *store.Bloques
-	bus     *session.Bus
-	dir     string
+	// chat es el repositorio del hilo de procesamiento (chat_evento): las líneas
+	// de sub-proceso y de herramienta que se guardan como parte del chat.
+	chat *store.Chat
+	bus  *session.Bus
+	dir  string
 	// catalogo son los flujos del proyecto: los oficiales más los que declara
 	// `ai/flows/*.json`. Lo arma el arranque; `Enviar` reconoce los comandos
 	// contra él.
@@ -202,7 +206,7 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	// montarse), así que el registro puede construirse antes de que el gestor
 	// exista.
 	cambios := store.NuevosCambios(conexion)
-	ad := &Adaptador{aprobar: aprobar, cerrar: turnos, auditar: store.NuevasAuditorias(conexion), todos: store.NuevosTodos(conexion), bloques: store.NuevosBloques(conexion), bus: bus, dir: carpeta, pendientas: map[string]chan string{}, contextos: map[string]int{}, cliente: cliente}
+	ad := &Adaptador{aprobar: aprobar, cerrar: turnos, auditar: store.NuevasAuditorias(conexion), todos: store.NuevosTodos(conexion), bloques: store.NuevosBloques(conexion), chat: store.NuevoChat(conexion), bus: bus, dir: carpeta, pendientas: map[string]chan string{}, contextos: map[string]int{}, cliente: cliente}
 	ad.modelo = modelo
 	ad.agenteRecordado = prefs.Agente
 	// El ejecutor externo corre las herramientas del usuario: el mismo módulo
@@ -310,6 +314,9 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	// (SPEC-MOTOR-FLUJOS §Bloque de contexto).
 	motorFlows.Bloque = &bloquePorTurno{ad: ad}
 	motorFlows.Optimizador = &optimizadorPorTurno{ad: ad, infer: infer}
+	// El hilo del chat guarda el sub-proceso de cada etapa: la línea queda en el
+	// historial además de verse en vivo.
+	motorFlows.Registro = &registroPorTurno{ad: ad}
 
 	// Arranque de sesión: NO se crea ninguna. La sesión nace con la primera
 	// petición desde la bienvenida (SPEC-SESIONES); hasta entonces no hay sesión
@@ -452,6 +459,21 @@ func (ad *Adaptador) capacidadesDe(ctx context.Context, nombre string) []string 
 // Ollama, así que la pantalla se pinta sin esperar a nada externo.
 func (ad *Adaptador) ModeloActual() string { return ad.modeloElegido() }
 
+// Carpeta devuelve la carpeta del proyecto —la desde la que se ejecutó
+// `localcli`—, que el arranque ya tenía resuelta al abrir la base. Es el dato
+// de «Ruta» del pie del panel (SPEC-INTERFAZ §Zonas 3). No consulta nada: es
+// el valor con el que se construyó el adaptador.
+func (ad *Adaptador) Carpeta() string { return ad.dir }
+
+// Git devuelve la rama activa del repositorio del proyecto y si el árbol tiene
+// cambios sin confirmar, que es lo que pinta el pie del panel
+// (SPEC-INTERFAZ §Zonas 3, dato «Git»). La rama vacía significa que el proyecto
+// no tiene git inicializado, o que no hay git instalado, y se muestra como
+// «sin iniciar». La lectura la hace `internal/git`, que llama al binario: aquí
+// no hay aprobación porque el harness lee su propio repositorio, no ejecuta
+// nada del proyecto.
+func (ad *Adaptador) Git() (string, bool) { return gitrepo.Estado(ad.dir) }
+
 // CapacidadesModelo dice qué declara capaz de hacer el modelo indicado (usar
 // herramientas e interpretar imágenes), para la línea de estado bajo el input
 // (SPEC-OLLAMA-PERFIL). Un fallo sube tal cual; la vista lo trata como dato
@@ -489,18 +511,56 @@ func (ad *Adaptador) FijarModelo(nombre string) {
 	ad.modelo = nombre
 }
 
-// Historial traduce la conversación guardada a lo que la vista pinta. La vista
-// nunca lee la base: llega como dato (INTERFACES §3).
-func (ad *Adaptador) Historial(sesionID string) ([]tui.MensajeHistorial, error) {
+// Historial traduce el hilo guardado de una sesión a lo que la vista pinta:
+// los turnos de la conversación y las líneas de procesamiento, con su tiempo,
+// más los números del panel de contexto. La vista nunca lee la base: llega como
+// dato (INTERFACES §3).
+func (ad *Adaptador) Historial(sesionID string) (tui.HistorialSesion, error) {
+	hilo, err := ad.chat.Hilo(sesionID)
+	if err != nil {
+		return tui.HistorialSesion{}, err
+	}
+	out := make([]tui.MensajeHistorial, 0, len(hilo))
+	for _, l := range hilo {
+		out = append(out, tui.MensajeHistorial{
+			Rol:          l.Rol,
+			Texto:        l.Content,
+			Razonamiento: l.Razonamiento,
+			Duracion:     duracionDeMS(l.DuracionMS),
+		})
+	}
+	usado, limite := ad.contextoSesion(sesionID)
+	return tui.HistorialSesion{Mensajes: out, ContextoTokens: usado, LimiteTokens: limite}, nil
+}
+
+// duracionDeMS convierte la duración guardada (ms) al tipo de la vista. -1 =
+// no se midió, que la vista trata como cero.
+func duracionDeMS(ms int) time.Duration {
+	if ms < 0 {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
+// contextoSesion estima los tokens que el chat de una sesión ocupa en el
+// contexto: la suma de sus mensajes de usuario y de agente. Las líneas de
+// procesamiento NO cuentan: no se le envían al modelo. El límite es la ventana
+// del modelo en uso. Es una estimación: no hay tokenizador exacto por mensaje.
+func (ad *Adaptador) contextoSesion(sesionID string) (usado, limite int) {
+	limite = ad.ventana(ad.modeloElegido())
+	if sesionID == "" {
+		return 0, limite
+	}
 	ms, err := ad.gest.Historial(sesionID)
 	if err != nil {
-		return nil, err
+		return 0, limite
 	}
-	out := make([]tui.MensajeHistorial, 0, len(ms))
 	for _, m := range ms {
-		out = append(out, tui.MensajeHistorial{Rol: m.Role, Texto: m.Content, Razonamiento: m.Reasoning})
+		if m.Role == "user" || m.Role == "agent" {
+			usado += tcontext.EstimarTokens(m.Content)
+		}
 	}
-	return out, nil
+	return usado, limite
 }
 
 // Tareas devuelve la lista de pasos de una sesión para que la vista la pinte al
@@ -1014,32 +1074,41 @@ func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, p flow.PeticionEtapa) (
 
 	// El turno de inferencia NO se toma aquí: el bucle de `agent` lo toma por
 	// PETICIÓN al modelo, así que una sesión esperando una aprobación deja libre
-	// el modelo para las demás (SPEC-OLLAMA-PERFIL, T-B024-14).
+	// el modelo para las demás (SPEC-OLLAMA-PERFIL, T-B024-14). El tiempo que se
+	// mide es el del turno entero (modelo + herramientas).
+	inicio := time.Now()
 	salida, err := e.ejecutor.Ejecutar(ctx, agente, modelo, p.Contexto, mensajesDeOllama(p.Historial), p.Imagenes, e.ad.ventana(modelo), p.SinHerramientas, sink)
 	if err != nil {
 		return flow.Resultado{}, err
 	}
-	// El consumo del turno alimenta el panel de contexto; solo la etapa visible
-	// (o el chat) lo reporta: el de un sub-proceso no interrumpe la lectura.
-	if !p.Silenciosa && salida.TokensEntrada+salida.TokensSalida > 0 {
-		e.ad.bus.Emitir(tui.Evento{Nombre: tui.EventoTokensTurno, Datos: map[string]string{
-			"entrada": strconv.FormatUint(salida.TokensEntrada, 10),
-			"salida":  strconv.FormatUint(salida.TokensSalida, 10),
-		}})
-	}
+	duracion := int(time.Since(inicio).Milliseconds())
 
 	resumen := strings.TrimSpace(salida.Texto)
 	if resumen == "" {
 		resumen = "(respuesta vacía)"
 	}
 	// El turno del agente se guarda en la misma transacción que su razonamiento
-	// y su estado (DATA_FLOW.md): el historial que verá la próxima vez incluye
-	// esta respuesta. Una etapa silenciosa no se persiste: solo la entrega final
-	// (o el chat) queda en el historial.
+	// y su estado (DATA_FLOW.md), con sus tokens y su duración: el historial que
+	// verá la próxima vez incluye esta respuesta. Una etapa silenciosa no se
+	// persiste: solo la entrega final (o el chat) queda en el historial.
 	if sesionID != "" && !p.Silenciosa {
-		if _, cErr := cerrarTurnoGuardado(e.ad, sesionID, resumen, salida.Razonamiento); cErr != nil {
+		if _, cErr := cerrarTurnoGuardado(e.ad, sesionID, resumen, salida.Razonamiento,
+			int(salida.TokensEntrada), int(salida.TokensSalida), duracion); cErr != nil {
 			return flow.Resultado{}, cErr
 		}
+	}
+	// El consumo del turno y el contexto del chat alimentan el panel; solo la
+	// etapa visible (o el chat) lo reporta: el de un sub-proceso no interrumpe la
+	// lectura. El contexto se calcula DESPUÉS de guardar el turno, para que lo
+	// incluya.
+	if !p.Silenciosa {
+		contexto, limite := e.ad.contextoSesion(sesionID)
+		e.ad.bus.Emitir(tui.Evento{Nombre: tui.EventoTokensTurno, Datos: map[string]string{
+			"entrada":  strconv.FormatUint(salida.TokensEntrada, 10),
+			"salida":   strconv.FormatUint(salida.TokensSalida, 10),
+			"contexto": strconv.Itoa(contexto),
+			"limite":   strconv.Itoa(limite),
+		}})
 	}
 	return flow.Resultado{Texto: resumen}, nil
 }
@@ -1076,10 +1145,11 @@ func (s sinkBus) Aviso(texto string) {
 }
 
 // cerrarTurnoGuardado persiste la respuesta del agente con su razonamiento,
-// dejando el estado de la sesión como está (lo mueve `session` al terminar el
-// flujo).
-func cerrarTurnoGuardado(ad *Adaptador, sesionID, contenido, razon string) (*store.Message, error) {
-	return ad.cerrar.CerrarAgente(sesionID, contenido, -1, -1, razon, "")
+// sus tokens y su duración, dejando el estado de la sesión como está (lo mueve
+// `session` al terminar el flujo). Los tokens y la duración llegan como -1
+// cuando el modelo no los reportó.
+func cerrarTurnoGuardado(ad *Adaptador, sesionID, contenido, razon string, in, out, duracionMs int) (*store.Message, error) {
+	return ad.cerrar.CerrarAgente(sesionID, contenido, in, out, duracionMs, razon, "")
 }
 
 // aprobadorPorTurno implementa flow.Aprobador con el aprobador de producción:
@@ -1135,6 +1205,22 @@ func (b *bloquePorTurno) Leer(ctx context.Context, flujo string) ([]flow.Entrada
 	return out, nil
 }
 
+// registroPorTurno implementa flow.Registro: guarda en el hilo del chat la
+// línea del sub-proceso de cada etapa, con la misma forma que la pinta la TUI
+// (LineaProceso). Es best-effort: si la escritura falla, el flujo sigue.
+type registroPorTurno struct{ ad *Adaptador }
+
+func (r *registroPorTurno) ProcesoEtapa(nombre string, fallida bool) {
+	if r.ad.chat == nil {
+		return
+	}
+	sesion := r.ad.sesionActual()
+	if sesion == "" {
+		return
+	}
+	_ = r.ad.chat.Registrar(sesion, store.ChatTipoProceso, tui.LineaProceso(nombre, fallida))
+}
+
 // optimizadorPorTurno implementa flow.Optimizador: condensa el resultado de una
 // etapa con una generación corta del modelo local, sin herramientas ni
 // streaming. Un fallo no detiene el flujo (el motor cae al resumen mecánico).
@@ -1151,16 +1237,16 @@ func (o *optimizadorPorTurno) Optimizar(ctx context.Context, flujo, etapa, resul
 	return strings.TrimSpace(crudo), nil
 }
 
-// agenteBase carga los agentes del proyecto desde `ai/agents/*.json`: los dos
+// agenteBase carga los agentes del proyecto desde `.localcli/agents/*.json`: los dos
 // base (`plan`, `build`) y cualquier agente propio que el usuario deje ahí. El
 // nombre de cada archivo no decide nada: manda el campo `nombre` del JSON.
 //
 // Un archivo inválido se ignora con un aviso por stderr, no tumba el arranque
-// (CONFIGURATION.md §5: la vista sigue viva), y `plan` y `build` siempre quedan
+// (CONFIGURATION.md 5: la vista sigue viva), y `plan` y `build` siempre quedan
 // disponibles aunque su JSON falte o esté roto: son los que arrancan los flujos
 // oficiales.
 func agenteBase(raiz string) map[string]agent.Agente {
-	dir := filepath.Join(raiz, "ai", "agents")
+	dir := filepath.Join(raiz, ".localcli", "agents")
 	out := map[string]agent.Agente{}
 	if entradas, err := os.ReadDir(dir); err == nil {
 		for _, e := range entradas {

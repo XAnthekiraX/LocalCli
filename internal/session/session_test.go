@@ -134,7 +134,7 @@ func (a *almacenMem) EscribirMensaje(m *store.Message) error {
 	return nil
 }
 
-func (a *almacenMem) CerrarTurno(sessionID, contenido string, in, out int, razonamiento, estadoSesion string) (*store.Message, error) {
+func (a *almacenMem) CerrarTurno(sessionID, contenido string, in, out, duracion int, razonamiento, estadoSesion string) (*store.Message, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	m := store.Message{SessionID: sessionID, Role: "agent", Content: contenido}

@@ -73,6 +73,59 @@ func (s *stubEmisor) nombres() []string {
 	return out
 }
 
+// stubRegistro recoge las líneas de sub-proceso que el motor manda guardar.
+type stubRegistro struct{ procesos []string }
+
+func (s *stubRegistro) ProcesoEtapa(nombre string, fallida bool) {
+	linea := nombre
+	if fallida {
+		linea += ":falló"
+	}
+	s.procesos = append(s.procesos, linea)
+}
+
+// --- el hilo del chat: el sub-proceso de cada etapa ------------------------
+
+// El motor guarda una línea de sub-proceso por etapa: es lo que hace que el
+// historial recuerde los pasos de un flujo al volver a la sesión.
+func TestElRegistroGuardaElSubProcesoDeCadaEtapa(t *testing.T) {
+	reg := &stubRegistro{}
+	f := FlujoPlanificacion()
+	m := &Motor{
+		Contexto:  &stubContexto{},
+		Agente:    &stubAgente{},
+		Aprobador: &stubAprobador{aprobar: true},
+		Registro:  reg,
+	}
+	if _, err := m.EjecutarFlujo(context.Background(), f, "objetivo"); err != nil {
+		t.Fatalf("EjecutarFlujo: %v", err)
+	}
+	if len(reg.procesos) != len(f.Etapas) {
+		t.Fatalf("una línea de sub-proceso por etapa: %v", reg.procesos)
+	}
+}
+
+// Una etapa que falla deja su línea marcada como fallida.
+func TestElRegistroMarcaLaEtapaQueFalla(t *testing.T) {
+	reg := &stubRegistro{}
+	m := &Motor{Contexto: &stubContexto{}, Agente: &stubAgente{fallar: true}, Registro: reg}
+	if _, err := m.EjecutarFlujo(context.Background(), FlujoResolver(), "objetivo"); !errors.Is(err, ErrEtapaFallida) {
+		t.Fatalf("err = %v, quiero E_STAGE_FAILED", err)
+	}
+	ultimo := reg.procesos[len(reg.procesos)-1]
+	if !strings.HasSuffix(ultimo, ":falló") {
+		t.Errorf("la etapa que falla se marca: %v", reg.procesos)
+	}
+}
+
+// Sin registro conectado el motor no falla: el sub-proceso solo se ve en vivo.
+func TestSinRegistroElFlujoNoSeRompe(t *testing.T) {
+	m := &Motor{Contexto: &stubContexto{}, Agente: &stubAgente{}, Aprobador: &stubAprobador{aprobar: true}}
+	if _, err := m.EjecutarFlujo(context.Background(), FlujoPlanificacion(), "objetivo"); err != nil {
+		t.Fatalf("EjecutarFlujo: %v", err)
+	}
+}
+
 // --- T-B010-04: el ciclo de planificación no escribe -----------------------
 
 func TestPlanTerminaSinEscribir(t *testing.T) {

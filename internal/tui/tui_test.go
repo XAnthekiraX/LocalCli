@@ -48,6 +48,13 @@ type puertoStub struct {
 	modelosErr       error
 	modelo           string
 	agenteRecordado  string
+	// carpeta es la carpeta del proyecto que el arranque resolvió; es lo que la
+	// vista pinta en el pie del panel.
+	carpeta string
+	// gitRama y gitLimpio son el estado del repositorio que el arranque leyó;
+	// gitRama vacía es el proyecto sin git inicializado.
+	gitRama   string
+	gitLimpio bool
 	// agentesDisponibles es la lista que ofrece el puerto; vacía deja los base
 	// plan/build.
 	agentesDisponibles []string
@@ -74,6 +81,10 @@ type puertoStub struct {
 	// `session_delete` (T-F017).
 	creadas    int
 	eliminadas []string
+	// contextoTokens y limiteTokens son los números del panel de contexto que
+	// devuelve la carga del historial (SPEC-PANEL-CONTEXTO).
+	contextoTokens int
+	limiteTokens   int
 }
 
 func (p *puertoStub) ResolverActiva() (*session.Sesion, error) {
@@ -142,12 +153,16 @@ func (p *puertoStub) Eliminar(sesionID string) error {
 	return nil
 }
 
-func (p *puertoStub) Historial(sesionID string) ([]MensajeHistorial, error) {
+func (p *puertoStub) Historial(sesionID string) (HistorialSesion, error) {
 	p.peticionesChat++
 	if p.err != nil {
-		return nil, p.err
+		return HistorialSesion{}, p.err
 	}
-	return p.historial, nil
+	return HistorialSesion{
+		Mensajes:       p.historial,
+		ContextoTokens: p.contextoTokens,
+		LimiteTokens:   p.limiteTokens,
+	}, nil
 }
 
 // Tareas simula la lectura de la lista de pasos de una sesión.
@@ -203,6 +218,15 @@ func (p *puertoStub) Modelos() ([]ModeloLocal, error) {
 // en `modelo` para que la línea de modelo de la bienvenida tenga algo que
 // enseñar sin llamar a Ollama.
 func (p *puertoStub) ModeloActual() string { return p.modelo }
+
+// Carpeta simula la carpeta del proyecto con la que se arrancó la herramienta;
+// el doble la declara en `carpeta` para que el pie del panel tenga una ruta que
+// pintar.
+func (p *puertoStub) Carpeta() string { return p.carpeta }
+
+// Git simula el estado del repositorio del proyecto: rama vacía = sin git
+// inicializado, que el pie pinta como «sin iniciar».
+func (p *puertoStub) Git() (string, bool) { return p.gitRama, p.gitLimpio }
 
 // AgenteRecordado simula la preferencia leída al arrancar; vacío = sin
 // preferencia (la vista cae en plan).
@@ -450,7 +474,7 @@ func TestElPanelMuestraLosNueveDatos(t *testing.T) {
 		Abierto:            true,
 		Sesion:             "api de pedidos",
 		Estado:             session.EstadoTrabajando,
-		Tokens:             1234,
+		ContextoTokens:     1234,
 		TokensEstimados:    true,
 		LimiteTokens:       2000,
 		ElementoActual:     "T-B014",
@@ -475,7 +499,10 @@ func TestElPanelMuestraLosNueveDatos(t *testing.T) {
 		"Capa y cola", "backend", "2 tareas grandes",
 		"Aprobaciones", "1 esperando decisión",
 		"Agente", "build",
-		"Proyecto", Nombre, Version,
+		// El nombre y la versión van en el pie sin etiqueta: es la firma del
+		// harness, como la ruta va entre corchetes y sin nombre. La etiqueta
+		// «Proyecto» ya no se pinta; el dato, sí.
+		Nombre, Version,
 	} {
 		if !strings.Contains(v, esperado) {
 			t.Errorf("el panel no muestra %q:\n%s", esperado, v)
@@ -493,7 +520,7 @@ func TestElPanelAvisaCuandoElContextoSeAcercaAlLímite(t *testing.T) {
 	a := Nuevo(&puertoStub{})
 	a.Vista = VistaPrincipal
 	a.Panel.Abierto = true
-	a.Panel.Tokens, a.Panel.LimiteTokens = 1700, 2000
+	a.Panel.ContextoTokens, a.Panel.LimiteTokens = 1700, 2000
 	pulsa(t, a, tea.WindowSizeMsg{Width: 120, Height: 30})
 	if !strings.Contains(sinEstilo(a.View()), "cerca del límite") {
 		t.Errorf("al 85%% del contexto debe avisarse:\n%s", sinEstilo(a.View()))

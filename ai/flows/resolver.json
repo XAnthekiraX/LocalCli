@@ -11,7 +11,14 @@
             "nombre": "Listar archivos",
             "agente": "plan",
             "aprobacion": false,
-            "instruccion": "Lista los archivos actuales del proyecto y retorna solo 'carpetas: lista de las carpetas y  archivos: lista de los archivos' "
+            "instruccion": "Lista los archivos actuales del proyecto usando tools de lectura y retorna el árbol de carpeta y archivos de manera estructurada "
+        },
+        {
+            "id": "0002",
+            "nombre": "Buscar documentación",
+            "agente": "plan",
+            "aprobacion": false,
+            "instruccion": "con la información del árbol de archivos, busca la documentación necesaria usando tools para solucionar el problema del usuario y retorna un resumen de la documentación encontrada"
         }
     ]
 }

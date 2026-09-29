@@ -260,7 +260,9 @@ func TestRecorridoPanelPlegable(t *testing.T) {
 	}
 	h.tecla("ctrl+d")
 	h.veSiContiene("CONTEXTO")
-	h.veSiContiene("Proyecto")
+	// Desplegado, el pie vuelve con la firma del harness: la ruta y la versión
+	// no son un dato de ESTADO, así que no se quedan al plegar.
+	h.veSiContiene(Nombre)
 	// Plegar y desplegar no pierde lo escrito.
 	h.veSiContiene("texto a salvo")
 }

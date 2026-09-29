@@ -36,7 +36,8 @@ internal/tui/
   chat.go       historial de la sesión activa: respuesta, líneas compactas de herramienta y razonamiento revelable
   input.go      caja de entrada con borde: línea de texto y pie con el agente y el modelo
   comandos.go   paleta de comandos de flujo: catálogo del motor, filtro y render sobre el input
-  panel.go      sidebar de datos plegable: título, contexto, TODO, tareas, estado y ruta
+  panel.go      sidebar de datos plegable: título, contexto, TODO, tareas, estado y pie
+               (git, ruta y firma del harness)
   reasoning.go  estado del razonamiento en vivo (texto revelado u oculto)
   approvals.go  panel de aprobaciones pendientes de todas las sesiones
   notify.go     línea de aviso de aprobaciones pendientes con el panel cerrado

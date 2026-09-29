@@ -8,11 +8,9 @@ CONTEXTO
   T-B014 · quedan 3
 
 ESTADO
-Git master · con cambios sin confirmar
 Capa y cola backend · 2 tareas grandes
 Aprobaciones 1 esperando decisión
 Agente build
-Proyecto LocalCli · v0.1 alpha
 
 
 
@@ -27,4 +25,6 @@ Proyecto LocalCli · v0.1 alpha
 
 
 
+Git master · con cambios sin confirmar
 [/tmp/proyecto]
+LocalCli · v0.1 alpha

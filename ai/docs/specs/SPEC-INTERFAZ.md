@@ -53,10 +53,13 @@ pegado a la derecha.
 │                                      │   [•] migrar tabla   │
 ├──────────────────────────────────────┤                      │
 │ ╭──────────────────────────────────╮ │  ESTADO              │
-│ │ En qué te ayudo hoy: █           │ │  Git        master   │
-│ │ [plan] · * llama3.2 · herr …     │ │  Capa y cola  …      │
-│ ╰──────────────────────────────────╯ │  Aprobaciones …      │
+│ │ En qué te ayudo hoy: █           │ │  Capa y cola  …      │
+│ │ [plan] · * llama3.2 · herr …     │ │  Aprobaciones …      │
+│ ╰──────────────────────────────────╯ │  Agente      plan    │
+│                                      │                      │
+│                                      │  Git        master   │
 │                                      │  [~/ruta/proyecto]   │
+│                                      │  LocalCli · v0.1     │
 └──────────────────────────────────────┴──────────────────────┘
 ```
 
@@ -142,8 +145,10 @@ visible** y se pliega y despliega con `Ctrl+D`. De arriba abajo muestra:
 2. **CONTEXTO**: los tokens usados y el porcentaje ocupado.
 3. **▾ TODO**: el elemento del TODO en curso y cuántos le quedan.
 4. **LISTA DE TAREAS**: los pasos del agente cuando queda alguno accionable.
-5. **ESTADO**: git, capa y cola, aprobaciones, agente y proyecto, en filas etiqueta + valor.
-6. Al pie, la **ruta** del proyecto entre corchetes, pegada al fondo de la columna.
+5. **ESTADO**: capa y cola, aprobaciones y agente, en filas etiqueta + valor.
+6. El **pie**, pegado al fondo de la columna y siempre visible, con tres filas de arriba abajo:
+   el estado de **git**, la **ruta** del proyecto entre corchetes y la **firma** del
+   harness con su nombre y versión.
 
 Los nueve datos siguen siendo estos:
 
@@ -158,6 +163,19 @@ Los nueve datos siguen siendo estos:
 | Aprobaciones | Cuántas hay esperando tu decisión |
 | Agente | `plan` o `build` |
 | Proyecto | Nombre y versión de LocalCli |
+
+Git y proyecto viven en el pie, no en ESTADO: son los dos datos que se miran de un
+vistazo y basta con llegar al fondo de la columna para verlos. La firma del harness va
+suelta, sin etiqueta, igual que la ruta va entre corchetes: el nombre y la versión se
+dicen solos.
+
+**Git se lee una vez al arrancar.** Una sesión trabaja siempre en la misma rama, así que
+el pie refleja el estado del repositorio en el momento del arranque y no se vuelve a
+consultar. Por eso un cambio que hagas tú en la terminal con la sesión abierta no sale en
+el pie hasta la siguiente: es el precio de no estar llamando a git sin parar.
+
+Si el proyecto **no tiene git inicializado** —o no hay git instalado—, no se deja un hueco
+ni se disfraza de árbol limpio: la fila dice `sin iniciar`. Es un dato, no un «no sé».
 
 Los datos de contexto se calculan y se interpretan según [[specs/SPEC-PANEL-CONTEXTO]].
 
@@ -252,6 +270,8 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] Con el panel cerrado, el chat ocupa todo el ancho.
 - [ ] El panel se abre y se cierra sin interrumpir el trabajo.
 - [ ] El panel muestra los nueve datos definidos.
+- [ ] El pie del panel son tres filas —estado de git, ruta y firma del harness— y se mantienen visibles aunque la lista de tareas no quepa.
+- [ ] En un proyecto sin git inicializado la fila de git dice `sin iniciar`.
 - [ ] El panel muestra la lista de pasos del agente cuando queda alguno por hacer, y la oculta cuando no hay nada accionable.
 - [ ] El panel muestra los datos de la sesión activa, no los de otra.
 - [ ] Mientras el modelo trabaja se ve el indicador en vivo (`[⠋ Pensando]`, y `[⠋ Usando herramienta: X]` mientras corre una herramienta).

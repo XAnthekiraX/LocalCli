@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	lcexec "localcli/internal/exec"
 	"localcli/internal/fileops"
@@ -73,15 +74,40 @@ func registroDeHerramientas(ad *Adaptador, carpeta string, cambios *store.Cambio
 	// La aprobación vive aquí, no dentro de cada handler: toda herramienta que
 	// la necesita la pide por el mismo camino (DECISIONS.md).
 	registro.Ask = ad.pedirAprobacion
-	registro.Eventos = publicadorBus{bus: ad.bus}
+	registro.Eventos = &publicadorBus{bus: ad.bus, ad: ad}
 	return registro, nil
 }
 
 // publicadorBus lleva los eventos de la capa universal al bus de la TUI. Si no
 // hay suscriptores, el bus los descarta: no se bloquea nada.
-type publicadorBus struct{ bus *session.Bus }
+//
+// Además de emitir, guarda en el hilo la línea cerrada de cada herramienta
+// (`✓ LEER [ruta] · 70 líneas`): es parte del chat y debe sobrevivir al cambio
+// de sesión. Se guarda solo al cerrarse, porque el mensaje es inmutable una vez
+// completo; por eso el publicador recuerda la línea abierta hasta su resultado.
+type publicadorBus struct {
+	bus *session.Bus
+	ad  *Adaptador
 
-func (p publicadorBus) HerramientaInvocada(nombre, agente, verbo, tema string) {
+	mu         sync.Mutex
+	pendientes []herramientaPendiente
+}
+
+// herramientaPendiente es la invocación que espera su resultado, en orden.
+type herramientaPendiente struct {
+	abierta string
+	sesion  string
+}
+
+func (p *publicadorBus) HerramientaInvocada(nombre, agente, verbo, tema string) {
+	if p.ad != nil {
+		p.mu.Lock()
+		p.pendientes = append(p.pendientes, herramientaPendiente{
+			abierta: tui.LineaHerramientaAbierta(verbo, tema),
+			sesion:  p.ad.sesionActual(),
+		})
+		p.mu.Unlock()
+	}
 	p.bus.Emitir(tui.Evento{Nombre: tui.EventoHerramientaInvocada, Datos: map[string]string{
 		"herramienta": nombre,
 		"agente":      agente,
@@ -90,7 +116,23 @@ func (p publicadorBus) HerramientaInvocada(nombre, agente, verbo, tema string) {
 	}})
 }
 
-func (p publicadorBus) HerramientaResultado(nombre string, ok bool, err string, truncado bool, medida string) {
+func (p *publicadorBus) HerramientaResultado(nombre string, ok bool, err string, truncado bool, medida string) {
+	// La línea cerrada se compone con la misma función que la pinta la TUI: una
+	// sola forma para lo que se ve y lo que se guarda.
+	base, sesion := nombre, ""
+	if p.ad != nil {
+		p.mu.Lock()
+		if len(p.pendientes) > 0 {
+			ult := p.pendientes[0]
+			p.pendientes = p.pendientes[1:]
+			base, sesion = ult.abierta, ult.sesion
+		}
+		p.mu.Unlock()
+	}
+	linea := tui.LineaHerramientaCerrada(base, ok, truncado, medida, err)
+	if p.ad != nil && p.ad.chat != nil && sesion != "" {
+		_ = p.ad.chat.Registrar(sesion, store.ChatTipoHerramienta, linea)
+	}
 	datos := map[string]string{
 		"herramienta": nombre,
 		"ok":          boolTexto(ok),
