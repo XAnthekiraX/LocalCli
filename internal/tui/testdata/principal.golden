@@ -1,0 +1,24 @@
+                                      ╭──────────────────╮ ▣ │api de pedidos (trabajando)
+                                      │ arregla el login │   │
+                                      ╰──────────────────╯   │CONTEXTO
+                                                             │  1234 tokens (estimado)
+ ▣ ╭─────────────────╮                                       │  61% usada
+  │ voy a revisarlo │                                        │
+  ╰─────────────────╯                                        │▾ TODO
+                                                             │  T-B014 · quedan 3
+                                                             │
+                                                             │LISTA DE TAREAS
+                                                             │  [•] migrar la tabla
+                                                             │
+                                                             │ESTADO
+                                                             │Git master · sin cambios
+                                                             │Capa y cola backend · 2 tareas grandes
+                                                             │Aprobaciones 0 esperando decisión
+                                                             │Agente plan
+                                                             │Proyecto LocalCli · v0.1 alpha
+─────────────────────────────────────────────────────────────│
+╭───────────────────────────────────────────────────────────╮│
+│ Escribe tu petición…                                      ││
+│ [plan] · * llama3.2 · herramientas: ? · visión: ?         ││
+╰───────────────────────────────────────────────────────────╯│
+tokens: 1.2k                                                 │[/tmp/proyecto]

@@ -82,8 +82,10 @@ func TestEnLaBienvenidaLosAtajosDeLaPrincipalNoExisten(t *testing.T) {
 	if a.Sesiones.Abierto {
 		t.Error("esc cierra el modal de sesiones en la bienvenida")
 	}
-	tecla(t, a, tea.KeyCtrlO)
-	if a.Panel.Abierto {
+	// `Ctrl+D` es la tecla real del panel de datos: en la bienvenida no existe,
+	// así que no se pliega nada y el sidebar no se pinta.
+	tecla(t, a, tea.KeyCtrlD)
+	if strings.Contains(sinEstilo(a.View()), "CONTEXTO") {
 		t.Error("en la bienvenida no hay panel de datos")
 	}
 	tecla(t, a, tea.KeyCtrlR)

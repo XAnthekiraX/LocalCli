@@ -286,7 +286,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.raton(m)
 	case tea.WindowSizeMsg:
 		a.Ancho, a.Alto = m.Width, m.Height
-		a.Entrada.FijarAncho(a.anchoChat())
+		a.Entrada.FijarAncho(a.anchoColumna())
 		// La edición interna del campo (flechas, home/end, borrado por palabra)
 		// sigue viva; el KeyResolver resuelve antes las teclas que el mapa
 		// reclama. Se reaplica en cada cambio de tamaño para que un textinput
@@ -501,7 +501,7 @@ func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.Panel.Abierto = !a.Panel.Abierto
 		// Plegar o desplegar cambia el reparto del ancho: la línea se
 		// adapta al layout resultante, sin interrumpir nada (T-F006-02).
-		a.Entrada.FijarAncho(a.anchoChat())
+		a.Entrada.FijarAncho(a.anchoColumna())
 		return a, nil
 	case AccionSelector:
 		// El modal de sesiones es global: se abre desde la interfaz principal
@@ -915,7 +915,6 @@ func (a *App) ejecutarComando(c ComandoFlujo, escrito string) tea.Cmd {
 // puerto (los agentes de `ai/agents/*.json`).
 func (a *App) ciclarAgente() {
 	a.Agente = siguienteAgente(a.Agentes, a.Agente)
-	a.Entrada.FijarAgente(a.Agente)
 	a.Panel.Agente = a.Agente
 	a.guardarPreferencias()
 }
@@ -1227,75 +1226,80 @@ func (a *App) viewConfirmarEliminar() string {
 // intercambio en curso, el contador, las propuestas, las aprobaciones, la línea
 // de entrada, la línea de estado del modelo y los avisos. Se mide para
 // reservarle su alto exacto y que el chat no empuje el marco fuera de pantalla.
-func (a *App) bloqueInferior(anchoChat int) string {
-	// El intercambio en curso: razonamiento arriba de la respuesta y separado
-	// de ella (SPEC-INTERFAZ §Razonamiento del modelo). El dibujo vive en
-	// styles.go (T-F002).
-	var partes []string
-	if x := renderIntercambio(a.Razon.Texto(), a.Chat.EnCurso(), a.Razon.Visible, a.Razon.NoDisponible, anchoGlobo(anchoChat)); x != "" {
-		partes = append(partes, burbuja(RolAgente, x))
+func (a *App) bloqueInferior(anchoCol int) string {
+	// Lo que se pinta como parte del hilo, arriba del divisor: el intercambio en
+	// curso (razonamiento arriba de la respuesta), el indicador en vivo, las
+	// propuestas y las aprobaciones pendientes. El dibujo vive en styles.go.
+	var cuerpo []string
+	if x := renderIntercambio(a.Razon.Texto(), a.Chat.EnCurso(), a.Razon.Visible, a.Razon.NoDisponible, anchoGlobo(anchoCol-anchoIcono-2*margenChat)); x != "" {
+		cuerpo = append(cuerpo, strings.Repeat(" ", margenChat)+lipgloss.JoinHorizontal(lipgloss.Top, iconoDeRol(RolAgente), " ", burbuja(RolAgente, x)))
 	}
 	// El indicador en vivo: mientras hay un turno en camino gira el glifo y
 	// corre el tiempo —[⠋ Pensando], [⠋ Usando herramienta: X]—, que es lo que
-	// dice que el modelo sigue trabajando aunque aún no emita nada. Sustituye al
-	// vuelco crudo del razonamiento.
+	// dice que el modelo sigue trabajando aunque aún no emita nada.
 	if act := a.lineaDeActividad(); act != "" {
-		partes = append(partes, act)
+		cuerpo = append(cuerpo, act)
 	}
-	// Las propuestas pendientes de esta sesión se ven dentro del chat
-	// (SPEC-INTERFAZ §Zonas 1, T-F005-06).
+	// Las propuestas pendientes de esta sesión se ven dentro del chat.
 	if prop := a.Chat.RenderPropuestas(); prop != "" {
-		partes = append(partes, prop)
+		cuerpo = append(cuerpo, prop)
 	}
 	if ap := a.Aprobs.Render(); ap != "" {
-		partes = append(partes, ap)
+		cuerpo = append(cuerpo, ap)
 	}
-	inferior := strings.Join(partes, "\n\n")
 
-	// La línea de entrada, con su indicador de agente a la izquierda
-	// (`[plan] > …`) y el de líder pendiente (T-F012-06, T-F015-01).
-	entrada := a.Entrada.View()
-	if a.TeclaRes != nil && a.TeclaRes.EsperandoLeader() {
-		entrada += " " + estiloAviso.Render("lider ")
+	var partes []string
+	if arriba := strings.Join(cuerpo, "\n\n"); arriba != "" {
+		partes = append(partes, arriba)
 	}
-	// La paleta de comandos se despliega encima del input mientras se escribe un
-	// comando de flujo (comandos.go).
-	var lineas []string
+	// La paleta de comandos se despliega encima de la caja (comandos.go).
 	if pal := a.Paleta.Render(); pal != "" {
-		lineas = append(lineas, pal)
+		partes = append(partes, pal)
 	}
-	lineas = append(lineas, entrada)
-	// La línea de estado del modelo va justo debajo del input.
-	if estado := a.lineaDeEstadoModelo(); estado != "" {
-		lineas = append(lineas, estado)
+	// El divisor horizontal separa el chat de la caja de entrada.
+	partes = append(partes, a.divisorHorizontal(anchoCol))
+	// La caja de la línea de entrada, con su pie (agente, modelo y capacidades)
+	// y el indicador de líder pendiente (T-F012-06, T-F015-01).
+	pie := a.lineaPieEntrada()
+	if a.TeclaRes != nil && a.TeclaRes.EsperandoLeader() {
+		pie += " " + estiloAviso.Render("lider ")
 	}
-	// El consumo de tokens del turno, junto al estado del modelo.
-	if tokens := a.lineaDeTokens(); tokens != "" {
-		lineas = append(lineas, tokens)
+	partes = append(partes, a.Entrada.Caja(anchoCol, pie))
+
+	// Los avisos van debajo de la caja: el consumo de tokens del turno, cancelar
+	// con ctrl+f (lo escrito queda a salvo), el doble esc para cancelar sin
+	// escribir, el aviso transitorio (p. ej. el modelo sin herramientas) y el
+	// aviso de aprobaciones pendientes con el panel cerrado (T-F009-03).
+	var avisos []string
+	if tok := a.lineaDeTokens(); tok != "" {
+		avisos = append(avisos, tok)
 	}
-	// Cancelar con ctrl+f se pregunta en línea; lo escrito queda a salvo.
 	if a.PidiendoCancelar {
-		lineas = append(lineas, estiloAviso.Render("¿cancelar el trabajo en curso? (s/n)"))
+		avisos = append(avisos, estiloAviso.Render("¿cancelar el trabajo en curso? (s/n)"))
 	}
-	// El doble esc para cancelar sin escribir.
 	if a.PidiendoCancelarEsc {
-		lineas = append(lineas, estiloAviso.Render("presiona esc otra vez para cancelar razonamiento"))
+		avisos = append(avisos, estiloAviso.Render("presiona esc otra vez para cancelar razonamiento"))
 	}
-	// El aviso transitorio (p. ej. el modelo sin herramientas).
 	if a.Aviso != "" {
-		lineas = append(lineas, estiloAviso.Render(a.Aviso))
+		avisos = append(avisos, estiloAviso.Render(a.Aviso))
 	}
-	// El aviso de aprobaciones pendientes, con el panel cerrado (T-F009-03).
 	if !a.Panel.Abierto {
 		if aviso := a.Panel.AvisoAprobaciones(); aviso != "" {
-			lineas = append(lineas, aviso)
+			avisos = append(avisos, aviso)
 		}
 	}
-	pie := strings.Join(lineas, "\n")
-	if inferior == "" {
-		return pie
+	if len(avisos) > 0 {
+		partes = append(partes, strings.Join(avisos, "\n"))
 	}
-	return inferior + "\n\n" + pie
+	return strings.Join(partes, "\n")
+}
+
+// divisorHorizontal pinta la línea que separa el chat de la caja de entrada.
+func (a *App) divisorHorizontal(ancho int) string {
+	if ancho < 1 {
+		ancho = 1
+	}
+	return estiloDivisor.Render(strings.Repeat("─", ancho))
 }
 
 // lineaDeActividad pinta el indicador en vivo mientras hay un turno en camino:
@@ -1345,16 +1349,17 @@ func (a *App) iniciarTurno() {
 	a.herramientaEnCurso = ""
 }
 
-// lineaDeEstadoModelo muestra, bajo la entrada, el modelo en uso y si tiene
-// acceso a herramientas y a la visión. Sin modelo no pinta nada; sin dato
-// conocido marca «?».
-func (a *App) lineaDeEstadoModelo() string {
-	if a.Modelo == "" {
-		return ""
+// lineaPieEntrada compone el pie de la caja de entrada: el agente activo, el
+// modelo en uso y sus capacidades. Sin modelo muestra solo el agente; sin dato
+// conocido, la capacidad se marca «?».
+func (a *App) lineaPieEntrada() string {
+	partes := []string{estiloIndicador.Render("[" + a.Agente + "]")}
+	if a.Modelo != "" {
+		partes = append(partes, "* "+a.Modelo,
+			"herramientas: "+siNoConocido(a.CapHerramientasConocida, a.ModeloHerramientas),
+			"visión: "+siNoConocido(a.CapVisionConocida, a.ModeloVision))
 	}
-	return estiloSistema.Render("modelo: " + a.Modelo +
-		" · herramientas: " + siNoConocido(a.CapHerramientasConocida, a.ModeloHerramientas) +
-		" · visión: " + siNoConocido(a.CapVisionConocida, a.ModeloVision))
+	return strings.Join(partes, " · ")
 }
 
 // siNoConocido traduce una capacidad a la marca de la línea de estado: «?» si no
@@ -1374,21 +1379,32 @@ func siNoConocido(conocida, valor bool) string {
 // para que el marco entero quepa en la terminal: si el chat empujara la vista
 // más allá del alto disponible, al pintar se recortaría la parte de arriba.
 func (a *App) viewPrincipal() string {
-	anchoChat := a.anchoChat()
-	abajo := a.bloqueInferior(anchoChat)
+	anchoCol := a.anchoColumna()
+	abajo := a.bloqueInferior(anchoCol)
 
 	construir := func(alto int) string {
-		var b strings.Builder
-		if h := a.Chat.Ventana(anchoChat, alto); h != "" {
+		var lineas []string
+		if h := a.Chat.Ventana(anchoCol, alto); h != "" {
 			if oa := a.Chat.OcultasArriba(); oa > 0 {
-				b.WriteString(estiloSistema.Render(fmt.Sprintf("↑ %d líneas arriba", oa)) + "\n")
+				lineas = append(lineas, estiloSistema.Render(fmt.Sprintf("↑ %d líneas arriba", oa)))
 			}
-			b.WriteString(h + "\n")
+			lineas = append(lineas, strings.Split(h, "\n")...)
 			if ob := a.Chat.OcultasAbajo(); ob > 0 {
-				b.WriteString(estiloSistema.Render(fmt.Sprintf("↓ %d líneas abajo", ob)) + "\n")
+				lineas = append(lineas, estiloSistema.Render(fmt.Sprintf("↓ %d líneas abajo", ob)))
 			}
-			b.WriteString("\n")
 		}
+		// El chat ocupa todo el alto que quede hasta el pie: con un historial
+		// corto se rellena de líneas en blanco, de modo que la caja de entrada
+		// queda pegada abajo en vez de flotar en medio de la pantalla.
+		objetivo := a.Alto - altoDe(abajo) - 1
+		for len(lineas) < objetivo {
+			lineas = append(lineas, "")
+		}
+		var b strings.Builder
+		for _, l := range lineas {
+			b.WriteString(l + "\n")
+		}
+		b.WriteString("\n")
 		b.WriteString(abajo)
 		b.WriteString("\n")
 		return b.String()
@@ -1413,8 +1429,39 @@ func (a *App) viewPrincipal() string {
 	if !a.Panel.Abierto {
 		return cuerpo
 	}
-	panel := a.Panel.Render(AnchoPanel - 4)
-	return lipgloss.JoinHorizontal(lipgloss.Top, cuerpo, "  ", panel) + "\n"
+	panel := a.Panel.Render(AnchoPanel, a.Alto)
+	return a.componerColumnas(cuerpo, anchoCol, panel)
+}
+
+// componerColumnas une la columna principal con el sidebar poniendo el divisor
+// vertical en cada fila. Rellena la columna izquierda a su ancho y ambos bloques
+// al alto de la terminal, de modo que el divisor quede recto y el marco siga
+// siendo UNA sola cadena: la selección con el ratón lo recorre entero (chat y
+// sidebar a la vez).
+func (a *App) componerColumnas(izquierda string, anchoIzq int, derecha string) string {
+	alto := a.Alto
+	if alto <= 0 {
+		// Sin geometría conocida no se recorta el sidebar: se toma el alto del
+		// bloque más largo para no perder contenido.
+		alto = altoDe(izquierda)
+		if d := altoDe(derecha); d > alto {
+			alto = d
+		}
+	}
+	izq := strings.Split(izquierda, "\n")
+	der := strings.Split(derecha, "\n")
+	lineas := make([]string, alto)
+	for i := 0; i < alto; i++ {
+		l, r := "", ""
+		if i < len(izq) {
+			l = izq[i]
+		}
+		if i < len(der) {
+			r = der[i]
+		}
+		lineas[i] = recortarColumnas(l, anchoIzq) + estiloDivisor.Render("│") + r
+	}
+	return strings.Join(lineas, "\n")
 }
 
 // lineasDe cuenta las líneas de un bloque (0 si está vacío).
@@ -1435,14 +1482,15 @@ func (a *App) trabajando() bool {
 	return a.Chat.HayTurno() || a.Panel.Estado == session.EstadoTrabajando
 }
 
-// anchoChat es el ancho disponible para el chat: el total menos el panel cuando
-// está abierto.
-func (a *App) anchoChat() int {
+// anchoColumna es el ancho disponible para la columna principal (el chat y su
+// caja de entrada): el total menos el sidebar y el divisor vertical cuando el
+// panel está abierto.
+func (a *App) anchoColumna() int {
 	if a.Ancho <= 0 {
 		return 80
 	}
 	if a.Panel.Abierto {
-		return a.Ancho - AnchoPanel
+		return a.Ancho - AnchoPanel - 1
 	}
 	return a.Ancho
 }

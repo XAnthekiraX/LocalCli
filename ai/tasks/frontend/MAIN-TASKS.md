@@ -45,6 +45,7 @@ Fuente de verdad del progreso del frontend. Derivada exclusivamente de `ai/docs/
 | T-F038 | actualizar | tokens de archivo, carpeta y pegado en la entrada: un archivo `[nombre.ext]`, una carpeta `[CARPETA N elementos]` y un texto de varias líneas `[PEGADO N líneas]`, expandiéndose al valor real al enviar | T-F004, T-F029 | completada | `038-task-tokens-archivo-y-pegado.md` |
 | T-F039 | actualizar | orden del texto y las líneas de herramienta: el texto previo a una herramienta queda arriba de su línea y el posterior abre un globo nuevo, en el orden de ejecución | T-F037 | completada | `039-task-orden-texto-herramientas.md` |
 | T-F040 | actualizar | ratón: la selección se resalta en video inverso y la rueda no la cancela (anclada al texto); al soltar se copia, el realce desaparece y sale el aviso `[Copiado]` | T-F024 | completada | `040-task-seleccion-resaltada.md` |
+| T-F041 | actualizar | rediseño de la vista principal: chat con burbujas e icono, sidebar con línea vertical y caja de entrada con borde y pie (agente · modelo · capacidades) | T-F036 | completada | `041-task-layout-sidebar-caja.md` |
 
 ## Referencias
 

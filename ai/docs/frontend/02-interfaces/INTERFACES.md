@@ -108,7 +108,7 @@ Atajos por defecto, reasignables desde la ayuda y guardados en `~/.config/localc
 | `Ctrl+X n` | Crear una sesión nueva y dejarla activa (`session_new`) | vista principal |
 | `Ctrl+D` | Eliminar la sesión resaltada en el modal; si trabaja, pide confirmación (`session_delete`) | modal de sesiones |
 | `Ctrl+P` | Abrir el modal con la lista de atajos existentes (`command_palette`) | global |
-| `Tab` | Cambiar de agente: recorre los disponibles (`agent_cycle`); el agente activo se pinta a la izquierda del input | vista y bienvenida (no con modal abierto) |
+| `Tab` | Cambiar de agente: recorre los disponibles (`agent_cycle`); el agente activo se pinta en el pie de la caja de entrada | vista y bienvenida (no con modal abierto) |
 | `Esc` | Cerrar cualquier modal (`dismiss`) | modal |
 | `Esc` | Cancelar el trabajo en curso: el primero pide confirmación, el segundo cancela (doble `esc`) | vista, sesión trabajando |
 | `↑` / `↓` | Navegar la lista del modal abierto | modal |
@@ -117,7 +117,7 @@ Atajos por defecto, reasignables desde la ayuda y guardados en `~/.config/localc
 | `←` / `→`, `Home` / `End` | Mover el cursor del input y editar en cualquier punto | input |
 | `Enter` | Aplicar lo resaltado en el modal y cerrarlo | modal |
 | `Enter` | Enviar la petición | input |
-| `Ctrl+D` | Abrir o cerrar el panel de datos | vista |
+| `Ctrl+D` | Plegar o desplegar el sidebar de datos, que arranca visible (`panel_toggle`) | vista |
 | `Ctrl+R` | Mostrar u ocultar el razonamiento | vista |
 | `Ctrl+A` | Abrir el panel de aprobaciones | vista |
 | `Ctrl+F` | Cancelar el flujo en curso (pide confirmación) | vista |
@@ -143,7 +143,7 @@ Reglas, según [[specs/SPEC-INTERFAZ-ATAJOS]] y [[specs/SPEC-KEYBINDS]]:
 - Si la sesión activa está generando, la entrada sigue activa: escribir no bloquea ni cancela nada.
 - La línea de entrada envuelve en varias filas lo que no cabe en el ancho, sin recortarlo, y reajusta el reparto al redimensionar la terminal; `Enter` envía y no inserta saltos. En el chat, lo del usuario y lo del agente se pintan en globos con color propio.
 - Un pegado o arrastre se muestra como token: cada archivo `[nombre.ext]`, cada carpeta `[CARPETA N elementos]` y un texto de varias líneas `[PEGADO N líneas]` (un token por elemento si todas las líneas son rutas). Al enviar se expande al valor real: la ruta, el texto entero o, si es imagen, la imagen adjunta.
-- Bajo la entrada se muestra el modelo en uso y si tiene acceso a herramientas (`sí`/`no`, o `?` mientras se desconoce).
+- La caja de la entrada lleva en su pie el agente activo, el modelo en uso y sus capacidades (`sí`/`no`, o `?` mientras se desconoce); el conteo de tokens del turno se ve justo debajo de la caja.
 - **Si el modelo en uso no puede usar herramientas, se dice explícitamente** que el agente va a conversar sin ellas. Es una diferencia entre «todavía no lo sé» y «este modelo no puede», y confundirlas hace que el usuario espere un trabajo que no va a pasar. Ver [[specs/SPEC-OLLAMA-PERFIL]].
 - Mientras una herramienta se ejecuta, su línea está en el chat. Si la sesión espera permiso por una herramienta, la línea de la herramienta y la de aprobación coexisten.
 - Con la sesión trabajando, el primer `esc` pide confirmación («presiona esc otra vez para cancelar razonamiento») y el segundo cancela; cualquier otra tecla la descarta.

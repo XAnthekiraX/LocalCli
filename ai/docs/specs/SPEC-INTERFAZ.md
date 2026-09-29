@@ -31,30 +31,43 @@ No incluye los atajos de teclado, que están en [[specs/SPEC-INTERFAZ-ATAJOS]] n
 
 ## Disposición
 
-El chat ocupa la pantalla completa. El panel de datos está plegado a la derecha y se abre y se cierra.
+El chat ocupa la columna principal. El sidebar de datos está pegado a la derecha,
+separado por una línea vertical, y la entrada de texto vive en una caja con borde al
+pie de la columna principal, bajo un divisor horizontal. Cada mensaje del chat va en
+un globo con un icono a su lado: el del agente delante y el del usuario detrás,
+pegado a la derecha.
 
 ```
-┌──────────────────────────────────┬──────────────┐
-│                                  │  PANEL       │
-│  CHAT                            │  DE DATOS    │
-│                                  │              │
-│   razonamiento del modelo        │  sesión      │
-│   respuesta                      │  contexto    │
-│   ...                            │  TODO        │
-│                                  │  ruta        │
-│                                  │  git         │
-│                                  │  capa y cola │
-│                                  │  aprobaciones│
-│                                  │  agente      │
-│                                  │  proyecto    │
-├──────────────────────────────────┤  LocalCli    │
-│  entrada de texto                │              │
-└──────────────────────────────────┴──────────────┘
-
-Con el panel cerrado, el chat ocupa todo el ancho.
+┌──────────────────────────────────────┬──────────────────────┐
+│                                      │  api de pedidos      │
+│                                      │  (trabajando)        │
+│  ▣ ╭───────────────────────────╮     │                      │
+│    │   respuesta del agente     │     │  CONTEXTO            │
+│    ╰───────────────────────────╯     │   12.000 tokens      │
+│         ╭─────────────────╮ ▣        │   20% usada          │
+│         │ lo que escribes │          │                      │
+│         ╰─────────────────╯          │  ▾ TODO              │
+│                                      │   T-B014 · quedan 3  │
+│                                      │                      │
+│                                      │  LISTA DE TAREAS     │
+│                                      │   [•] migrar tabla   │
+├──────────────────────────────────────┤                      │
+│ ╭──────────────────────────────────╮ │  ESTADO              │
+│ │ En qué te ayudo hoy: █           │ │  Git        master   │
+│ │ [plan] · * llama3.2 · herr …     │ │  Capa y cola  …      │
+│ ╰──────────────────────────────────╯ │  Aprobaciones …      │
+│                                      │  [~/ruta/proyecto]   │
+└──────────────────────────────────────┴──────────────────────┘
 ```
 
-El panel es de lectura. No se escribe nada desde ahí.
+Con el sidebar cerrado, el chat ocupa todo el ancho y la caja de entrada también.
+
+El sidebar **arranca visible** y `Ctrl+D` lo pliega y lo despliega: es la disposición
+normal, no un extra. Plegado, el chat recupera todo el ancho.
+
+El sidebar es de lectura. No se escribe nada desde ahí. La entrada de texto lleva un
+borde y, dentro, debajo del texto, la línea del agente activo y el modelo en uso con
+sus capacidades.
 
 ## Pantalla de bienvenida
 
@@ -100,9 +113,9 @@ El logotipo es fijo y esta es su definición, que sirve de salida dorada para la
 
 ### 1. Chat
 
-- Ocupa el resto del ancho.
+- Ocupa la columna principal (el ancho total menos el sidebar cuando está abierto).
 - Muestra el historial de la sesión activa.
-- Cada mensaje se pinta en un globo con el color de quien habla: uno para lo que escribe el usuario y otro para lo que responde el agente (el «terminal»). Las líneas del sistema —herramientas, avisos— no son un turno: se pintan sueltas, sin globo.
+- Cada mensaje se pinta en un globo con el color de quien habla —azul el usuario, verde el agente— y con un icono a su lado: el del agente delante (`▣ ╭…╮`) y el del usuario detrás, con el globo pegado a la derecha (`╭…╮ ▣`). Los globos y las líneas del sistema dejan un margen a cada lado, para no quedar pegados al borde de la columna ni al divisor. Las líneas del sistema —herramientas, avisos— no son un turno: se pintan sueltas, sin globo.
 - El hilo se pinta en el **orden en que ocurrió**: el texto que el modelo escribió antes de usar una herramienta queda arriba de su línea, y el que escribe después abre un globo nuevo. Los segmentos de texto de un mismo turno no se funden en uno solo por debajo de las líneas de herramienta.
 - Cada intercambio muestra la respuesta del modelo; mientras genera, un **indicador en vivo** (`[⠋ Pensando]`) sustituye al volcado del razonamiento. El texto del razonamiento se revela con `Ctrl+R` (ver §Razonamiento del modelo).
 - Cada respuesta del modelo muestra cuánto tardó en llegar, atenuado junto a ella. Mientras se espera, el tiempo corre en pantalla —junto al indicador en vivo— para saber que el modelo sigue trabajando.
@@ -115,12 +128,24 @@ El logotipo es fijo y esta es su definición, que sirve de salida dorada para la
 - Escribe hacia la sesión activa.
 - **Paleta de comandos de flujo.** Al escribir `/` se despliega encima de la línea la lista de comandos de flujo disponibles —los oficiales más los propios de `ai/flows/*.json`—, con el resaltado en el primero. Lo escrito filtra la lista; `↑`/`↓` la recorren, `Tab` autocompleta el comando resaltado dejando la línea lista para escribir la petición detrás (`/comando [petición]`) y `Enter` ejecuta. En cuanto se escribe un espacio (empieza la petición) la paleta se retira. Es un ayudante para descubrir los comandos, no una vía nueva de arranque: el flujo sigue arrancando solo con su comando explícito y el catálogo lo sirve el motor.
 - El texto se edita en cualquier punto: las flechas mueven el cursor, `home`/`end` van al principio y al final y `ctrl+b`/`ctrl+e` son sus equivalentes. Los atajos que coincidan con una acción (por ejemplo `ctrl+a`) siguen resolviéndose como acción y no editan.
-- Bajo la línea de entrada se muestra el modelo en uso y si tiene acceso a herramientas (`modelo: X · herramientas: sí/no/?`) y, cuando hay consumo que mostrar, el conteo de tokens del turno (`tokens: 54k`). La línea de entrada de la bienvenida se edita igual que esta.
+- La **caja de la entrada** lleva, bajo el texto, una línea de estado con el agente activo, el modelo en uso y sus capacidades (`[plan] · * llama3.2 · herramientas: sí/no/? · visión: sí/no/?`). Cuando hay consumo que mostrar, el conteo de tokens del turno (`tokens: 54k`) se pinta justo debajo de la caja. La caja queda **siempre pegada al pie** de la columna, aunque el historial sea corto (el chat se rellena con líneas en blanco hasta el divisor). La línea de entrada de la bienvenida se edita igual que esta.
 - Sobre la línea de entrada, mientras el modelo trabaja, se pinta la **línea de actividad**: un glifo que gira y la etiqueta de lo que pasa —`[⠋ Pensando]` si aún no hay respuesta, `[⠋ Usando herramienta: X]` si corre una herramienta, `[⠋ Generando]` si ya llega respuesta— más el tiempo transcurrido. Sustituye al volcado crudo del razonamiento.
-- **Indicador de agente a la izquierda del input**: justo al lado izquierdo de la línea de entrada se muestra el agente activo (p. ej. `[plan] > `). Cambia al instante con `Tab`, que recorre los agentes disponibles (los base `plan` y `build` más los que el usuario añada en `ai/agents/*.json`). El indicador es visible tanto en la interfaz principal como en la bienvenida.
+- **Indicador de agente en el pie de la caja**: en la línea de estado dentro de la caja de entrada se muestra el agente activo (p. ej. `[plan]`). Cambia al instante con `Tab`, que recorre los agentes disponibles (los base `plan` y `build` más los que el usuario añada en `ai/agents/*.json`). En la bienvenida el indicador va delante de la línea (`[plan] > `).
 - El agente activo responde con el catálogo derivado de sus permisos: `plan` solo lee y propone; `build` escribe con aprobación. Quién responde lo decide el indicador, no el texto escrito.
 
-### 3. Panel de datos
+### 3. Sidebar de datos
+
+Es la columna derecha, separada de la principal por una línea vertical; **arranca
+visible** y se pliega y despliega con `Ctrl+D`. De arriba abajo muestra:
+
+1. El **título de la conversación**: el nombre de la sesión activa con su estado entre paréntesis.
+2. **CONTEXTO**: los tokens usados y el porcentaje ocupado.
+3. **▾ TODO**: el elemento del TODO en curso y cuántos le quedan.
+4. **LISTA DE TAREAS**: los pasos del agente cuando queda alguno accionable.
+5. **ESTADO**: git, capa y cola, aprobaciones, agente y proyecto, en filas etiqueta + valor.
+6. Al pie, la **ruta** del proyecto entre corchetes, pegada al fondo de la columna.
+
+Los nueve datos siguen siendo estos:
 
 | Dato | Qué muestra |
 |---|---|
@@ -136,7 +161,7 @@ El logotipo es fijo y esta es su definición, que sirve de salida dorada para la
 
 Los datos de contexto se calculan y se interpretan según [[specs/SPEC-PANEL-CONTEXTO]].
 
-Debajo de los nueve datos, cuando el agente mantiene una lista de pasos (`actualizar_todo`) y le queda alguno por hacer, el panel muestra la sección «TODO DEL AGENTE» con `[•]` en curso, `[✓]` hecho, `[x]` cancelado y `[ ]` pendiente. Se oculta cuando no hay nada accionable. Ver [[specs/SPEC-TOOLS]].
+La sección «LISTA DE TAREAS» muestra la lista de pasos del agente (`actualizar_todo`) con `[•]` en curso, `[✓]` hecho, `[x]` cancelado y `[ ]` pendiente. Se oculta cuando no hay nada accionable. Ver [[specs/SPEC-TOOLS]].
 
 ## Razonamiento del modelo
 
@@ -200,7 +225,7 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - El marco de la vista nunca excede el alto de la terminal: el historial se recorta a lo disponible para que la entrada no quede fuera.
 - El modal de atajos agrupa las acciones por categorías y alinea la tecla con su descripción.
 - Hay exactamente tres modales (modelos, sesiones, atajos); solo uno puede estar abierto a la vez y `Esc` cierra cualquiera.
-- El agente activo se muestra siempre a la izquierda del input; `Tab` recorre los agentes disponibles, en bienvenida y en la vista principal. Con un modal abierto, `Tab` no cicla.
+- El agente activo se muestra siempre en el pie de la caja de entrada (y a la izquierda de la línea en la bienvenida); `Tab` recorre los agentes disponibles, en bienvenida y en la vista principal. Con un modal abierto, `Tab` no cicla.
 - Cambiar de sesión no detiene lo que está corriendo.
 - El panel refleja los datos de la sesión activa, no de otra.
 - Con el modal de sesiones abierto, `Ctrl+D` elimina la sesión resaltada; si está trabajando, se confirma antes de borrarla.
@@ -223,6 +248,7 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 
 ## Criterios de aceptación
 
+- [ ] El sidebar de datos arranca visible y `Ctrl+D` lo pliega y lo despliega.
 - [ ] Con el panel cerrado, el chat ocupa todo el ancho.
 - [ ] El panel se abre y se cierra sin interrumpir el trabajo.
 - [ ] El panel muestra los nueve datos definidos.
@@ -251,7 +277,8 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] La línea de entrada de la bienvenida se edita en cualquier punto (flechas, `home`/`end`).
 - [ ] El modal de atajos agrupa las acciones por categorías y alinea tecla y descripción.
 - [ ] `Esc` cierra cualquier modal sin cambiar nada; con ninguno abierto no hace nada visible.
-- [ ] `Tab` alterna el agente entre `plan` y `build`; el indicador del agente aparece a la izquierda del input tanto en la bienvenida como en la vista principal y se actualiza al instante.
+- [ ] `Tab` alterna el agente entre `plan` y `build`; el indicador del agente aparece en el pie de la caja de entrada en la vista principal (y a la izquierda de la línea en la bienvenida) y se actualiza al instante.
+- [ ] El chat y el sidebar van separados por una línea vertical, y el chat y la caja de entrada por una línea horizontal; la caja tiene borde y dentro lleva el texto y la línea del agente y el modelo.
 - [ ] Elegir una sesión cambia el chat a esa sesión sin detener lo demás.
 - [ ] `Ctrl+D` en el modal de sesiones elimina la sesión resaltada; si está trabajando, pide confirmación antes.
 - [ ] `Ctrl+X n` crea una sesión nueva y la deja activa.

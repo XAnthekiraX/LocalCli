@@ -42,13 +42,15 @@ const altoMáximoEntrada = 6
 type Entrada struct {
 	campo textarea.Model
 	Ancho int
-	// Agente es el que está activo, `AgentePlan` o `AgenteBuild`: solo lo pinta,
-	// no decide nada. Lo escribe la acción `agent_cycle`.
-	Agente string
 	// adjuntos recuerda las imágenes pegadas o arrastradas en la línea: se
 	// muestran como [nombre.ext] y se expanden a su ruta al enviar.
 	adjuntos adjuntos
 }
+
+// anchoCajaInterno es lo que consume la caja de la entrada entre bordes y
+// relleno horizontal: dos columnas de borde y dos de relleno. El texto dispone
+// del ancho de la columna menos esto.
+const anchoCajaInterno = 4
 
 // NuevaEntrada crea la línea enfocada, con su placeholder, sin numeración ni
 // prompt propio (el indicador del agente ya compone el `> `, T-F015-01).
@@ -67,7 +69,7 @@ func NuevaEntrada() Entrada {
 	campo.FocusedStyle = plano
 	campo.BlurredStyle = plano
 	campo.Focus()
-	e := Entrada{campo: campo, Agente: AgentePlan, Ancho: anchoEntradaPorDefecto}
+	e := Entrada{campo: campo, Ancho: anchoEntradaPorDefecto}
 	e.AjustarTeclasPropias()
 	e.fijarAnchoCampo()
 	return e
@@ -89,33 +91,20 @@ func estiloCampoPlano() textarea.Style {
 	}
 }
 
-// FijarAgente deja el agente activo que se pinta en el indicador. Vale
-// cualquier nombre de la lista de agentes disponibles (p. ej. uno propio); solo
-// un valor vacío cae en `plan`, para que el indicador nunca salga sin nombre
-// (SPEC-INTERFAZ §Zonas 2). El ancho del campo se reajusta porque el indicador
-// cambia de largo (`[plan]` no mide lo mismo que `[build]`).
-func (e *Entrada) FijarAgente(agente string) {
-	if strings.TrimSpace(agente) == "" {
-		agente = AgentePlan
-	}
-	e.Agente = agente
-	e.fijarAnchoCampo()
-}
-
 // anchoIndicador mide lo que ocupa el indicador del agente activo (`[plan] > `)
-// delante del campo.
+// delante de la línea de entrada de la bienvenida.
 func anchoIndicador(agente string) int {
 	return lipgloss.Width("[" + agente + "] > ")
 }
 
-// fijarAnchoCampo reparte el ancho disponible entre el indicador y el campo: el
-// texto solo dispone de lo que queda tras el indicador, para que la línea no
-// desborde la terminal. Sin ancho conocido no toca nada.
+// fijarAnchoCampo ajusta el campo al ancho de la columna menos lo que consume la
+// caja (bordes y relleno), para que la caja no desborde la terminal. Sin ancho
+// conocido no toca nada.
 func (e *Entrada) fijarAnchoCampo() {
 	if e.Ancho <= 0 {
 		return
 	}
-	campoW := e.Ancho - anchoIndicador(e.Agente)
+	campoW := e.Ancho - anchoCajaInterno
 	if campoW < 1 {
 		campoW = 1
 	}
@@ -268,24 +257,20 @@ func (e *Entrada) AjustarTeclasPropias() {
 	e.campo.KeyMap = km
 }
 
-// View pinta la línea con su indicador de agente a la izquierda y, detrás, el
-// campo: el placeholder cuando está vacía, el texto y su cursor cuando no
-// (SPEC-INTERFAZ §Zonas 2, "Indicador de agente a la izquierda del input",
-// p. ej. `[plan] > █`). Las filas de continuación se sangran al ancho del
-// indicador para que el texto quede alineado bajo la primera. Los tokens de
-// imagen pegada se resaltan.
-func (e *Entrada) View() string {
-	indicador := IndicadorAgente(e.Agente)
-	sangria := strings.Repeat(" ", lipgloss.Width(indicador))
-	lineas := strings.Split(e.campo.View(), "\n")
-	for i, l := range lineas {
-		if i == 0 {
-			lineas[i] = indicador + l
-		} else {
-			lineas[i] = sangria + l
-		}
+// Caja pinta la línea de entrada dentro de una caja con borde: el texto (o su
+// placeholder) y, debajo, la línea de estado que compone la vista (el agente, el
+// modelo en uso y sus capacidades). El ancho es el de la columna principal: la
+// caja ocupa ese ancho completo para que el divisor vertical quede recto. Los
+// tokens de imagen pegada se resaltan.
+func (e *Entrada) Caja(ancho int, pie string) string {
+	if ancho < 1 {
+		ancho = 1
 	}
-	return e.adjuntos.Resaltar(strings.Join(lineas, "\n"))
+	lineas := strings.Split(e.campo.View(), "\n")
+	if strings.TrimSpace(pie) != "" {
+		lineas = append(lineas, pie)
+	}
+	return e.adjuntos.Resaltar(cajaConBorde(ancho, lineas))
 }
 
 // IndicadorAgente compone el indicador del agente activo: `[plan] > ` o

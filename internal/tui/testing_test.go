@@ -106,8 +106,10 @@ func TestElArnesInyectaYLee(t *testing.T) {
 	h.evento(EventoEtapaIniciada, map[string]string{"etapa": "prueba"})
 	h.veSiContiene("[Sub Proceso] prueba")
 
+	// El sidebar arranca visible, así que `ctrl+d` lo pliega: si la bandera no
+	// cambia es que el arnés no está pulsando el mapa real.
 	h.tecla("ctrl+d")
-	if !h.app.Panel.Abierto {
+	if h.app.Panel.Abierto {
 		t.Error("el arnés pulsa atajos del mapa real")
 	}
 }

@@ -34,9 +34,9 @@ internal/tui/
   app.go        modelo raíz, enrutado de eventos y suscripciones
   welcome.go    pantalla de bienvenida: logotipo ASCII, línea de modelo y primera petición
   chat.go       historial de la sesión activa: respuesta, líneas compactas de herramienta y razonamiento revelable
-  input.go      entrada de texto con el indicador de agente a la izquierda ([plan]/[build])
+  input.go      caja de entrada con borde: línea de texto y pie con el agente y el modelo
   comandos.go   paleta de comandos de flujo: catálogo del motor, filtro y render sobre el input
-  panel.go      panel de datos plegable con sus nueve datos
+  panel.go      sidebar de datos plegable: título, contexto, TODO, tareas, estado y ruta
   reasoning.go  estado del razonamiento en vivo (texto revelado u oculto)
   approvals.go  panel de aprobaciones pendientes de todas las sesiones
   notify.go     línea de aviso de aprobaciones pendientes con el panel cerrado

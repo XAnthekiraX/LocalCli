@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-runewidth"
 )
 
 // posicion es una celda de la pantalla: columna (X) y fila (Y), en base 0.
@@ -45,17 +46,17 @@ func (a *App) raton(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 		a.ratonSelec = true
 		a.ratonIni = posicion{X: m.X, Y: m.Y}
 		a.ratonFin = a.ratonIni
-		a.iniEnChat = a.enChat(m.Y)
+		a.iniEnChat = a.enChat(m.X, m.Y)
 		a.finEnChat = a.iniEnChat
 		return a, nil
 	case m.Action == tea.MouseActionMotion && a.ratonSelec:
 		a.ratonFin = posicion{X: m.X, Y: m.Y}
-		a.finEnChat = a.enChat(m.Y)
+		a.finEnChat = a.enChat(m.X, m.Y)
 		return a, nil
 	case m.Action == tea.MouseActionRelease && a.ratonSelec:
 		a.ratonSelec = false
 		fin := posicion{X: m.X, Y: m.Y}
-		a.finEnChat = a.enChat(fin.Y)
+		a.finEnChat = a.enChat(fin.X, fin.Y)
 		// Un clic (pulsar y soltar sin arrastrar) sobre «aprobar» o «declinar»
 		// de una fila de aprobaciones resuelve ESA aprobación. Un arrastre sigue
 		// siendo una selección de texto.
@@ -90,10 +91,15 @@ func (a *App) limpiarSeleccion() {
 	a.iniEnChat, a.finEnChat = false, false
 }
 
-// enChat dice si una fila de pantalla cae sobre la ventana visible del
-// historial (chatFilaIni..chatFilaFin, fijados al pintar en app.go). Fuera de
-// la vista principal la banda vale 0 y ningún extremo cuenta como del chat.
-func (a *App) enChat(y int) bool {
+// enChat dice si una celda de pantalla cae sobre la ventana visible del
+// historial (chatFilaIni..chatFilaFin, fijados al pintar en app.go) Y en la
+// columna principal: el sidebar comparte filas con el chat, así que una celda
+// suya no cuenta como del chat a la hora de reanclar. Fuera de la vista
+// principal la banda vale 0 y ningún extremo cuenta como del chat.
+func (a *App) enChat(x, y int) bool {
+	if a.Panel.Abierto && x >= a.anchoColumna() {
+		return false
+	}
 	return y >= a.chatFilaIni && y < a.chatFilaFin
 }
 
@@ -154,10 +160,17 @@ func (a *App) decisionEnCelda(pos posicion) (Aprobacion, bool, bool) {
 		return Aprobacion{}, false, false
 	}
 	cuerpo := []rune(sinANSI(lineas[pos.Y]))
+	// Con el sidebar abierto, la fila trae también su texto a la derecha: se
+	// recorta a la columna principal para comparar con la fila de la aprobación.
+	if col := a.anchoColumna(); col > 0 && len(cuerpo) > col {
+		cuerpo = cuerpo[:col]
+	}
 	if len(cuerpo) < 2 {
 		return Aprobacion{}, false, false
 	}
-	texto := string(cuerpo[2:]) // sin el marcador («› » o «  »)
+	// Sin el marcador («› » o «  ») y sin el relleno con que la columna principal
+	// completa la fila hasta el divisor.
+	texto := strings.TrimRight(string(cuerpo[2:]), " ")
 	x := pos.X - 2
 	for _, it := range a.Aprobs.Items {
 		if it.Obsoleta || FilaDe(it) != texto {
@@ -182,10 +195,24 @@ var codigosANSIRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func sinANSI(s string) string { return codigosANSIRE.ReplaceAllString(s, "") }
 
+// indiceColumna devuelve el índice de runa donde empieza la columna `col` de una
+// línea ya sin códigos ANSI, contando el ancho de pantalla (un emoji ocupa dos
+// columnas). Es lo que traduce la X del ratón a una posición dentro de la línea.
+func indiceColumna(r []rune, col int) int {
+	w := 0
+	for i, ch := range r {
+		if w >= col {
+			return i
+		}
+		w += runewidth.RuneWidth(ch)
+	}
+	return len(r)
+}
+
 // textoSeleccionado extrae de un marco pintado el texto que va de una celda a
 // otra. Los extremos se ordenan; una selección de una sola celda (un clic sin
 // arrastrar) no produce texto. Las columnas se cuentan sobre el texto visible,
-// sin códigos de color.
+// sin códigos de color y por ancho de pantalla.
 func textoSeleccionado(vista string, ini, fin posicion) string {
 	if vista == "" {
 		return ""
@@ -209,10 +236,10 @@ func textoSeleccionado(vista string, ini, fin posicion) string {
 		r := []rune(sinANSI(lineas[y]))
 		desde, hasta := 0, len(r)
 		if y == ini.Y {
-			desde = ini.X
+			desde = indiceColumna(r, ini.X)
 		}
 		if y == fin.Y {
-			hasta = fin.X
+			hasta = indiceColumna(r, fin.X)
 		}
 		if desde < 0 {
 			desde = 0
@@ -251,7 +278,7 @@ func resaltarSeleccion(vista string, ini, fin posicion) string {
 		if y < 0 || y >= len(lineas) {
 			continue
 		}
-		n := len([]rune(sinANSI(lineas[y])))
+		n := runewidth.StringWidth(sinANSI(lineas[y]))
 		x0, x1 := 0, n
 		if y == ini.Y {
 			x0 = ini.X
@@ -291,6 +318,7 @@ func resaltarTramo(linea string, x0, x1 int) string {
 			continue
 		}
 		r, size := utf8.DecodeRuneInString(linea[i:])
+		w := runewidth.RuneWidth(r)
 		nuevo := col >= x0 && col < x1
 		if nuevo != dentro {
 			if nuevo {
@@ -301,7 +329,7 @@ func resaltarTramo(linea string, x0, x1 int) string {
 			dentro = nuevo
 		}
 		b.WriteRune(r)
-		col++
+		col += w
 		i += size
 	}
 	if dentro {
@@ -331,9 +359,10 @@ func superponerDerecha(vista, texto string, ancho int) string {
 	return strings.Join(lineas, "\n")
 }
 
-// recortarColumnas deja la línea con exactamente n columnas visibles: copia lo
-// que quepa (sin cortar los códigos de color) y rellena con espacios lo que
-// falte. Cierra cualquier atributo abierto antes del relleno.
+// recortarColumnas deja la línea con exactamente n columnas visibles de ancho de
+// pantalla: copia lo que quepa (sin cortar códigos de color ni partir un carácter
+// ancho) y rellena con espacios lo que falte. Cierra cualquier atributo abierto
+// antes del relleno.
 func recortarColumnas(linea string, n int) string {
 	if n <= 0 {
 		return ""
@@ -347,8 +376,14 @@ func recortarColumnas(linea string, n int) string {
 			continue
 		}
 		r, size := utf8.DecodeRuneInString(linea[i:])
+		w := runewidth.RuneWidth(r)
+		if col+w > n {
+			// El carácter ancho no cabe entero: mejor dejarlo fuera que partir
+			// la columna.
+			break
+		}
 		b.WriteRune(r)
-		col++
+		col += w
 		i += size
 	}
 	if col > 0 {

@@ -19,18 +19,18 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// --- T-F015-01: el indicador en la línea de entrada ------------------------
+// --- T-F015-01: el indicador en la caja de entrada -------------------------
 
-func TestLaLineaDeEntradaEmpiezaPorElAgenteActivo(t *testing.T) {
+func TestLaCajaDeEntradaMuestraElAgenteActivo(t *testing.T) {
 	a := Nuevo(&puertoStub{})
 	a.Vista = VistaPrincipal
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 
-	if v := sinEstilo(a.Entrada.View()); !strings.HasPrefix(v, "[plan] > ") {
-		t.Errorf("la línea de entrada debe empezar por el indicador: %q", v)
+	if v := sinEstilo(a.View()); !strings.Contains(v, "[plan]") {
+		t.Errorf("la caja de entrada muestra el agente activo: %q", v)
 	}
 	tecla(t, a, tea.KeyTab)
-	if v := sinEstilo(a.Entrada.View()); !strings.HasPrefix(v, "[build] > ") {
+	if v := sinEstilo(a.View()); !strings.Contains(v, "[build]") {
 		t.Errorf("tras Tab el indicador cambia al instante: %q", v)
 	}
 }
@@ -55,8 +55,11 @@ func TestTabAlternaElAgenteEnLaVistaPrincipal(t *testing.T) {
 		t.Fatalf("la vista arranca en plan: %q", a.Agente)
 	}
 	tecla(t, a, tea.KeyTab)
-	if a.Agente != AgenteBuild || a.Entrada.Agente != AgenteBuild {
-		t.Errorf("Tab pasa a build en la vista y en el indicador: %q / %q", a.Agente, a.Entrada.Agente)
+	if a.Agente != AgenteBuild {
+		t.Errorf("Tab pasa a build en la vista: %q", a.Agente)
+	}
+	if v := sinEstilo(a.View()); !strings.Contains(v, "[build]") {
+		t.Errorf("la caja de entrada pinta el nuevo agente:\n%s", v)
 	}
 	tecla(t, a, tea.KeyTab)
 	if a.Agente != AgentePlan {
@@ -148,11 +151,11 @@ func TestTabRecorreTodosLosAgentesDisponibles(t *testing.T) {
 		t.Errorf("Tab pasa al segundo: %q", a.Agente)
 	}
 	tecla(t, a, tea.KeyTab)
-	if a.Agente != "revisor" || a.Entrada.Agente != "revisor" {
-		t.Errorf("Tab llega al agente propio en la vista y el indicador: %q / %q", a.Agente, a.Entrada.Agente)
+	if a.Agente != "revisor" {
+		t.Errorf("Tab llega al agente propio en la vista: %q", a.Agente)
 	}
-	if v := sinEstilo(a.Entrada.View()); !strings.HasPrefix(v, "[revisor] > ") {
-		t.Errorf("el indicador pinta el agente propio: %q", v)
+	if v := sinEstilo(a.View()); !strings.Contains(v, "[revisor]") {
+		t.Errorf("la caja de entrada pinta el agente propio:\n%s", v)
 	}
 	tecla(t, a, tea.KeyTab)
 	if a.Agente != AgentePlan {

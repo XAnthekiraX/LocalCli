@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 // estilos de la vista, en un solo sitio para que la pantalla no tenga colores
@@ -56,6 +57,23 @@ var (
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("10")).
 				Padding(0, 1)
+
+	// Estilos del rediseño de la vista principal (sidebar, caja de entrada y
+	// iconos de las burbujas).
+	//
+	// estiloDivisor pinta la línea vertical entre la columna principal y el
+	// sidebar y la horizontal entre el chat y la caja de entrada.
+	estiloDivisor = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	// estiloSeccion titula los bloques del sidebar (CONTEXTO, TODO, LISTA DE
+	// TAREAS).
+	estiloSeccion = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
+	// estiloCajaBorde pinta el borde de la caja que envuelve la línea de
+	// escritura.
+	estiloCajaBorde = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	// estiloIconoAgente y estiloIconoUsuario colorean la cajita que precede
+	// (agente) o sigue (usuario) a cada globo del chat.
+	estiloIconoAgente  = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+	estiloIconoUsuario = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))
 )
 
 // Códigos del realce de la selección con el ratón (selection.go). No se usa
@@ -125,23 +143,60 @@ func centrar(bloque string, ancho, alto int) string {
 	return lipgloss.Place(ancho, alto, lipgloss.Center, lipgloss.Center, bloque)
 }
 
-// recortar deja el texto en una línea por párrafo y sin exceder el ancho, para
-// que el razonamiento no rompa la disposición del panel. Es una función pura:
-// no toca la pantalla, solo devuelve texto ya medido.
+// corteAncho devuelve el índice de byte donde termina el prefijo de `s` que
+// cabe en `ancho` columnas de pantalla (los caracteres anchos, como un emoji o
+// un ideograma, ocupan dos). Es la base de todo el recorte por columnas.
+func corteAncho(s string, ancho int) int {
+	w := 0
+	for i, r := range s {
+		rw := runewidth.RuneWidth(r)
+		if w+rw > ancho {
+			return i
+		}
+		w += rw
+	}
+	return len(s)
+}
+
+// recortar envuelve el texto en líneas de a lo sumo `ancho` columnas de
+// pantalla, partiendo por columnas (no por runas): un emoji no desborda la
+// línea. Es una función pura y la usan los globos del chat.
 func recortar(texto string, ancho int) string {
 	if ancho <= 0 {
 		return texto
 	}
 	var out []string
 	for _, linea := range strings.Split(texto, "\n") {
-		for len([]rune(linea)) > ancho {
-			r := []rune(linea)
-			out = append(out, string(r[:ancho]))
-			linea = string(r[ancho:])
+		for runewidth.StringWidth(linea) > ancho {
+			corte := corteAncho(linea, ancho)
+			if corte == 0 {
+				// Un solo carácter más ancho que la columna: se deja tal cual
+				// para no entrar en bucle.
+				break
+			}
+			out = append(out, linea[:corte])
+			linea = linea[corte:]
 		}
 		out = append(out, linea)
 	}
 	return strings.Join(out, "\n")
+}
+
+// truncar deja el texto en una sola línea de a lo sumo `ancho` columnas,
+// recortando con «…» lo que sobre. Es para las filas del sidebar y el pie de la
+// caja, donde una línea no puede partirse; el chat y los mensajes usan
+// `recortar`, que envuelve. Es una función pura.
+func truncar(texto string, ancho int) string {
+	if ancho <= 0 {
+		return ""
+	}
+	if runewidth.StringWidth(texto) <= ancho {
+		return texto
+	}
+	if ancho == 1 {
+		return "…"
+	}
+	return texto[:corteAncho(texto, ancho-1)] + "…"
 }
 
 // envolverConCursor reparte el texto en líneas de a lo sumo `ancho` columnas
@@ -272,4 +327,56 @@ func burbuja(rol Rol, contenido string) string {
 		return estiloGloboUsuario.Render(contenido)
 	}
 	return estiloGloboAgente.Render(contenido)
+}
+
+// glifoIcono es el avatar que precede (agente) o sigue (usuario) a cada globo
+// del chat.
+const glifoIcono = "▣"
+
+// anchoIcono es lo que ocupa el icono más su separación del globo: las columnas
+// que hay que descontar del ancho del chat al medir una burbuja.
+const anchoIcono = 2
+
+// margenChat son las columnas que los globos y las líneas del chat dejan libres
+// a cada lado, para no quedar pegados al borde de la columna.
+const margenChat = 1
+
+// iconoDeRol dibuja el avatar de un rol: el glifo con el color de quien habla.
+// Es una función pura.
+func iconoDeRol(rol Rol) string {
+	if rol == RolUsuario {
+		return estiloIconoUsuario.Render(glifoIcono)
+	}
+	return estiloIconoAgente.Render(glifoIcono)
+}
+
+// lineasALaDerecha coloca un bloque pegado al borde derecho de un ancho dado,
+// rellenando con espacios a su izquierda. Es lo que alinea el globo del usuario
+// (con su icono detrás) contra el margen derecho del chat. Sin ancho conocido
+// no mueve nada.
+func lineasALaDerecha(bloque string, ancho int) string {
+	if ancho <= 0 {
+		return bloque
+	}
+	return lipgloss.PlaceHorizontal(ancho, lipgloss.Right, bloque)
+}
+
+// cajaConBorde envuelve las líneas dadas en una caja de borde redondeado con una
+// columna de relleno a cada lado, de ancho total EXACTO `ancho`: cada línea se
+// recorta (contando ANSI) al ancho interno. Se dibuja a mano —en vez de con el
+// borde de Lip Gloss— para que el ancho no dependa de cómo reparte el estilo el
+// relleno y el borde, y las columnas del layout queden rectas. Es pura.
+func cajaConBorde(ancho int, lineas []string) string {
+	if ancho < 5 {
+		return strings.Join(lineas, "\n")
+	}
+	interno := ancho - 4
+	barra := estiloCajaBorde.Render("│")
+	var b strings.Builder
+	b.WriteString(estiloCajaBorde.Render("╭" + strings.Repeat("─", ancho-2) + "╮"))
+	for _, l := range lineas {
+		b.WriteString("\n" + barra + " " + recortarColumnas(l, interno) + " " + barra)
+	}
+	b.WriteString("\n" + estiloCajaBorde.Render("╰"+strings.Repeat("─", ancho-2)+"╯"))
+	return b.String()
 }

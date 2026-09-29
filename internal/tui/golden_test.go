@@ -59,7 +59,7 @@ func TestLasDoradasDeVistaSeMantienen(t *testing.T) {
 		Proyecto:           Nombre,
 		Version:            Version,
 	}
-	compararDorada(t, "panel.golden", sinEstilo(p.Render(AnchoPanel-4))+"\n")
+	compararDorada(t, "panel.golden", sinEstilo(p.Render(AnchoPanel, 30))+"\n")
 
 	// Modal de atajos con el keymap de fábrica: acción y tecla de cada una.
 	km := &KeysModal{}
@@ -86,10 +86,39 @@ func TestLasDoradasDeVistaSeMantienen(t *testing.T) {
 	})
 	compararDorada(t, "aprobaciones.golden", sinEstilo(ap.Render())+"\n")
 
-	// Línea de entrada de la interfaz principal con su indicador de agente
-	// (T-F015-01): la línea empieza por el agente actual, `[plan] >`.
+	// Caja de la línea de entrada de la interfaz principal, con su pie (agente,
+	// modelo y capacidades) dentro de la caja con borde.
 	e := NuevaEntrada()
-	compararDorada(t, "entrada.golden", sinEstilo(e.View())+"\n")
+	e.FijarAncho(60)
+	compararDorada(t, "entrada.golden", sinEstilo(e.Caja(60, "[plan] · * llama3.2 · herramientas: sí · visión: sí"))+"\n")
+
+	// Vista principal completa: chat con globos e iconos, divisor, caja de
+	// entrada y sidebar con los datos de la sesión activa.
+	principal := Nuevo(&puertoStub{modelo: "llama3.2", capHerramientas: true, capVision: true})
+	principal.Vista = VistaPrincipal
+	principal.Panel = Panel{
+		Abierto:            true,
+		Sesion:             "api de pedidos",
+		Estado:             session.EstadoTrabajando,
+		Tokens:             1234,
+		TokensEstimados:    true,
+		LimiteTokens:       2000,
+		ElementoActual:     "T-B014",
+		ElementosRestantes: 3,
+		Ruta:               "/tmp/proyecto",
+		GitRama:            "master",
+		GitLimpio:          true,
+		Capa:               "backend",
+		TareasGrandes:      2,
+		Agente:             "plan",
+		Proyecto:           Nombre,
+		Version:            Version,
+		Tareas:             []TareaPanel{{Contenido: "migrar la tabla", Estado: "en_progreso"}},
+	}
+	pulsa(t, principal, tea.WindowSizeMsg{Width: 100, Height: 24})
+	principal.Chat.AñadirEntrada("arregla el login")
+	principal.Chat.AñadirAgente("voy a revisarlo")
+	compararDorada(t, "principal.golden", sinEstilo(principal.View())+"\n")
 
 	// Bienvenida con la línea de modelo y sin lista de modelos: la selección
 	// vive en el modal, no en la pantalla (SPEC-INTERFAZ §Pantalla de

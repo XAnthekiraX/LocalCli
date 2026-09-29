@@ -360,7 +360,7 @@ func TestElChatPintaCadaMensajeEnSuGlobo(t *testing.T) {
 	lineas := strings.Split(sinEstilo(c.Render(60)), "\n")
 	inicioUsuario, inicioAgente := -1, -1
 	for i, l := range lineas {
-		if !strings.HasPrefix(l, "╭") {
+		if !strings.Contains(l, "╭") {
 			continue
 		}
 		if inicioUsuario < 0 {

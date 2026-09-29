@@ -157,7 +157,7 @@ func TestLaVistaComponeChatEntradaPanelYAviso(t *testing.T) {
 	// Panel abierto: el panel está a la derecha y el aviso no se repite fuera.
 	a.Panel.Abierto = true
 	v = sinEstilo(a.View())
-	if !strings.Contains(v, "PANEL") || !strings.Contains(v, "2 esperando decisión") {
+	if !strings.Contains(v, "CONTEXTO") || !strings.Contains(v, "2 esperando decisión") {
 		t.Errorf("con el panel abierto se ve el panel con sus datos: %s", v)
 	}
 	if strings.Contains(v, "esperando tu decisión") {
@@ -253,13 +253,14 @@ func TestRecorridoPanelPlegable(t *testing.T) {
 	h := nuevoArnes(t)
 	h.escribe("texto a salvo")
 
+	// El sidebar arranca visible: el recorrido va de plegar a desplegar.
 	h.tecla("ctrl+d")
-	h.veSiContiene("PANEL")
-	h.veSiContiene("Proyecto")
-	h.tecla("ctrl+d")
-	if strings.Contains(h.ve(), "PANEL") {
+	if strings.Contains(h.ve(), "CONTEXTO") {
 		t.Error("cerrado no se pinta")
 	}
-	// Abrir y cerrar no pierde lo escrito.
+	h.tecla("ctrl+d")
+	h.veSiContiene("CONTEXTO")
+	h.veSiContiene("Proyecto")
+	// Plegar y desplegar no pierde lo escrito.
 	h.veSiContiene("texto a salvo")
 }

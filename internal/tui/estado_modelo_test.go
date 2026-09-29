@@ -18,7 +18,7 @@ func TestLaLineaDeEstadoMuestraModeloYHerramientas(t *testing.T) {
 
 	// Antes de saber la capacidad, se muestra «?».
 	v := sinEstilo(a.View())
-	if !strings.Contains(v, "modelo: llama3.2") || !strings.Contains(v, "herramientas: ?") {
+	if !strings.Contains(v, "* llama3.2") || !strings.Contains(v, "herramientas: ?") {
 		t.Fatalf("la línea de estado muestra el modelo y la duda:\n%s", v)
 	}
 
@@ -76,7 +76,7 @@ func TestElegirModeloActualizaLaLineaDeEstado(t *testing.T) {
 	tecla(t, a, tea.KeyEnter)
 
 	v := sinEstilo(a.View())
-	if !strings.Contains(v, "modelo: sin-tools") || !strings.Contains(v, "herramientas: no") {
+	if !strings.Contains(v, "* sin-tools") || !strings.Contains(v, "herramientas: no") {
 		t.Errorf("al elegir un modelo sin herramientas, la línea de estado lo dice:\n%s", v)
 	}
 }

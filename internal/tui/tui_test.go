@@ -467,11 +467,11 @@ func TestElPanelMuestraLosNueveDatos(t *testing.T) {
 	pulsa(t, a, tea.WindowSizeMsg{Width: 120, Height: 30})
 	v := sinEstilo(a.View())
 	for _, esperado := range []string{
-		"Sesión", "api de pedidos", "trabajando",
-		"Contexto", "1234 tokens", "(estimado)", "61%",
+		"api de pedidos", "trabajando",
+		"CONTEXTO", "1234 tokens", "(estimado)", "61% usada",
 		"TODO", "T-B014", "quedan 3",
-		"Ruta", "/tmp/proyecto",
-		"Git", "master",
+		"/tmp/proyecto",
+		"Git", "master", "con cambios sin confirmar",
 		"Capa y cola", "backend", "2 tareas grandes",
 		"Aprobaciones", "1 esperando decisión",
 		"Agente", "build",
@@ -495,7 +495,7 @@ func TestElPanelAvisaCuandoElContextoSeAcercaAlLímite(t *testing.T) {
 	a.Panel.Abierto = true
 	a.Panel.Tokens, a.Panel.LimiteTokens = 1700, 2000
 	pulsa(t, a, tea.WindowSizeMsg{Width: 120, Height: 30})
-	if !strings.Contains(sinEstilo(a.View()), "acercando a su límite") {
+	if !strings.Contains(sinEstilo(a.View()), "cerca del límite") {
 		t.Errorf("al 85%% del contexto debe avisarse:\n%s", sinEstilo(a.View()))
 	}
 }
@@ -505,19 +505,20 @@ func TestElPanelSeAbreYCierraSinTocarLaEntrada(t *testing.T) {
 	a.Vista = VistaPrincipal
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 	escribe(t, a, "a medio escribir")
+	// El sidebar arranca visible: el recorrido va de plegar a desplegar.
 	tecla(t, a, tea.KeyCtrlD)
-	if !a.Panel.Abierto || !strings.Contains(sinEstilo(a.View()), "PANEL") {
-		t.Fatal("ctrl+d abre el panel")
-	}
-	if a.Entrada.Texto() != "a medio escribir" {
-		t.Error("abrir el panel no puede perder lo escrito")
-	}
-	tecla(t, a, tea.KeyCtrlD)
-	if a.Panel.Abierto || strings.Contains(sinEstilo(a.View()), "PANEL") {
+	if a.Panel.Abierto || strings.Contains(sinEstilo(a.View()), "CONTEXTO") {
 		t.Fatal("ctrl+d cierra el panel")
 	}
 	if a.Entrada.Texto() != "a medio escribir" {
 		t.Error("cerrar el panel no puede perder lo escrito")
+	}
+	tecla(t, a, tea.KeyCtrlD)
+	if !a.Panel.Abierto || !strings.Contains(sinEstilo(a.View()), "CONTEXTO") {
+		t.Fatal("ctrl+d abre el panel")
+	}
+	if a.Entrada.Texto() != "a medio escribir" {
+		t.Error("abrir el panel no puede perder lo escrito")
 	}
 }
 
@@ -767,6 +768,9 @@ func TestUnAtajoReasignadoDisparaLaMismaAcción(t *testing.T) {
 	a := Nuevo(p)
 	a.Vista = VistaPrincipal
 	a.Panel.SesionID = "s1"
+	// El sidebar arranca visible; aquí se parte de plegado, que es el estado en
+	// el que se distingue si una tecla pliega o despliega.
+	a.Panel.Abierto = false
 	porAccion := MapasPorDefecto()
 	porAccion[AccionPanel] = []string{"ctrl+k"}
 	km, err := NuevoKeymap(LíderPorDefecto, TimeoutPorDefectoMs, porAccion)

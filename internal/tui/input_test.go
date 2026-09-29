@@ -24,7 +24,7 @@ func TestLaEntradaNaceEnfocadaConSuPlaceholder(t *testing.T) {
 	if e.Texto() != "" {
 		t.Errorf("la línea nace vacía: %q", e.Texto())
 	}
-	if v := e.View(); !strings.Contains(sinEstilo(v), "Escribe tu petición…") {
+	if v := e.Caja(e.Ancho, ""); !strings.Contains(sinEstilo(v), "Escribe tu petición…") {
 		t.Errorf("vacía muestra su placeholder: %q", v)
 	}
 }
@@ -144,18 +144,19 @@ func TestElCursorSeMueveConLasFlechasYHomeEnd(t *testing.T) {
 func TestElAnchoDeLaEntradaSeAdaptaAlLayout(t *testing.T) {
 	a := Nuevo(&puertoStub{})
 	a.Vista = VistaPrincipal
+	a.Panel.Abierto = false
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 	if a.Entrada.Ancho != 100 {
 		t.Errorf("con el panel cerrado la línea toma todo el ancho: %d", a.Entrada.Ancho)
 	}
 	a.Panel.Abierto = true
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
-	if a.Entrada.Ancho != 100-AnchoPanel {
+	if a.Entrada.Ancho != 100-AnchoPanel-1 {
 		t.Errorf("con el panel abierto la línea cede su ancho: %d", a.Entrada.Ancho)
 	}
 	// Un ancho desconocido no resetea la medida anterior.
 	a.Entrada.FijarAncho(0)
-	if a.Entrada.Ancho != 100-AnchoPanel {
+	if a.Entrada.Ancho != 100-AnchoPanel-1 {
 		t.Errorf("ancho 0 no debe tocar la medida: %d", a.Entrada.Ancho)
 	}
 }
@@ -166,18 +167,20 @@ func TestLaEntradaEnvuelveElTextoLargoEnVezDeRecortarlo(t *testing.T) {
 	a := Nuevo(&puertoStub{})
 	a.Vista = VistaPrincipal
 	a.Panel.SesionID = "s1"
+	a.Panel.Abierto = false
 	pulsa(t, a, tea.WindowSizeMsg{Width: 40, Height: 20})
 	escribe(t, a, "este es un texto de prueba bastante largo que debe saltar de linea")
 
-	v := sinEstilo(a.Entrada.View())
+	v := sinEstilo(a.Entrada.Caja(a.Entrada.Ancho, ""))
 	// El texto está entero y repartido: saltó de línea en vez de recortarse al
 	// inicio o desbordar la terminal.
 	if filas := len(strings.Split(v, "\n")); filas < 2 {
 		t.Fatalf("un texto largo debe saltar de línea:\n%s", v)
 	}
-	// Se compara sin espacios ni saltos: las filas de continuación van sangradas
-	// al ancho del indicador, así que el texto se reparte pero no se pierde.
-	compacto := strings.Join(strings.Fields(v), "")
+	// Se compara sin los caracteres de la caja, sin espacios ni saltos: las
+	// filas de continuación se reparten, pero el texto no se pierde.
+	sinCaja := strings.NewReplacer("│", "", "╭", "", "╮", "", "╰", "", "╯", "", "─", "").Replace(v)
+	compacto := strings.Join(strings.Fields(sinCaja), "")
 	quiero := strings.Join(strings.Fields("este es un texto de prueba bastante largo que debe saltar de linea"), "")
 	if !strings.Contains(compacto, quiero) {
 		t.Errorf("el texto se conserva entero, repartido en filas:\n%s", v)
@@ -193,6 +196,7 @@ func TestLaEntradaEnvuelveElTextoLargoEnVezDeRecortarlo(t *testing.T) {
 func TestElSaltoDeLineaSeReajustaAlRedimensionar(t *testing.T) {
 	a := Nuevo(&puertoStub{})
 	a.Vista = VistaPrincipal
+	a.Panel.Abierto = false
 	pulsa(t, a, tea.WindowSizeMsg{Width: 30, Height: 20})
 	escribe(t, a, "texto suficientemente largo para envolver en varias lineas")
 	if filas := a.Entrada.campo.Height(); filas < 2 {

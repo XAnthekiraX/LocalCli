@@ -18,23 +18,25 @@ import (
 	"localcli/internal/session"
 )
 
-// --- T-F006-02: el plegado devuelve el ancho ----------------------------------
+// --- T-F006-02 / T-F041: visible por defecto y plegado ------------------------
 
-func TestConElPanelCerradoElChatOcupaTodoElAncho(t *testing.T) {
+func TestElSidebarEstaAbiertoPorDefectoYPlegarloDevuelveElAncho(t *testing.T) {
 	a := Nuevo(&puertoStub{})
 	a.Vista = VistaPrincipal
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 
-	tecla(t, a, tea.KeyCtrlD)
-	if a.Entrada.Ancho != 100-AnchoPanel {
-		t.Errorf("con el panel abierto la entrada cede su ancho: %d", a.Entrada.Ancho)
+	if !a.Panel.Abierto || !strings.Contains(sinEstilo(a.View()), "CONTEXTO") {
+		t.Fatal("el sidebar está visible por defecto")
+	}
+	if a.Entrada.Ancho != 100-AnchoPanel-1 {
+		t.Errorf("con el sidebar abierto la entrada cede su ancho: %d", a.Entrada.Ancho)
 	}
 	tecla(t, a, tea.KeyCtrlD)
-	if a.Entrada.Ancho != 100 {
-		t.Errorf("con el panel cerrado el ancho vuelve al chat: %d", a.Entrada.Ancho)
+	if a.Panel.Abierto || a.Entrada.Ancho != 100 {
+		t.Errorf("plegado, el chat recupera todo el ancho: abierto=%v ancho=%d", a.Panel.Abierto, a.Entrada.Ancho)
 	}
-	if strings.Contains(sinEstilo(a.View()), "PANEL") {
-		t.Error("cerrado no se pinta")
+	if strings.Contains(sinEstilo(a.View()), "CONTEXTO") {
+		t.Error("plegado no se pinta")
 	}
 }
 
@@ -119,7 +121,7 @@ func TestElPanelPintaLaListaDePasosDelAgente(t *testing.T) {
 	}})
 	v := sinEstilo(a.View())
 	for _, esperado := range []string{
-		"TODO DEL AGENTE",
+		"LISTA DE TAREAS",
 		"[✓] leer el esquema",
 		"[•] migrar la tabla",
 		"[ ] escribir la doc",
@@ -132,11 +134,11 @@ func TestElPanelPintaLaListaDePasosDelAgente(t *testing.T) {
 
 func TestLaListaDePasosSeOcultaCuandoTodoEstaHecho(t *testing.T) {
 	p := Panel{Tareas: []TareaPanel{{Contenido: "a", Estado: "completada"}, {Contenido: "b", Estado: "cancelada"}}}
-	if strings.Contains(sinEstilo(p.Render(30)), "TODO DEL AGENTE") {
+	if strings.Contains(sinEstilo(p.Render(30, 30)), "LISTA DE TAREAS") {
 		t.Error("un checklist sin nada accionable no se pinta")
 	}
 	p.Tareas = append(p.Tareas, TareaPanel{Contenido: "c", Estado: "pendiente"})
-	if !strings.Contains(sinEstilo(p.Render(30)), "TODO DEL AGENTE") {
+	if !strings.Contains(sinEstilo(p.Render(30, 30)), "LISTA DE TAREAS") {
 		t.Error("con un paso pendiente, la sección se pinta")
 	}
 }

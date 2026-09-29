@@ -196,6 +196,18 @@ func TestLaRuedaNoCancelaLaSelecciónEnCurso(t *testing.T) {
 	}
 }
 
+// columnaPrincipal recorta una fila del marco a la columna principal: con el
+// sidebar abierto la fila es una sola cadena y trae también su texto a la
+// derecha del divisor, que cambia de una fila a otra. El ancla del chat se
+// compara solo con el chat.
+func columnaPrincipal(a *App, linea string) string {
+	r := []rune(linea)
+	if n := a.anchoColumna(); len(r) > n {
+		r = r[:n]
+	}
+	return strings.TrimRight(string(r), " ")
+}
+
 func TestLaSelecciónSeAnclaAlScroll(t *testing.T) {
 	a := Nuevo(&puertoStub{})
 	a.Vista = VistaPrincipal
@@ -213,7 +225,7 @@ func TestLaSelecciónSeAnclaAlScroll(t *testing.T) {
 
 	y, _ := filaDe(t, a.View(), "mensaje")
 	lineas := strings.Split(sinANSI(a.ultimaVista), "\n")
-	ancla := lineas[y]
+	ancla := columnaPrincipal(a, lineas[y])
 
 	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 0, Y: y})
 	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion, X: 0, Y: y + 1})
@@ -225,7 +237,7 @@ func TestLaSelecciónSeAnclaAlScroll(t *testing.T) {
 		t.Fatal("la rueda no cancela la selección")
 	}
 	despues := strings.Split(sinANSI(a.View()), "\n")
-	if a.ratonIni.Y < 0 || a.ratonIni.Y >= len(despues) || despues[a.ratonIni.Y] != ancla {
+	if a.ratonIni.Y < 0 || a.ratonIni.Y >= len(despues) || columnaPrincipal(a, despues[a.ratonIni.Y]) != ancla {
 		t.Fatalf("el ancla debe seguir en la misma línea tras el scroll:\nantes: %q (fila %d)\nahora: fila %d",
 			ancla, y, a.ratonIni.Y)
 	}
@@ -308,5 +320,40 @@ func TestElAvisoDeCopiadoSeVeArribaALaDerechaYSeApagaSolo(t *testing.T) {
 	pulsa(t, a, copiadoExpiradoMsg{gen: a.copiadoGen - 1})
 	if !a.copiado {
 		t.Error("un temporizador de una copia anterior no debe apagar el aviso vigente")
+	}
+}
+
+// El chat y el sidebar son UNA sola columna compuesta, así que un arrastre puede
+// cruzar del chat al sidebar y copiar las dos zonas: la selección vive en la
+// raíz, sobre el marco entero (no dentro de cada componente).
+func TestLaSeleccionCruzaChatYSidebar(t *testing.T) {
+	var copiado []string
+	original := copiarFunc
+	copiarFunc = func(s string) { copiado = append(copiado, s) }
+	defer func() { copiarFunc = original }()
+
+	a := Nuevo(&puertoStub{modelo: "llama3.2"})
+	a.Vista = VistaPrincipal
+	a.Panel = NuevoPanel()
+	a.Panel.Abierto = true
+	a.Panel.SesionID = "s1"
+	a.Panel.Sesion = "sesion-de-prueba"
+	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 20})
+	a.Chat.AñadirUsuario("hola chat")
+
+	y, x := filaDe(t, a.View(), "hola chat")
+	// El arrastre termina a la derecha del divisor vertical, dentro del sidebar.
+	xs := a.anchoColumna() + 3
+	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: x, Y: y})
+	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion, X: xs, Y: y})
+	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease, X: xs, Y: y})
+
+	if len(copiado) != 1 {
+		t.Fatalf("al soltar se copia la selección: %v", copiado)
+	}
+	// La misma fila copiada trae el texto del chat y el del sidebar, con el
+	// divisor en medio: prueba de que la selección atraviesa las dos zonas.
+	if !strings.Contains(copiado[0], "hola chat") || !strings.Contains(copiado[0], "│") {
+		t.Errorf("la selección debe cruzar del chat al sidebar: %q", copiado[0])
 	}
 }

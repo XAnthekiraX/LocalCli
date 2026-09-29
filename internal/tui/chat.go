@@ -20,6 +20,8 @@ package tui
 import (
 	"strings"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Rol es quién produjo un mensaje del chat.
@@ -300,24 +302,32 @@ func (c *Chat) Cargar(ms []MensajeHistorial) {
 // mezcla visualmente con la respuesta final (SPEC-INTERFAZ §Reglas). Las líneas
 // del sistema (herramientas, avisos) no son un turno: se pintan sueltas.
 func (c *Chat) Render(ancho int) string {
-	interno := anchoGlobo(ancho)
+	// Los globos dejan un margen a cada lado para no quedar pegados al borde de
+	// la columna (ni al divisor con el sidebar).
+	interno := anchoGlobo(ancho - anchoIcono - 2*margenChat)
 	var b strings.Builder
 	for _, m := range c.mensajes {
 		var bloque string
 		switch m.Rol {
 		case RolAgente:
 			if contenido := renderIntercambio(m.Razonamiento, m.Texto, c.MostrarRazonamiento, false, interno); contenido != "" {
-				bloque = burbuja(RolAgente, contenido)
+				globo := burbuja(RolAgente, contenido)
 				// El tiempo de la respuesta se cuelga al final, atenuado, para no
 				// confundirse con lo que dijo el modelo. Sin medición no se pinta.
 				if s := sufijoDuracion(m.Duracion); s != "" {
-					bloque += " " + s
+					globo += " " + s
 				}
+				// El icono del agente precede a su globo; el margen lo separa del
+				// borde izquierdo.
+				bloque = strings.Repeat(" ", margenChat) + lipgloss.JoinHorizontal(lipgloss.Top, iconoDeRol(RolAgente), " ", globo)
 			}
 		case RolUsuario:
-			bloque = burbuja(RolUsuario, recortar(m.Texto, interno))
+			// El globo del usuario se pega a la derecha (con su margen) y su icono
+			// va detrás.
+			globo := burbuja(RolUsuario, recortar(m.Texto, interno))
+			bloque = lineasALaDerecha(lipgloss.JoinHorizontal(lipgloss.Top, globo, " ", iconoDeRol(RolUsuario)), ancho-margenChat)
 		default:
-			bloque = estiloSistema.Render("· ") + m.Texto
+			bloque = strings.Repeat(" ", margenChat) + estiloSistema.Render("· ") + m.Texto
 		}
 		if bloque == "" {
 			continue
