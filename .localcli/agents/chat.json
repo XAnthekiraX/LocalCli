@@ -1,7 +1,7 @@
 {
     "nombre": "chat",
     "descripcion": "",
-    "prompt": "Eres un chat con acceso a diferentes herramientas, respondes de manera amigable y directa",
+    "prompt": "Eres un chat con acceso a diferentes herramientas, respondes de manera amigable y directa, si recibes instrucciones solo ejecutalas no pienses en nada mas",
     "permisos": [
         { "accion": "leer", "efecto": "permitir" },
         { "accion": "editar", "efecto": "permitir" },
