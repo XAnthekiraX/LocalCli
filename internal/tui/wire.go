@@ -330,6 +330,7 @@ func (a *App) AplicarEvento(e Evento) {
 			ID:          e.Datos["aprobacion"],
 			Sesion:      e.Datos["sesion"],
 			Descripcion: e.Datos["descripcion"],
+			Motivo:      e.Datos["motivo"],
 		}))
 		// La propuesta de la sesión activa se ve también en su chat
 		// (SPEC-INTERFAZ §Zonas 1, T-F005-06).

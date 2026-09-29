@@ -162,7 +162,7 @@ func aprobadorDeContexto(c tools.Contexto) fileops.Aprobador {
 		return nil
 	}
 	return fileops.AprobadorFunc(func(ctx context.Context, s fileops.SolicitudAprobacion) (fileops.Decision, error) {
-		d, err := c.Ask(ctx, tools.Solicitud{Descripcion: s.Descripcion, Borrado: s.Borrado})
+		d, err := c.Ask(ctx, tools.Solicitud{Descripcion: s.Descripcion, Borrado: s.Borrado, Motivo: s.Motivo})
 		if err != nil {
 			return fileops.Decision{}, err
 		}
@@ -170,24 +170,52 @@ func aprobadorDeContexto(c tools.Contexto) fileops.Aprobador {
 	})
 }
 
-func opsDe(carpeta string, cambios *store.Cambios, ad *Adaptador, c tools.Contexto) *fileops.Ops {
+// motivoDe saca el motivo de la petición, sea del tipo que sea: todas las de
+// archivos lo llevan y solo hace falta cuando la ruta sale de la carpeta.
+func motivoDe(args any) string {
+	switch p := args.(type) {
+	case *tools.PeticionLeerArchivo:
+		return p.Motivo
+	case *tools.PeticionListarCarpeta:
+		return p.Motivo
+	case *tools.PeticionBuscarEnArchivos:
+		return p.Motivo
+	case *tools.PeticionCrearArchivo:
+		return p.Motivo
+	case *tools.PeticionEscribirArchivo:
+		return p.Motivo
+	case *tools.PeticionEditarArchivo:
+		return p.Motivo
+	case *tools.PeticionEliminarArchivo:
+		return p.Motivo
+	case *tools.PeticionCrearCarpeta:
+		return p.Motivo
+	case *tools.PeticionEliminarCarpeta:
+		return p.Motivo
+	}
+	return ""
+}
+
+func opsDe(carpeta string, cambios *store.Cambios, ad *Adaptador, c tools.Contexto, args any) *fileops.Ops {
 	return &fileops.Ops{
 		Proyecto:  carpeta,
 		Historial: cambios,
 		SesionID:  ad.sesionActual(),
 		Aprobador: aprobadorDeContexto(c),
+		Motivo:    motivoDe(args),
 	}
 }
 
 // opsLectura es el `Ops` de las herramientas que leen: sin historial (leer no
 // registra cambios) y con el aprobador del contexto, que es lo que permite
 // pedir permiso cuando la ruta sale de la carpeta del proyecto (SPEC-ARCHIVOS
-// §Reglas: fuera hace falta permiso).
-func opsLectura(carpeta string, ad *Adaptador, c tools.Contexto) *fileops.Ops {
+// §Reglas: fuera hace falta permiso y explicación).
+func opsLectura(carpeta string, ad *Adaptador, c tools.Contexto, args any) *fileops.Ops {
 	return &fileops.Ops{
 		Proyecto:  carpeta,
 		SesionID:  ad.sesionActual(),
 		Aprobador: aprobadorDeContexto(c),
+		Motivo:    motivoDe(args),
 	}
 }
 
@@ -197,7 +225,7 @@ func herramientaLeerArchivo(carpeta string, ad *Adaptador) tools.Ejecutar {
 		if !ok {
 			return tools.Resultado{}, fmt.Errorf("arranque: petición de lectura desconocida %T", args)
 		}
-		resp, err := opsLectura(carpeta, ad, c).LeerArchivo(ctx, p.Ruta)
+		resp, err := opsLectura(carpeta, ad, c, args).LeerArchivo(ctx, p.Ruta)
 		if err != nil {
 			return corregible(err)
 		}
@@ -211,7 +239,7 @@ func herramientaListarCarpeta(carpeta string, ad *Adaptador) tools.Ejecutar {
 		if !ok {
 			return tools.Resultado{}, fmt.Errorf("arranque: petición de listado desconocida %T", args)
 		}
-		resp, err := opsLectura(carpeta, ad, c).ListarCarpeta(ctx, p.Ruta)
+		resp, err := opsLectura(carpeta, ad, c, args).ListarCarpeta(ctx, p.Ruta)
 		if err != nil {
 			return corregible(err)
 		}
@@ -225,7 +253,7 @@ func herramientaBuscarArchivos(carpeta string, ad *Adaptador) tools.Ejecutar {
 		if !ok {
 			return tools.Resultado{}, fmt.Errorf("arranque: petición de búsqueda desconocida %T", args)
 		}
-		resp, err := opsLectura(carpeta, ad, c).BuscarArchivos(ctx, p.Patron)
+		resp, err := opsLectura(carpeta, ad, c, args).BuscarArchivos(ctx, p.Patron)
 		if err != nil {
 			return corregible(err)
 		}
@@ -239,7 +267,7 @@ func herramientaBuscarEnArchivos(carpeta string, ad *Adaptador) tools.Ejecutar {
 		if !ok {
 			return tools.Resultado{}, fmt.Errorf("arranque: petición de búsqueda desconocida %T", args)
 		}
-		resp, err := opsLectura(carpeta, ad, c).BuscarEnArchivos(ctx, p.Patron, p.Ruta)
+		resp, err := opsLectura(carpeta, ad, c, args).BuscarEnArchivos(ctx, p.Patron, p.Ruta)
 		if err != nil {
 			return corregible(err)
 		}
@@ -255,7 +283,7 @@ func herramientaBuscarEnArchivos(carpeta string, ad *Adaptador) tools.Ejecutar {
 // que aplica la frontera de rutas, la aprobación y el registro del cambio.
 func herramientaEscritura(carpeta string, cambios *store.Cambios, ad *Adaptador, operacion string) tools.Ejecutar {
 	return func(ctx context.Context, args any, c tools.Contexto) (tools.Resultado, error) {
-		ops := opsDe(carpeta, cambios, ad, c)
+		ops := opsDe(carpeta, cambios, ad, c, args)
 		var salida string
 		var err error
 		switch operacion {

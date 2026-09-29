@@ -62,6 +62,10 @@ type Ejecutar func(ctx context.Context, args any, c Contexto) (Resultado, error)
 type Solicitud struct {
 	Descripcion string
 	Borrado     bool
+	// Motivo es la explicación del agente cuando la operación sale de la
+	// carpeta del proyecto: la spec la exige junto al permiso y queda visible en
+	// el panel (SPEC-ARCHIVOS §Reglas).
+	Motivo string
 }
 
 // Decision es la respuesta del usuario.

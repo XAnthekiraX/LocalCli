@@ -61,15 +61,20 @@ La comprobación de que el esquema derivado coincide con el documentado aquí es
 
 Los argumentos que el modelo envía. Todos obligatorios salvo lo marcado.
 
+Todas las herramientas de archivos admiten además `motivo` (string, **opcional**): la explicación de por qué se busca esa ruta. Solo hace falta —y entonces es obligatoria— cuando la ruta sale de la carpeta del proyecto: la spec exige permiso **y** explicación, y sin ella la operación se rechaza con `E_PATH_OUTSIDE` corregible ([[specs/SPEC-ARCHIVOS]] §Reglas, [[backend/05-quality/ERRORS]] §3). El motivo queda visible en el panel de aprobaciones.
+
 ### Archivos de lectura
 
 | Herramienta | Campo | Tipo | Obligatorio | `desc` |
 |---|---|---|---|---|
 | `leer_archivo` | `ruta` | string | Sí | Ruta relativa a la carpeta del proyecto |
+| `leer_archivo` | `motivo` | string | No | Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas |
 | `listar_carpeta` | `ruta` | string | Sí | Ruta relativa; un nivel |
+| `listar_carpeta` | `motivo` | string | No | Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas |
 | `buscar_archivos` | `patron` | string | Sí | Texto contra el que se comparan los nombres de archivo |
 | `buscar_en_archivos` | `patron` | string | Sí | Texto a buscar dentro de los archivos |
 | `buscar_en_archivos` | `ruta` | string | No | Limita la búsqueda a una subcarpeta |
+| `buscar_en_archivos` | `motivo` | string | No | Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas |
 
 ### Archivos de escritura (solo `build`)
 
@@ -84,6 +89,7 @@ Los argumentos que el modelo envía. Todos obligatorios salvo lo marcado.
 | `eliminar_archivo` | `ruta` | string | Sí | Ruta del archivo a borrar; pide confirmación explícita |
 | `crear_carpeta` | `ruta` | string | Sí | Ruta de la carpeta; falla si ya existe |
 | `eliminar_carpeta` | `ruta` | string | Sí | Ruta de la carpeta; pide confirmación explícita |
+| *(las seis)* | `motivo` | string | No | Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas |
 
 ### Terminal
 

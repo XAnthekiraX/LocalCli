@@ -64,9 +64,10 @@ func TestLeerFueraPidePermiso(t *testing.T) {
 		t.Fatalf("sin aprobador = %v, quiero E_PATH_OUTSIDE", err)
 	}
 
-	// Con aprobador: se pide permiso, la solicitud va marcada como fuera y se lee.
+	// Con aprobador y motivo: se pide permiso, la solicitud va marcada como
+	// fuera con su explicación y se lee.
 	var pedida SolicitudAprobacion
-	ops := &Ops{Proyecto: proyecto, Aprobador: AprobadorFunc(func(_ context.Context, s SolicitudAprobacion) (Decision, error) {
+	ops := &Ops{Proyecto: proyecto, Motivo: "la foto que mencionó el usuario", Aprobador: AprobadorFunc(func(_ context.Context, s SolicitudAprobacion) (Decision, error) {
 		pedida = s
 		return Decision{Aprobada: true}, nil
 	})}
@@ -77,12 +78,25 @@ func TestLeerFueraPidePermiso(t *testing.T) {
 	if !pedida.Fuera {
 		t.Error("la solicitud debe ir marcada como fuera de la carpeta")
 	}
+	if pedida.Motivo == "" {
+		t.Error("el motivo del agente viaja con la solicitud")
+	}
 	if resp.Contenido != "contenido" {
 		t.Errorf("contenido = %q", resp.Contenido)
 	}
 
+	// Fuera sin explicación es E_PATH_OUTSIDE (corregible): la spec exige las dos
+	// cosas, permiso y explicación.
+	sinMotivo := &Ops{Proyecto: proyecto, Aprobador: AprobadorFunc(func(context.Context, SolicitudAprobacion) (Decision, error) {
+		t.Error("sin motivo no se llega a pedir permiso")
+		return Decision{Aprobada: true}, nil
+	})}
+	if _, err := sinMotivo.LeerArchivo(context.Background(), ruta); !errors.Is(err, ErrRutaFuera) {
+		t.Errorf("fuera sin motivo = %v, quiero E_PATH_OUTSIDE", err)
+	}
+
 	// Declinado: no se lee.
-	negado := &Ops{Proyecto: proyecto, Aprobador: AprobadorFunc(func(context.Context, SolicitudAprobacion) (Decision, error) {
+	negado := &Ops{Proyecto: proyecto, Motivo: "m", Aprobador: AprobadorFunc(func(context.Context, SolicitudAprobacion) (Decision, error) {
 		return Decision{}, nil
 	})}
 	if _, err := negado.LeerArchivo(context.Background(), ruta); !errors.Is(err, ErrAprobacionDeclinada) {

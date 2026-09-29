@@ -37,6 +37,9 @@ type SolicitudAprobacion struct {
 	// Fuera marca que la ruta sale de la carpeta del proyecto: la operación
 	// necesita permiso (SPEC-ARCHIVOS §Reglas), y el panel lo dice.
 	Fuera bool
+	// Motivo es la explicación del agente: obligatoria cuando la ruta sale de la
+	// carpeta, y visible en el panel junto a la propuesta.
+	Motivo string
 }
 
 // Aprobador pide una decisión sobre una operación de archivo.

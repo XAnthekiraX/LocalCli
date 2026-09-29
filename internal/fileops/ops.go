@@ -18,6 +18,7 @@ package fileops
 
 import (
 	"context"
+	"strings"
 
 	"localcli/internal/store"
 )
@@ -40,14 +41,22 @@ type Ops struct {
 	// Aprobador obtiene la decisión del usuario. Sin él, ninguna escritura se
 	// aplica: el estado por defecto es cerrado.
 	Aprobador Aprobador
+	// Motivo es la explicación del agente para ESTA operación. Obligatoria
+	// cuando la ruta sale de la carpeta del proyecto (SPEC-ARCHIVOS §Reglas).
+	Motivo string
 }
 
-// aprobar pide la decisión y la traduce a un error tipado. Sin aprobador no se
-// aplica nada: E_NEEDS_APPROVAL para una escritura dentro de la carpeta y
-// E_PATH_OUTSIDE para una ruta de fuera (que es «fuera sin permiso y sin
-// explicación», ERRORS.md §3). Declinada es E_APPROVAL_DECLINED; un borrado sin
-// confirmación explícita es E_NEEDS_CONFIRM.
+// aprobar pide la decisión y la traduce a un error tipado. Fuera de la carpeta
+// hacen falta las DOS cosas —permiso y explicación— (SPEC-ARCHIVOS §Reglas): sin
+// `motivo` es E_PATH_OUTSIDE corregible (ERRORS.md §3), no una aprobación a
+// medias. Sin aprobador no se aplica nada, y una escritura dentro de la carpeta
+// que no se puede aprobar es E_NEEDS_APPROVAL. Un borrado sin confirmación
+// explícita es E_NEEDS_CONFIRM.
 func (o *Ops) aprobar(ctx context.Context, operacion, ruta string, borrado, fuera bool) error {
+	if fuera && strings.TrimSpace(o.Motivo) == "" {
+		return nuevoError(CodigoRutaFuera,
+			"la ruta "+ruta+" sale de la carpeta del proyecto: añade `motivo` explicando por qué la buscas")
+	}
 	if o.Aprobador == nil {
 		if fuera {
 			return nuevoError(CodigoRutaFuera,
@@ -63,6 +72,7 @@ func (o *Ops) aprobar(ctx context.Context, operacion, ruta string, borrado, fuer
 		Descripcion: recomendar(operacion, ruta, fuera),
 		Borrado:     borrado,
 		Fuera:       fuera,
+		Motivo:      o.Motivo,
 	})
 	if err != nil {
 		return err

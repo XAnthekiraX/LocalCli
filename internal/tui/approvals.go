@@ -21,6 +21,10 @@ type Aprobacion struct {
 	ID          string
 	Sesion      string
 	Descripcion string
+	// Motivo es la explicación del agente para una operación que sale de la
+	// carpeta del proyecto: la spec la exige junto al permiso y se muestra bajo
+	// la línea (SPEC-ARCHIVOS §Reglas).
+	Motivo string
 	// Obsoleta marca una aprobación que ya no aplica (la sesión terminó
 	// mientras esperaba).
 	Obsoleta bool
@@ -194,6 +198,11 @@ func (a *Aprobaciones) Render() string {
 			l = estiloUsuario.Render(l)
 		}
 		b.WriteString(l + "\n")
+		// La explicación del agente, si la trae, va debajo y atenuada: la línea
+		// queda corta y el porqué se lee sin perderse.
+		if m := a.Items[i].Motivo; strings.TrimSpace(m) != "" {
+			b.WriteString(estiloSistema.Render("  por qué: "+m) + "\n")
+		}
 	}
 	// El pie dice qué teclas valen ahora: con el foco en el panel, a/d deciden;
 	// sin foco, el teclado es del input y se decide con el ratón o pidiendo el

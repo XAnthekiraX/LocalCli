@@ -28,12 +28,14 @@ package tools
 
 // PeticionLeerArchivo pide el contenido de un archivo del proyecto.
 type PeticionLeerArchivo struct {
-	Ruta string `json:"ruta" desc:"Ruta relativa a la carpeta del proyecto"`
+	Ruta   string `json:"ruta" desc:"Ruta relativa a la carpeta del proyecto"`
+	Motivo string `json:"motivo,omitempty" desc:"Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas"`
 }
 
 // PeticionListarCarpeta pide las entradas de un nivel de una carpeta.
 type PeticionListarCarpeta struct {
-	Ruta string `json:"ruta" desc:"Ruta relativa; un nivel"`
+	Ruta   string `json:"ruta" desc:"Ruta relativa; un nivel"`
+	Motivo string `json:"motivo,omitempty" desc:"Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas"`
 }
 
 // PeticionBuscarArchivos busca rutas por nombre de archivo.
@@ -46,6 +48,7 @@ type PeticionBuscarArchivos struct {
 type PeticionBuscarEnArchivos struct {
 	Patron string `json:"patron" desc:"Texto a buscar dentro de los archivos"`
 	Ruta   string `json:"ruta,omitempty" desc:"Limita la búsqueda a una subcarpeta"`
+	Motivo string `json:"motivo,omitempty" desc:"Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas"`
 }
 
 // --- Archivos de escritura (solo `build`) ---------------------------------
@@ -54,12 +57,14 @@ type PeticionBuscarEnArchivos struct {
 type PeticionCrearArchivo struct {
 	Ruta      string `json:"ruta" desc:"Ruta del archivo a crear; falla si ya existe"`
 	Contenido string `json:"contenido" desc:"Texto completo del archivo"`
+	Motivo    string `json:"motivo,omitempty" desc:"Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas"`
 }
 
 // PeticionEscribirArchivo sobrescribe el contenido entero de un archivo.
 type PeticionEscribirArchivo struct {
 	Ruta      string `json:"ruta" desc:"Ruta del archivo a sobrescribir"`
 	Contenido string `json:"contenido" desc:"Texto que reemplaza el contenido entero"`
+	Motivo    string `json:"motivo,omitempty" desc:"Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas"`
 }
 
 // PeticionEditarArchivo aplica una edición parcial. El cambio va como texto
@@ -67,23 +72,27 @@ type PeticionEscribirArchivo struct {
 type PeticionEditarArchivo struct {
 	Ruta   string `json:"ruta" desc:"Ruta del archivo a modificar"`
 	Cambio string `json:"cambio" desc:"La edición a aplicar"`
+	Motivo string `json:"motivo,omitempty" desc:"Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas"`
 }
 
 // PeticionEliminarArchivo borra un archivo. La confirmación explícita no viaja
 // aquí: la pide el motor a la persona.
 type PeticionEliminarArchivo struct {
-	Ruta string `json:"ruta" desc:"Ruta del archivo a borrar; pide confirmación explícita"`
+	Ruta   string `json:"ruta" desc:"Ruta del archivo a borrar; pide confirmación explícita"`
+	Motivo string `json:"motivo,omitempty" desc:"Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas"`
 }
 
 // PeticionCrearCarpeta crea una carpeta. Falla si ya existe.
 type PeticionCrearCarpeta struct {
-	Ruta string `json:"ruta" desc:"Ruta de la carpeta; falla si ya existe"`
+	Ruta   string `json:"ruta" desc:"Ruta de la carpeta; falla si ya existe"`
+	Motivo string `json:"motivo,omitempty" desc:"Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas"`
 }
 
 // PeticionEliminarCarpeta borra una carpeta. La confirmación explícita no
 // viaja aquí, igual que en el borrado de archivos.
 type PeticionEliminarCarpeta struct {
-	Ruta string `json:"ruta" desc:"Ruta de la carpeta; pide confirmación explícita"`
+	Ruta   string `json:"ruta" desc:"Ruta de la carpeta; pide confirmación explícita"`
+	Motivo string `json:"motivo,omitempty" desc:"Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas"`
 }
 
 // --- Terminal (ambos agentes) ---------------------------------------------

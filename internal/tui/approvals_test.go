@@ -118,6 +118,22 @@ func TestLaLineaDeAprobacionVaEnCorto(t *testing.T) {
 	}
 }
 
+// La explicación del agente (cuando la operación sale de la carpeta) se ve bajo
+// la línea, atenuada, para que la fila no se alargue.
+func TestLaExplicacionSeVeBajoLaLinea(t *testing.T) {
+	ap := Aprobaciones{}
+	ap.Fijar([]Aprobacion{{
+		ID:          "a1",
+		Sesion:      "s1",
+		Descripcion: "leer ~/foto.png (fuera)",
+		Motivo:      "la mencionó el usuario",
+	}})
+	v := sinEstilo(ap.Render())
+	if !strings.Contains(v, "por qué: la mencionó el usuario") {
+		t.Errorf("la explicación va debajo de la línea:\n%s", v)
+	}
+}
+
 // Con una decisión esperando, el indicador lo dice: el turno no avanza hasta que
 // se resuelva, y «Pensando» haría creer que sigue trabajando.
 func TestElIndicadorDiceQueEsperaTuPermiso(t *testing.T) {

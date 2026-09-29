@@ -63,7 +63,12 @@ func TestSinAprobadorNadaSaleDeLaCarpeta(t *testing.T) {
 // se aplica.
 func TestFueraDeLaCarpetaSeAplicaConPermiso(t *testing.T) {
 	proyecto, db := proyectoTemp(t)
-	ops := &fileops.Ops{Proyecto: proyecto, Historial: storeHistorial(db), Aprobador: aprobadorTotal()}
+	ops := &fileops.Ops{
+		Proyecto:  proyecto,
+		Historial: storeHistorial(db),
+		Aprobador: aprobadorTotal(),
+		Motivo:    "el usuario lo pidió",
+	}
 
 	fuera := filepath.Join(filepath.Dir(proyecto), "permitido.txt")
 	t.Cleanup(func() { _ = os.Remove(fuera) })
@@ -114,7 +119,12 @@ func TestUnaRutaAbsolutaFueraPidePermiso(t *testing.T) {
 		t.Fatal("GARANTÍA ROTA: la ruta absoluta escribió sin permiso")
 	}
 
-	abierto := &fileops.Ops{Proyecto: proyecto, Historial: storeHistorial(db), Aprobador: aprobadorTotal()}
+	abierto := &fileops.Ops{
+		Proyecto:  proyecto,
+		Historial: storeHistorial(db),
+		Aprobador: aprobadorTotal(),
+		Motivo:    "el usuario lo pidió",
+	}
 	if _, err := abierto.CrearArchivo(context.Background(), destino, "x"); err != nil {
 		t.Fatalf("con permiso, la ruta absoluta de fuera se aplica: %v", err)
 	}

@@ -52,6 +52,24 @@ func TestEsquemaOpcionalNoVaEnRequired(t *testing.T) {
 	}
 }
 
+// `motivo` viaja en el esquema como opcional: solo hace falta cuando la ruta
+// sale de la carpeta del proyecto (SPEC-ARCHIVOS §Reglas), y eso lo decide el
+// momento de usarla, no la obligatoriedad del esquema.
+func TestElEsquemaLlevaElMotivoOpcional(t *testing.T) {
+	h, ok := NuevaHerramienta("leer_archivo", nil)
+	if !ok {
+		t.Fatal("leer_archivo está en el catálogo")
+	}
+	if _, hay := h.Esquema.Properties["motivo"]; !hay {
+		t.Fatal("el esquema declara el motivo")
+	}
+	for _, r := range h.Esquema.Required {
+		if r == "motivo" {
+			t.Error("el motivo no es obligatorio en el esquema")
+		}
+	}
+}
+
 // TestEsquemaDeTodasLasHerramientas — las catorce tienen esquema y ninguna queda
 // sin describir.
 func TestEsquemaDeTodasLasHerramientas(t *testing.T) {

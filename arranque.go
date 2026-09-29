@@ -710,7 +710,7 @@ func (ad *Adaptador) pedirAprobacion(ctx context.Context, s tools.Solicitud) (to
 	if descripcion == "" {
 		descripcion = "aprobar una acción"
 	}
-	id, ch, err := ad.pedirPermiso(descripcion)
+	id, ch, err := ad.pedirPermiso(descripcion, s.Motivo)
 	if err != nil {
 		return tools.Decision{}, err
 	}
@@ -763,7 +763,7 @@ func (ad *Adaptador) capaDe(sesionID string) string {
 // fila y pasa la sesión a esperando_permiso), emite `peticion_aprobacion` y
 // devuelve el canal donde el usuario resolverá. Es el lado productor del flujo
 // de aprobación (DATA_FLOW.md §7 paso 3).
-func (ad *Adaptador) pedirPermiso(descripcion string) (approvalID string, resolucion <-chan string, err error) {
+func (ad *Adaptador) pedirPermiso(descripcion, motivo string) (approvalID string, resolucion <-chan string, err error) {
 	// Con la sesión en esperando_permiso, store rechazaría una segunda
 	// transición; si llega otro pedido mientras tanto, se registra sin tocar
 	// el estado (ya está esperando).
@@ -784,6 +784,7 @@ func (ad *Adaptador) pedirPermiso(descripcion string) (approvalID string, resolu
 		"aprobacion":  ap.ID,
 		"sesion":      ap.SessionID,
 		"descripcion": ap.Description,
+		"motivo":      motivo,
 	}})
 	return ap.ID, ch, nil
 }
@@ -1158,7 +1159,7 @@ func cerrarTurnoGuardado(ad *Adaptador, sesionID, contenido, razon string, in, o
 type aprobadorPorTurno struct{ ad *Adaptador }
 
 func (p *aprobadorPorTurno) Aprobar(ctx context.Context, descripcion string) (bool, error) {
-	id, ch, err := p.ad.pedirPermiso(descripcion)
+	id, ch, err := p.ad.pedirPermiso(descripcion, "")
 	if err != nil {
 		return false, err
 	}
