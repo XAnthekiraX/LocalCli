@@ -92,13 +92,16 @@ const EtapaChat = "chat"
 // etapa intermedia de un flujo —cuyo texto no se muestra ni se persiste, solo
 // alimenta la cadena— de la última etapa y del chat. `Etapa` es el nombre de la
 // etapa (vacío en el chat); la vista lo usa en su línea de progreso.
+// `SinHerramientas` corre el turno sin presentar herramientas al modelo: lo usa
+// la etapa de composición, que solo redacta la entrega a partir del bloque.
 type PeticionEtapa struct {
-	Agente     string
-	Contexto   string
-	Historial  []Mensaje
-	Imagenes   []string
-	Etapa      string
-	Silenciosa bool
+	Agente          string
+	Contexto        string
+	Historial       []Mensaje
+	Imagenes        []string
+	Etapa           string
+	Silenciosa      bool
+	SinHerramientas bool
 }
 
 // Agente ejecuta una etapa con el agente indicado (`plan` o `build`) sobre el
@@ -123,6 +126,12 @@ type Motor struct {
 	Aprobador Aprobador
 	// Eventos es opcional: sin emisor, el motor trabaja igual.
 	Eventos Emisor
+	// Bloque y Optimizador son opcionales: sin ellos, un flujo con
+	// `BloqueContexto` cae al encadenado de resúmenes mecánicos y el bloque vive
+	// solo en memoria. Con ellos se activa el pipeline del bloque de contexto
+	// (persistencia + optimización por etapa). Ver bloque.go.
+	Bloque      Bloque
+	Optimizador Optimizador
 }
 
 func (m *Motor) emitir(nombre string, datos map[string]string) {
@@ -150,12 +159,27 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 		return EstadoConError, err
 	}
 
-	// `acumulado` guarda el resumen corto de cada etapa ya corrida. Vive en el
-	// motor (no en la base de datos) y se inyecta en el contexto de la etapa
-	// siguiente: es el encadenado de SPEC-MOTOR-FLUJOS ("el resultado pasa a la
-	// etapa siguiente"), sin arrastrar la salida completa.
+	// `acumulado` guarda el resumen corto de cada etapa ya corrida. Se inyecta en
+	// el contexto de la etapa siguiente: es el encadenado de SPEC-MOTOR-FLUJOS
+	// ("el resultado pasa a la etapa siguiente"), sin arrastrar la salida
+	// completa. En un flujo con bloque de contexto cada entrada es la aportación
+	// ya optimizada por el modelo.
 	var acumulado []string
+
+	// Un flujo con bloque de contexto empieza con el bloque vacío: la ejecución
+	// nueva no hereda las aportaciones de la anterior.
+	if f.BloqueContexto && m.Bloque != nil {
+		if err := m.Bloque.Limpiar(ctx, f.Nombre); err != nil {
+			return EstadoConError, fmt.Errorf("flow: no se pudo limpiar el bloque del flujo %s: %w", f.Nombre, err)
+		}
+	}
+
 	for i, etapa := range f.Etapas {
+		ultima := i == len(f.Etapas)-1
+		// La etapa de composición de un flujo con bloque corre sin herramientas:
+		// solo redacta la entrega a partir del bloque, así el cierre es
+		// determinista y no depende de que el modelo deje de pedir herramientas.
+		composicion := f.BloqueContexto && ultima
 		if cerr := ctx.Err(); cerr != nil {
 			m.emitir(EventoFlujoCancelado, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 			return EstadoDetenido, nuevoError(CodigoFlujoCancelado,
@@ -172,19 +196,26 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 			return EstadoConError, fmt.Errorf("%w: %s: %v", ErrEtapaFallida, etapa.ID, cErr)
 		}
 		contexto = componerBrief(f.Reglas, etapa.Instruccion, contexto)
-		if len(acumulado) > 0 {
+		if composicion {
+			// La composición recibe el bloque entero: el estado del turno vive
+			// en `store`, no en la memoria del motor.
+			if seccion := m.bloqueParaComposicion(ctx, f, acumulado); seccion != "" {
+				contexto += "\n\n" + seccion
+			}
+		} else if len(acumulado) > 0 {
 			contexto += "\n\n## Resultados de los pasos anteriores\n" + strings.Join(acumulado, "\n\n")
 		}
 		// Una etapa intermedia que no pide aprobación corre en silencio: su texto
 		// no se muestra en el chat ni se guarda, solo alimenta la cadena. La
 		// última etapa y las que piden aprobación se muestran: la entrega final y
 		// lo que el usuario debe ver para poder aprobar.
-		silenciosa := i < len(f.Etapas)-1 && !etapa.Aprobacion
+		silenciosa := !ultima && !etapa.Aprobacion
 		res, aErr := m.Agente.Ejecutar(ctx, PeticionEtapa{
-			Agente:     etapa.Agente,
-			Contexto:   contexto,
-			Etapa:      etapa.Nombre,
-			Silenciosa: silenciosa,
+			Agente:          etapa.Agente,
+			Contexto:        contexto,
+			Etapa:           etapa.Nombre,
+			Silenciosa:      silenciosa,
+			SinHerramientas: composicion,
 		})
 		if aErr != nil {
 			m.emitir(EventoEtapaFallida, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
@@ -218,7 +249,16 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 			m.emitir(EventoFlujoReanudado, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 		}
 
-		acumulado = append(acumulado, bloqueResumen(etapa.Nombre, res.Texto))
+		if f.BloqueContexto && !ultima {
+			// Cada etapa intermedia deja su aportación optimizada en el bloque.
+			aportacion := m.optimizarEtapa(ctx, f, etapa, res.Texto)
+			if err := m.guardarAportacion(ctx, f, etapa, i, aportacion); err != nil {
+				return EstadoConError, err
+			}
+			acumulado = append(acumulado, bloqueResumen(etapa.Nombre, aportacion))
+		} else {
+			acumulado = append(acumulado, bloqueResumen(etapa.Nombre, res.Texto))
+		}
 		m.emitir(EventoEtapaTerminada, map[string]string{
 			"flujo":   f.Nombre,
 			"etapa":   etapa.ID,
@@ -229,6 +269,63 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 
 	estado = EstadoTerminado
 	return estado, nil
+}
+
+// optimizarEtapa condensa el resultado de una etapa con el modelo. Si no hay
+// optimizador conectado o la generación falla, cae al recorte mecánico de
+// siempre: el flujo nunca se detiene por una optimización que no llegó
+// (SPEC-MOTOR-FLUJOS §Reglas de negocio).
+func (m *Motor) optimizarEtapa(ctx context.Context, f Flujo, etapa Etapa, texto string) string {
+	if m.Optimizador != nil {
+		if opt, err := m.Optimizador.Optimizar(ctx, f.Nombre, etapa.Nombre, texto); err == nil {
+			if s := strings.TrimSpace(opt); s != "" {
+				return s
+			}
+		}
+	}
+	rec, _ := tools.Recortar(strings.TrimSpace(texto), limiteTokensResumenEtapa)
+	if s := strings.TrimSpace(rec); s == "" {
+		return "(sin resultado)"
+	}
+	return strings.TrimSpace(rec)
+}
+
+// guardarAportacion persiste la aportación de una etapa en el bloque. Con un
+// bloque conectado, un fallo de escritura detiene el flujo: la entrega final
+// depende de que todo lo anterior esté en el bloque.
+func (m *Motor) guardarAportacion(ctx context.Context, f Flujo, etapa Etapa, posicion int, contenido string) error {
+	if m.Bloque == nil {
+		return nil
+	}
+	if err := m.Bloque.Guardar(ctx, f.Nombre, EntradaBloque{
+		Etapa: etapa.ID, Nombre: etapa.Nombre, Posicion: posicion, Contenido: contenido,
+	}); err != nil {
+		return fmt.Errorf("flow: no se pudo guardar la aportación de la etapa %s: %w", etapa.ID, err)
+	}
+	return nil
+}
+
+// bloqueParaComposicion arma la sección «Bloque de contexto» que recibe la etapa
+// de composición. Lee el bloque persistido (todas las etapas anteriores); si no
+// hay bloque conectado, compone con lo que quedó en memoria.
+func (m *Motor) bloqueParaComposicion(ctx context.Context, f Flujo, acumulado []string) string {
+	var entradas []EntradaBloque
+	if m.Bloque != nil {
+		if leidas, err := m.Bloque.Leer(ctx, f.Nombre); err == nil {
+			entradas = leidas
+		}
+	}
+	if len(entradas) > 0 {
+		partes := make([]string, 0, len(entradas))
+		for _, e := range entradas {
+			partes = append(partes, "### "+e.Nombre+"\n"+e.Contenido)
+		}
+		return "## Bloque de contexto\n" + strings.Join(partes, "\n\n")
+	}
+	if len(acumulado) > 0 {
+		return "## Bloque de contexto\n" + strings.Join(acumulado, "\n\n")
+	}
+	return ""
 }
 
 // Conversar responde una petición como chat: arma el contexto del objetivo y

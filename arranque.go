@@ -77,8 +77,11 @@ type Adaptador struct {
 	auditar *store.Auditorias
 	// todos es el repositorio de la lista de pasos de la sesión (SPEC-TOOLS).
 	todos *store.Todos
-	bus   *session.Bus
-	dir   string
+	// bloques es el repositorio del bloque de contexto de un flujo con
+	// `bloque_contexto` (SPEC-MOTOR-FLUJOS).
+	bloques *store.Bloques
+	bus     *session.Bus
+	dir     string
 	// catalogo son los flujos del proyecto: los oficiales más los que declara
 	// `ai/flows/*.json`. Lo arma el arranque; `Enviar` reconoce los comandos
 	// contra él.
@@ -199,7 +202,7 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	// montarse), así que el registro puede construirse antes de que el gestor
 	// exista.
 	cambios := store.NuevosCambios(conexion)
-	ad := &Adaptador{aprobar: aprobar, cerrar: turnos, auditar: store.NuevasAuditorias(conexion), todos: store.NuevosTodos(conexion), bus: bus, dir: carpeta, pendientas: map[string]chan string{}, contextos: map[string]int{}, cliente: cliente}
+	ad := &Adaptador{aprobar: aprobar, cerrar: turnos, auditar: store.NuevasAuditorias(conexion), todos: store.NuevosTodos(conexion), bloques: store.NuevosBloques(conexion), bus: bus, dir: carpeta, pendientas: map[string]chan string{}, contextos: map[string]int{}, cliente: cliente}
 	ad.modelo = modelo
 	ad.agenteRecordado = prefs.Agente
 	// El ejecutor externo corre las herramientas del usuario: el mismo módulo
@@ -302,6 +305,11 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	ad.agentes = agent.OrdenarNombres(agentes)
 	motorFlows.Agente = &ejecutorPorTurno{ad: ad, ejecutor: ejecutor, agente: agentes}
 	motorFlows.Aprobador = &aprobadorPorTurno{ad: ad}
+	// El bloque de contexto de un flujo con `bloque_contexto`: cada etapa guarda
+	// su aportación optimizada en `store` y la composición final la lee entera
+	// (SPEC-MOTOR-FLUJOS §Bloque de contexto).
+	motorFlows.Bloque = &bloquePorTurno{ad: ad}
+	motorFlows.Optimizador = &optimizadorPorTurno{ad: ad, infer: infer}
 
 	// Arranque de sesión: NO se crea ninguna. La sesión nace con la primera
 	// petición desde la bienvenida (SPEC-SESIONES); hasta entonces no hay sesión
@@ -1007,7 +1015,7 @@ func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, p flow.PeticionEtapa) (
 	// El turno de inferencia NO se toma aquí: el bucle de `agent` lo toma por
 	// PETICIÓN al modelo, así que una sesión esperando una aprobación deja libre
 	// el modelo para las demás (SPEC-OLLAMA-PERFIL, T-B024-14).
-	salida, err := e.ejecutor.Ejecutar(ctx, agente, modelo, p.Contexto, mensajesDeOllama(p.Historial), p.Imagenes, e.ad.ventana(modelo), sink)
+	salida, err := e.ejecutor.Ejecutar(ctx, agente, modelo, p.Contexto, mensajesDeOllama(p.Historial), p.Imagenes, e.ad.ventana(modelo), p.SinHerramientas, sink)
 	if err != nil {
 		return flow.Resultado{}, err
 	}
@@ -1092,6 +1100,55 @@ func (p *aprobadorPorTurno) Aprobar(ctx context.Context, descripcion string) (bo
 		return false, nil
 	}
 	return estado == store.ApprovalAprobada, nil
+}
+
+// bloquePorTurno implementa flow.Bloque sobre el repositorio del arranque. El
+// bloque está acotado a la sesión en curso: la lee del Adaptador en cada
+// llamada, igual que el nodo de contexto.
+type bloquePorTurno struct{ ad *Adaptador }
+
+func (b *bloquePorTurno) Limpiar(ctx context.Context, flujo string) error {
+	return b.ad.bloques.Limpiar(b.ad.sesionActual(), flujo)
+}
+
+func (b *bloquePorTurno) Guardar(ctx context.Context, flujo string, e flow.EntradaBloque) error {
+	return b.ad.bloques.Guardar(b.ad.sesionActual(), &store.FlowContext{
+		Flow:      flujo,
+		Stage:     e.Etapa,
+		StageName: e.Nombre,
+		Position:  e.Posicion,
+		Content:   e.Contenido,
+	})
+}
+
+func (b *bloquePorTurno) Leer(ctx context.Context, flujo string) ([]flow.EntradaBloque, error) {
+	filas, err := b.ad.bloques.Leer(b.ad.sesionActual(), flujo)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]flow.EntradaBloque, 0, len(filas))
+	for _, f := range filas {
+		out = append(out, flow.EntradaBloque{
+			Etapa: f.Stage, Nombre: f.StageName, Posicion: f.Position, Contenido: f.Content,
+		})
+	}
+	return out, nil
+}
+
+// optimizadorPorTurno implementa flow.Optimizador: condensa el resultado de una
+// etapa con una generación corta del modelo local, sin herramientas ni
+// streaming. Un fallo no detiene el flujo (el motor cae al resumen mecánico).
+type optimizadorPorTurno struct {
+	ad    *Adaptador
+	infer *ollama.ColaInferencia
+}
+
+func (o *optimizadorPorTurno) Optimizar(ctx context.Context, flujo, etapa, resultado string) (string, error) {
+	crudo, err := generarTextoCorrido(ctx, o.ad, o.infer, flow.PromptOptimizacion(flujo, etapa, resultado))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(crudo), nil
 }
 
 // agenteBase carga los agentes del proyecto desde `ai/agents/*.json`: los dos

@@ -21,7 +21,7 @@ La base de datos de LocalCli es un archivo SQLite por proyecto, en la carpeta de
 
 El esquema tiene dos naturalezas y conviene no confundirlas:
 
-- **Estado en SQLite.** Sesiones, conversaciones, aprobaciones, auditoría de contexto e historial de cambios. Son datos que nacen y mueren con la ejecución.
+- **Estado en SQLite.** Sesiones, conversaciones, aprobaciones, auditoría de contexto, historial de cambios, la lista de pasos de la sesión y el bloque de contexto de un flujo. Son datos que nacen y mueren con la ejecución.
 - **Datos en archivos.** La documentación del proyecto y los archivos de tarea son la fuente de verdad y viven fuera de SQLite. El grafo de documentos y el orden de la cola se derivan de ellos y se reconstruyen al arrancar, sin tabla propia.
 
 SQLite solo modela el primer grupo. El segundo se documenta en [[database/02-rules/DATA_FLOW]].
@@ -47,6 +47,8 @@ La versión del esquema no ocupa tabla: se guarda en el `PRAGMA user_version` de
 | `approvals` | Las aprobaciones pendientes y resueltas de cada sesión |
 | `context_audit` | Qué documentación entró o salió del contexto de cada etapa, y por qué |
 | `change_history` | Qué archivo se cambió, qué había antes y qué quedó |
+| `todos` | La lista de pasos de una sesión, mantenida con `actualizar_todo` |
+| `flow_context` | El bloque de contexto de un flujo: una aportación optimizada por etapa |
 
 El detalle de cada columna está en [[database/01-schema/TABLES]]. Las relaciones entre ellas, en [[database/01-schema/RELATIONSHIPS]]. Los valores cerrados, en [[database/01-schema/ENUMS]].
 
@@ -123,6 +125,31 @@ Resumen estructural. Los valores permitidos, los `NULL` y los valores por defect
 | `created_at` | TEXT | | ISO 8601 UTC |
 
 `change_history` es la única tabla cuya `session_id` no se borra en cascada: usa `ON DELETE SET NULL`. Así, al eliminar una sesión de forma definitiva, el registro de los cambios que aplicó en los archivos del proyecto sobrevive, tal como exige [[specs/SPEC-ARCHIVOS]].
+
+### `todos`
+
+| Campo | Tipo | Clave | Notas |
+|---|---|---|---|
+| `session_id` | TEXT | PK | FK → `sessions.id`. `ON DELETE CASCADE` |
+| `position` | INTEGER | PK | Orden del paso. Clave compuesta `(session_id, position)` |
+| `content` | TEXT | | Qué hay que hacer |
+| `status` | TEXT | | `pendiente`, `en_progreso`, `completada` o `cancelada` |
+| `priority` | TEXT | | `alta`, `media` o `baja`. Por defecto `media` |
+| `created_at` | TEXT | | ISO 8601 UTC |
+| `updated_at` | TEXT | | ISO 8601 UTC |
+
+### `flow_context`
+
+| Campo | Tipo | Clave | Notas |
+|---|---|---|---|
+| `id` | TEXT | PK | UUID v4 |
+| `session_id` | TEXT | FK → `sessions.id` | `ON DELETE CASCADE` |
+| `flow` | TEXT | | Nombre del flujo al que pertenece el bloque |
+| `stage` | TEXT | | Etapa que produjo la aportación |
+| `stage_name` | TEXT | | Nombre visible de la etapa |
+| `position` | INTEGER | | Orden de la etapa en el flujo |
+| `content` | TEXT | | Aportación ya optimizada |
+| `created_at` | TEXT | | ISO 8601 UTC |
 
 ## Referencias
 

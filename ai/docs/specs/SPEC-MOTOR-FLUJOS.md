@@ -49,6 +49,18 @@ Se arranca con el comando explícito `/ejecutar`. Encadena las tareas grandes di
 5. El resumen pasa a la etapa siguiente, que lo recibe además de su propio contexto. No se arrastra la salida completa: cada etapa recibe solo lo que necesita.
 6. El flujo termina y el chat muestra el resultado final: la entrega del último paso.
 
+Un flujo con `bloque_contexto` (hoy solo el resolver) cambia los pasos 4-6: cada etapa guarda su resultado en un **bloque de contexto** persistido, el modelo lo **optimiza** al cerrar la etapa y la última etapa **compone** la entrega a partir de todo el bloque, sin herramientas. Ver §Bloque de contexto.
+
+### Bloque de contexto
+
+Un flujo declara `bloque_contexto: true` cuando necesita que el trabajo de sus etapas no se pierda por el camino: el resolver lo hace para entregar el PLAN.
+
+1. Cada etapa intermedia entrega su resultado y el modelo lo **optimiza** —una generación corta que lo condensa sin inventar— antes de guardarlo y de encadenarlo.
+2. El bloque guarda una aportación por etapa en `flow_context` (sesión, flujo, etapa, orden y contenido). Una ejecución nueva del mismo flujo lo vacía: no hereda la anterior.
+3. Las etapas siguientes reciben las aportaciones ya optimizadas.
+4. La **última etapa es la composición**: recibe el bloque entero y corre **sin herramientas**, solo para redactar la entrega. Así el cierre es determinista y no depende de que el modelo deje de pedir herramientas.
+5. La vista no cambia: sigue anunciando `[Sub Proceso] <nombre>` y las líneas de herramienta; solo el texto de las fases intermedias queda oculto.
+
 ## Flujos alternativos
 
 - Una etapa falla: el flujo se detiene y el usuario decide.
@@ -63,7 +75,7 @@ Se arranca con el comando explícito `/ejecutar`. Encadena las tareas grandes di
 - Cada etapa recibe solo el contexto que necesita, no todo lo que la etapa anterior produjo.
 - Cada etapa es un sub-proceso: corre sin el historial del chat y recibe de las anteriores solo sus resúmenes cortos, encadenados.
 - Una etapa intermedia que no pide aprobación corre en silencio: su texto no se muestra en el chat ni se persiste; la vista solo anuncia su nombre (`[Sub Proceso] <nombre>`). La última etapa y las que piden aprobación sí se muestran.
-- El estado de la cadena —los resúmenes de las etapas— vive en el motor, no en la base de datos; al terminar, el chat muestra la entrega del último paso.
+- En un flujo normal, el estado de la cadena —los resúmenes de las etapas— vive en el motor. En un flujo con `bloque_contexto` se persiste en `flow_context` (una aportación por etapa y sesión) y la composición final lo lee entero; al terminar, el chat muestra la entrega del último paso.
 - Si una etapa falla, el flujo se detiene. El usuario elige reintentar, saltar esa etapa o cancelar.
 - Un flujo pausado por un permiso se retoma desde la misma etapa, sin repetir lo ya hecho.
 - Todo lo que hace cada etapa queda registrado: qué recibió, qué hizo y qué produjo.
@@ -83,6 +95,8 @@ Se arranca con el comando explícito `/ejecutar`. Encadena las tareas grandes di
 - [ ] Una tarea con dependencias sin cumplir no arranca.
 - [ ] Cada etapa recibe solo el contexto que necesita.
 - [ ] El resultado de cada etapa se pasa a la siguiente como un resumen corto.
+- [ ] Un flujo con `bloque_contexto` guarda una aportación optimizada por etapa en `flow_context`.
+- [ ] La última etapa de un flujo con `bloque_contexto` compone la entrega sin herramientas, a partir del bloque entero.
 - [ ] Una etapa intermedia sin aprobación no se muestra ni se persiste; la vista solo anuncia su nombre.
 - [ ] Al terminar el flujo, el chat muestra la entrega del último paso.
 - [ ] Si una etapa falla, el flujo se detiene y el usuario elige qué hacer.

@@ -70,7 +70,13 @@ type Flujo struct {
 	// Reglas son las reglas del flujo (no del agente): se anteponen al contexto
 	// de cada etapa. Aquí viven las reglas de descubrimiento de documentación.
 	Reglas []string
-	Etapas []Etapa
+	// BloqueContexto activa el pipeline del bloque de contexto: cada etapa
+	// guarda su resultado optimizado (persistido, ver [[specs/SPEC-MOTOR-FLUJOS]])
+	// y la ÚLTIMA etapa compone la entrega a partir de todo el bloque, sin
+	// herramientas. Sin este flag el flujo encadena resúmenes cortos en memoria,
+	// como antes.
+	BloqueContexto bool
+	Etapas         []Etapa
 }
 
 // Validar comprueba que el flujo es encadenable: nombre, al menos una etapa y

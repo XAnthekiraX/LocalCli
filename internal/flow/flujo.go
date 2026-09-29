@@ -25,12 +25,13 @@ import (
 
 // definicionFlujo es el contrato JSON de un flujo.
 type definicionFlujo struct {
-	Comando     string            `json:"comando"`
-	Nombre      string            `json:"nombre"`
-	Descripcion string            `json:"descripcion"`
-	Peticion    string            `json:"peticion"`
-	Reglas      []string          `json:"reglas"`
-	Etapas      []definicionEtapa `json:"etapas"`
+	Comando        string            `json:"comando"`
+	Nombre         string            `json:"nombre"`
+	Descripcion    string            `json:"descripcion"`
+	Peticion       string            `json:"peticion"`
+	BloqueContexto bool              `json:"bloque_contexto"`
+	Reglas         []string          `json:"reglas"`
+	Etapas         []definicionEtapa `json:"etapas"`
 }
 
 // definicionEtapa es el contrato JSON de una etapa del flujo.
@@ -45,7 +46,7 @@ type definicionEtapa struct {
 // CamposDelFlujo y CamposDeLaEtapa son los nombres de campo admitidos. Son la
 // lista cerrada del contrato; sirven para documentar y para los tests.
 var (
-	CamposDelFlujo  = []string{"comando", "nombre", "descripcion", "peticion", "reglas", "etapas"}
+	CamposDelFlujo  = []string{"comando", "nombre", "descripcion", "peticion", "bloque_contexto", "reglas", "etapas"}
 	CamposDeLaEtapa = []string{"id", "nombre", "agente", "aprobacion", "instruccion"}
 )
 
@@ -69,12 +70,13 @@ func DecodificarFlujo(datos []byte) (Flujo, error) {
 	}
 
 	f := Flujo{
-		Nombre:      strings.TrimSpace(d.Nombre),
-		Comando:     strings.TrimSpace(d.Comando),
-		Descripcion: strings.TrimSpace(d.Descripcion),
-		Peticion:    strings.TrimSpace(d.Peticion),
-		Reglas:      limpiarLista(d.Reglas),
-		Etapas:      make([]Etapa, 0, len(d.Etapas)),
+		Nombre:         strings.TrimSpace(d.Nombre),
+		Comando:        strings.TrimSpace(d.Comando),
+		Descripcion:    strings.TrimSpace(d.Descripcion),
+		Peticion:       strings.TrimSpace(d.Peticion),
+		BloqueContexto: d.BloqueContexto,
+		Reglas:         limpiarLista(d.Reglas),
+		Etapas:         make([]Etapa, 0, len(d.Etapas)),
 	}
 	for _, e := range d.Etapas {
 		f.Etapas = append(f.Etapas, Etapa{

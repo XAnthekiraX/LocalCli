@@ -23,6 +23,8 @@ Incluye recibir la tarea, entender el problema, buscar contexto, investigar, dia
 No implementa: no aplica cambios ni crea tareas; entregar el PLAN es el final del ciclo. Es un ciclo aparte: no amplía el alcance del proyecto. Eso lo hace [[specs/SPEC-CICLO-TRABAJO]].
 Su flujo se declara en `ai/flows/resolver.json`; el motor lo carga al arrancar y, si el archivo no está, usa su definición oficial de respaldo.
 
+Es un flujo con **bloque de contexto** (`bloque_contexto: true`, [[specs/SPEC-MOTOR-FLUJOS]] §Bloque de contexto): cada paso deja su resultado optimizado en el bloque y el paso 9 compone el PLAN a partir de todo el bloque, sin herramientas. Así la entrega es determinista: el resolver cierra siempre con la salida estándar, no con un preámbulo del modelo.
+
 ## Actores
 
 - **Usuario**: reporta el problema y recibe el PLAN.
@@ -47,7 +49,9 @@ El flujo se declara en `ai/flows/resolver.json` (ver [[specs/SPEC-FLUJO-PERSONAL
 6. **Identificar los archivos afectados**, en tres grupos: MODIFICAR, CONSULTAR y NO TOCAR, cada uno con su motivo.
 7. **Diseñar la solución.** Qué cambiar, dónde cambiarlo y cómo se relacionan los cambios.
 8. **Crear el plan de ejecución.** Pasos concretos, en orden, con su validación.
-9. **Entregar el PLAN. No se implementa.**
+9. **Entregar el PLAN. No se implementa.** Es la composición: recibe el bloque con lo que dejaron los pasos 1-8 y lo redacta con la salida estándar, sin herramientas.
+
+Los pasos 1-8 son fases silenciosas: cada una entrega su resultado, el modelo lo optimiza y queda en el bloque del flujo. El paso 9 es la única fase visible: lo que el usuario lee es la entrega del PLAN. La vista sí anuncia cada fase (`[Sub Proceso] <nombre>`) y sus herramientas, para que el usuario vea que el sistema trabaja.
 
 ### La regla central
 

@@ -8,9 +8,9 @@ import (
 
 // schemaVersion es la versión del esquema que conoce este binario. La base se
 // crea ya en su versión 1 con las seis tablas (MIGRATIONS.md, "Nota sobre el
-// esquema actual") y la 002 añade la lista de pasos; user_version = 2 significa
-// que las migraciones 001 y 002 están aplicadas.
-const schemaVersion = 2
+// esquema actual"), la 002 añade la lista de pasos y la 003 el bloque de
+// contexto de un flujo; user_version = 3 significa que las tres están aplicadas.
+const schemaVersion = 3
 
 // migration es una migración numerada, en orden ascendente, cada una en su
 // propia transacción (MIGRATIONS.md §2). to es la versión resultante.
@@ -23,11 +23,13 @@ type migration struct {
 
 // migrations lista las migraciones pendientes de aplicar. La 001 crea el
 // archivo y su esquema inicial; la 002 añade la tabla `todos` (la lista de pasos
-// de la sesión). Los índices se aplican junto con la creación, no después
-// (MIGRATIONS.md, nota final).
+// de la sesión); la 003 añade `flow_context` (el bloque de contexto de un flujo).
+// Los índices se aplican junto con la creación, no después (MIGRATIONS.md, nota
+// final).
 var migrations = []migration{
 	{num: 1, nom: "001-crear-schema", to: 1, ddl: schemaSQL},
 	{num: 2, nom: "002-crear-todo", to: 2, ddl: todoSQL},
+	{num: 3, nom: "003-crear-flow-context", to: 3, ddl: flowContextSQL},
 }
 
 // userVersion lee PRAGMA user_version de la conexión.

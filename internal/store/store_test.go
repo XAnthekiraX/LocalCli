@@ -82,11 +82,11 @@ func TestDBPathConVariable(t *testing.T) {
 	}
 }
 
-// --- T-B002-03: esquema coincide con SCHEMA.md (7 tablas + índices) ---
+// --- T-B002-03: esquema coincide con SCHEMA.md (8 tablas + índices) ---
 
 func TestEsquemaTablasEIndices(t *testing.T) {
 	db := abrirBaseTemporal(t)
-	tablasWant := []string{"approvals", "change_history", "context_audit", "messages", "reasoning", "sessions", "todos"}
+	tablasWant := []string{"approvals", "change_history", "context_audit", "flow_context", "messages", "reasoning", "sessions", "todos"}
 	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
 	if err != nil {
 		t.Fatal(err)
@@ -136,6 +136,7 @@ var indicesWant = map[string]struct {
 	"idx_approvals_pending":           {columnas: []string{"created_at"}, parcial: "status = 'pendiente'"},
 	"idx_context_audit_session_stage": {columnas: []string{"session_id", "stage"}},
 	"idx_context_audit_unico":         {columnas: []string{"session_id", "stage", "document"}, unique: true},
+	"idx_flow_context_unico":          {columnas: []string{"session_id", "flow", "stage"}, unique: true},
 	"idx_change_history_file":         {columnas: []string{"file_path"}},
 	"idx_sessions_status":             {columnas: []string{"status"}},
 	"idx_sessions_updated":            {columnas: []string{"updated_at"}},
@@ -223,10 +224,10 @@ func columnasDeIndice(t *testing.T, db *sql.DB, indice string) []string {
 func TestMigracionIdempotente(t *testing.T) {
 	proyecto := proyectoTemporal(t)
 
-	// El valor se compara contra el literal 2 que fija MIGRATIONS.md, no contra
-	// la constante de producción: si ambas suben a 3, este test debe seguir
+	// El valor se compara contra el literal 3 que fija MIGRATIONS.md, no contra
+	// la constante de producción: si ambas suben a 4, este test debe seguir
 	// avisando de que la documentación y el código han divergido.
-	const versionEsperada = 2
+	const versionEsperada = 3
 	if schemaVersion != versionEsperada {
 		t.Errorf("schemaVersion = %d, queremos %d; MIGRATIONS.md fija la versión actual. Si el cambio es real, actualiza esa nota y este literal.", schemaVersion, versionEsperada)
 	}
@@ -258,14 +259,14 @@ func TestMigracionIdempotente(t *testing.T) {
 	if v != versionEsperada {
 		t.Errorf("tras reabrir, user_version = %d, queremos %d", v, versionEsperada)
 	}
-	// Reabrir no debe duplicar el esquema: siguen siendo siete tablas.
+	// Reabrir no debe duplicar el esquema: siguen siendo ocho tablas.
 	var n int
 	if err := db2.QueryRow(
 		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 7 {
-		t.Errorf("tablas tras reabrir = %d, queremos 7", n)
+	if n != 8 {
+		t.Errorf("tablas tras reabrir = %d, queremos 8", n)
 	}
 }
 

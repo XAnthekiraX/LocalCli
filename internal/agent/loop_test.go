@@ -106,7 +106,7 @@ func TestElBucleRespondeSinHerramientasEnUnaPasada(t *testing.T) {
 	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("hola mundo")}}
 	sink := &sinkGrabador{}
 	e := &Ejecutor{Runner: g}
-	res, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, 0, sink)
+	res, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, 0, false, sink)
 	if err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestElBucleAnteponeElHistorialAlContexto(t *testing.T) {
 		{Role: "user", Content: "hola"},
 		{Role: "assistant", Content: "qué tal"},
 	}
-	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", historial, nil, 0, nil); err != nil {
+	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", historial, nil, 0, false, nil); err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
 	if len(g.ultimos) != len(historial)+1 {
@@ -148,7 +148,7 @@ func TestElTurnoLlevaImagenesAlModelo(t *testing.T) {
 	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("ok")}}
 	e := &Ejecutor{Runner: g}
 	imgs := []string{"aG9sYQ=="}
-	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", []ollama.Mensaje{{Role: "user", Content: "hola"}}, imgs, 0, nil); err != nil {
+	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", []ollama.Mensaje{{Role: "user", Content: "hola"}}, imgs, 0, false, nil); err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
 	if len(g.ultimos[0].Images) != 0 {
@@ -173,7 +173,7 @@ func TestElBucleEjecutaHerramientaYVuelveAlModelo(t *testing.T) {
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
 	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
 
-	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, nil)
+	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, nil)
 	if err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestElBucleEjecutaEnElOrdenPedido(t *testing.T) {
 	}}
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
 	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
-	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, nil); err != nil {
+	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, nil); err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
 	if len(orden) != 2 || orden[0] != "listar_carpeta" || orden[1] != "buscar_archivos" {
@@ -229,7 +229,7 @@ func TestElBucleUnRechazoNoCortaElTurno(t *testing.T) {
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
 	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
 
-	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, nil)
+	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, nil)
 	if err != nil {
 		t.Fatalf("un rechazo no debe cortar el turno: %v", err)
 	}
@@ -247,22 +247,52 @@ func TestElBucleUnRechazoNoCortaElTurno(t *testing.T) {
 	}
 }
 
-// TestElBucleSeDetieneEnElTopeDePasadas — si el modelo pide herramientas
-// siempre, el turno se cierra al agotar las pasadas.
-func TestElBucleSeDetieneEnElTopeDePasadas(t *testing.T) {
+// TestElBucleCierraConSintesisAlAgotarPasadas — si el modelo pide herramientas
+// siempre, al agotar las rondas el bucle hace UNA pasada final SIN herramientas
+// para que el turno cierre con texto real, no con el preámbulo que acompañaba a
+// la última petición.
+func TestElBucleCierraConSintesisAlAgotarPasadas(t *testing.T) {
 	d := NuevoDespachador(registroStub(nil))
 	g := &generadorGuion{pasadas: [][]ollama.Evento{
-		pedido("", llamada("leer_archivo", `{"ruta":"a.md"}`)),
-		pedido("", llamada("leer_archivo", `{"ruta":"b.md"}`)),
-		respuesta("no debería llegar"),
+		pedido("voy a mirar a", llamada("leer_archivo", `{"ruta":"a.md"}`)),
+		pedido("voy a mirar b", llamada("leer_archivo", `{"ruta":"b.md"}`)),
+		respuesta("síntesis final"),
 	}}
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 2}
 	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
-	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, nil); err != nil {
+
+	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, nil)
+	if err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
-	if g.llamadas != 2 {
-		t.Errorf("llamadas al modelo = %d, quiero 2 (el tope)", g.llamadas)
+	if g.llamadas != 3 {
+		t.Errorf("llamadas al modelo = %d, quiero 3 (2 con herramientas + 1 de síntesis)", g.llamadas)
+	}
+	if res.Texto != "síntesis final" {
+		t.Errorf("texto = %q, quiero la síntesis, no el preámbulo", res.Texto)
+	}
+	if len(g.ultimasHerramientas) != 0 {
+		t.Errorf("la pasada de síntesis no debe ofrecer herramientas: %+v", g.ultimasHerramientas)
+	}
+}
+
+// TestElBucleSinHerramientasNoLasOfrece — con `sinHerramientas` el turno no
+// presenta definiciones y cierra en la primera pasada con su texto.
+func TestElBucleSinHerramientasNoLasOfrece(t *testing.T) {
+	d := NuevoDespachador(registroStub(nil))
+	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("compuesto")}}
+	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
+	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+
+	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, true, nil)
+	if err != nil {
+		t.Fatalf("Ejecutar: %v", err)
+	}
+	if res.Texto != "compuesto" || g.llamadas != 1 {
+		t.Errorf("texto = %q, llamadas = %d, quiero «compuesto» en 1 pasada", res.Texto, g.llamadas)
+	}
+	if len(g.ultimasHerramientas) != 0 {
+		t.Errorf("no debe ofrecer herramientas: %+v", g.ultimasHerramientas)
 	}
 }
 
@@ -271,7 +301,7 @@ func TestElBuclePropagaElErrorDelModelo(t *testing.T) {
 	fallo := errors.New("modelo caído")
 	g := &generadorGuion{pasadas: [][]ollama.Evento{{{Tipo: ollama.EventoError, Error: fallo}}}}
 	e := &Ejecutor{Runner: g}
-	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, 0, nil); !errors.Is(err, fallo) {
+	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, 0, false, nil); !errors.Is(err, fallo) {
 		t.Fatalf("err = %v, quiero %v", err, fallo)
 	}
 }
@@ -284,7 +314,7 @@ func TestAcumulaLosTokensDelTurno(t *testing.T) {
 		{Tipo: ollama.EventoDone, Done: &ollama.RespuestaFinal{Texto: "hola", Done: true, TokensEntr: 11, TokensSal: 3}},
 	}}}
 	e := &Ejecutor{Runner: g}
-	res, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, 0, nil)
+	res, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, 0, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +343,7 @@ func TestElTestigoSeTomaPorPeticion(t *testing.T) {
 		},
 	}
 	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
-	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, nil); err != nil {
+	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	if tomas != 2 {
@@ -333,7 +363,7 @@ func TestSinHerramientasDegradaAConversacion(t *testing.T) {
 		PuedeHerramientas: func(modelo string) bool { return false },
 	}
 	ag := Agente{Nombre: "plan", Prompt: "p", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
-	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, sink)
+	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, sink)
 	if err != nil {
 		t.Fatal(err)
 	}

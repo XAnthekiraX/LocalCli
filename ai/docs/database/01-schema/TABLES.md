@@ -18,7 +18,7 @@ relacionado:
 
 ## 1. Tablas
 
-El esquema tiene siete tablas. La estructura de alto nivel está en [[database/01-schema/SCHEMA]]; aquí cada columna en detalle. Las relaciones entre tablas están en [[database/01-schema/RELATIONSHIPS]] y los valores cerrados, en [[database/01-schema/ENUMS]].
+El esquema tiene ocho tablas. La estructura de alto nivel está en [[database/01-schema/SCHEMA]]; aquí cada columna en detalle. Las relaciones entre tablas están en [[database/01-schema/RELATIONSHIPS]] y los valores cerrados, en [[database/01-schema/ENUMS]].
 
 Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TEXT` en ISO 8601 UTC, y los booleanos son enteros `0`/`1`. La única excepción es `todos`, que no tiene `id`: se identifica por `(session_id, position)`.
 
@@ -31,6 +31,7 @@ Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TE
 - **`context_audit`** — La traza de qué documentación recibió el modelo en cada etapa y qué se descartó, con el motivo. Es lo que hace auditable el nodo de contexto. Ver [[specs/SPEC-NODO-CONTEXTO]].
 - **`change_history`** — Cada cambio aplicado a un archivo del proyecto, con lo que había antes y lo que quedó. Nunca se borra. Ver [[database/02-rules/BUSINESS_RULES]].
 - **`todos`** — La lista de pasos de una sesión: el plan que el agente mantiene con `actualizar_todo`. Es estado de ejecución de la sesión, no un documento del proyecto: se reescribe entera y cae con su sesión. Ver [[specs/SPEC-TOOLS]].
+- **`flow_context`** — El bloque de contexto de un flujo con `bloque_contexto`: una aportación por etapa, ya optimizada por el modelo. Es lo que permite que la composición final arme la entrega a partir de todo el trabajo de las etapas. Es estado de ejecución de la sesión: se reemplaza en cada ejecución del flujo y cae con su sesión. Ver [[specs/SPEC-MOTOR-FLUJOS]].
 
 ## 3. Columnas
 
@@ -132,11 +133,27 @@ Hay un registro por documento y por etapa. `reason` es `NULL` cuando `decision` 
 
 La clave primaria es `(session_id, position)` y no hay `id` de fila: la lista llega entera y se numera por su índice, así que no hay identificadores que puedan quedar obsoletos. Cada llamada a `actualizar_todo` borra la lista de la sesión y la reinserta con sus posiciones. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su lista.
 
+### `flow_context`
+
+| Columna | Qué representa | Valores permitidos | Nullable | Default |
+|---|---|---|---|---|
+| `id` | Identificador de la aportación | UUID v4 | No | — |
+| `session_id` | Sesión que ejecutó el flujo | UUID v4 de `sessions.id` | No | — |
+| `flow` | Flujo al que pertenece el bloque | Nombre del flujo (p. ej. `resolver`) | No | — |
+| `stage` | Etapa que produjo la aportación | Id de la etapa | No | — |
+| `stage_name` | Nombre visible de la etapa | Texto libre | No | — |
+| `position` | Orden de la etapa en el flujo | Entero ≥ 0 | No | — |
+| `content` | Aportación ya optimizada | Texto libre | No | — |
+| `created_at` | Cuándo se guardó | ISO 8601 UTC | No | — |
+
+Hay una aportación por etapa y flujo dentro de la sesión: el índice único `(session_id, flow, stage)` hace que volver a ejecutar el flujo **reemplace** la fila en vez de duplicarla. El motor vacía el bloque al arrancar cada ejecución. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su bloque. Ver [[specs/SPEC-MOTOR-FLUJOS]].
+
 ## 4. Relaciones
 
 - `sessions` 1:N `messages`; `messages` 1:1 opcional `reasoning`.
 - `sessions` 1:N `approvals`.
 - `sessions` 1:N `context_audit`.
+- `sessions` 1:N `flow_context`.
 - `sessions` 1:N `todos`.
 - `sessions` 1:N opcional `change_history`, que sobrevive a la sesión.
 

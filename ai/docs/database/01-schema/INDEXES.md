@@ -25,6 +25,7 @@ Los índices se crean en la definición del esquema y se gestionan con las migra
 | `idx_approvals_pending` | `approvals` | Simple, parcial |
 | `idx_context_audit_session_stage` | `context_audit` | Compuesto |
 | `idx_context_audit_unico` | `context_audit` | Compuesto, `UNIQUE` |
+| `idx_flow_context_unico` | `flow_context` | Compuesto, `UNIQUE` |
 | `idx_change_history_file` | `change_history` | Simple |
 | `idx_sessions_status` | `sessions` | Simple |
 | `idx_sessions_updated` | `sessions` | Simple |
@@ -39,6 +40,7 @@ Los índices se crean en la definición del esquema y se gestionan con las migra
 | `idx_approvals_pending` | Contar y listar todas las aprobaciones pendientes de cualquier sesión | El panel de aprobaciones y el contador que se ve con el panel de datos cerrado |
 | `idx_context_audit_session_stage` | Ver qué documentación recibió una etapa concreta | El usuario al auditar una etapa |
 | `idx_context_audit_unico` | Rechazar una segunda auditoría de la misma terna (documento en la misma etapa) | La base, al escribir en `context_audit` |
+| `idx_flow_context_unico` | Rechazar dos aportaciones de la misma etapa y reemplazar la del flujo al re-ejecutarlo | El motor, al guardar el bloque y al leerlo para la composición |
 | `idx_change_history_file` | Ver el historial de cambios de un archivo concreto | El usuario al revertir o auditar un archivo |
 | `idx_sessions_status` | Listar las sesiones por estado, para el selector | El selector de sesiones |
 | `idx_sessions_updated` | Listar las sesiones por actividad reciente | El selector, ordenado por última actividad |
@@ -55,6 +57,7 @@ El más importante es `idx_approvals_pending`. La consulta que cuenta las aproba
 | `idx_approvals_pending` | `created_at` | Parcial: solo filas con `status = 'pendiente'` |
 | `idx_context_audit_session_stage` | `session_id`, `stage` | Agrupa la auditoría por etapa |
 | `idx_context_audit_unico` | `session_id`, `stage`, `document` | `UNIQUE`: la terna identifica la fila, así que las tres van en el índice |
+| `idx_flow_context_unico` | `session_id`, `flow`, `stage` | `UNIQUE`: identifica la aportación de una etapa y reemplaza al re-ejecutar |
 | `idx_change_history_file` | `file_path` | Historial de un archivo |
 | `idx_sessions_status` | `status` | Filtro por estado |
 | `idx_sessions_updated` | `updated_at` | Orden por actividad |
@@ -68,13 +71,14 @@ El índice parcial `idx_approvals_pending` ordena por `created_at` y no por `sta
 | `id` único de cada tabla | Índice primario de la clave primaria |
 | Un solo razonamiento por mensaje | `idx_reasoning_message`, declarado `UNIQUE` |
 | Una sola auditoría por documento y etapa | `idx_context_audit_unico`, declarado `UNIQUE` |
+| Una sola aportación por etapa y flujo en la sesión | `idx_flow_context_unico`, declarado `UNIQUE` |
 | Restricciones `CHECK` de valores | No usan índice; las valida la base al escribir |
 
 El `UNIQUE` de `idx_reasoning_message` es lo que hace efectiva la relación 1:1 entre `messages` y `reasoning` descrita en [[database/01-schema/RELATIONSHIPS]]. Sin él, la base permitiría dos razonamientos para el mismo mensaje.
 
 El `UNIQUE` de `idx_context_audit_unico` hace lo propio con la auditoría: un documento no puede entrar dos veces en la misma etapa de la misma sesión. No es solo una ayuda de rendimiento, es una regla de negocio, y por eso vive en la base y no en el código: si la comprobación estuviera en Go, un `INSERT` que no pasara por el repositorio podría duplicar la fila y la traza de auditoría dejaría de ser fiable. Ver [[database/02-rules/BUSINESS_RULES]].
 
-Los índices no imponen unicidad de negocio más allá de esas tres. No hay índices únicos sobre nombres de sesión ni sobre rutas de archivo, porque nada en las reglas del proyecto lo exige. Dos sesiones pueden llamarse igual y un archivo puede cambiarse muchas veces.
+Los índices no imponen unicidad de negocio más allá de esas cuatro. No hay índices únicos sobre nombres de sesión ni sobre rutas de archivo, porque nada en las reglas del proyecto lo exige. Dos sesiones pueden llamarse igual y un archivo puede cambiarse muchas veces.
 
 ## Notas de diseño
 

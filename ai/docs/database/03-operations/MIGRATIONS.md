@@ -38,7 +38,7 @@ Subir una migración aplicada no es lo mismo que tener un esquema válido: `user
 - Cada migración tiene un número y un nombre corto: `001-crear-schema`, `002-agregar-indice-approvals`, y así sucesivamente.
 - El número es correlativo y de tres dígitos. El nombre describe qué hace, no dónde.
 - El orden de los números es el orden de ejecución. No se reutiliza un número ni se renumera una migración ya publicada.
-- La versión del esquema es el número de la última migración aplicada. `user_version = 2` significa que se aplicaron `001` y `002`.
+- La versión del esquema es el número de la última migración aplicada. `user_version = 3` significa que se aplicaron `001`, `002` y `003`.
 
 ## 4. Datos existentes
 
@@ -60,9 +60,11 @@ Reglas:
 
 ## Nota sobre el esquema actual
 
-La base se crea ya en su versión actual (v2): las seis tablas de [[database/01-schema/SCHEMA]] más `todos`, la lista de pasos de la sesión. La creación del archivo, su esquema inicial y la migración `002-crear-todo` ocurren en el mismo paso de apertura, así que `user_version` arranca en 2. Los índices de [[database/01-schema/INDEXES]] se aplican junto con la creación, no después.
+La base se crea ya en su versión actual (v3): las seis tablas de [[database/01-schema/SCHEMA]] más `todos`, la lista de pasos de la sesión, y `flow_context`, el bloque de contexto de un flujo. La creación del archivo, su esquema inicial y las migraciones `002-crear-todo` y `003-crear-flow-context` ocurren en el mismo paso de apertura, así que `user_version` arranca en 3. Los índices de [[database/01-schema/INDEXES]] se aplican junto con la creación, no después.
 
 La migración `002-crear-todo` es aditiva: añade la tabla `todos` y su clave primaria `(session_id, position)`, sin tocar ninguna fila existente. Una base en `user_version = 1` la recibe al abrirse y pasa a la 2 sin perder nada.
+
+La migración `003-crear-flow-context` también es aditiva: añade la tabla `flow_context` y su índice único `(session_id, flow, stage)`, sin tocar ninguna fila existente. Una base en `user_version = 2` la recibe al abrirse y pasa a la 3 sin perder nada.
 
 ### Un `user_version` correcto no basta para saber que el esquema es el de la versión
 

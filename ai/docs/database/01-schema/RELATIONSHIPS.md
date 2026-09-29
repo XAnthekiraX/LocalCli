@@ -22,6 +22,8 @@ relacionado:
 | `messages` | `reasoning` | 1:1 opcional | Un mensaje de agente puede tener un razonamiento |
 | `sessions` | `approvals` | 1:N | Una sesión puede tener muchas aprobaciones |
 | `sessions` | `context_audit` | 1:N | Una sesión genera muchos registros de auditoría |
+| `sessions` | `todos` | 1:N | Una sesión tiene su lista de pasos |
+| `sessions` | `flow_context` | 1:N | Una sesión ejecuta flujos; cada ejecución deja una aportación por etapa |
 | `sessions` | `change_history` | 1:N opcional | Una sesión aplica cambios; el registro sobrevive a ella |
 
 No hay relaciones de N:N. La base de datos es un árbol que cuelga de `sessions`, sin tablas puente.
@@ -36,6 +38,8 @@ Hay dos entidades que **no** están en SQLite: la documentación del proyecto y 
 | `reasoning` | `message_id` | `messages.id` | `CASCADE` | `CASCADE` |
 | `approvals` | `session_id` | `sessions.id` | `CASCADE` | `CASCADE` |
 | `context_audit` | `session_id` | `sessions.id` | `CASCADE` | `CASCADE` |
+| `todos` | `session_id` | `sessions.id` | `CASCADE` | `CASCADE` |
+| `flow_context` | `session_id` | `sessions.id` | `CASCADE` | `CASCADE` |
 | `change_history` | `session_id` | `sessions.id` | `SET NULL` | `CASCADE` |
 
 Todas las claves foráneas son `NOT NULL` salvo la de `change_history`, que es nullable a propósito. Las cascadas en `update` son irrelevantes en la práctica porque los UUID no se reescriben nunca, pero se declaran por completitud.
@@ -44,14 +48,14 @@ Todas las claves foráneas son `NOT NULL` salvo la de `change_history`, que es n
 
 La diferencia entre `CASCADE` y `SET NULL` en `change_history` es la que sostiene una política del proyecto: **el historial de cambios de los archivos nunca se borra**.
 
-- **Al eliminar una sesión**, `messages`, `approvals` y `context_audit` se borran en cascada con ella, porque son parte de la conversación y del estado de ejecución. Lo mismo ocurre con `reasoning`, que cuelga de `messages`.
+- **Al eliminar una sesión**, `messages`, `approvals`, `context_audit`, `todos` y `flow_context` se borran en cascada con ella, porque son parte de la conversación y del estado de ejecución. Lo mismo ocurre con `reasoning`, que cuelga de `messages`.
 - **`change_history` sobrevive.** Su `session_id` pasa a `NULL` con `SET NULL`. El registro de qué se tocó en los archivos del proyecto se conserva aunque la sesión desaparezca, tal como exige [[specs/SPEC-ARCHIVOS]].
 
 Esto no contradice que el borrado de sesiones sea definitivo. Son dos planos distintos:
 
 | Tabla | Al borrar la sesión | Por qué |
 |---|---|---|
-| `messages`, `reasoning`, `approvals`, `context_audit` | Desaparecen | Son la conversación y el estado de ejecución, desechables |
+| `messages`, `reasoning`, `approvals`, `context_audit`, `todos`, `flow_context` | Desaparecen | Son la conversación y el estado de ejecución, desechables |
 | `change_history` | Sobrevive con `session_id` en `NULL` | Es el registro permanente de los cambios en los archivos del proyecto |
 
 Cuando una fila queda con `session_id` en `NULL`, `session_id` deja de ser una relación utilizable: ya no apunta a ninguna sesión. Los índices sobre esa columna lo tratan como `NULL` y no lo incluyen, lo que es el comportamiento deseado.
@@ -67,6 +71,8 @@ sessions
   ├─ messages ── reasoning
   ├─ approvals
   ├─ context_audit
+  ├─ todos
+  ├─ flow_context
   └─ change_history   (sobrevive: SET NULL)
 ```
 

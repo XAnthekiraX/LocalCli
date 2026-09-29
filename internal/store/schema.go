@@ -17,3 +17,11 @@ var schemaSQL string
 //
 //go:embed todo.sql
 var todoSQL string
+
+// flowContextSQL es el DDL del bloque de contexto de un flujo (migración 003),
+// embebido igual que el esquema base para que el binario siga siendo portable.
+//
+// source: flowcontext.sql — única copia del DDL del bloque de contexto.
+//
+//go:embed flowcontext.sql
+var flowContextSQL string

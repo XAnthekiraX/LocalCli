@@ -133,11 +133,11 @@ func TestRegresionElTurnoMandaLaVentana(t *testing.T) {
 	ag := Agente{Nombre: "plan", Prompt: "p"}
 
 	// Sin ventana, el servidor simula el corte por defecto de Ollama.
-	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, nil); err == nil {
+	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, nil); err == nil {
 		t.Fatal("sin num_ctx debe aparecer el corte simulado de Ollama")
 	}
 	// Con ventana, el turno completa igual que un modelo sin herramientas.
-	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 16384, nil)
+	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 16384, false, nil)
 	if err != nil {
 		t.Fatalf("con num_ctx no debe fallar: %v", err)
 	}

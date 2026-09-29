@@ -19,7 +19,7 @@ import "localcli/internal/tools"
 // con el contexto de cada etapa (ver engine.go): son las que obligan a resolver
 // las seis preguntas y a cerrar con la salida estándar, sin implementar.
 var ReglasResolver = []string{
-	"AGENTS.md es la puerta de entrada: identifica las capas y el flujo aplicable antes de nada.",
+	"AGENTS.md (en la raíz del proyecto, no en ai/docs) es la puerta de entrada: identifica las capas y el flujo aplicable antes de nada.",
 	"ai/docs/PROJECT.md es el índice: úsalo para orientarte.",
 	"No cargues todo ai/docs: pide solo los documentos relevantes siguiendo las dependencias declaradas en el frontmatter.",
 	"No afirmes nada sin evidencia: cita el archivo y la línea.",
@@ -33,11 +33,12 @@ var ReglasResolver = []string{
 // diagnostica y entrega un plan, sin implementar.
 func FlujoResolver() Flujo {
 	return Flujo{
-		Nombre:      "resolver",
-		Comando:     "/resolver",
-		Descripcion: "resolver un problema",
-		Peticion:    "diagnosticar un problema y entregar un plan de solución",
-		Reglas:      ReglasResolver,
+		Nombre:         "resolver",
+		Comando:        "/resolver",
+		Descripcion:    "resolver un problema",
+		Peticion:       "diagnosticar un problema y entregar un plan de solución",
+		BloqueContexto: true,
+		Reglas:         ReglasResolver,
 		Etapas: []Etapa{
 			// 1. Recibir la tarea.
 			{ID: "recibir_tarea", Nombre: "Recibir la tarea", Agente: tools.AgentePlan,

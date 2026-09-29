@@ -87,3 +87,25 @@ func (t *Todos) Reemplazar(sessionID string, items []Todo) error {
 
 // Leer devuelve la lista de pasos de una sesión, en orden.
 func (t *Todos) Leer(sessionID string) ([]Todo, error) { return LeerTodos(t.db, sessionID) }
+
+// Bloques es el repositorio del bloque de contexto de un flujo sobre una
+// conexión viva.
+type Bloques struct{ db *sql.DB }
+
+// NuevosBloques envuelve la conexión para operar sobre el bloque de contexto.
+func NuevosBloques(db *sql.DB) *Bloques { return &Bloques{db: db} }
+
+// Limpiar deja vacío el bloque de un flujo en una sesión.
+func (b *Bloques) Limpiar(sessionID, flujo string) error {
+	return LimpiarBloque(b.db, sessionID, flujo)
+}
+
+// Guardar inserta o reemplaza la aportación de una etapa.
+func (b *Bloques) Guardar(sessionID string, x *FlowContext) error {
+	return GuardarEntradaBloque(b.db, sessionID, x)
+}
+
+// Leer devuelve las aportaciones de un flujo, en orden de secuencia.
+func (b *Bloques) Leer(sessionID, flujo string) ([]FlowContext, error) {
+	return EntradasDelBloque(b.db, sessionID, flujo)
+}

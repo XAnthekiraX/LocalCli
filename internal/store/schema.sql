@@ -1,7 +1,9 @@
 -- schema.sql — DDL del esquema v1 de LocalCli (T-B002-03).
--- Seis tablas, sin séptima: la versión vive en PRAGMA user_version
--- (MIGRATIONS.md). Convenciones de SCHEMA.md §1: id TEXT UUID v4, fechas
--- TEXT ISO 8601 UTC, booleanos enteros 0/1, ausencia = NULL.
+-- Seis tablas en su versión 1; las migraciones 002 y 003 añaden `todos` (la
+-- lista de pasos) y `flow_context` (el bloque de contexto de un flujo). La
+-- versión vive en PRAGMA user_version (MIGRATIONS.md). Convenciones de
+-- SCHEMA.md §1: id TEXT UUID v4, fechas TEXT ISO 8601 UTC, booleanos enteros
+-- 0/1, ausencia = NULL.
 
 CREATE TABLE sessions (
     id         TEXT PRIMARY KEY NOT NULL,                -- UUID v4
