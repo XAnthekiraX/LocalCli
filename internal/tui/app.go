@@ -167,9 +167,12 @@ type App struct {
 	// turno— del `inactiva` previo a arrancar, que no lo toca.
 	enTurno bool
 	// latido es la generación del contador en vivo: identifica la cadena de
-	// ticks vigente. Al enviar se incrementa, y una cadena de una generación
+	// ticks vigente. Al arrancar se incrementa, y una cadena de una generación
 	// anterior se detiene en su siguiente tick, así que nunca se acumulan.
 	latido uint64
+	// animando dice si la cadena de latidos vigente sigue viva. Evita arrancar
+	// una segunda cadena con cada evento: solo se arma cuando no hay ninguna.
+	animando bool
 	// frame es el frame del indicador en vivo ([⠋ Pensando]): avanza un paso
 	// por latido mientras hay turno. El glifo lo elige glifoActividad.
 	frame int
@@ -296,6 +299,20 @@ func tickCmd(gen uint64) tea.Cmd {
 	return tea.Tick(intervaloLatido, func(time.Time) tea.Msg { return tickMsg{gen: gen} })
 }
 
+// asegurarLatido arranca la cadena de latidos si hay algo en vivo y no hay ya
+// una corriendo. Es el único punto que incrementa la generación: así el
+// contador y el glifo se reanudan al activar una sesión que trabaja o al llegar
+// un evento, no solo al enviar. Sin actividad —o con una cadena ya viva— no
+// hace nada.
+func (a *App) asegurarLatido() tea.Cmd {
+	if !a.enActividad() || a.animando {
+		return nil
+	}
+	a.animando = true
+	a.latido++
+	return tickCmd(a.latido)
+}
+
 // Update maneja las teclas, el tamaño y los mensajes que llegan por eventos.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
@@ -338,8 +355,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case eventoMsg:
 		a.AplicarEvento(m.Evento)
 		// La escucha se re-arma: sin esto, tras el primer evento la vista
-		// quedaría sorda (T-F010-06).
-		return a, a.escucharCmd()
+		// quedaría sorda (T-F010-06). Además se asegura el latido: un evento que
+		// abre actividad (un token, una herramienta) reanuda el contador y el
+		// glifo aunque el turno no lo haya arrancado esta vista.
+		return a, tea.Batch(a.escucharCmd(), a.asegurarLatido())
 	case sesionesMsg:
 		// La lista llega cuando la lectura a `store` termina: rellena el modal
 		// que la pidió. Si ya no está abierto, el mensaje se ignora (llegó
@@ -388,14 +407,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.Panel.ContextoTokens = m.ContextoTokens
 			a.Panel.LimiteTokens = m.LimiteTokens
 			a.Panel.TokensEstimados = true
+			// Cargar vacía el chat y deja `inicio` a cero: si la sesión retomada
+			// sigue trabajando, se reanuda su reloj para que el contador y el
+			// glifo no se queden mudos tras el cambio.
+			if a.Panel.Estado == session.EstadoTrabajando {
+				a.Chat.ReanudarTurno()
+				return a, a.asegurarLatido()
+			}
 		}
 		return a, nil
 	case enviadoMsg:
-		// La petición ya salió: arranca una cadena de latidos nueva. Incrementar
-		// la generación invalida la anterior, de modo que un envío justo al
-		// cerrar un turno no deja dos cadenas corriendo.
-		a.latido++
-		return a, tickCmd(a.latido)
+		// La petición ya salió: se asegura el latido del contador y del glifo.
+		// Al enviar, el chat ya arrancó su turno (`AñadirUsuario`), así que hay
+		// actividad y la cadena se arma.
+		return a, a.asegurarLatido()
 	case copiadoExpiradoMsg:
 		// El aviso [Copiado] se apaga solo al vencer su tiempo; un temporizador
 		// de una copia anterior no apaga el aviso de una copia nueva.
@@ -404,14 +429,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case tickMsg:
-		// El contador late solo mientras hay un turno vivo y la cadena sea la
-		// vigente; al cerrarse el turno (o quedar obsoleta la generación), el
+		// El contador late mientras hay algo en vivo y la cadena sea la vigente;
+		// al dejar de haber actividad (o quedar obsoleta la generación), el
 		// siguiente latido ya no se re-arma y el contador se detiene solo. Cada
 		// latido avanza un frame del indicador en vivo.
-		if a.Chat.HayTurno() && m.gen == a.latido {
+		if m.gen != a.latido {
+			return a, nil
+		}
+		if a.enActividad() {
 			a.frame++
 			return a, tickCmd(m.gen)
 		}
+		a.animando = false
 		return a, nil
 	case errorMsg:
 		// Un envío que no llegó a arrancar no deja turno que fechar; uno que ya
@@ -704,10 +733,12 @@ func (a *App) nuevaSesion() tea.Cmd {
 		return nil
 	}
 	// activar ya vacía el chat y el razonamiento de la sesión anterior: una
-	// sesión nueva no hereda nada de la que se estaba viendo.
+	// sesión nueva no hereda nada de la que se estaba viendo. Se pide su
+	// historial —vacío— para que los números del contexto dejen de ser los de la
+	// sesión anterior (SPEC-PANEL-CONTEXTO).
 	a.activar(ses)
 	a.Vista = VistaPrincipal
-	return nil
+	return tea.Batch(a.cmdHistorial(ses.ID), a.asegurarLatido())
 }
 
 // eliminarSesion borra la sesión resaltada. Si está trabajando (o esperando
@@ -765,8 +796,16 @@ func (a *App) volverABienvenida() {
 	a.Panel.Capa = ""
 	a.Panel.Tareas = nil
 	a.Chat.Vaciar()
-	a.Chat.MostrarRazonamiento = false
-	a.Razon = NuevoRazonamiento()
+	// El razonamiento revelado es una preferencia de la vista: no se pierde al
+	// quedarse sin sesión.
+	a.Chat.MostrarRazonamiento = a.Razon.Visible
+	razon := NuevoRazonamiento()
+	razon.Visible = a.Razon.Visible
+	a.Razon = razon
+	// Sin sesión no hay contexto que medir.
+	a.Panel.ContextoTokens = 0
+	a.Panel.LimiteTokens = 0
+	a.Panel.TokensEstimados = false
 	a.enTurno = false
 	a.PidiendoCancelarEsc = false
 	a.iniciarTurno()
@@ -991,12 +1030,23 @@ func (a *App) activar(ses *session.Sesion) {
 		a.Panel.Sesion = ses.ID
 	}
 	a.Chat.Vaciar()
-	a.Chat.MostrarRazonamiento = false
-	a.Razon = NuevoRazonamiento()
+	// El razonamiento revelado es una preferencia de la vista, no de la sesión:
+	// al cambiar de sesión se conserva el `Ctrl+R` y solo se vacía lo acumulado.
+	razon := NuevoRazonamiento()
+	razon.Visible = a.Razon.Visible
+	a.Razon = razon
+	a.Chat.MostrarRazonamiento = a.Razon.Visible
 	a.Panel.Tareas = nil
-	// El turno que se seguía era de la sesión anterior: al cambiar de sesión no
-	// se sigue midiendo, para que un evento suyo no cierre el turno de esta.
-	a.enTurno = false
+	// Los números del contexto son de la sesión cargada: se dejan a cero hasta
+	// que llegue su historial, para no seguir mostrando los de la anterior
+	// (SPEC-PANEL-CONTEXTO).
+	a.Panel.ContextoTokens = 0
+	a.Panel.LimiteTokens = 0
+	a.Panel.TokensEstimados = false
+	// El turno que se seguía era de la sesión anterior. Si la destino ya está
+	// trabajando, su turno se retoma: `enTurno` queda encendido para que su
+	// cierre se procese, y el reloj se arranca al cargar su historial.
+	a.enTurno = ses.Estado == session.EstadoTrabajando
 	a.PidiendoCancelarEsc = false
 	a.iniciarTurno()
 }

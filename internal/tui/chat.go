@@ -111,6 +111,13 @@ func (c *Chat) Transcurrido() time.Duration {
 // a arrancar (el envío falló), así que no hay respuesta que fechar.
 func (c *Chat) CancelarTurno() { c.inicio = time.Time{} }
 
+// ReanudarTurno vuelve a arrancar el contador del turno en curso. Lo usa la
+// vista al retomar una sesión que ya estaba trabajando: su turno sigue vivo en
+// segundo plano, pero el inicio real no se persiste, así que el tiempo se cuenta
+// desde el cambio. Sin esto, cargar el historial dejaría el contador y el glifo
+// mudos aunque la sesión trabajara.
+func (c *Chat) ReanudarTurno() { c.inicio = time.Now() }
+
 // AñadirSistema añade una línea del sistema (un aviso, el desenlace de un
 // turno). Va como mensaje para que quede en el hilo, no en una barra aparte.
 func (c *Chat) AñadirSistema(texto string) {

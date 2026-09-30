@@ -276,11 +276,24 @@ func (a *App) escucharCmd() tea.Cmd {
 	return Suscribir(a.eventos)
 }
 
+// esDeOtraSesion dice si un evento pertenece a una sesión distinta de la
+// activa. La vista pinta la sesión activa y solo esa: un token, una herramienta
+// o una etapa de otra sesión no se cuelan en su chat ni en su panel
+// (DOMAIN §1: "No hay relación entre sesiones"). Un evento sin `sesion` no se
+// puede atribuir —es de alcance de proyecto— y se acepta tal cual.
+func (a *App) esDeOtraSesion(e Evento) bool {
+	s := e.Datos["sesion"]
+	return s != "" && s != a.Panel.SesionID
+}
+
 // AplicarEvento traduce un evento del motor a lo que se ve. Es el único sitio
 // donde la vista "entiende" el motor, y lo hace sin decidir nada: pinta.
 func (a *App) AplicarEvento(e Evento) {
 	switch e.Nombre {
 	case EventoToken:
+		if a.esDeOtraSesion(e) {
+			return
+		}
 		texto := e.Datos["texto"]
 		if texto == "" {
 			texto = e.Datos["content"]
@@ -334,8 +347,13 @@ func (a *App) AplicarEvento(e Evento) {
 			a.Panel.Sesion = nombre
 		}
 	case session.EventoNotificacion:
-		// Llega aunque no se esté viendo esa sesión (SPEC-SESIONES).
-		a.cerrarSegmentoEnVivo()
+		// Llega aunque no se esté viendo esa sesión (SPEC-SESIONES): la línea se
+		// pinta igual. Pero solo cierra el segmento en vivo cuando es de la
+		// sesión activa: una notificación de otra no puede cortar el razonamiento
+		// o la respuesta que se están viendo.
+		if !a.esDeOtraSesion(e) {
+			a.cerrarSegmentoEnVivo()
+		}
 		a.Chat.AñadirSistema(notificacionEnTexto(e.Datos))
 	case EventoPeticionAprobacion:
 		a.Aprobs.Fijar(append(a.Aprobs.Items, Aprobacion{
@@ -369,16 +387,25 @@ func (a *App) AplicarEvento(e Evento) {
 		// Cada etapa de un flujo corre como un sub-proceso: la vista solo anuncia
 		// su nombre. El texto de un paso intermedio no llega al chat (el motor lo
 		// corre en silencio); la entrega final sí.
+		if a.esDeOtraSesion(e) {
+			return
+		}
 		a.cerrarSegmentoEnVivo()
 		a.Chat.AñadirSistema(LineaProceso(nombreDeEtapa(e.Datos), false))
 	case EventoEtapaTerminada:
 		// Sin línea: el último paso del flujo escribe la entrega final, y los
 		// intermedios no se muestran.
 	case EventoEtapaFallida:
+		if a.esDeOtraSesion(e) {
+			return
+		}
 		a.cerrarSegmentoEnVivo()
 		a.Chat.AñadirSistema(LineaProceso(nombreDeEtapa(e.Datos), true))
 	case EventoFlujoPausado, EventoFlujoReanudado, EventoFlujoCancelado:
 		// El estado del flujo se refleja en el hilo (EVENTS.md §2, T-F010-05).
+		if a.esDeOtraSesion(e) {
+			return
+		}
 		a.cerrarSegmentoEnVivo()
 		a.Chat.AñadirSistema(textoDeFlujo(e.Nombre))
 	case EventoHerramientaInvocada:
@@ -388,6 +415,9 @@ func (a *App) AplicarEvento(e Evento) {
 		// hilo queda una línea compacta que se completa al terminar: el verbo y
 		// el objetivo —la ruta, el patrón o el comando—, nunca el resto de
 		// argumentos.
+		if a.esDeOtraSesion(e) {
+			return
+		}
 		a.herramientaEnCurso = e.Datos["herramienta"]
 		// La herramienta se interpone en el turno: lo que el modelo haya dicho
 		// hasta aquí se cierra como un intercambio para que la línea quede debajo,
@@ -399,6 +429,9 @@ func (a *App) AplicarEvento(e Evento) {
 	case EventoHerramientaResultado:
 		// El resultado no lleva la salida: solo si terminó bien, la medida y si
 		// se recortó. Al cerrar, el indicador vuelve a «Pensando» o «Generando».
+		if a.esDeOtraSesion(e) {
+			return
+		}
 		a.herramientaEnCurso = ""
 		a.Chat.CerrarHerramienta(e.Datos["herramienta"], e.Datos["ok"] == "true",
 			e.Datos["truncado"] == "true", e.Datos["medida"], e.Datos["error"])
@@ -406,7 +439,11 @@ func (a *App) AplicarEvento(e Evento) {
 		// El consumo del turno alimenta la línea bajo la entrada
 		// (SPEC-PANEL-CONTEXTO). El total del contexto del chat y su límite
 		// alimentan la fila CONTEXTO del panel: el contexto es una estimación
-		// sobre los mensajes de la sesión, no el consumo del turno.
+		// sobre los mensajes de la sesión, no el consumo del turno. Es de la
+		// sesión activa: el de otra no pisa sus números.
+		if a.esDeOtraSesion(e) {
+			return
+		}
 		if n, err := enteroDe(e.Datos["salida"]); err == nil {
 			a.Panel.Tokens = n
 		}

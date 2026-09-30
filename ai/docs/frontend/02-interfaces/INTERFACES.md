@@ -41,6 +41,8 @@ De [[backend/04-infrastructure/EVENTS]] llega cada evento y así reacciona la pa
 | `cambio_aplicado`                           | Hoy no cambia nada en pantalla: el estado de git se leyó al arrancar y el panel no lo vuelve a consultar. El evento queda reservado para cuando la lectura deje de ser solo de arranque |
 | `contexto_auditado`                         | Queda disponible para consulta; no se pinta por defecto                                                                                                                                 |
 
+**La vista pinta una sola sesión.** De los eventos que llevan `sesion`, la TUI aplica los de la sesión activa y descarta los de las demás, que siguen trabajando en segundo plano y no deben mezclarse ([[backend/01-domain/DOMAIN]] §1). `notificacion` es la excepción: se ve aunque sea de otra. Al activar una sesión se refresca el CONTEXTO con su historial, se conserva el `Ctrl+R` y, si la sesión está trabajando, se reanuda su contador y su glifo ([Sub Proceso] y las líneas de herramienta de otro turno no entran).
+
 ## 1.1 La línea de herramienta
 
 Es lo que hace visible el trabajo del agente, y sin ella no habría nada que ver.
