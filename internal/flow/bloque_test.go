@@ -106,6 +106,9 @@ func TestFlujoConBloqueOptimizaYGuardaCadaFaseYComponeSinHerramientas(t *testing
 	if !strings.Contains(final.Contexto, "opt(ok)") {
 		t.Errorf("el bloque debe llevar las aportaciones optimizadas: %q", final.Contexto)
 	}
+	if !strings.Contains(final.Contexto, "Pregunta: ¿A?") || !strings.Contains(final.Contexto, "Respuesta: opt(ok)") {
+		t.Errorf("el bloque debe llevar la pregunta y la respuesta de cada etapa: %q", final.Contexto)
+	}
 }
 
 // TestFlujoConBloqueSinOptimizadorSigueGuardando — sin optimizador conectado el

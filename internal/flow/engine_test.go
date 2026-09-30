@@ -61,6 +61,26 @@ func (s *stubAprobador) Aprobar(ctx context.Context, descripcion string) (bool, 
 	return s.aprobar, nil
 }
 
+// stubAgenteGuion devuelve una respuesta por llamada, en orden. Agotado el
+// guion, repite la última: sirve para forzar una etapa que no responde y su
+// reintento.
+type stubAgenteGuion struct {
+	respuestas []string
+	peticiones []PeticionEtapa
+}
+
+func (s *stubAgenteGuion) Ejecutar(ctx context.Context, p PeticionEtapa) (Resultado, error) {
+	s.peticiones = append(s.peticiones, p)
+	r := ""
+	if len(s.respuestas) > 0 {
+		r = s.respuestas[0]
+		if len(s.respuestas) > 1 {
+			s.respuestas = s.respuestas[1:]
+		}
+	}
+	return Resultado{Texto: r}, nil
+}
+
 type stubEmisor struct{ eventos []Evento }
 
 func (s *stubEmisor) Emitir(e Evento) { s.eventos = append(s.eventos, e) }
@@ -76,7 +96,7 @@ func (s *stubEmisor) nombres() []string {
 // stubRegistro recoge las líneas de sub-proceso que el motor manda guardar.
 type stubRegistro struct{ procesos []string }
 
-func (s *stubRegistro) ProcesoEtapa(nombre string, fallida bool) {
+func (s *stubRegistro) ProcesoEtapa(ctx context.Context, nombre string, fallida bool) {
 	linea := nombre
 	if fallida {
 		linea += ":falló"
@@ -90,7 +110,7 @@ func (s *stubRegistro) ProcesoEtapa(nombre string, fallida bool) {
 // historial recuerde los pasos de un flujo al volver a la sesión.
 func TestElRegistroGuardaElSubProcesoDeCadaEtapa(t *testing.T) {
 	reg := &stubRegistro{}
-	f := FlujoPlanificacion()
+	f := flujoConAprobacion()
 	m := &Motor{
 		Contexto:  &stubContexto{},
 		Agente:    &stubAgente{},
@@ -109,7 +129,7 @@ func TestElRegistroGuardaElSubProcesoDeCadaEtapa(t *testing.T) {
 func TestElRegistroMarcaLaEtapaQueFalla(t *testing.T) {
 	reg := &stubRegistro{}
 	m := &Motor{Contexto: &stubContexto{}, Agente: &stubAgente{fallar: true}, Registro: reg}
-	if _, err := m.EjecutarFlujo(context.Background(), FlujoResolver(), "objetivo"); !errors.Is(err, ErrEtapaFallida) {
+	if _, err := m.EjecutarFlujo(context.Background(), flujoDeDosEtapas(), "objetivo"); !errors.Is(err, ErrEtapaFallida) {
 		t.Fatalf("err = %v, quiero E_STAGE_FAILED", err)
 	}
 	ultimo := reg.procesos[len(reg.procesos)-1]
@@ -121,7 +141,7 @@ func TestElRegistroMarcaLaEtapaQueFalla(t *testing.T) {
 // Sin registro conectado el motor no falla: el sub-proceso solo se ve en vivo.
 func TestSinRegistroElFlujoNoSeRompe(t *testing.T) {
 	m := &Motor{Contexto: &stubContexto{}, Agente: &stubAgente{}, Aprobador: &stubAprobador{aprobar: true}}
-	if _, err := m.EjecutarFlujo(context.Background(), FlujoPlanificacion(), "objetivo"); err != nil {
+	if _, err := m.EjecutarFlujo(context.Background(), flujoConAprobacion(), "objetivo"); err != nil {
 		t.Fatalf("EjecutarFlujo: %v", err)
 	}
 }
@@ -135,7 +155,7 @@ func TestPlanTerminaSinEscribir(t *testing.T) {
 		Agente:    &stubAgente{traza: &traza},
 		Aprobador: &stubAprobador{traza: &traza, aprobar: true},
 	}
-	estado, err := m.EjecutarFlujo(context.Background(), FlujoPlanificacion(), "documentar")
+	estado, err := m.EjecutarFlujo(context.Background(), flujoDePruebaBloque(), "documentar")
 	if err != nil {
 		t.Fatalf("EjecutarFlujo: %v", err)
 	}
@@ -158,7 +178,7 @@ func TestBuildSoloTrasAprobacion(t *testing.T) {
 		Agente:    &stubAgente{traza: &traza},
 		Aprobador: &stubAprobador{traza: &traza, aprobar: true},
 	}
-	if _, err := m.EjecutarFlujo(context.Background(), FlujoTrabajo(task.AccionCrear), "crear x"); err != nil {
+	if _, err := m.EjecutarFlujo(context.Background(), flujoConAprobacion(), "crear x"); err != nil {
 		t.Fatalf("EjecutarFlujo: %v", err)
 	}
 	primerBuild, primeraAprobacion := -1, -1
@@ -178,34 +198,29 @@ func TestBuildSoloTrasAprobacion(t *testing.T) {
 	}
 }
 
-// --- T-B010-06: el ciclo resolver sigue la secuencia documentada -----------
+// --- T-B010-06: las etapas corren en orden, con su agente ------------------
 
-func TestResolverSecuenciaDocumentada(t *testing.T) {
+func TestLasEtapasCorrenEnOrdenConSuAgente(t *testing.T) {
 	var traza []string
 	m := &Motor{
 		Contexto:  &stubContexto{},
 		Agente:    &stubAgente{traza: &traza},
 		Aprobador: &stubAprobador{traza: &traza, aprobar: true},
 	}
-	if _, err := m.EjecutarFlujo(context.Background(), FlujoResolver(), "arreglar x"); err != nil {
+	if _, err := m.EjecutarFlujo(context.Background(), flujoConAprobacion(), "trabajar"); err != nil {
 		t.Fatalf("EjecutarFlujo: %v", err)
-	}
-	quiero := []string{
-		"agente:" + tools.AgentePlan, // recibir_tarea
-		"agente:" + tools.AgentePlan, // entender_problema
-		"agente:" + tools.AgentePlan, // buscar_contexto
-		"agente:" + tools.AgentePlan, // investigar
-		"agente:" + tools.AgentePlan, // diagnosticar
-		"agente:" + tools.AgentePlan, // archivos_afectados
-		"agente:" + tools.AgentePlan, // diseno
-		"agente:" + tools.AgentePlan, // plan_ejecucion
-		"agente:" + tools.AgentePlan, // entregar_plan
 	}
 	var soloAgentes []string
 	for _, p := range traza {
 		if strings.HasPrefix(p, "agente:") {
 			soloAgentes = append(soloAgentes, p)
 		}
+	}
+	quiero := []string{
+		"agente:" + tools.AgentePlan,
+		"agente:" + tools.AgentePlan,
+		"agente:" + tools.AgenteBuild,
+		"agente:" + tools.AgentePlan,
 	}
 	if strings.Join(soloAgentes, ",") != strings.Join(quiero, ",") {
 		t.Fatalf("secuencia = %v, quiero %v", soloAgentes, quiero)
@@ -218,16 +233,17 @@ func TestResolverSecuenciaDocumentada(t *testing.T) {
 func TestElBriefDelFlujoLlegaAlAgente(t *testing.T) {
 	ag := &stubAgente{}
 	m := &Motor{Contexto: &stubContexto{}, Agente: ag, Aprobador: &stubAprobador{aprobar: true}}
-	if _, err := m.EjecutarFlujo(context.Background(), FlujoResolver(), "arreglar x"); err != nil {
+	f := flujoConAprobacion()
+	if _, err := m.EjecutarFlujo(context.Background(), f, "trabajar"); err != nil {
 		t.Fatalf("EjecutarFlujo: %v", err)
 	}
 	if !strings.Contains(ag.contexto, "Reglas del flujo:") {
 		t.Errorf("el contexto no lleva las reglas del flujo: %q", ag.contexto)
 	}
-	if !strings.Contains(ag.contexto, ReglasResolver[0]) {
+	if !strings.Contains(ag.contexto, f.Reglas[0]) {
 		t.Errorf("el contexto no lleva la primera regla del flujo: %q", ag.contexto)
 	}
-	// La última etapa de resolver es `entregar_plan`, con `plan`.
+	// La última etapa es la entrega: su instrucción viaja en el brief.
 	if !strings.Contains(ag.contexto, "No implementes nada") {
 		t.Errorf("el contexto no lleva la instrucción de la etapa: %q", ag.contexto)
 	}
@@ -241,7 +257,7 @@ func TestElBriefDelFlujoLlegaAlAgente(t *testing.T) {
 func TestCadaEtapaRecibeElResumenDeLaAnterior(t *testing.T) {
 	ag := &stubAgente{}
 	m := &Motor{Contexto: &stubContexto{}, Agente: ag, Aprobador: &stubAprobador{aprobar: true}}
-	if _, err := m.EjecutarFlujo(context.Background(), FlujoResolver(), "objetivo"); err != nil {
+	if _, err := m.EjecutarFlujo(context.Background(), flujoDePruebaBloque(), "objetivo"); err != nil {
 		t.Fatalf("EjecutarFlujo: %v", err)
 	}
 	if len(ag.peticiones) < 2 {
@@ -254,17 +270,18 @@ func TestCadaEtapaRecibeElResumenDeLaAnterior(t *testing.T) {
 	if !strings.Contains(seg, "Resultados de los pasos anteriores") {
 		t.Fatalf("la segunda etapa no recibió lo resuelto por la anterior: %q", seg)
 	}
-	if !strings.Contains(seg, "### Recibir la tarea") {
+	if !strings.Contains(seg, "### Fase A") {
 		t.Errorf("el bloque acumulado no lleva el nombre de la etapa anterior: %q", seg)
 	}
 }
 
-// TestEtapasIntermediasSilenciosas — una etapa intermedia sin aprobación corre
-// en silencio (no se muestra en el chat ni se persiste); la última se muestra.
+// TestEtapasIntermediasSilenciosas — una etapa intermedia sin aprobación ni
+// respuesta en el chat corre en silencio (no se muestra en el chat ni se
+// persiste); la última se muestra.
 func TestEtapasIntermediasSilenciosas(t *testing.T) {
 	ag := &stubAgente{}
 	m := &Motor{Contexto: &stubContexto{}, Agente: ag, Aprobador: &stubAprobador{aprobar: true}}
-	if _, err := m.EjecutarFlujo(context.Background(), FlujoResolver(), "objetivo"); err != nil {
+	if _, err := m.EjecutarFlujo(context.Background(), flujoDePruebaBloque(), "objetivo"); err != nil {
 		t.Fatalf("EjecutarFlujo: %v", err)
 	}
 	ult := len(ag.peticiones) - 1
@@ -279,8 +296,94 @@ func TestEtapasIntermediasSilenciosas(t *testing.T) {
 			t.Errorf("la etapa intermedia %q debería ser silenciosa", p.Etapa)
 		}
 	}
-	if ag.peticiones[0].Etapa != "Recibir la tarea" {
+	if ag.peticiones[0].Etapa != "Fase A" {
 		t.Errorf("la etapa no lleva su nombre: %q", ag.peticiones[0].Etapa)
+	}
+}
+
+// TestUnaEtapaConRespuestaEnChatNoEsSilenciosa — una etapa intermedia con
+// `respuesta_en_chat` se muestra aunque no sea la última: decide la bandera, no
+// la posición.
+func TestUnaEtapaConRespuestaEnChatNoEsSilenciosa(t *testing.T) {
+	f := Flujo{
+		Nombre:   "visible",
+		Comando:  "/visible",
+		Pregunta: "el resultado",
+		Etapas: []Etapa{
+			{ID: "a", Nombre: "Fase A", Agente: tools.AgentePlan, Pregunta: "¿A?", RespuestaEnChat: true},
+			{ID: "final", Nombre: "Componer", Agente: tools.AgentePlan, Pregunta: "¿final?", Entrega: true},
+		},
+	}
+	ag := &stubAgente{}
+	m := &Motor{Contexto: &stubContexto{}, Agente: ag}
+	if _, err := m.EjecutarFlujo(context.Background(), f, "objetivo"); err != nil {
+		t.Fatalf("EjecutarFlujo: %v", err)
+	}
+	if ag.peticiones[0].Silenciosa {
+		t.Error("una etapa con `respuesta_en_chat` no debe correr en silencio")
+	}
+}
+
+// TestElBriefDeLaEtapaLlevaSuPregunta — la pregunta de la etapa viaja en el
+// contexto: sin ella el modelo no sabe qué responder y la etapa queda muda.
+func TestElBriefDeLaEtapaLlevaSuPregunta(t *testing.T) {
+	ag := &stubAgente{}
+	m := &Motor{Contexto: &stubContexto{}, Agente: ag}
+	if _, err := m.EjecutarFlujo(context.Background(), flujoDePruebaBloque(), "objetivo"); err != nil {
+		t.Fatalf("EjecutarFlujo: %v", err)
+	}
+	if !strings.Contains(ag.peticiones[0].Contexto, "¿A?") {
+		t.Errorf("el brief no lleva la pregunta de la etapa: %q", ag.peticiones[0].Contexto)
+	}
+}
+
+// TestLaVentanaLlevaPreguntaYRespuesta — la etapa siguiente recibe la pregunta
+// y la respuesta de la anterior: es la ventana de contexto de la spec.
+func TestLaVentanaLlevaPreguntaYRespuesta(t *testing.T) {
+	ag := &stubAgente{}
+	m := &Motor{Contexto: &stubContexto{}, Agente: ag}
+	if _, err := m.EjecutarFlujo(context.Background(), flujoDePruebaBloque(), "objetivo"); err != nil {
+		t.Fatalf("EjecutarFlujo: %v", err)
+	}
+	seg := ag.peticiones[1].Contexto
+	if !strings.Contains(seg, "Pregunta: ¿A?") {
+		t.Errorf("la ventana no lleva la pregunta anterior: %q", seg)
+	}
+	if !strings.Contains(seg, "Respuesta: ok") {
+		t.Errorf("la ventana no lleva la respuesta anterior: %q", seg)
+	}
+}
+
+// TestUnaEtapaSinRespuestaSeReintentaYFalla — una etapa que no responde se
+// reintenta una vez y, si sigue muda, el flujo falla con E_STAGE_FAILED en vez
+// de encadenar "(sin resultado)".
+func TestUnaEtapaSinRespuestaSeReintentaYFalla(t *testing.T) {
+	ag := &stubAgenteGuion{respuestas: []string{"", ""}}
+	emi := &stubEmisor{}
+	m := &Motor{Contexto: &stubContexto{}, Agente: ag, Eventos: emi}
+	_, err := m.EjecutarFlujo(context.Background(), flujoDePruebaBloque(), "objetivo")
+	if !errors.Is(err, ErrEtapaFallida) {
+		t.Fatalf("quiero E_STAGE_FAILED; err = %v", err)
+	}
+	if len(ag.peticiones) != 2 {
+		t.Errorf("peticiones = %d, quiero 2 (la etapa y su reintento)", len(ag.peticiones))
+	}
+	if !contieneStr(emi.nombres(), EventoEtapaFallida) {
+		t.Errorf("eventos = %v, quiero %s", emi.nombres(), EventoEtapaFallida)
+	}
+}
+
+// TestUnaEtapaQueRespondeTrasElReintento — si el reintento responde, el flujo
+// sigue: el reintento no es un fallo, es una segunda oportunidad.
+func TestUnaEtapaQueRespondeTrasElReintento(t *testing.T) {
+	ag := &stubAgenteGuion{respuestas: []string{"", "ok"}}
+	m := &Motor{Contexto: &stubContexto{}, Agente: ag}
+	if _, err := m.EjecutarFlujo(context.Background(), flujoDePruebaBloque(), "objetivo"); err != nil {
+		t.Fatalf("EjecutarFlujo: %v", err)
+	}
+	// Fase A se reintenta (2) + Fase B (1) + Componer (1) = 4.
+	if len(ag.peticiones) != 4 {
+		t.Errorf("peticiones = %d, quiero 4", len(ag.peticiones))
 	}
 }
 
@@ -289,7 +392,7 @@ func TestEtapasIntermediasSilenciosas(t *testing.T) {
 func TestEtapaConAprobacionNoEsSilenciosa(t *testing.T) {
 	ag := &stubAgente{}
 	m := &Motor{Contexto: &stubContexto{}, Agente: ag, Aprobador: &stubAprobador{aprobar: true}}
-	if _, err := m.EjecutarFlujo(context.Background(), FlujoTrabajo(task.AccionCrear), "objetivo"); err != nil {
+	if _, err := m.EjecutarFlujo(context.Background(), flujoConAprobacion(), "objetivo"); err != nil {
 		t.Fatalf("EjecutarFlujo: %v", err)
 	}
 	visto := false
@@ -319,7 +422,7 @@ func TestCadaEtapaPideContextoConSuEtapa(t *testing.T) {
 		Agente:    &stubAgente{},
 		Aprobador: &stubAprobador{aprobar: true},
 	}
-	if _, err := m.EjecutarFlujo(context.Background(), FlujoResolver(), "objetivo"); err != nil {
+	if _, err := m.EjecutarFlujo(context.Background(), flujoDePruebaBloque(), "objetivo"); err != nil {
 		t.Fatalf("EjecutarFlujo: %v", err)
 	}
 	if len(ctx.etapas) < 2 {
@@ -383,7 +486,7 @@ func TestConversarReenviaLasImagenesAlAgente(t *testing.T) {
 func TestEjecutarFlujoNoPasaImagenes(t *testing.T) {
 	ag := &stubAgente{}
 	m := &Motor{Contexto: &stubContexto{}, Agente: ag, Aprobador: &stubAprobador{aprobar: true}}
-	if _, err := m.EjecutarFlujo(context.Background(), FlujoPlanificacion(), "objetivo"); err != nil {
+	if _, err := m.EjecutarFlujo(context.Background(), flujoDePruebaBloque(), "objetivo"); err != nil {
 		t.Fatalf("EjecutarFlujo: %v", err)
 	}
 	if len(ag.imagenes) != 0 {
@@ -395,7 +498,7 @@ func TestEjecutarFlujoNoPasaImagenes(t *testing.T) {
 func TestEjecutarFlujoNoPasaHistorial(t *testing.T) {
 	ag := &stubAgente{}
 	m := &Motor{Contexto: &stubContexto{}, Agente: ag, Aprobador: &stubAprobador{aprobar: true}}
-	if _, err := m.EjecutarFlujo(context.Background(), FlujoPlanificacion(), "objetivo"); err != nil {
+	if _, err := m.EjecutarFlujo(context.Background(), flujoDePruebaBloque(), "objetivo"); err != nil {
 		t.Fatalf("EjecutarFlujo: %v", err)
 	}
 	if len(ag.historial) != 0 {
@@ -411,9 +514,9 @@ func TestEventosPorEtapa(t *testing.T) {
 		Aprobador: &stubAprobador{aprobar: true},
 		Eventos:   emisor,
 	}
-	// El ciclo de trabajo tiene etapas con aprobación, que son las que emiten
-	// pausa y reanudación; resolver ya no aprueba nada (solo diagnostica).
-	if _, err := m.EjecutarFlujo(context.Background(), FlujoTrabajo(task.AccionCrear), "objetivo"); err != nil {
+	// El flujo de prueba tiene etapas con aprobación, que son las que emiten
+	// pausa y reanudación.
+	if _, err := m.EjecutarFlujo(context.Background(), flujoConAprobacion(), "objetivo"); err != nil {
 		t.Fatalf("EjecutarFlujo: %v", err)
 	}
 	nombres := emisor.nombres()
@@ -442,6 +545,40 @@ func TestEventosPorEtapa(t *testing.T) {
 	}
 }
 
+// La sesión del turno viaja en el contexto y el motor la estampa en cada evento:
+// es lo que permite a la vista no mezclar sesiones (DOMAIN §1).
+func TestLosEventosLlevanLaSesionDelContexto(t *testing.T) {
+	emisor := &stubEmisor{}
+	m := &Motor{Contexto: &stubContexto{}, Agente: &stubAgente{}, Eventos: emisor}
+	ctx := tools.ConSesion(context.Background(), "s7")
+	if _, err := m.EjecutarFlujo(ctx, flujoDeDosEtapas(), "objetivo"); err != nil {
+		t.Fatalf("EjecutarFlujo: %v", err)
+	}
+	if len(emisor.eventos) == 0 {
+		t.Fatal("el flujo emite eventos")
+	}
+	for _, e := range emisor.eventos {
+		if e.Datos["sesion"] != "s7" {
+			t.Errorf("el evento %s no lleva la sesión del contexto: %v", e.Nombre, e.Datos)
+		}
+	}
+}
+
+// Sin sesión en el contexto, el payload no inventa una: los caminos sin sesión
+// (tests, ejecuciones sueltas) siguen como antes.
+func TestSinSesionElEventoNoLlevaElCampo(t *testing.T) {
+	emisor := &stubEmisor{}
+	m := &Motor{Contexto: &stubContexto{}, Agente: &stubAgente{}, Eventos: emisor}
+	if _, err := m.EjecutarFlujo(context.Background(), flujoDeDosEtapas(), "objetivo"); err != nil {
+		t.Fatalf("EjecutarFlujo: %v", err)
+	}
+	for _, e := range emisor.eventos {
+		if _, ok := e.Datos["sesion"]; ok {
+			t.Errorf("sin sesión en el contexto, el evento %s no la lleva: %v", e.Nombre, e.Datos)
+		}
+	}
+}
+
 // TestEtapaFallidaEmiteEventoYDetiene — una etapa que falla detiene el flujo y
 // no encadena la siguiente.
 func TestEtapaFallidaEmiteEventoYDetiene(t *testing.T) {
@@ -451,7 +588,7 @@ func TestEtapaFallidaEmiteEventoYDetiene(t *testing.T) {
 		Agente:   &stubAgente{fallar: true},
 		Eventos:  emisor,
 	}
-	_, err := m.EjecutarFlujo(context.Background(), FlujoResolver(), "objetivo")
+	_, err := m.EjecutarFlujo(context.Background(), flujoDeDosEtapas(), "objetivo")
 	if !errors.Is(err, ErrEtapaFallida) {
 		t.Fatalf("err = %v, quiero E_STAGE_FAILED", err)
 	}
@@ -466,7 +603,7 @@ func TestCancelacionSePropaga(t *testing.T) {
 	m := &Motor{Contexto: &stubContexto{}, Agente: &stubAgente{}, Eventos: emisor}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := m.EjecutarFlujo(ctx, FlujoResolver(), "objetivo")
+	_, err := m.EjecutarFlujo(ctx, flujoDeDosEtapas(), "objetivo")
 	if !errors.Is(err, ErrFlujoCancelado) {
 		t.Fatalf("err = %v, quiero E_FLOW_CANCELLED", err)
 	}
@@ -519,7 +656,8 @@ func TestConsumirColaUnElementoPorIteracion(t *testing.T) {
 		Agente:    &stubAgente{},
 		Aprobador: &stubAprobador{aprobar: true},
 	}
-	if err := m.ConsumirCola(context.Background(), cola, FlujoTrabajo(task.AccionCrear)); err != nil {
+	flujoDe := func(ElementoCola) (Flujo, bool) { return flujoDeDosEtapas(), true }
+	if err := m.ConsumirCola(context.Background(), cola, flujoDe); err != nil {
 		t.Fatalf("ConsumirCola: %v", err)
 	}
 	if cola.violacion {
@@ -533,6 +671,34 @@ func TestConsumirColaUnElementoPorIteracion(t *testing.T) {
 	}
 	if strings.Join(cola.marcas, ",") != strings.Join(quiero, ",") {
 		t.Fatalf("marcas = %v, quiero %v", cola.marcas, quiero)
+	}
+}
+
+// TestConsumirColaResuelveElFlujoPorAccion — el flujo de cada elemento lo elige
+// el resolutor por su acción; sin flujo para una acción, la cola se detiene con
+// un error en vez de correr con otro que no le corresponde.
+func TestConsumirColaResuelveElFlujoPorAccion(t *testing.T) {
+	cola := &stubCola{elementos: []ElementoCola{
+		{ID: "T-B001", Objetivo: "uno", Accion: "crear"},
+		{ID: "T-B002", Objetivo: "dos", Accion: "verificar"},
+	}}
+	var vistos []string
+	flujoDe := func(e ElementoCola) (Flujo, bool) {
+		vistos = append(vistos, e.Accion)
+		if e.Accion == "verificar" {
+			return Flujo{}, false
+		}
+		return flujoDeDosEtapas(), true
+	}
+	m := &Motor{Contexto: &stubContexto{}, Agente: &stubAgente{}, Aprobador: &stubAprobador{aprobar: true}}
+	if err := m.ConsumirCola(context.Background(), cola, flujoDe); err == nil {
+		t.Fatal("sin flujo para la acción, la cola debe detenerse con error")
+	}
+	if strings.Join(vistos, ",") != "crear,verificar" {
+		t.Errorf("el resolutor ve cada acción en orden: %v", vistos)
+	}
+	if contieneStr(cola.marcas, "T-B002:en_progreso") {
+		t.Errorf("el elemento sin flujo no debe arrancarse: %v", cola.marcas)
 	}
 }
 

@@ -124,7 +124,9 @@ type Aprobador interface {
 // arranque; un fallo al registrar no detiene el flujo: es un dato de pantalla,
 // no una regla de negocio.
 type Registro interface {
-	ProcesoEtapa(nombre string, fallida bool)
+	// ProcesoEtapa recibe el contexto del turno, del que saca (vía
+	// `tools.SesionDe`) la sesión a cuyo hilo pertenece la línea.
+	ProcesoEtapa(ctx context.Context, nombre string, fallida bool)
 }
 
 // Motor encadena las etapas de un flujo.
@@ -146,20 +148,31 @@ type Motor struct {
 	Registro Registro
 }
 
-func (m *Motor) emitir(nombre string, datos map[string]string) {
+// emitir publica un evento del motor. La sesión que lo produjo viaja en el
+// contexto (`tools.ConSesion`): se estampa en el payload para que el bus y la
+// vista sepan de quién es, sin una variable global. Un contexto sin sesión deja
+// el payload tal cual (tests y caminos sin sesión).
+func (m *Motor) emitir(ctx context.Context, nombre string, datos map[string]string) {
 	if m.Eventos == nil {
 		return
+	}
+	if s := tools.SesionDe(ctx); s != "" {
+		if datos == nil {
+			datos = map[string]string{}
+		}
+		datos["sesion"] = s
 	}
 	m.Eventos.Emitir(Evento{Nombre: nombre, Datos: datos})
 }
 
 // registrarProceso guarda la línea de procesamiento de una etapa. Sin registro
-// conectado no hace nada; un registro que falla no interrumpe el flujo.
-func (m *Motor) registrarProceso(nombre string, fallida bool) {
+// conectado no hace nada; un registro que falla no interrumpe el flujo. La
+// sesión va en el contexto para que el registro sepa a qué hilo escribir.
+func (m *Motor) registrarProceso(ctx context.Context, nombre string, fallida bool) {
 	if m.Registro == nil {
 		return
 	}
-	m.Registro.ProcesoEtapa(nombre, fallida)
+	m.Registro.ProcesoEtapa(ctx, nombre, fallida)
 }
 
 // EjecutarFlujo corre las etapas en orden. Devuelve el estado final y, si algo
@@ -202,23 +215,23 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 		// de pedir herramientas.
 		composicion := etapa.Entrega
 		if cerr := ctx.Err(); cerr != nil {
-			m.emitir(EventoFlujoCancelado, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
+			m.emitir(ctx, EventoFlujoCancelado, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 			return EstadoDetenido, nuevoError(CodigoFlujoCancelado,
 				"el flujo "+f.Nombre+" se canceló en la etapa "+etapa.ID)
 		}
 
-		m.emitir(EventoEtapaIniciada, map[string]string{
+		m.emitir(ctx, EventoEtapaIniciada, map[string]string{
 			"flujo": f.Nombre, "etapa": etapa.ID, "nombre": etapa.Nombre,
 		})
-		m.registrarProceso(etapa.Nombre, false)
+		m.registrarProceso(ctx, etapa.Nombre, false)
 
 		contexto, cErr := m.Contexto.ContextoPara(ctx, etapa.ID, objetivo)
 		if cErr != nil {
-			m.emitir(EventoEtapaFallida, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
-			m.registrarProceso(etapa.Nombre, true)
+			m.emitir(ctx, EventoEtapaFallida, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
+			m.registrarProceso(ctx, etapa.Nombre, true)
 			return EstadoConError, fmt.Errorf("%w: %s: %v", ErrEtapaFallida, etapa.ID, cErr)
 		}
-		contexto = componerBrief(f.Reglas, etapa.Instruccion, contexto)
+		contexto = componerBrief(f.Reglas, etapa.Pregunta, etapa.Instruccion, contexto)
 		if composicion {
 			// La composición recibe el bloque entero: el estado del turno vive
 			// en `store`, no en la memoria del motor.
@@ -233,16 +246,10 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 		// la cadena. La última etapa y las que piden aprobación o respuesta se
 		// muestran: la entrega final y lo que el usuario debe ver.
 		silenciosa := !ultima && !etapa.Aprobacion && !etapa.RespuestaEnChat
-		res, aErr := m.Agente.Ejecutar(ctx, PeticionEtapa{
-			Agente:          etapa.Agente,
-			Contexto:        contexto,
-			Etapa:           etapa.Nombre,
-			Silenciosa:      silenciosa,
-			SinHerramientas: composicion,
-		})
+		res, aErr := m.ejecutarEtapa(ctx, etapa, contexto, silenciosa, composicion)
 		if aErr != nil {
-			m.emitir(EventoEtapaFallida, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
-			m.registrarProceso(etapa.Nombre, true)
+			m.emitir(ctx, EventoEtapaFallida, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
+			m.registrarProceso(ctx, etapa.Nombre, true)
 			return EstadoConError, fmt.Errorf("%w: %s: %v", ErrEtapaFallida, etapa.ID, aErr)
 		}
 
@@ -252,7 +259,7 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 			if err != nil {
 				return EstadoConError, err
 			}
-			m.emitir(EventoFlujoPausado, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
+			m.emitir(ctx, EventoFlujoPausado, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 			if m.Aprobador == nil {
 				return EstadoPausadoPermiso, nuevoError(CodigoFlujoCancelado,
 					"la etapa "+etapa.ID+" necesita aprobación y no hay aprobador conectado")
@@ -262,7 +269,7 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 				return EstadoConError, pErr
 			}
 			if !ok {
-				m.emitir(EventoFlujoCancelado, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
+				m.emitir(ctx, EventoFlujoCancelado, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 				return EstadoDetenido, nuevoError(CodigoFlujoCancelado,
 					"el usuario declinó la etapa "+etapa.ID)
 			}
@@ -270,7 +277,7 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 			if err != nil {
 				return EstadoConError, err
 			}
-			m.emitir(EventoFlujoReanudado, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
+			m.emitir(ctx, EventoFlujoReanudado, map[string]string{"flujo": f.Nombre, "etapa": etapa.ID})
 		}
 
 		if m.Bloque != nil && !ultima {
@@ -279,11 +286,11 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 			if err := m.guardarAportacion(ctx, f, etapa, i, aportacion); err != nil {
 				return EstadoConError, err
 			}
-			acumulado = append(acumulado, bloqueResumen(etapa.Nombre, aportacion))
+			acumulado = append(acumulado, entradaVentana(etapa.Nombre, etapa.Pregunta, aportacion))
 		} else {
-			acumulado = append(acumulado, bloqueResumen(etapa.Nombre, res.Texto))
+			acumulado = append(acumulado, entradaVentana(etapa.Nombre, etapa.Pregunta, res.Texto))
 		}
-		m.emitir(EventoEtapaTerminada, map[string]string{
+		m.emitir(ctx, EventoEtapaTerminada, map[string]string{
 			"flujo":   f.Nombre,
 			"etapa":   etapa.ID,
 			"nombre":  etapa.Nombre,
@@ -293,6 +300,38 @@ func (m *Motor) EjecutarFlujo(ctx context.Context, f Flujo, objetivo string) (Es
 
 	estado = EstadoTerminado
 	return estado, nil
+}
+
+// reintentosRespuestaVacia es cuántas veces se reintenta una etapa que no
+// responde a su pregunta antes de darla por fallida.
+const reintentosRespuestaVacia = 1
+
+// ejecutarEtapa corre la etapa y exige que responda a su pregunta. Una etapa
+// muda no alimenta la ventana de contexto —la etapa siguiente no tendría nada
+// que encadenar—, así que se reintenta una vez reforzando la pregunta y, si
+// sigue sin responder, devuelve un error: el motor la marca fallida y el flujo
+// se detiene (BUSINESS_RULES.md §Invariantes). Sin esta exigencia, el flujo
+// avanzaba con "(sin resultado)" y una etapa sin sentido pasaba por buena.
+func (m *Motor) ejecutarEtapa(ctx context.Context, etapa Etapa, contexto string, silenciosa, composicion bool) (Resultado, error) {
+	for intento := 0; ; intento++ {
+		res, err := m.Agente.Ejecutar(ctx, PeticionEtapa{
+			Agente:          etapa.Agente,
+			Contexto:        contexto,
+			Etapa:           etapa.Nombre,
+			Silenciosa:      silenciosa,
+			SinHerramientas: composicion,
+		})
+		if err != nil {
+			return Resultado{}, err
+		}
+		if strings.TrimSpace(res.Texto) != "" {
+			return res, nil
+		}
+		if intento >= reintentosRespuestaVacia {
+			return Resultado{}, fmt.Errorf("la etapa no respondió a su pregunta %q", etapa.Pregunta)
+		}
+		contexto += "\n\n## Reintento\nTu respuesta anterior quedó vacía. Contesta explícitamente a: «" + etapa.Pregunta + "»."
+	}
 }
 
 // optimizarEtapa condensa el resultado de una etapa con el modelo. Si no hay
@@ -342,7 +381,7 @@ func (m *Motor) bloqueParaComposicion(ctx context.Context, f Flujo, acumulado []
 	if len(entradas) > 0 {
 		partes := make([]string, 0, len(entradas))
 		for _, e := range entradas {
-			partes = append(partes, "### "+e.Nombre+"\n"+e.Contenido)
+			partes = append(partes, entradaVentana(e.Nombre, preguntaDe(f, e.Etapa), e.Contenido))
 		}
 		return "## Bloque de contexto\n" + strings.Join(partes, "\n\n")
 	}
@@ -388,10 +427,13 @@ func (m *Motor) Conversar(ctx context.Context, agente, objetivo string, historia
 	})
 }
 
-// ElementoCola es un elemento del TODO listo para ejecutarse.
+// ElementoCola es un elemento del TODO listo para ejecutarse. `Accion` es la
+// acción que declara el elemento (`crear`, `actualizar`, `eliminar`): la usa el
+// resolutor de flujo para elegir con qué flujo del catálogo correrlo.
 type ElementoCola struct {
 	ID       string
 	Objetivo string
+	Accion   string
 }
 
 // Cola es lo que el motor necesita para consumir el TODO. Lo implementa `queue`
@@ -404,12 +446,22 @@ type Cola interface {
 	Marcar(id string, estado task.Estado) error
 }
 
+// ResolutorFlujo elige el flujo con el que correr un elemento de la cola. Lo
+// provee el arranque desde el catálogo (`.localcli/flows/*.json`): el motor no
+// define ni conoce qué flujos existen. El segundo valor es false si no hay
+// ninguno para ese elemento, y entonces la cola se detiene con un error claro en
+// vez de correr con un flujo inventado.
+type ResolutorFlujo func(ElementoCola) (Flujo, bool)
+
 // ConsumirCola ejecuta la cola entera, un elemento por iteración. Cada elemento
-// se marca en_progreso, se ejecuta como un flujo y se marca completada; nunca
-// hay dos en_progreso a la vez. Al vaciarse, se detiene.
-func (m *Motor) ConsumirCola(ctx context.Context, cola Cola, f Flujo) error {
+// se marca en_progreso, se ejecuta con el flujo que resuelve `flujoDe` y se
+// marca completada; nunca hay dos en_progreso a la vez. Al vaciarse, se detiene.
+func (m *Motor) ConsumirCola(ctx context.Context, cola Cola, flujoDe ResolutorFlujo) error {
 	if cola == nil {
 		return fmt.Errorf("flow: no hay cola que consumir")
+	}
+	if flujoDe == nil {
+		return fmt.Errorf("flow: la cola necesita un resolutor de flujo")
 	}
 	enProgreso := ""
 	for {
@@ -427,6 +479,12 @@ func (m *Motor) ConsumirCola(ctx context.Context, cola Cola, f Flujo) error {
 		// el anterior siga en progreso.
 		if enProgreso != "" {
 			return fmt.Errorf("flow: ya hay un elemento en progreso (%s); se ejecuta uno por iteración", enProgreso)
+		}
+		// Sin flujo para el elemento no se arranca nada: mejor detenerse con un
+		// error claro que correrlo con un flujo que no le corresponde.
+		f, ok := flujoDe(*elem)
+		if !ok {
+			return fmt.Errorf("flow: no hay un flujo para el elemento %s (acción %q)", elem.ID, elem.Accion)
 		}
 		if err := cola.Marcar(elem.ID, task.EstadoEnProgreso); err != nil {
 			return err
@@ -451,25 +509,53 @@ func (m *Motor) ConsumirCola(ctx context.Context, cola Cola, f Flujo) error {
 // todo lo que produjo la anterior (SPEC-MOTOR-FLUJOS §Reglas de negocio).
 const limiteTokensResumenEtapa = 400
 
-// bloqueResumen compone el bloque que una etapa deja a la siguiente: su nombre y
-// su resultado, recortado al límite. Lo usan el encadenado y el evento
-// `etapa_terminada`.
-func bloqueResumen(nombre, texto string) string {
-	texto, _ = tools.Recortar(strings.TrimSpace(texto), limiteTokensResumenEtapa)
-	if texto == "" {
-		texto = "(sin resultado)"
+// entradaVentana compone lo que una etapa deja a las siguientes en la ventana
+// de contexto: su nombre, la pregunta que responde y su resultado, recortado al
+// límite. Llevar la pregunta es lo que hace la ventana legible —cada etapa ve
+// qué se preguntó y qué se respondió— y lo que la spec describe
+// (SPEC-MOTOR-FLUJOS §Ventana de contexto). Lo usan el encadenado y el bloque.
+func entradaVentana(nombre, pregunta, respuesta string) string {
+	respuesta, _ = tools.Recortar(strings.TrimSpace(respuesta), limiteTokensResumenEtapa)
+	if respuesta == "" {
+		respuesta = "(sin resultado)"
 	}
-	return "### " + nombre + "\n" + texto
+	var b strings.Builder
+	b.WriteString("### " + nombre)
+	if p := strings.TrimSpace(pregunta); p != "" {
+		b.WriteString("\nPregunta: " + p)
+	}
+	b.WriteString("\nRespuesta: " + respuesta)
+	return b.String()
 }
 
-// componerBrief antepone las reglas del flujo y la instrucción de la etapa al
-// contexto que recibe el agente. Es cómo un flujo declara sus reglas —por
-// ejemplo, cómo descubrir la documentación— sin tocar el código: el brief viaja
-// dentro del texto que ya recibe la etapa, sin cambiar las interfaces.
-func componerBrief(reglas []string, instruccion, contexto string) string {
+// preguntaDe devuelve la pregunta que responde una etapa del flujo, por su id.
+// La ventana la necesita al recomponer una aportación del bloque: el flujo es
+// dato y sus ids son estables, así que no hace falta persistir la pregunta.
+func preguntaDe(f Flujo, etapaID string) string {
+	for _, e := range f.Etapas {
+		if e.ID == etapaID {
+			return e.Pregunta
+		}
+	}
+	return ""
+}
+
+// componerBrief antepone las reglas del flujo, la pregunta que la etapa debe
+// responder y su instrucción al contexto que recibe el agente. Es cómo un flujo
+// declara sus reglas —por ejemplo, cómo descubrir la documentación— sin tocar el
+// código: el brief viaja dentro del texto que ya recibe la etapa, sin cambiar las
+// interfaces.
+//
+// La pregunta viaja aquí porque es lo que da sentido a la etapa: sin ella el
+// modelo no sabe qué tiene que responder y puede cerrar el turno en blanco. El
+// motor lo exige después (ver ejecutarEtapa).
+func componerBrief(reglas []string, pregunta, instruccion, contexto string) string {
 	var partes []string
 	if len(reglas) > 0 {
 		partes = append(partes, "Reglas del flujo:\n- "+strings.Join(reglas, "\n- "))
+	}
+	if pregunta != "" {
+		partes = append(partes, "Debes responder a esta pregunta: «"+pregunta+"». Si no puedes, dilo; no dejes la respuesta en blanco.")
 	}
 	if instruccion != "" {
 		partes = append(partes, instruccion)

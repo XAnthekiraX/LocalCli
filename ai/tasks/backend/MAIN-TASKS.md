@@ -35,6 +35,7 @@ Fuente de verdad del progreso del backend. Derivada exclusivamente de `ai/docs/`
 | T-B028 | actualizar | `/resolver` determinista: bloque de contexto optimizado por fase en `flow_context` (migración 003), composición final sin herramientas y regla de la ruta raíz de `AGENTS.md` | T-B010, T-B014, T-B027 | completada | `028-task-bloque-contexto-resolver.md` |
 | T-B029 | actualizar | hilo del chat persistente: líneas de procesamiento en `chat_evento` (migración 004) sin entrar al contexto, tokens y duración del turno en `messages`, y `contextoSesion` para el panel | T-B002, T-B010, T-B013, T-B014, T-B024, T-B027 | completada | `029-task-hilo-chat-tokens-duracion.md` |
 | T-B030 | actualizar | los agentes base se cargan de `.localcli/agents/` y la carpeta se versiona con el proyecto: `.gitignore` ignora solo el SQLite, y código, specs y tareas nombran la ruta nueva | T-B006, T-B023, T-B024 | completada | `030-task-agentes-en-localcli.md` |
+| T-B031 | actualizar | la etapa responde a su pregunta (brief + ventana con pregunta/respuesta; reintento y `E_STAGE_FAILED` si sigue muda) y los flujos son dato: fuera los flujos cableados y la cola resuelve su flujo del catálogo | T-B010, T-B012, T-B013, T-B027 | completada | `031-task-etapa-responde-y-flujos-dato.md` |
 
 ## Referencias
 

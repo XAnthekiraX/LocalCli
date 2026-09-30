@@ -22,9 +22,9 @@ Investigar un problema detectado durante el desarrollo, diagnosticar su causa y 
 
 Incluye recibir la tarea, entender el problema, buscar contexto, investigar, diagnosticar, identificar los archivos afectados, diseñar la solución, armar el plan de ejecución y **entregar el PLAN**.
 No implementa: no aplica cambios ni crea tareas; entregar el PLAN es el final del ciclo. Es un ciclo aparte: no amplía el alcance del proyecto. Eso lo hace [[specs/SPEC-CICLO-TRABAJO]].
-Su flujo se declara en `.localcli/flows/resolver.json`; el motor lo carga al arrancar y, si el archivo no está, usa su definición oficial de respaldo.
+Su flujo se declara en `.localcli/flows/resolver.json`; el motor lo carga al arrancar y el comando `/resolver` existe mientras ese archivo esté. Los flujos son dato: el motor no cablea ninguno ([[specs/SPEC-FLUJO-PERSONALIZADO]]).
 
-Es un flujo con **bloque de contexto** (`bloque_contexto: true`, [[specs/SPEC-MOTOR-FLUJOS]] §Bloque de contexto): cada paso deja su resultado optimizado en el bloque y el paso 9 compone el PLAN a partir de todo el bloque, sin herramientas. Así la entrega es determinista: el resolver cierra siempre con la salida estándar, no con un preámbulo del modelo.
+Es un flujo con **bloque de contexto** ([[specs/SPEC-MOTOR-FLUJOS]] §Bloque de contexto: todos los flujos llevan bloque): cada paso deja su resultado optimizado en el bloque y el paso 9 compone el PLAN a partir de todo el bloque, sin herramientas. Así la entrega es determinista: el resolver cierra siempre con la salida estándar, no con un preámbulo del modelo.
 
 ## Actores
 
@@ -40,7 +40,7 @@ Es un flujo con **bloque de contexto** (`bloque_contexto: true`, [[specs/SPEC-MO
 
 ## Flujo principal
 
-El flujo se declara en `.localcli/flows/resolver.json` (ver [[specs/SPEC-FLUJO-PERSONALIZADO]]); esta es su forma oficial. Es un recorrido de nueve pasos, todos con `plan`:
+El flujo se declara en `.localcli/flows/resolver.json` (ver [[specs/SPEC-FLUJO-PERSONALIZADO]]); así está declarado. Es un recorrido de nueve pasos, todos con `plan`:
 
 1. **Recibir la tarea.**
 2. **Entender el problema.** Qué se pidió y qué comportamiento se espera.
@@ -52,7 +52,7 @@ El flujo se declara en `.localcli/flows/resolver.json` (ver [[specs/SPEC-FLUJO-P
 8. **Crear el plan de ejecución.** Pasos concretos, en orden, con su validación.
 9. **Entregar el PLAN. No se implementa.** Es la composición: recibe el bloque con lo que dejaron los pasos 1-8 y lo redacta con la salida estándar, sin herramientas.
 
-Los pasos 1-8 son fases silenciosas: cada una entrega su resultado, el modelo lo optimiza y queda en el bloque del flujo. El paso 9 es la única fase visible: lo que el usuario lee es la entrega del PLAN. La vista sí anuncia cada fase (`[Sub Proceso] <nombre>`) y sus herramientas, para que el usuario vea que el sistema trabaja.
+Todos los pasos declaran `respuesta_en_chat: true`: cada uno responde a su pregunta y esa respuesta se ve en la pantalla, se guarda y alimenta la ventana y el bloque que reciben los pasos siguientes. El paso 9 es la composición: recibe el bloque con lo que dejaron los pasos 1-8 y lo redacta con la salida estándar, sin herramientas. La vista anuncia cada paso (`[Sub Proceso] <nombre>`) y sus herramientas, para que el usuario vea que el sistema trabaja.
 
 ### La regla central
 

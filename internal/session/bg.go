@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"sync"
 
-	"localcli/internal/flow"
 	"localcli/internal/store"
 )
 
@@ -28,9 +27,6 @@ type Gestor struct {
 	Alcance *Alcance
 	Motor   Motor
 	Bus     *Bus
-	// Flujo es el ciclo que se arranca al enviar un mensaje. Vacío =
-	// FlujoPorDefecto().
-	Flujo flow.Flujo
 	// Titulador produce el título de una sesión a partir de su primera petición.
 	// Opcional: sin él, la sesión conserva el nombre provisional.
 	Titulador Titulador

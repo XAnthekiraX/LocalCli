@@ -9,9 +9,9 @@
 //  1. El binario compila y arranca contra un proyecto fixture (--help, que es
 //     la única ruta que no abre TUI ni requiere terminal interactiva), y
 //     `store.Open` prepara su base sin errores.
-//  2. Los tres ciclos oficiales (planificación, trabajo, resolver) recorren sus
-//     etapas completas sobre el motor real con dependencias dobles, y la cola
-//     consume un TODO real de disco de principio a fin.
+//  2. Los tres ciclos del catálogo (planificación, trabajo, resolver) recorren
+//     sus etapas completas sobre el motor real con dependencias dobles, y la
+//     cola consume un TODO real de disco de principio a fin.
 package tests
 
 import (
@@ -106,11 +106,27 @@ func (a aprobadorFijo) Aprobar(ctx context.Context, descripcion string) (bool, e
 	return bool(a), nil
 }
 
-// TestElCicloDePlanificacionRecorreCompleto — las 8 etapas de
-// FlujoPlanificacion, sin escribir nada.
+// catalogoDelProyecto carga los flujos del proyecto desde
+// `.localcli/flows/*.json`: son dato, no código, así que el e2e prueba los
+// flujos reales del proyecto.
+func catalogoDelProyecto(t *testing.T) *flow.Catalogo {
+	t.Helper()
+	c, err := flow.CargarFlujos("..")
+	if err != nil {
+		t.Fatalf("CargarFlujos: %v", err)
+	}
+	return c
+}
+
+// TestElCicloDePlanificacionRecorreCompleto — las 8 etapas de `/planificar`, sin
+// escribir nada.
 func TestElCicloDePlanificacionRecorreCompleto(t *testing.T) {
+	f, ok := catalogoDelProyecto(t).PorComando("/planificar")
+	if !ok {
+		t.Fatal("el catálogo del proyecto no tiene /planificar")
+	}
 	m := motorE2E(true)
-	estado, err := m.EjecutarFlujo(context.Background(), flow.FlujoPlanificacion(), "documentar el proyecto")
+	estado, err := m.EjecutarFlujo(context.Background(), f, "documentar el proyecto")
 	if err != nil {
 		t.Fatalf("planificación: %v", err)
 	}
@@ -119,11 +135,15 @@ func TestElCicloDePlanificacionRecorreCompleto(t *testing.T) {
 	}
 }
 
-// TestElCicloDeTrabajoRecorreCompleto — las 5 etapas de FlujoTrabajo con el
-// relevo plan→build y sus aprobaciones.
+// TestElCicloDeTrabajoRecorreCompleto — las etapas de `/crear` con el relevo
+// plan→build y sus aprobaciones.
 func TestElCicloDeTrabajoRecorreCompleto(t *testing.T) {
+	f, ok := catalogoDelProyecto(t).PorComando("/crear")
+	if !ok {
+		t.Fatal("el catálogo del proyecto no tiene /crear")
+	}
 	m := motorE2E(true)
-	estado, err := m.EjecutarFlujo(context.Background(), flow.FlujoTrabajo(task.AccionCrear), "implementar x")
+	estado, err := m.EjecutarFlujo(context.Background(), f, "implementar x")
 	if err != nil {
 		t.Fatalf("trabajo: %v", err)
 	}
@@ -132,15 +152,19 @@ func TestElCicloDeTrabajoRecorreCompleto(t *testing.T) {
 	}
 	// Y declinado se detiene: sin el sí de la persona, no hay etapa de build.
 	mDeclinado := motorE2E(false)
-	if _, err := mDeclinado.EjecutarFlujo(context.Background(), flow.FlujoTrabajo(task.AccionCrear), "implementar x"); err == nil {
+	if _, err := mDeclinado.EjecutarFlujo(context.Background(), f, "implementar x"); err == nil {
 		t.Fatal("un ciclo de trabajo declinado no puede terminar")
 	}
 }
 
-// TestElCicloDeResolverRecorreCompleto — las 9 etapas de FlujoResolver.
+// TestElCicloDeResolverRecorreCompleto — las 9 etapas de `/resolver`.
 func TestElCicloDeResolverRecorreCompleto(t *testing.T) {
+	f, ok := catalogoDelProyecto(t).PorComando("/resolver")
+	if !ok {
+		t.Fatal("el catálogo del proyecto no tiene /resolver")
+	}
 	m := motorE2E(true)
-	estado, err := m.EjecutarFlujo(context.Background(), flow.FlujoResolver(), "arreglar el fallo")
+	estado, err := m.EjecutarFlujo(context.Background(), f, "arreglar el fallo")
 	if err != nil {
 		t.Fatalf("resolver: %v", err)
 	}
@@ -200,7 +224,11 @@ func TestLaColaRealConsumeElTODOCompleto(t *testing.T) {
 		Agente:    agenteFijo{},
 		Aprobador: aprobadorFijo(true),
 	}
-	if err := m.ConsumirCola(context.Background(), cola, flow.FlujoTrabajo(task.AccionCrear)); err != nil {
+	cat := catalogoDelProyecto(t)
+	flujoDe := func(e flow.ElementoCola) (flow.Flujo, bool) {
+		return cat.PorComando("/" + e.Accion)
+	}
+	if err := m.ConsumirCola(context.Background(), cola, flujoDe); err != nil {
 		t.Fatalf("ConsumirCola: %v", err)
 	}
 

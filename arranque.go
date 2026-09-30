@@ -108,7 +108,6 @@ type Adaptador struct {
 	agentes []string
 
 	mu         sync.Mutex
-	sesionID   string
 	pendientas map[string]chan string // approvalID -> canal de resolución
 	// contextos cachea, por modelo, la ventana de contexto que declara
 	// `/api/tags` (details.context_length), para no repetir el listado al
@@ -260,9 +259,6 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 		conexion.Close()
 		return nil, err
 	}
-	// El flujo por defecto es el ciclo de trabajo (SPEC-CICLO-TRABAJO); la
-	// detección de trabajo ordenado decide si además se consume la cola.
-	gest.Flujo = session.FlujoPorDefecto()
 	// El título de una sesión y el resumen de su conversación son dos
 	// generaciones cortas del mismo modelo local: viven en el arranque, que es
 	// quien tiene el cliente y la cola. El presupuesto de historial lo fija el
@@ -303,7 +299,7 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 		Despachar:  despachador,
 		MaxPasadas: 3,
 		Testigo: func(ctx context.Context, fn func(context.Context) error) error {
-			return infer.Encolar(ctx, ollama.OpcionesEncolar{IdSesion: ad.sesionActual()}, fn)
+			return infer.Encolar(ctx, ollama.OpcionesEncolar{IdSesion: tools.SesionDe(ctx)}, fn)
 		},
 		PuedeHerramientas: func(m string) bool {
 			caps, ok := ad.fichaDe(m)
@@ -342,8 +338,7 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 
 	// Arranque de sesión: NO se crea ninguna. La sesión nace con la primera
 	// petición desde la bienvenida (SPEC-SESIONES); hasta entonces no hay sesión
-	// activa. Cada `Enviar` fija la suya antes de arrancar.
-	ad.fijarSesion("")
+	// activa. Cada turno viaja con su sesión en el contexto.
 
 	// Las aprobaciones que quedaron pendientes de otra ejecución vuelven a
 	// tener dueño: se re-emiten como peticiones al bus (DATA_FLOW.md §7).
@@ -402,7 +397,6 @@ func (ad *Adaptador) Crear() (*session.Sesion, error) {
 	if err != nil {
 		return nil, err
 	}
-	ad.fijarSesion(ses.ID)
 	return ses, nil
 }
 
@@ -663,7 +657,6 @@ func (ad *Adaptador) Tareas(sesionID string) ([]tui.TareaPanel, error) {
 // `imagenes` son las imágenes (base64) que la vista detectó en el texto: solo
 // acompañan al chat; un comando de flujo las ignora (los flujos no adjuntan).
 func (ad *Adaptador) Enviar(ctx context.Context, sesionID, agente, texto string, imagenes []string) error {
-	ad.fijarSesion(sesionID)
 	if cmd, ok := ad.catalogo.De(texto); ok {
 		if cmd.Consumir {
 			return ad.ejecutarCola(sesionID, texto)
@@ -719,7 +712,21 @@ func (ad *Adaptador) consumirCola(sesionID string) {
 	if err != nil {
 		return
 	}
-	_ = ad.gest.ConsumirCola(ctx, sesionID, consumidor)
+	_ = ad.gest.ConsumirCola(ctx, sesionID, consumidor, ad.flujoDeLaCola())
+}
+
+// flujoDeLaCola resuelve, desde el catálogo, el flujo con el que correr cada
+// elemento de la cola: por su acción, el comando `/<acción>` (`/crear`,
+// `/actualizar`, `/eliminar`). El motor no define flujos; sin flujo para una
+// acción, la cola se detiene con un error en vez de correr con otro que no le
+// corresponde.
+func (ad *Adaptador) flujoDeLaCola() flow.ResolutorFlujo {
+	return func(e flow.ElementoCola) (flow.Flujo, bool) {
+		if ad.catalogo == nil {
+			return flow.Flujo{}, false
+		}
+		return ad.catalogo.PorComando("/" + e.Accion)
+	}
 }
 
 func (ad *Adaptador) Pendientes() ([]tui.Aprobacion, error) {
@@ -779,7 +786,7 @@ func (ad *Adaptador) pedirAprobacion(ctx context.Context, s tools.Solicitud) (to
 	if descripcion == "" {
 		descripcion = "aprobar una acción"
 	}
-	id, ch, err := ad.pedirPermiso(descripcion, s.Motivo)
+	id, ch, err := ad.pedirPermiso(tools.SesionDe(ctx), descripcion, s.Motivo)
 	if err != nil {
 		return tools.Decision{}, err
 	}
@@ -808,18 +815,6 @@ func (ad *Adaptador) Suscribir() (<-chan tui.Evento, func()) { return ad.gest.Su
 
 // --- estado interno del adaptador -------------------------------------------
 
-func (ad *Adaptador) fijarSesion(id string) {
-	ad.mu.Lock()
-	defer ad.mu.Unlock()
-	ad.sesionID = id
-}
-
-func (ad *Adaptador) sesionActual() string {
-	ad.mu.Lock()
-	defer ad.mu.Unlock()
-	return ad.sesionID
-}
-
 func (ad *Adaptador) capaDe(sesionID string) string {
 	ses, err := ad.gest.Estado(sesionID)
 	if err != nil || ses == nil {
@@ -832,11 +827,11 @@ func (ad *Adaptador) capaDe(sesionID string) string {
 // fila y pasa la sesión a esperando_permiso), emite `peticion_aprobacion` y
 // devuelve el canal donde el usuario resolverá. Es el lado productor del flujo
 // de aprobación (DATA_FLOW.md §7 paso 3).
-func (ad *Adaptador) pedirPermiso(descripcion, motivo string) (approvalID string, resolucion <-chan string, err error) {
+func (ad *Adaptador) pedirPermiso(sesionID, descripcion, motivo string) (approvalID string, resolucion <-chan string, err error) {
 	// Con la sesión en esperando_permiso, store rechazaría una segunda
 	// transición; si llega otro pedido mientras tanto, se registra sin tocar
 	// el estado (ya está esperando).
-	ses := ad.sesionActual()
+	ses := sesionID
 	extra := ""
 	if st, e := ad.gest.Estado(ses); e == nil && st != nil && st.Estado == session.EstadoEsperandoPermiso {
 		ses, extra = "", " (pendiente de resolución)"
@@ -1101,7 +1096,7 @@ func (n *nodoPorTurno) ContextoPara(ctx context.Context, etapa, objetivo string)
 		Grafo:     n.grafo,
 		Modelo:    &tcontext.ModeloOllama{Cliente: n.cliente, Modelo: modelo},
 		Auditor:   n.ad.auditar,
-		SessionID: n.ad.sesionActual(),
+		SessionID: tools.SesionDe(ctx),
 		// El bloque de contexto se queda por debajo de la ventana del modelo:
 		// sin este límite, el nodo no recortaba nada (limite 0 = sin tope) y el
 		// contexto podía desbordar la petición. Un cuarto de la ventana.
@@ -1133,7 +1128,9 @@ func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, p flow.PeticionEtapa) (
 	if !ok {
 		return flow.Resultado{}, fmt.Errorf("arranque: agente base desconocido %q", p.Agente)
 	}
-	sesionID := e.ad.sesionActual()
+	// La sesión viene en el contexto del turno: es la que arrancó esta
+	// ejecución, no una global que otra petición pudo reemplazar.
+	sesionID := tools.SesionDe(ctx)
 
 	// Una etapa silenciosa (intermedia de un flujo) no se muestra ni se guarda:
 	// su texto solo alimenta la cadena del motor. Sin sink no hay eventos de
@@ -1154,7 +1151,13 @@ func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, p flow.PeticionEtapa) (
 	}
 	duracion := int(time.Since(inicio).Milliseconds())
 
-	resumen := strings.TrimSpace(salida.Texto)
+	texto := strings.TrimSpace(salida.Texto)
+	// Una etapa de flujo (`p.Etapa != ""`) que no responde no se persiste: el
+	// motor la reintenta y, si sigue muda, la da por fallida (engine.go). Así el
+	// reintento no deja un mensaje de relleno en el historial. El chat (sin etapa)
+	// conserva su traza con el marcador de respuesta vacía.
+	etapaMuda := p.Etapa != "" && texto == ""
+	resumen := texto
 	if resumen == "" {
 		resumen = "(respuesta vacía)"
 	}
@@ -1162,7 +1165,7 @@ func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, p flow.PeticionEtapa) (
 	// y su estado (DATA_FLOW.md), con sus tokens y su duración: el historial que
 	// verá la próxima vez incluye esta respuesta. Una etapa silenciosa no se
 	// persiste: solo la entrega final (o el chat) queda en el historial.
-	if sesionID != "" && !p.Silenciosa {
+	if sesionID != "" && !p.Silenciosa && !etapaMuda {
 		if _, cErr := cerrarTurnoGuardado(e.ad, sesionID, resumen, salida.Razonamiento,
 			int(salida.TokensEntrada), int(salida.TokensSalida), duracion); cErr != nil {
 			return flow.Resultado{}, cErr
@@ -1175,13 +1178,14 @@ func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, p flow.PeticionEtapa) (
 	if !p.Silenciosa {
 		contexto, limite := e.ad.contextoSesion(sesionID)
 		e.ad.bus.Emitir(tui.Evento{Nombre: tui.EventoTokensTurno, Datos: map[string]string{
+			"sesion":   sesionID,
 			"entrada":  strconv.FormatUint(salida.TokensEntrada, 10),
 			"salida":   strconv.FormatUint(salida.TokensSalida, 10),
 			"contexto": strconv.Itoa(contexto),
 			"limite":   strconv.Itoa(limite),
 		}})
 	}
-	return flow.Resultado{Texto: resumen}, nil
+	return flow.Resultado{Texto: texto}, nil
 }
 
 // sinkBus traduce los fragmentos que produce el modelo a eventos de token de
@@ -1228,7 +1232,7 @@ func cerrarTurnoGuardado(ad *Adaptador, sesionID, contenido, razon string, in, o
 type aprobadorPorTurno struct{ ad *Adaptador }
 
 func (p *aprobadorPorTurno) Aprobar(ctx context.Context, descripcion string) (bool, error) {
-	id, ch, err := p.ad.pedirPermiso(descripcion, "")
+	id, ch, err := p.ad.pedirPermiso(tools.SesionDe(ctx), descripcion, "")
 	if err != nil {
 		return false, err
 	}
@@ -1249,11 +1253,11 @@ func (p *aprobadorPorTurno) Aprobar(ctx context.Context, descripcion string) (bo
 type bloquePorTurno struct{ ad *Adaptador }
 
 func (b *bloquePorTurno) Limpiar(ctx context.Context, flujo string) error {
-	return b.ad.bloques.Limpiar(b.ad.sesionActual(), flujo)
+	return b.ad.bloques.Limpiar(tools.SesionDe(ctx), flujo)
 }
 
 func (b *bloquePorTurno) Guardar(ctx context.Context, flujo string, e flow.EntradaBloque) error {
-	return b.ad.bloques.Guardar(b.ad.sesionActual(), &store.FlowContext{
+	return b.ad.bloques.Guardar(tools.SesionDe(ctx), &store.FlowContext{
 		Flow:      flujo,
 		Stage:     e.Etapa,
 		StageName: e.Nombre,
@@ -1263,7 +1267,7 @@ func (b *bloquePorTurno) Guardar(ctx context.Context, flujo string, e flow.Entra
 }
 
 func (b *bloquePorTurno) Leer(ctx context.Context, flujo string) ([]flow.EntradaBloque, error) {
-	filas, err := b.ad.bloques.Leer(b.ad.sesionActual(), flujo)
+	filas, err := b.ad.bloques.Leer(tools.SesionDe(ctx), flujo)
 	if err != nil {
 		return nil, err
 	}
@@ -1281,11 +1285,11 @@ func (b *bloquePorTurno) Leer(ctx context.Context, flujo string) ([]flow.Entrada
 // (LineaProceso). Es best-effort: si la escritura falla, el flujo sigue.
 type registroPorTurno struct{ ad *Adaptador }
 
-func (r *registroPorTurno) ProcesoEtapa(nombre string, fallida bool) {
+func (r *registroPorTurno) ProcesoEtapa(ctx context.Context, nombre string, fallida bool) {
 	if r.ad.chat == nil {
 		return
 	}
-	sesion := r.ad.sesionActual()
+	sesion := tools.SesionDe(ctx)
 	if sesion == "" {
 		return
 	}
@@ -1375,7 +1379,7 @@ func generarTextoCorrido(ctx context.Context, ad *Adaptador, infer *ollama.ColaI
 		return "", errors.New("arranque: no hay modelo de Ollama disponible")
 	}
 	var b strings.Builder
-	err := infer.Encolar(ctx, ollama.OpcionesEncolar{IdSesion: ad.sesionActual()}, func(c context.Context) error {
+	err := infer.Encolar(ctx, ollama.OpcionesEncolar{IdSesion: tools.SesionDe(ctx)}, func(c context.Context) error {
 		ch, err := ad.cliente.Chat(c, ollama.GenerarRequest{
 			Model:    modelo,
 			Messages: []ollama.Mensaje{{Role: "user", Content: prompt}},

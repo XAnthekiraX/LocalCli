@@ -19,6 +19,7 @@ import (
 
 	"localcli/internal/flow"
 	"localcli/internal/task"
+	"localcli/internal/tools"
 )
 
 // colaPausable envuelve una cola y deja de entregar elementos mientras la
@@ -41,9 +42,9 @@ func (c *colaPausable) Siguiente(ctx context.Context) (*flow.ElementoCola, error
 func (c *colaPausable) Marcar(id string, estado task.Estado) error { return c.cola.Marcar(id, estado) }
 
 // ConsumirCola ejecuta una cola delegando en el motor, un elemento por
-// iteración. Devuelve en cuanto el trabajo quedó arrancado: el desenlace llega
-// por eventos.
-func (g *Gestor) ConsumirCola(ctx context.Context, sesionID string, cola flow.Cola) error {
+// iteración. El flujo de cada elemento lo resuelve `flujoDe` desde el catálogo.
+// Devuelve en cuanto el trabajo quedó arrancado: el desenlace llega por eventos.
+func (g *Gestor) ConsumirCola(ctx context.Context, sesionID string, cola flow.Cola, flujoDe flow.ResolutorFlujo) error {
 	if cola == nil {
 		return fmt.Errorf("session: no hay cola que consumir")
 	}
@@ -58,7 +59,8 @@ func (g *Gestor) ConsumirCola(ctx context.Context, sesionID string, cola flow.Co
 	envuelta := &colaPausable{cola: cola, pausada: g.lectorDePausa(t)}
 	t.cola = envuelta
 	g.lanzar(ctx, sesionID, t, func(c context.Context) error {
-		err := g.Motor.ConsumirCola(c, envuelta, g.flujoOFectivo())
+		c = tools.ConSesion(c, sesionID)
+		err := g.Motor.ConsumirCola(c, envuelta, flujoDe)
 		if err == nil {
 			// La cola terminó: la entrega final del último elemento ya está en
 			// el historial —la escribió la última etapa visible de su flujo—,
@@ -68,14 +70,6 @@ func (g *Gestor) ConsumirCola(ctx context.Context, sesionID string, cola flow.Co
 		return g.cerrarTurno(sesionID, flow.EstadoConError, err)
 	})
 	return nil
-}
-
-// flujoOFectivo devuelve el flujo configurado o el de por defecto.
-func (g *Gestor) flujoOFectivo() flow.Flujo {
-	if g.Flujo.Nombre == "" {
-		return FlujoPorDefecto()
-	}
-	return g.Flujo
 }
 
 // lectorDePausa devuelve la lectura segura del flag de pausa de un trabajo.

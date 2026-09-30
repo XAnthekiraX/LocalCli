@@ -85,6 +85,15 @@ func (c *Catalogo) PorNombre(nombre string) (Flujo, bool) {
 	return Flujo{}, false
 }
 
+// PorComando devuelve el flujo registrado con ese comando (p. ej. "/crear"). El
+// segundo valor es false si no hay ninguno: lo usa la cola para resolver el
+// flujo de un elemento por su acción, y quien llama decide qué hacer sin flujo
+// en vez de recibir uno vacío.
+func (c *Catalogo) PorComando(comando string) (Flujo, bool) {
+	f, ok := c.porComando[comando]
+	return f, ok
+}
+
 // Flujos devuelve los flujos del catálogo, en orden de registro.
 func (c *Catalogo) Flujos() []Flujo {
 	out := make([]Flujo, 0, len(c.orden))

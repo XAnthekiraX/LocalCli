@@ -167,6 +167,24 @@ func (a *almacenMem) estadoDe(t *testing.T, id string) string {
 	return s.Status
 }
 
+// flujoDePrueba es un flujo mínimo para las pruebas de sesión: los flujos del
+// proyecto viven en `.localcli/flows/*.json`, no cableados en el código.
+func flujoDePrueba() flow.Flujo {
+	return flow.Flujo{
+		Nombre:   "prueba",
+		Comando:  "/prueba",
+		Pregunta: "el resultado",
+		Etapas: []flow.Etapa{
+			{ID: "unica", Nombre: "Única", Agente: "plan", Pregunta: "¿?", Entrega: true},
+		},
+	}
+}
+
+// resolutorDePrueba devuelve siempre el flujo de prueba para cualquier elemento.
+func resolutorDePrueba() flow.ResolutorFlujo {
+	return func(flow.ElementoCola) (flow.Flujo, bool) { return flujoDePrueba(), true }
+}
+
 // motorStub permite controlar el desenlace del flujo y su duración.
 type motorStub struct {
 	mu       sync.Mutex
@@ -253,7 +271,7 @@ func (m *motorStub) conversacionesHechas() []string {
 	return append([]string(nil), m.conversaciones...)
 }
 
-func (m *motorStub) ConsumirCola(ctx context.Context, cola flow.Cola, f flow.Flujo) error {
+func (m *motorStub) ConsumirCola(ctx context.Context, cola flow.Cola, _ flow.ResolutorFlujo) error {
 	m.mu.Lock()
 	m.cola = cola
 	primer, continuar := m.primerHecho, m.continuar
@@ -509,7 +527,7 @@ func TestElTrabajoSigueAunqueLaVistaEstéEnOtraSesión(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := g.Enviar(context.Background(), a.ID, "trabaja en A"); err != nil {
+	if err := g.ArrancarFlujo(context.Background(), a.ID, flujoDePrueba(), "trabaja en A"); err != nil {
 		t.Fatal(err)
 	}
 	// La "vista" se va a otra sesión: se crea y se usa la B sin tocar la A.
@@ -517,7 +535,7 @@ func TestElTrabajoSigueAunqueLaVistaEstéEnOtraSesión(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := g.Enviar(context.Background(), b.ID, "trabaja en B"); err != nil {
+	if err := g.ArrancarFlujo(context.Background(), b.ID, flujoDePrueba(), "trabaja en B"); err != nil {
 		t.Fatal(err)
 	}
 	if !g.EnCurso(a.ID) {
@@ -540,7 +558,7 @@ func TestCerrarSesiónEnCursoPideDecisión(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := g.Enviar(context.Background(), s.ID, "algo largo"); err != nil {
+	if err := g.ArrancarFlujo(context.Background(), s.ID, flujoDePrueba(), "algo largo"); err != nil {
 		t.Fatal(err)
 	}
 	if err := g.Cerrar(s.ID, false); err == nil {
@@ -563,7 +581,7 @@ func TestEnviarInvocaFlowUnaVez(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := g.Enviar(context.Background(), s.ID, "  implementa la API  "); err != nil {
+	if err := g.ArrancarFlujo(context.Background(), s.ID, flujoDePrueba(), ObjetivoDeMensaje("  implementa la API  ")); err != nil {
 		t.Fatal(err)
 	}
 	esperarEstado(t, g, s.ID, EstadoTerminada)
@@ -575,7 +593,7 @@ func TestEnviarInvocaFlowUnaVez(t *testing.T) {
 	if llamadas[0] != "implementa la API" {
 		t.Errorf("objetivo = %q, quiero el mensaje del usuario sin espacios", llamadas[0])
 	}
-	if err := g.Enviar(context.Background(), s.ID, ""); err == nil {
+	if err := g.ArrancarFlujo(context.Background(), s.ID, flujoDePrueba(), ""); err == nil {
 		t.Error("un mensaje vacío no debe arrancar nada")
 	}
 	// Un flujo correcto cierra con el estado y sin mensaje de relleno: la
@@ -595,7 +613,7 @@ func TestFalloDejaLaSesiónEnError(t *testing.T) {
 	motor.err = errors.New("E_STAGE_FAILED: la etapa falló")
 	g, _ := gestorDe(t, motor)
 	s, _ := g.Crear("sesión", "")
-	if err := g.Enviar(context.Background(), s.ID, "algo"); err != nil {
+	if err := g.ArrancarFlujo(context.Background(), s.ID, flujoDePrueba(), "algo"); err != nil {
 		t.Fatal(err)
 	}
 	esperarEstado(t, g, s.ID, EstadoError)
@@ -605,7 +623,7 @@ func TestPausaPorPermisoDejaLaSesiónEsperando(t *testing.T) {
 	motor := nuevoMotor(flow.EstadoPausadoPermiso)
 	g, _ := gestorDe(t, motor)
 	s, _ := g.Crear("sesión", "")
-	if err := g.Enviar(context.Background(), s.ID, "algo que pide permiso"); err != nil {
+	if err := g.ArrancarFlujo(context.Background(), s.ID, flujoDePrueba(), "algo que pide permiso"); err != nil {
 		t.Fatal(err)
 	}
 	esperarEstado(t, g, s.ID, EstadoEsperandoPermiso)
@@ -621,7 +639,7 @@ func TestPausarDetieneDespuésDelElementoEnCurso(t *testing.T) {
 	s, _ := g.Crear("cola", "")
 	cola := &colaStub{ids: []string{"T-B001", "T-B002"}}
 
-	if err := g.ConsumirCola(context.Background(), s.ID, cola); err != nil {
+	if err := g.ConsumirCola(context.Background(), s.ID, cola, resolutorDePrueba()); err != nil {
 		t.Fatal(err)
 	}
 	<-motor.primerHecho // el primer elemento ya está completado
@@ -659,7 +677,7 @@ func TestReanudarVuelveADejarPasarElementos(t *testing.T) {
 	s, _ := g.Crear("cola", "")
 	cola := &colaStub{ids: []string{"T-B001", "T-B002"}}
 
-	if err := g.ConsumirCola(context.Background(), s.ID, cola); err != nil {
+	if err := g.ConsumirCola(context.Background(), s.ID, cola, resolutorDePrueba()); err != nil {
 		t.Fatal(err)
 	}
 	<-motor.primerHecho
@@ -693,7 +711,7 @@ func TestCancelarCortaElTrabajo(t *testing.T) {
 	motor.bloqueo = make(chan struct{})
 	g, _ := gestorDe(t, motor)
 	s, _ := g.Crear("cancelable", "")
-	if err := g.Enviar(context.Background(), s.ID, "algo largo"); err != nil {
+	if err := g.ArrancarFlujo(context.Background(), s.ID, flujoDePrueba(), "algo largo"); err != nil {
 		t.Fatal(err)
 	}
 	<-motor.iniciado
@@ -709,7 +727,7 @@ func TestNotificaAlTerminar(t *testing.T) {
 	defer baja()
 
 	s, _ := g.Crear("sesión", "")
-	if err := g.Enviar(context.Background(), s.ID, "algo"); err != nil {
+	if err := g.ArrancarFlujo(context.Background(), s.ID, flujoDePrueba(), "algo"); err != nil {
 		t.Fatal(err)
 	}
 	esperarEstado(t, g, s.ID, EstadoTerminada)
@@ -734,7 +752,7 @@ func TestNotificaFalloConSuMotivo(t *testing.T) {
 	defer baja()
 
 	s, _ := g.Crear("sesión", "")
-	_ = g.Enviar(context.Background(), s.ID, "algo")
+	_ = g.ArrancarFlujo(context.Background(), s.ID, flujoDePrueba(), "algo")
 	esperarEstado(t, g, s.ID, EstadoError)
 
 	if !contieneEvento(recoger(eventos), EventoNotificacion, "con error") {

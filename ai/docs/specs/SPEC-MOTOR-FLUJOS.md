@@ -75,7 +75,7 @@ Caer una entrada no cancela la etapa: la sigue, sabiendo por el aviso qué parte
 
 Toda etapa entrega su respuesta, el modelo la **optimiza** y queda en el bloque de contexto, una aportación por etapa. No hay bandera que lo active: **todos los flujos** llevan bloque.
 
-El bloque vive en `flow_context` (sesión, flujo, etapa, posición, pregunta y contenido). Una ejecución nueva del mismo flujo lo vacía: no hereda la anterior. Se guarda porque es lo que permite **retomar un flujo pausado sin repetir las etapas ya hechas**, y porque la etapa `entrega` lo lee entero para redactar.
+El bloque vive en `flow_context` (sesión, flujo, etapa, nombre visible, posición y contenido). La pregunta no se persiste: se deriva del flujo al recomponer la ventana, porque el flujo es dato y los ids de etapa son estables. Una ejecución nueva del mismo flujo lo vacía: no hereda la anterior. Se guarda porque es lo que permite **retomar un flujo pausado sin repetir las etapas ya hechas**, y porque la etapa `entrega` lo lee entero para redactar.
 
 ## Visibilidad de una respuesta
 
@@ -113,6 +113,8 @@ El nivel de entrega es el único que corre sin herramientas. Lo declara la etapa
 - La ventana tiene tope, se recalcula por etapa con el modelo que la corre y, al exceder, se caen sus entradas más antiguas avisando de cuáles.
 - Una etapa `entrega` corre sin herramientas. Las demás, con las del agente que declara.
 - Una etapa con `respuesta_en_chat` se ve en la pantalla y se guarda, y su texto nunca entra al contexto del modelo.
+- La pregunta de cada etapa viaja en el brief que recibe el agente: es lo que la etapa debe responder, y es la que la ventana empareja con la respuesta.
+- Una etapa que no responde a su pregunta se reintenta **una vez**; si sigue muda, falla (`E_STAGE_FAILED`) y el flujo se detiene. Una etapa sin respuesta no alimenta la ventana y no pasa por buena.
 - Una etapa que no pide nada de esto corre en silencio: la vista solo anuncia su nombre (`[Sub Proceso] <nombre>`).
 - Si una etapa falla, el flujo se detiene. El usuario elige reintentar, saltar esa etapa o cancelar.
 - Un flujo pausado por un permiso se retoma desde la misma etapa, sin repetir lo ya hecho, leyendo el bloque.
@@ -142,6 +144,8 @@ El nivel de entrega es el único que corre sin herramientas. Lo declara la etapa
 - [ ] Una etapa con `aprobacion` detiene el flujo después de correr, y el usuario aprueba su resultado.
 - [ ] La etapa `entrega` corre sin herramientas; una etapa que escribe código, con ellas.
 - [ ] Una etapa con `respuesta_en_chat` se ve en la pantalla y se guarda, y su texto no aparece en el contexto que recibe el modelo.
+- [ ] La pregunta de una etapa viaja en el brief del agente y la ventana empareja pregunta y respuesta de cada etapa anterior.
+- [ ] Una etapa que no responde a su pregunta se reintenta una vez y, si sigue muda, falla con `E_STAGE_FAILED` y el flujo se detiene.
 - [ ] Una etapa sin nada de esto no se muestra ni se persiste; la vista solo anuncia su nombre.
 - [ ] Al terminar el flujo, el chat muestra la entrega como conversación.
 - [ ] Todas las etapas guardan su respuesta optimizada en el bloque, sin importar el flujo.

@@ -38,7 +38,7 @@ func (c *Consumidor) Siguiente(ctx context.Context) (*flow.ElementoCola, error) 
 		return nil, nil
 	}
 	e := elegibles[0]
-	return &flow.ElementoCola{ID: e.ID, Objetivo: Objetivo(e)}, nil
+	return &flow.ElementoCola{ID: e.ID, Objetivo: Objetivo(e), Accion: string(e.Accion)}, nil
 }
 
 // Objetivo redacta con qué objetivo se pide el contexto de un elemento.

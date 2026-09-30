@@ -54,7 +54,7 @@ func matrizDeReglas() []regla {
 
 		// --- §Motor de etapas ---
 		{"Motor de etapas", "Las etapas se ejecutan en orden y cada una arranca cuando la anterior terminó",
-			[]string{"ResolverSecuenciaDocumentada"}},
+			[]string{"LasEtapasCorrenEnOrdenConSuAgente"}},
 		{"Motor de etapas", "Si una etapa falla, el flujo se detiene",
 			[]string{"EtapaFallidaEmiteEventoYDetiene"}},
 		{"Motor de etapas", "Un flujo pausado por un permiso se retoma desde la misma etapa",

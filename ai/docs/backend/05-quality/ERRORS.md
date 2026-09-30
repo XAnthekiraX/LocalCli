@@ -34,6 +34,7 @@ Los que el usuario puede encontrarse y merece la pena distinguir:
 | El modelo elegido no cabe en la VRAM | Aviso de que irá a RAM, más lento | Lo carga igual, sin fallar en silencio |
 | Falta Landlock | Aviso de que la garantía de la terminal es más débil | Sigue funcionando con la garantía reducida |
 | Una etapa pide un documento que no existe | Aviso de qué falta | La etapa se detiene; no se supone nada |
+| Una etapa no responde a su pregunta | Aviso de que la etapa no respondió | Se reintenta una vez y, si sigue muda, falla con `E_STAGE_FAILED` y el flujo se detiene |
 | El contexto no cabe en el modelo | El recorte ocurre, y queda registrado | Se entrega lo que cabe, y se registra qué salió |
 | Una escritura se declina | El agente recibe el rechazo | Propone otra cosa |
 | Un comando no termina o no para de imprimir | Aviso de que se cortó | Se corta; el harness no se cuelga ni llena el contexto |
@@ -64,7 +65,7 @@ Los que el usuario puede encontrarse y merece la pena distinguir:
 | `E_DOC_PARSE` | Un documento no se pudo leer o su frontmatter no se pudo parsear; el archivo concreto se queda fuera del grafo y el resto se carga |
 | `E_CONTEXT_TOO_BIG` | Lo que se quería entregar no cabe ni tras recortar |
 | `E_ELEMENTO_BLOQUEADO` | Un elemento del TODO no puede arrancar por dependencias |
-| `E_STAGE_FAILED` | Una etapa falló; el flujo se detiene |
+| `E_STAGE_FAILED` | Una etapa falló (incluida una que no responde a su pregunta tras el reintento); el flujo se detiene |
 | `E_FLOW_CANCELLED` | El flujo fue cancelado |
 | `E_NOT_A_PROJECT` | La carpeta abierta no es un proyecto válido |
 | `E_DB_UNAVAILABLE` | No se pudo abrir o leer la base de datos del proyecto |
@@ -98,7 +99,7 @@ Go no tiene excepciones, así que el "manejo" es explícito en cada punto donde 
   sin avisar; el código propio queda en el mensaje como diagnóstico. Una raíz que no es carpeta de
   documentación es `E_STAGE_FAILED` directo.
 - **Cola:** `E_ELEMENTO_BLOQUEADO`; la cola no es un error, sigue con otra.
-- **Flujo:** `E_STAGE_FAILED`, `E_FLOW_CANCELLED`.
+- **Flujo:** `E_STAGE_FAILED` (una etapa falla o no responde a su pregunta tras el reintento), `E_FLOW_CANCELLED`.
 - **Sesiones:** `E_NOT_A_PROJECT` al abrir; los demás casos son operacionales, no de arranque.
 - **Base de datos:** `E_DB_UNAVAILABLE`, `E_DB_SCHEMA_OUTDATED`, `E_DB_CONSTRAINT`, `E_DB_FOREIGN_KEY`, `E_DB_CONFLICT`, `E_DB_LOCKED`. Ninguno de ellos es `E_BAD_ARGS`: ese código es para el contrato de una herramienta, y un fallo de la base es de otra capa. Ver [[database/02-rules/DATA_FLOW]].
 - **Ollama:** `E_OLLAMA_UNAVAILABLE`, `E_MODEL_TOO_BIG`. Ver [[backend/04-infrastructure/INTEGRATIONS]].

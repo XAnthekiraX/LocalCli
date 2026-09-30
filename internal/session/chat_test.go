@@ -68,7 +68,7 @@ func TestArrancarFlujoCorreElFlujoExplicito(t *testing.T) {
 	motor := nuevoMotor(flow.EstadoTerminado)
 	g, _ := gestorDe(t, motor)
 	s, _ := g.Crear("sesión", "")
-	if err := g.ArrancarFlujo(context.Background(), s.ID, flow.FlujoResolver(), "arregla el fallo"); err != nil {
+	if err := g.ArrancarFlujo(context.Background(), s.ID, flujoDePrueba(), "arregla el fallo"); err != nil {
 		t.Fatal(err)
 	}
 	esperarEstado(t, g, s.ID, EstadoTerminada)

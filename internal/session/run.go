@@ -20,7 +20,7 @@ import (
 
 	"localcli/internal/flow"
 	"localcli/internal/store"
-	"localcli/internal/task"
+	"localcli/internal/tools"
 )
 
 // Motor es lo que `session` necesita de `flow`: responder como chat, arrancar
@@ -28,16 +28,11 @@ import (
 type Motor interface {
 	Conversar(ctx context.Context, agente, objetivo string, historial []flow.Mensaje, imagenes []string) (flow.Resultado, error)
 	EjecutarFlujo(ctx context.Context, f flow.Flujo, objetivo string) (flow.EstadoFlujo, error)
-	ConsumirCola(ctx context.Context, cola flow.Cola, f flow.Flujo) error
+	ConsumirCola(ctx context.Context, cola flow.Cola, flujoDe flow.ResolutorFlujo) error
 }
 
 // El motor real cumple la interfaz que session necesita.
 var _ Motor = (*flow.Motor)(nil)
-
-// FlujoPorDefecto es el ciclo de trabajo de la acción `crear`, que es el que usa
-// una sesión cuando no se le dice otro. El flujo concreto de una petición lo
-// decide quien la interpreta (SPEC-CICLO-TRABAJO); session no lo adivina.
-func FlujoPorDefecto() flow.Flujo { return flow.FlujoTrabajo(task.AccionCrear) }
 
 // ObjetivoDeMensaje construye el objetivo que se le pasa a `flow` a partir del
 // mensaje del usuario. Es el texto tal cual: interpretarlo es de `flow` y del
@@ -69,19 +64,13 @@ func (g *Gestor) ArrancarFlujo(ctx context.Context, sesionID string, f flow.Fluj
 	if err := g.marcarTrabajando(ses); err != nil {
 		return err
 	}
-	if f.Nombre == "" {
-		f = g.flujoOFectivo()
+	if strings.TrimSpace(f.Nombre) == "" {
+		return fmt.Errorf("session: el flujo necesita un nombre")
 	}
 	g.lanzar(ctx, sesionID, &trabajo{}, func(c context.Context) error {
 		return g.ejecutarFlujo(c, sesionID, objetivo, f)
 	})
 	return nil
-}
-
-// Enviar arranca el flujo configurado con el mensaje del usuario. Es el arranque
-// explícito de un flujo; el camino por defecto de la vista es `Conversar`.
-func (g *Gestor) Enviar(ctx context.Context, sesionID, texto string) error {
-	return g.ArrancarFlujo(ctx, sesionID, g.flujoOFectivo(), ObjetivoDeMensaje(texto))
 }
 
 // Conversar responde el mensaje como chat con el agente activo: es el camino
@@ -138,6 +127,10 @@ func (g *Gestor) Conversar(ctx context.Context, sesionID, agente, texto string, 
 		return err
 	}
 	g.lanzar(ctx, sesionID, &trabajo{}, func(c context.Context) error {
+		// La sesión viaja en el contexto del turno: cada evento del motor
+		// —tokens, herramientas, etapas— se atribuye a quien lo produjo, sin una
+		// variable global compartida por todas las sesiones.
+		c = tools.ConSesion(c, sesionID)
 		_, cErr := g.Motor.Conversar(c, agente, ObjetivoDeMensaje(texto), previos, imagenes)
 		if cErr := g.cerrarChat(sesionID, cErr); cErr != nil {
 			return cErr
@@ -248,9 +241,9 @@ func (g *Gestor) cerrarChat(sesionID string, err error) error {
 // estado que `store` ya puso al registrar la aprobación); cualquier otro
 // desenlace → terminada.
 func (g *Gestor) ejecutarFlujo(ctx context.Context, sesionID, objetivo string, f flow.Flujo) error {
-	if f.Nombre == "" {
-		f = FlujoPorDefecto()
-	}
+	// La sesión viaja en el contexto: las etapas del flujo (y sus eventos) se
+	// atribuyen a esta sesión, no a una global que otra petición pudo pisar.
+	ctx = tools.ConSesion(ctx, sesionID)
 	estadoFlujo, err := g.Motor.EjecutarFlujo(ctx, f, objetivo)
 	// Un flujo que termina bien ya dejó su entrega final en el historial: la
 	// última etapa es visible y el ejecutor la persistió. Cerrar el turno aquí
