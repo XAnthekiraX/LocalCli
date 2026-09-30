@@ -180,13 +180,43 @@ func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto stri
 	// resultado. Es lo que cierra una etapa con texto real y lo que garantiza
 	// que la entrega final de un flujo no dependa de que el modelo deje de pedir
 	// herramientas por sí solo.
-	texto, razon, _, err := e.unaPasada(ctx, a, modelo, mensajes, nil, numCtx, pensar, sink, &tokensIn, &tokensOut)
+	texto, razon, pedidos, err := e.unaPasada(ctx, a, modelo, mensajes, nil, numCtx, pensar, sink, &tokensIn, &tokensOut)
 	if err != nil {
 		if sink != nil {
 			sink.Token("[sin respuesta del modelo]", false)
 		}
 		return Resultado{}, err
 	}
+
+	// Una redacción no es un cierre: puede volver a pedir herramientas aunque no
+	// se le ofrezcan. Si lo hace y no ha entregado texto, se le responde con una
+	// instrucción explícita y se reintenta UNA sola vez
+	// (SPEC-AGENTE-BASE §El ciclo de un turno). El reintento es el precio de no
+	// dejar un turno mudo, y no se repite.
+	if strings.TrimSpace(texto) == "" && len(pedidos) > 0 {
+		mensajes = append(mensajes,
+			ollama.Mensaje{Role: "assistant", Content: texto, ToolCalls: pedidos},
+			ollama.Mensaje{Role: "user", Content: instruccionDeRedaccion},
+		)
+		texto, razon, _, err = e.unaPasada(ctx, a, modelo, mensajes, nil, numCtx, pensar, sink, &tokensIn, &tokensOut)
+		if err != nil {
+			if sink != nil {
+				sink.Token("[sin respuesta del modelo]", false)
+			}
+			return Resultado{}, err
+		}
+	}
+
+	// El turno nunca se cierra mudo: sin texto no hay resultado, hay un error
+	// distinguible, para que quien lo reciba deje el motivo a la vista en vez de
+	// guardar una respuesta que el modelo no escribió.
+	if strings.TrimSpace(texto) == "" {
+		if sink != nil {
+			sink.Token("[sin respuesta del modelo]", false)
+		}
+		return Resultado{}, nuevoErrorSinRespuesta()
+	}
+
 	return Resultado{
 		Texto:         texto,
 		Razonamiento:  razon,
@@ -195,6 +225,13 @@ func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto stri
 		Aviso:         aviso,
 	}, nil
 }
+
+// instruccionDeRedaccion es lo que se le responde al modelo que vuelve a pedir
+// herramientas en la pasada de redacción. Es explícita porque un modelo pequeño
+// no entiende que se le está pidiendo prosa: hay que decirle que no hay
+// herramientas y que escriba lo que consiguió.
+const instruccionDeRedaccion = "No hay más herramientas disponibles: has agotado las rondas y no has entregado ninguna respuesta. " +
+	"Escribe ahora, en prosa, el resultado del trabajo con lo que ya conseguiste. No pidas ninguna herramienta."
 
 // unaPasada hace UNA petición al modelo con las herramientas dadas y devuelve
 // su texto, su razonamiento y las peticiones de herramienta de la señal de fin.

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 // registroStub arma el registro del catálogo cerrado con un handler propio por
@@ -182,6 +183,10 @@ func TestEventosDeTodaEjecucion(t *testing.T) {
 	if pub.medida != "1 línea" {
 		t.Errorf("el resultado se mide en su unidad: %q", pub.medida)
 	}
+	// La duración del handler también viaja en el resultado (EVENTS.md §3).
+	if pub.duracion < 0 {
+		t.Errorf("el resultado debe llevar la duración medida: %v", pub.duracion)
+	}
 }
 
 type publicadorGrabador struct {
@@ -189,6 +194,7 @@ type publicadorGrabador struct {
 	sesion, agente, verbo string
 	tema                  string
 	medida                string
+	duracion              time.Duration
 }
 
 func (p *publicadorGrabador) HerramientaInvocada(sesion, nombre, agente, verbo, tema string) {
@@ -199,7 +205,86 @@ func (p *publicadorGrabador) HerramientaInvocada(sesion, nombre, agente, verbo, 
 	p.tema = tema
 }
 
-func (p *publicadorGrabador) HerramientaResultado(sesion, nombre string, ok bool, err string, truncado bool, medida string) {
+func (p *publicadorGrabador) HerramientaResultado(sesion, nombre string, ok bool, err string, truncado bool, medida string, duracion time.Duration) {
 	p.resultado++
 	p.medida = medida
+	p.duracion = duracion
+}
+
+// TestLaEsperaDeAprobacionNoEsTiempoDeLaHerramienta — el handler pide permiso
+// por `c.Ask` y ese rato es de la persona, no de la herramienta: la duración
+// reportada lo descuenta (TOOLS.md §8 §Duración).
+func TestLaEsperaDeAprobacionNoEsTiempoDeLaHerramienta(t *testing.T) {
+	const espera = 20 * time.Millisecond
+	h, _ := NuevaHerramienta("crear_archivo", func(ctx context.Context, args any, c Contexto) (Resultado, error) {
+		if _, err := c.Ask(ctx, Solicitud{Descripcion: "crear a.txt"}); err != nil {
+			return Resultado{}, err
+		}
+		return Resultado{Salida: "ok"}, nil
+	})
+	r, err := NuevoRegistro([]Herramienta{h})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Ask = func(ctx context.Context, s Solicitud) (Decision, error) {
+		time.Sleep(espera)
+		return Decision{Aprobada: true, Explicita: true}, nil
+	}
+	pub := &publicadorGrabador{}
+	r.Eventos = pub
+	if _, err := r.Ejecutar(context.Background(), Peticion{
+		Agente:      AgenteBuild,
+		SesionID:    "s1",
+		Permisos:    AccionesDeBuild(),
+		Herramienta: "crear_archivo",
+		Argumentos:  json.RawMessage(`{"ruta":"a.txt","contenido":"hola"}`),
+	}); err != nil {
+		t.Fatalf("Ejecutar: %v", err)
+	}
+	if pub.duracion >= espera {
+		t.Errorf("la espera de aprobación no cuenta como duración: %v", pub.duracion)
+	}
+}
+
+// TestElResultadoLlevaLaDuracionDelHandler — la medición envuelve el handler y
+// viaja en `herramienta_resultado` tanto si terminó bien como si falló: una
+// ejecución que tardó y falló también tardó (TOOLS.md §8 §Duración).
+func TestElResultadoLlevaLaDuracionDelHandler(t *testing.T) {
+	const trabajo = 2 * time.Millisecond
+	casos := []struct {
+		nombre string
+		hacer  Ejecutar
+	}{
+		{"termina bien", func(ctx context.Context, args any, c Contexto) (Resultado, error) {
+			time.Sleep(trabajo)
+			return Resultado{Salida: "ok"}, nil
+		}},
+		{"falla", func(ctx context.Context, args any, c Contexto) (Resultado, error) {
+			time.Sleep(trabajo)
+			return Resultado{}, errors.New("boom")
+		}},
+	}
+	for _, caso := range casos {
+		t.Run(caso.nombre, func(t *testing.T) {
+			h, _ := NuevaHerramienta("leer_archivo", caso.hacer)
+			r, err := NuevoRegistro([]Herramienta{h})
+			if err != nil {
+				t.Fatal(err)
+			}
+			pub := &publicadorGrabador{}
+			r.Eventos = pub
+			if _, err := r.Ejecutar(context.Background(), Peticion{
+				Agente:      AgenteBuild,
+				SesionID:    "s1",
+				Permisos:    AccionesDeBuild(),
+				Herramienta: "leer_archivo",
+				Argumentos:  json.RawMessage(`{"ruta":"a.md"}`),
+			}); err != nil && caso.nombre == "termina bien" {
+				t.Fatalf("Ejecutar: %v", err)
+			}
+			if pub.duracion < trabajo {
+				t.Errorf("el evento debe llevar lo que tardó el handler: %v", pub.duracion)
+			}
+		})
+	}
 }

@@ -38,7 +38,7 @@ Subir una migración aplicada no es lo mismo que tener un esquema válido: `user
 - Cada migración tiene un número y un nombre corto: `001-crear-schema`, `002-agregar-indice-approvals`, y así sucesivamente.
 - El número es correlativo y de tres dígitos. El nombre describe qué hace, no dónde.
 - El orden de los números es el orden de ejecución. No se reutiliza un número ni se renumera una migración ya publicada.
-- La versión del esquema es el número de la última migración aplicada. `user_version = 4` significa que se aplicaron `001`, `002`, `003` y `004`.
+- La versión del esquema es el número de la última migración aplicada. `user_version = 5` significa que se aplicaron `001`, `002`, `003`, `004` y `005`.
 
 ## 4. Datos existentes
 
@@ -60,13 +60,17 @@ Reglas:
 
 ## Nota sobre el esquema actual
 
-La base se crea ya en su versión actual (v4): las seis tablas de [[database/01-schema/SCHEMA]] más `todos`, la lista de pasos de la sesión, `flow_context`, el bloque de contexto de un flujo, y `chat_evento`, las líneas de procesamiento del chat, además de la columna `messages.duration_ms`. La creación del archivo, su esquema inicial y las migraciones `002-crear-todo`, `003-crear-flow-context` y `004-crear-chat-evento` ocurren en el mismo paso de apertura, así que `user_version` arranca en 4. Los índices de [[database/01-schema/INDEXES]] se aplican junto con la creación, no después.
+La base se crea ya en su versión actual (v5): las seis tablas de [[database/01-schema/SCHEMA]] más `todos`, la lista de pasos de la sesión, `flow_context`, el bloque de contexto de un flujo, y `chat_evento`, las líneas de procesamiento del chat, además de las columnas `messages.duration_ms` y `chat_evento.duration_ms`. La creación del archivo, su esquema inicial y las migraciones `002-crear-todo`, `003-crear-flow-context`, `004-crear-chat-evento` y `005-duracion-linea-herramienta` ocurren en el mismo paso de apertura, así que `user_version` arranca en 5. Los índices de [[database/01-schema/INDEXES]] se aplican junto con la creación, no después.
 
 La migración `002-crear-todo` es aditiva: añade la tabla `todos` y su clave primaria `(session_id, position)`, sin tocar ninguna fila existente. Una base en `user_version = 1` la recibe al abrirse y pasa a la 2 sin perder nada.
 
 La migración `003-crear-flow-context` también es aditiva: añade la tabla `flow_context` y su índice único `(session_id, flow, stage)`, sin tocar ninguna fila existente. Una base en `user_version = 2` la recibe al abrirse y pasa a la 3 sin perder nada.
 
 La migración `004-crear-chat-evento` también es aditiva: añade la tabla `chat_evento` con su índice `(session_id, created_at)` y la columna `messages.duration_ms` (nullable, sin valor por defecto: las filas anteriores quedan con `NULL`, que es "no se midió"). No toca ninguna fila existente. Una base en `user_version = 3` la recibe al abrirse y pasa a la 4 sin perder nada.
+
+La migración `005-duracion-linea-herramienta` es aditiva y solo añade una columna: `chat_evento.duration_ms`, nullable y sin valor por defecto. No crea tabla, no crea índice y no actualiza filas. Las líneas de herramienta ya guardadas quedan con `NULL` y se pintan sin tiempo, que es exactamente lo que significa "no se midió": no se rellena un tiempo inventado para tapar el hueco. Una base en `user_version = 4` la recibe al abrirse y pasa a la 5 sin perder nada.
+
+Añadir la columna como número y no solo dentro de `content` es deliberado: `content` ya guarda la línea compuesta, así que el tiempo se podría leer de ahí. Guardarlo también como columna es lo que permite ordenarlo o filtrar por él sin parsear texto de pantalla, que es la razón de ser de una columna y no un adorno del `content`.
 
 ### Un `user_version` correcto no basta para saber que el esquema es el de la versión
 

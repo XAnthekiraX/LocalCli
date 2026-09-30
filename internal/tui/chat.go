@@ -68,7 +68,7 @@ type Chat struct {
 
 	// pendientes son los índices de las líneas de herramienta abiertas, en
 	// orden de invocación. Al llegar el resultado se cierra la primera (FIFO),
-	// así la misma línea pasa de «LEER [ruta]» a «✓ LEER [ruta] · 70 líneas».
+	// así la misma línea pasa de «LEER [ruta]» a «✓ LEER [ruta] · 70 líneas · 0.4 s».
 	pendientes []int
 
 	// ultimoAgente es el índice+1 del último segmento del agente cerrado en el
@@ -149,9 +149,16 @@ func LineaHerramientaAbierta(verbo, tema string) string {
 }
 
 // LineaHerramientaCerrada completa la línea de una herramienta: su marca
-// («✓»/«✗»), la medida del resultado y, si se recortó, el aviso. `base` es la
+// («✓»/«✗»), la medida del resultado, si se recortó, el motivo del fallo y
+// cuánto tardó la ejecución —«✓ LEER [ruta] · 70 líneas · 0.4 s»—. `base` es la
 // línea abierta —o el nombre de la herramienta si el resultado llegó suelto—.
-func LineaHerramientaCerrada(base string, ok, truncado bool, medida, err string) string {
+//
+// La duración va al final, con el separador de la línea y el atenuado de
+// sistema: sin paréntesis, porque estos marcan «esto es el tiempo de una
+// respuesta» y una línea de herramienta no lo es (INTERFACES.md §1.1). Se pinta
+// también si la ejecución falló —tardó igual— y, sin medición, no se pinta nada
+// ni se deja hueco.
+func LineaHerramientaCerrada(base string, ok, truncado bool, medida, err string, duracion time.Duration) string {
 	marca := "✓ "
 	if !ok {
 		marca = "✗ "
@@ -165,6 +172,9 @@ func LineaHerramientaCerrada(base string, ok, truncado bool, medida, err string)
 	}
 	if !ok && err != "" {
 		linea += " · " + recortarError(err)
+	}
+	if duracion > 0 {
+		linea += " · " + estiloSistema.Render(formatearDuracion(duracion))
 	}
 	return linea
 }
@@ -181,16 +191,17 @@ func LineaProceso(nombre string, fallida bool) string {
 
 // CerrarHerramienta cierra la línea abierta por AnotarInvocacion con su marca
 // compacta: «✓» si terminó bien, «✗» si falló, más la medida del resultado
-// («70 líneas») y, si se recortó, el aviso. La salida cruda no se pinta: va al
-// modelo, no a la pantalla (EVENTS.md §3). Sin invocación pendiente —un
-// resultado suelto— se añade una línea nueva con el nombre de la herramienta.
-func (c *Chat) CerrarHerramienta(nombre string, ok, truncado bool, medida, err string) {
+// («70 líneas»), si se recortó y cuánto tardó la ejecución. La salida cruda no
+// se pinta: va al modelo, no a la pantalla (EVENTS.md §3). Sin invocación
+// pendiente —un resultado suelto— se añade una línea nueva con el nombre de la
+// herramienta.
+func (c *Chat) CerrarHerramienta(nombre string, ok, truncado bool, medida, err string, duracion time.Duration) {
 	idx := c.siguientePendiente()
 	base := nombre
 	if idx >= 0 {
 		base = c.mensajes[idx].Texto
 	}
-	linea := LineaHerramientaCerrada(base, ok, truncado, medida, err)
+	linea := LineaHerramientaCerrada(base, ok, truncado, medida, err, duracion)
 	if idx >= 0 {
 		c.mensajes[idx].Texto = linea
 		return

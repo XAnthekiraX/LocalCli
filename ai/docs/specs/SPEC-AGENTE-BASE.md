@@ -62,7 +62,11 @@ Un turno no es una pregunta y una respuesta. Es una conversación corta entre el
 4. El modelo ve el resultado y decide: seguir, pedir otra, o responder.
 5. Se repite desde el 2 hasta que el modelo responde en texto o se alcanza el máximo de rondas.
 
-Ese máximo existe para que un modelo que se equivoca en bucle no se quede generando indefinidamente. Al agotarse, el turno termina con lo que haya conseguido y con un aviso, en vez de seguir consumiendo.
+Ese máximo existe para que un modelo que se equivoca en bucle no se quede generando indefinidamente.
+
+**Al agotarse, el turno redacta.** Cerrarlo devolviendo el preámbulo que acompañaba a la última petición de herramienta sería devolver un texto que no contesta nada, así que el turno cierra con una **pasada de redacción sin herramientas**: se le pide al modelo que escriba su resultado con lo que consiguió. Esa pasada es la que hace que la entrega final no dependa de que el modelo deje de pedir herramientas por sí solo.
+
+Una redacción no es un cierre, y puede fallar de dos maneras. Si el modelo vuelve a pedir herramientas —aun sin que se le ofrezcan— se le responde con una instrucción explícita y se **reintenta una sola vez**. Si aun así no entrega texto, el turno **falla con el motivo a la vista**: se avisa de que se agotaron las rondas y de que el modelo no entregó nada. Nunca se guarda un turno mudo como si hubiera respondido, y nunca se termina en silencio.
 
 **Un fallo no termina el turno.** Si una herramienta falla por un motivo que el modelo puede corregir —le faltan argumentos, la ruta no existe— ve el motivo y puede reintentarlo en la misma ronda. Si el fallo no es suyo —se le ha denegado el permiso, el sistema no responde— se lo dice y sigue con otra cosa.
 
@@ -163,7 +167,9 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 - Un fallo corregible —argumentos que no cuadran, una ruta que no existe— vuelve al modelo como resultado y el turno puede continuar corrigiendo.
 - Un fallo no corregible se informa al modelo y no detiene el trabajo.
 - Si el modelo en uso no puede usar herramientas, el agente responde en modo conversación y la interfaz lo avisa.
-- Un turno termina al llegar al máximo de rondas, con un aviso y con lo conseguido.
+- Un turno que agota las rondas pide una redacción sin herramientas antes de cerrarse, y solo entonces.
+- Si esa redacción vuelve a pedir herramientas, se reintenta una sola vez con una instrucción explícita.
+- Si el turno no entrega texto ni así, falla con el motivo a la vista: no se guarda como si hubiera respondido ni se termina en silencio.
 
 ## Criterios de aceptación
 
@@ -187,6 +193,8 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 - [ ] El prompt del agente no lleva el catálogo de herramientas.
 - [ ] Un turno que necesita leer y después escribir hace al menos dos rondas de herramientas.
 - [ ] Un turno se detiene al llegar al máximo de rondas y avisa de que se agotaron.
+- [ ] Un turno que gastó sus rondas en herramientas cierra con una redacción de su resultado, no con el preámbulo de su última petición de herramienta.
+- [ ] Si el modelo sigue pidiendo herramientas al redactar, se reintenta una vez y, si tampoco responde, el turno falla con un aviso visible en vez de guardar una respuesta vacía.
 - [ ] Un fallo de argumentos vuelve al modelo y puede corregirlo sin perder el turno.
 - [ ] Las herramientas de un turno se ejecutan en el orden en que las pidió el modelo.
 - [ ] Un modelo sin capacidad de herramientas hace que el agente responda en modo conversación, y la interfaz lo avisa.
@@ -195,6 +203,7 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 
 - Ambos operan solo con el contexto que reciben, no con el proyecto completo.
 - No añaden esperas propias al tiempo de respuesta del modelo.
+- El reintento de la redacción es una sola pasada más y solo ocurre cuando el turno ya no iba a entregar nada: es el precio de no dejar un turno mudo, y no se repite.
 - Una espera de aprobación de una sesión no retiene el turno de inferencia de las demás.
 
 ## Dependencias funcionales

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"localcli/internal/session"
 	"localcli/internal/store"
@@ -41,13 +42,14 @@ func adaptadorConSesion(t *testing.T) (*Adaptador, string) {
 	return ad, ses.ID
 }
 
-// La línea de herramienta se guarda cerrada (con su marca y su medida), que es
-// justo lo que la vista pinta: así el hilo la recuerda al volver a la sesión.
+// La línea de herramienta se guarda cerrada (con su marca, su medida y su
+// tiempo), que es justo lo que la vista pinta: así el hilo la recuerda al
+// volver a la sesión.
 func TestElPublicadorGuardaLaLineaDeHerramientaEnElHilo(t *testing.T) {
 	ad, sesion := adaptadorConSesion(t)
 	pub := &publicadorBus{bus: ad.bus, ad: ad}
 	pub.HerramientaInvocada(sesion, "leer_archivo", "plan", "LEER", "AGENTS.md")
-	pub.HerramientaResultado(sesion, "leer_archivo", true, "", false, "93 líneas")
+	pub.HerramientaResultado(sesion, "leer_archivo", true, "", false, "93 líneas", 400*time.Millisecond)
 
 	hilo, err := ad.chat.Hilo(sesion)
 	if err != nil {
@@ -61,6 +63,14 @@ func TestElPublicadorGuardaLaLineaDeHerramientaEnElHilo(t *testing.T) {
 	}
 	if !strings.Contains(hilo[0].Content, "LEER [AGENTS.md] · 93 líneas") {
 		t.Errorf("la línea guardada lleva el verbo, el tema y la medida: %q", hilo[0].Content)
+	}
+	// El tiempo se pinta dentro de la línea (atenuado: los códigos de estilo van
+	// alrededor del texto, que queda contiguo) y además se guarda como número.
+	if !strings.Contains(hilo[0].Content, "400 ms") {
+		t.Errorf("la línea guardada lleva su duración: %q", hilo[0].Content)
+	}
+	if hilo[0].DuracionMS != 400 {
+		t.Errorf("la duración se guarda como columna: %d", hilo[0].DuracionMS)
 	}
 }
 

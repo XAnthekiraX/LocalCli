@@ -49,6 +49,46 @@ func TestSinDuracionNoSePintaSufijo(t *testing.T) {
 	}
 }
 
+// --- la línea de herramienta --------------------------------------------------
+
+// La línea cerrada lleva su tiempo al final, con el separador de la línea y sin
+// paréntesis: los paréntesis marcan el tiempo de una respuesta, y una línea de
+// herramienta no lo es (INTERFACES.md §1.1).
+func TestLaLineaDeHerramientaCerradaLlevaSuTiempo(t *testing.T) {
+	linea := sinEstilo(LineaHerramientaCerrada("LEER [AGENTS.md]", true, false, "93 líneas", "", 400*time.Millisecond))
+	if linea != "✓ LEER [AGENTS.md] · 93 líneas · 400 ms" {
+		t.Fatalf("la línea cerrada lleva su duración al final: %q", linea)
+	}
+}
+
+// El tiempo se pinta también cuando la ejecución falló: tardó igual.
+func TestLaLineaDeHerramientaQueFalloLlevaSuTiempo(t *testing.T) {
+	linea := sinEstilo(LineaHerramientaCerrada("CREAR [nuevo.txt]", false, false, "", "el archivo ya existe", 10*time.Millisecond))
+	if linea != "✗ CREAR [nuevo.txt] · el archivo ya existe · 10 ms" {
+		t.Fatalf("la línea fallida lleva su tiempo tras el motivo: %q", linea)
+	}
+}
+
+// Sin duración medida no se pinta nada ni se deja hueco: la línea queda igual
+// que antes de existir el tiempo.
+func TestSinDuracionLaLineaDeHerramientaNoDejaHueco(t *testing.T) {
+	linea := sinEstilo(LineaHerramientaCerrada("LEER [a]", true, false, "1 línea", "", -1))
+	if linea != "✓ LEER [a] · 1 línea" {
+		t.Fatalf("sin medición la línea no cambia: %q", linea)
+	}
+}
+
+// El chat pinta el tiempo de la línea al cerrarla, igual que lo hace con la
+// respuesta: los dos salen del mismo formateador.
+func TestElChatPintaElTiempoDeLaLineaDeHerramienta(t *testing.T) {
+	c := Chat{}
+	c.AnotarInvocacion("LEER", "a.md")
+	c.CerrarHerramienta("leer_archivo", true, false, "70 líneas", "", 400*time.Millisecond)
+	if plano := sinEstilo(c.Render(80)); !strings.Contains(plano, "✓ LEER [a.md] · 70 líneas · 400 ms") {
+		t.Fatalf("el tiempo se pinta al cerrar la línea:\n%s", plano)
+	}
+}
+
 // --- el chat -----------------------------------------------------------------
 
 func TestLaRespuestaCerradaLlevaSuTiempo(t *testing.T) {

@@ -34,3 +34,12 @@ var flowContextSQL string
 //
 //go:embed chatevento.sql
 var chatEventoSQL string
+
+// duracionLineaSQL es el DDL de la duración de una línea de herramienta
+// (migración 005), embebido igual que el esquema base para que el binario siga
+// siendo portable.
+//
+// source: duracionlinea.sql — única copia del DDL de la columna.
+//
+//go:embed duracionlinea.sql
+var duracionLineaSQL string

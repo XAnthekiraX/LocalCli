@@ -87,7 +87,7 @@ Esto tiene tres consecuencias:
 
 Cada herramienta expone su esquema a partir de sus propios tipos de petición, con un esquema por campo: tipo, si es obligatorio y qué significa. La descripción que ve el modelo está escrita para que sepa cuándo usarla y cuándo no, no para resumir la implementación.
 
-El resultado de una ejecución vuelve al modelo como un mensaje propio de herramienta, asociado al nombre con el que la pidió. Se hacen **varias pasadas**: el modelo pide, ve el resultado, y vuelve a pedir si le hace falta. Hay un máximo de pasadas por turno para que un bucle no se alargue sin fin; al agotarlo, el turno termina con lo que haya conseguido.
+El resultado de una ejecución vuelve al modelo como un mensaje propio de herramienta, asociado al nombre con el que la pidió. Se hacen **varias pasadas**: el modelo pide, ve el resultado, y vuelve a pedir si le hace falta. Hay un máximo de pasadas por turno para que un bucle no se alargue sin fin. Al agotarlo, el turno pide una redacción final y **avisa**: si el modelo tampoco entrega nada, el turno falla con el motivo a la vista. Nunca termina en silencio. Ver [[specs/SPEC-AGENTE-BASE]] §El ciclo de un turno.
 
 Las ejecuciones son **secuenciales**. Una tras otra, en el orden en que el modelo las pidió. No en paralelo: el orden importa —una carpeta tiene que existir antes de escribir dentro— y la aprobación de cada escritura es una interrupción que el usuario tiene que ver en orden.
 
@@ -100,7 +100,10 @@ Toda ejecución de una herramienta pasa por la misma secuencia, sin excepciones.
 3. **Se validan** los argumentos contra su esquema.
 4. **Se ejecuta** el handler de la herramienta.
 5. **Se recorta** la salida.
-6. **Se avisa** de lo que pasó, para que se vea en pantalla.
+6. **Se mide** cuánto tardó la ejecución.
+7. **Se avisa** de lo que pasó, para que se vea en pantalla: el desenlace, la medida del resultado, si se recortó y cuánto tardó.
+
+La medición va **en la capa universal, no en cada herramienta**: es el único punto por el que pasan todas las ejecuciones, incluidas las del usuario, así que ninguna tiene que llevar un reloj propio para que su línea diga cuánto tardó. El tiempo medido es el de la ejecución —lo que tardó el handler—, no el del turno: el turno incluye el modelo, y son dos cosas distintas.
 
 ### Errores que el modelo puede corregir
 
@@ -310,7 +313,8 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - [ ] La salida de toda herramienta se recorta, incluida la que no es un comando.
 - [ ] Al recortar, el modelo sabe que se ha recortado y por dónde.
 - [ ] Las ejecuciones de un turno son secuenciales y en el orden pedido.
-- [ ] Un turno se detiene al llegar al máximo de pasadas.
+- [ ] Un turno se detiene al llegar al máximo de pasadas, y avisa de que se agotaron.
+- [ ] La línea de cada herramienta dice cuánto tardó su ejecución, y ese tiempo no viaja al modelo.
 - [ ] `plan` puede leer, listar, buscar, ejecutar comandos de consulta, buscar en internet y mantener su lista de pasos.
 - [ ] `plan` no tiene ninguna herramienta que cree, modifique o borre.
 - [ ] `build` tiene el catálogo completo.

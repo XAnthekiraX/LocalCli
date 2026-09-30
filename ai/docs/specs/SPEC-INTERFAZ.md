@@ -114,6 +114,7 @@ El logotipo es fijo y esta es su definición, que sirve de salida dorada para la
 - El hilo se pinta en el **orden en que ocurrió**: el texto que el modelo escribió antes de usar una herramienta queda arriba de su línea, y el que escribe después abre un globo nuevo. Los segmentos de texto de un mismo turno no se funden en uno solo por debajo de las líneas de herramienta.
 - Cada intercambio muestra la respuesta del modelo; mientras genera, un **indicador en vivo** (`[⠋ Pensando]`) sustituye al volcado del razonamiento. El texto del razonamiento se revela con `Ctrl+R` (ver §Razonamiento del modelo). El intercambio del turno en vivo —razonamiento y respuesta según llegan— es un bloque más del chat: crece dentro de la ventana del historial, así que se recorre con el scroll y nunca empuja la caja de entrada fuera de la pantalla.
 - Cada respuesta del modelo muestra cuánto tardó en llegar, atenuado junto a ella. Mientras se espera, el tiempo corre en pantalla —junto al indicador en vivo— para saber que el modelo sigue trabajando.
+- Cada línea de herramienta muestra cuánto tardó esa ejecución. Usa **la misma forma de medir el número y el mismo atenuado** que el tiempo de la respuesta, pero va unido con el separador de la línea (`· 0.4 s`) en vez de entre paréntesis, porque el paréntesis es lo que marca «esto es el tiempo de una respuesta» y ahí no lo es. Los dos tiempos son cosas distintas y se lucie por separado: el de la respuesta es del turno entero, y el de la herramienta es solo de su ejecución.
 - Muestra las propuestas pendientes de aprobación.
 - El historial se puede recorrer: `↑`/`↓` suben y bajan línea a línea y `pgup`/`pgdown` por páginas; la rueda del ratón también desplaza. Mientras no se sube, la vista sigue el final y baja sola con cada respuesta nueva; al subir se respeta la posición. Cuando queda historial fuera de la ventana se indica con una línea discreta («↑ N líneas arriba» / «↓ N líneas abajo»).
 
@@ -225,7 +226,9 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - Mientras el modelo trabaja se muestra un indicador en vivo (`[⠋ Pensando]`, `[⠋ Usando herramienta: X]`, `[⠋ Generando]`); el texto del razonamiento se revela con `Ctrl+R` y se puede volver a ocultar.
 - El razonamiento revelado nunca se mezcla visualmente con la respuesta final.
 - El conteo de tokens del turno se muestra bajo la entrada, atenuado, cuando hay consumo (`tokens: 54k`).
-- Cada respuesta muestra el tiempo que tardó el modelo en entregarla. Mientras el turno está en curso, ese tiempo corre en pantalla y se detiene al cerrarse el turno; el tiempo no se guarda en el historial, así que una sesión retomada no lo muestra.
+- Cada respuesta muestra el tiempo que tardó el modelo en entregarla. Mientras el turno está en curso, ese tiempo corre en pantalla y se detiene al cerrarse el turno. Ese tiempo **se guarda** con la respuesta, así que una sesión retomada lo vuelve a mostrar; una línea anterior a esa medición se pinta sin él.
+- Cada línea de herramienta muestra cuánto tardó su ejecución, y ese tiempo también se guarda: al volver a la sesión, el hilo se pinta con los tiempos que tuvo.
+- Los dos tiempos se miden con las mismas reglas —milisegundos por debajo del segundo, décimas de segundo por debajo del minuto, minutos y segundos a partir de ahí— y los dos son opcionales: sin medición, no se pinta nada en vez de un cero.
 - No hay lista de sesiones permanente: se acceden con `Ctrl+X l`, que abre el modal de sesiones.
 - El historial del chat se recorre con `↑`/`↓` y `pgup`/`pgdown`; mientras no se sube, la vista sigue el final. La línea de entrada nunca queda fuera de pantalla.
 - Al abrir el modal de modelos, el resaltado arranca en el modelo en uso. Los modelos que no declaran capacidad de herramientas se marcan; elegirlos avisa sin bloquear y deja al usuario cambiar de modelo.
@@ -274,6 +277,7 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] El razonamiento no se vuelca por defecto; `Ctrl+R` revela su texto, arriba de la respuesta y distinguible visualmente, y volver a pulsarlo lo oculta sin perderlo.
 - [ ] El conteo de tokens del turno se ve bajo la entrada (`tokens: 54k`).
 - [ ] Cada respuesta muestra el tiempo que tardó en llegar, y mientras se espera el tiempo corre en pantalla y se detiene al cerrarse el turno.
+- [ ] Cada línea de herramienta muestra cuánto tardó su ejecución, y al recargar la sesión el hilo conserva ese tiempo igual que el de las respuestas.
 - [ ] `Ctrl+X l` abre el modal de sesiones con nombre y estado de cada una; al seleccionar una con `Enter` se abre esa sesión y el chat muestra su historial.
 - [ ] `Ctrl+P` abre el modal con la lista de atajos existentes (acción + tecla); es de solo lectura.
 - [ ] El historial del chat se recorre con `↑`/`↓` y `pgup`/`pgdown`; mientras no se sube, la vista sigue el final.

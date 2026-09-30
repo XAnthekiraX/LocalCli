@@ -136,6 +136,8 @@ Todas las respuestas comparten envoltura: `Resultado{Salida, Meta, Truncado, Err
 
 El tamaño de `Salida` no viaja al modelo, pero sí a la línea del chat: cada herramienta declara su **unidad** ([[backend/02-interfaces/TOOLS]] §1) y el harness cuenta sus líneas con contenido. `leer_archivo`, `ejecutar_comando` y `abrir_pagina` se miden en líneas; `listar_carpeta` en entradas; `buscar_archivos` y `buscar_en_archivos` en coincidencias; `buscar_en_internet` en resultados; `actualizar_todo` en pasos. Las escrituras no tienen medida.
 
+**La duración de la ejecución tampoco viaja al modelo, y por eso no está en `Resultado`.** Es un dato de pantalla: lo mide la capa universal y sale en el evento `herramienta_resultado` —campo `duracion`— y de ahí a la línea del chat y a `chat_evento.duration_ms`. Que no forme parte del payload que el modelo ve es deliberado: al modelo le importa si la herramienta funcionó y qué devolvió, no cuánto tardó, y un número de más en cada resultado es contexto que se paga en cada turno. Ver [[backend/04-infrastructure/EVENTS]] y [[database/01-schema/TABLES]] §`chat_evento`.
+
 ### Lectura de archivos
 
 | Herramienta | Devuelve | Tipo |

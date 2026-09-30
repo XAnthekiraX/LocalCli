@@ -156,9 +156,12 @@ Hay una aportación por etapa y flujo dentro de la sesión: el índice único `(
 | `session_id` | Sesión a la que pertenece el hilo | UUID v4 de `sessions.id` | No | — |
 | `tipo` | Qué clase de línea es | `proceso`, `herramienta` | No | — |
 | `content` | La línea tal como se pinta | Texto libre | No | — |
+| `duration_ms` | Cuánto tardó lo que la línea describe, en milisegundos | Entero ≥ 0 | Sí | `NULL` |
 | `created_at` | Cuándo se añadió al hilo | ISO 8601 UTC | No | — |
 
-`tipo` distingue el sub-proceso de una etapa (`proceso`) de la línea de una herramienta (`herramienta`). `content` guarda el texto ya compuesto —«[Sub Proceso] Entender el problema» o «✓ LEER [AGENTS.md] · 93 líneas»—, para que al recargar la sesión el hilo se pinte igual que en vivo. Las líneas son inmutables una vez completas, como los mensajes: la línea de una herramienta se guarda cerrada, con su marca y su medida. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su hilo. Ver [[database/02-rules/DATA_FLOW]].
+`tipo` distingue el sub-proceso de una etapa (`proceso`) de la línea de una herramienta (`herramienta`). `content` guarda el texto ya compuesto —«[Sub Proceso] Entender el problema» o «✓ LEER [AGENTS.md] · 93 líneas»—, para que al recargar la sesión el hilo se pinte igual que en vivo. Las líneas son inmutables una vez completas, como los mensajes: la línea de una herramienta se guarda cerrada, con su marca, su medida y su tiempo. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su hilo.
+
+`duration_ms` es el tiempo de **lo que esa línea describe**, no el del turno: en una línea de herramienta es el de su ejecución, y en una de sub-proceso no se mide y queda `NULL`. Sigue la misma convención que `messages.duration_ms` —`NULL` es «no se midió», no «tardó cero»—, y como la línea ya guarda su texto compuesto, el tiempo está ahí dos veces: como número, para poder consultarlo, y dentro de `content`, para que pintar el hilo no dependa de recomponerlo. Ver [[database/02-rules/DATA_FLOW]] y [[database/03-operations/MIGRATIONS]] §Nota sobre el esquema actual.
 
 ## 4. Relaciones
 

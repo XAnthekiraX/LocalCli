@@ -319,8 +319,10 @@ func formatearDuracion(d time.Duration) string {
 }
 
 // sufijoDuracion pinta el tiempo que tardó una respuesta, atenuado para no
-// confundirse con lo que dijo el modelo. Sin duración medida no pinta nada: un
-// historial recargado no la trae (la base no guarda el tiempo).
+// confundirse con lo que dijo el modelo. Sin duración medida no pinta nada: el
+// tiempo se guarda con el turno (`messages.duration_ms`) y se recupera al
+// recargar, así que «sin medir» es solo el caso de una fila anterior a la
+// migración 004.
 func sufijoDuracion(d time.Duration) string {
 	if d <= 0 {
 		return ""

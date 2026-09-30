@@ -16,6 +16,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -433,8 +434,14 @@ func (a *App) AplicarEvento(e Evento) {
 			return
 		}
 		a.herramientaEnCurso = ""
+		// La duración viaja en milisegundos; sin ella (-1) la línea se pinta sin
+		// tiempo, sin dejar hueco (INTERFACES.md §1.1).
+		duracion := time.Duration(-1)
+		if ms, err := enteroDe(e.Datos["duracion"]); err == nil {
+			duracion = time.Duration(ms) * time.Millisecond
+		}
 		a.Chat.CerrarHerramienta(e.Datos["herramienta"], e.Datos["ok"] == "true",
-			e.Datos["truncado"] == "true", e.Datos["medida"], e.Datos["error"])
+			e.Datos["truncado"] == "true", e.Datos["medida"], e.Datos["error"], duracion)
 	case EventoTokensTurno:
 		// El consumo del turno alimenta la línea bajo la entrada
 		// (SPEC-PANEL-CONTEXTO). El total del contexto del chat y su límite

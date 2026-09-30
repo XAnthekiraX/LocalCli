@@ -221,9 +221,17 @@ En orden:
 2. **Comprobar el permiso.** La herramienta debe estar en el catálogo efectivo del agente (`peticion.Agente` resuelve los permisos). Este paso es el que sostiene §2, y por eso vive **antes** de ejecutar nada.
 3. **Validar** los argumentos contra `Esquema`. Aquí se decodifica el JSON que el modelo envió.
 4. **Emitir** `herramienta_invocada` con el verbo y el tema (el campo objetivo que declara el catálogo: la ruta, el patrón, el comando).
-5. **Ejecutar** el handler, con el `Contexto` montado.
+5. **Ejecutar** el handler, con el `Contexto` montado, y medir cuánto tarda.
 6. **Recortar** la salida.
-7. **Emitir** `herramienta_resultado` con el nombre, si terminó bien, la medida del resultado y si hubo recorte.
+7. **Emitir** `herramienta_resultado` con el nombre, si terminó bien, la medida del resultado, si hubo recorte y la duración de la ejecución.
+
+### Duración
+
+La medición va aquí, y no dentro de cada handler, porque **esta es la única función por la que pasa toda ejecución**: la de un catálogo nativo y la de una herramienta del usuario, por igual. Medir en la herramienta obligaría a que cada una llevara su propio reloj, y bastaría con que una lo olvidara para que su línea saliera sin tiempo.
+
+La duración medida es la del **handler**, no la de la ejecución completa: el paso 2 pide permiso y puede esperar a que el usuario conteste, y ese tiempo no es de la herramienta, es de la persona. Se mide en el paso 5, y se reporta tanto si el handler terminó bien como si falló —una ejecución que tardó cinco minutos y falló también tardó cinco minutos—. Los pasos 1 a 4 no se miden, y por eso `herramienta_invocada` no lleva tiempo: el modelo sabe cuándo pidió, no cuánto lleva esperando.
+
+El dato es de **pantalla, no de modelo**: viaja en `herramienta_resultado` y desde ahí a la línea del chat y a `chat_evento.duration_ms`, y no entra en `Resultado` ni en el contexto. Ver [[backend/04-infrastructure/EVENTS]] y [[database/01-schema/TABLES]] §`chat_evento`.
 
 ### Errores que el modelo puede corregir
 
@@ -248,7 +256,7 @@ Una herramienta que ya produce texto corto nunca paga el coste de esta capa más
 
 ### Un solo sitio para engancharse
 
-Como el punto de permiso, el de validación, el de recorte y el de eventos están todos aquí, no hace falta tocar ninguna herramienta para añadir una regla nueva. Es también el punto natural para medir.
+Como el punto de permiso, el de validación, el de medición, el de recorte y el de eventos están todos aquí, no hace falta tocar ninguna herramienta para añadir una regla nueva ni para que su línea diga cuánto tardó.
 
 ## 9. Herramientas del usuario
 

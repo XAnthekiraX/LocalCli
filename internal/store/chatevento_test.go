@@ -67,6 +67,46 @@ func TestChatEventoSeAislaPorSesion(t *testing.T) {
 	}
 }
 
+// La línea de una herramienta se guarda CON su duración; la de un sub-proceso
+// no se mide y queda en NULL («no se midió»), no en cero (TABLES.md §3).
+func TestChatEventoGuardaLaDuracionDeLaLinea(t *testing.T) {
+	db := abrirBaseTemporal(t)
+	s, err := CrearSesion(db, "chat", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := InsertarChatEvento(db, &ChatEvento{
+		SessionID: s.ID, Tipo: ChatTipoHerramienta,
+		Content: "✓ LEER [AGENTS.md] · 93 líneas · 400 ms", DuracionMS: 400,
+	}); err != nil {
+		t.Fatalf("registrar herramienta: %v", err)
+	}
+	if err := InsertarChatEvento(db, &ChatEvento{
+		SessionID: s.ID, Tipo: ChatTipoProceso, Content: "[Sub Proceso] Entender el problema",
+		DuracionMS: -1, // no se midió: la columna queda NULL, no en cero
+	}); err != nil {
+		t.Fatalf("registrar proceso: %v", err)
+	}
+	eventos, err := ChatEventosSesion(db, s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eventos) != 2 || eventos[0].DuracionMS != 400 {
+		t.Fatalf("la línea de herramienta lleva su duración: %+v", eventos)
+	}
+	if eventos[1].DuracionMS != -1 {
+		t.Errorf("un sub-proceso no se mide: %+v", eventos[1])
+	}
+	// Y en la base la línea sin medición es NULL de verdad, no un cero.
+	var nulos int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM chat_evento WHERE duration_ms IS NULL`).Scan(&nulos); err != nil {
+		t.Fatal(err)
+	}
+	if nulos != 1 {
+		t.Errorf("filas con duration_ms NULL = %d, queremos 1", nulos)
+	}
+}
+
 // El procesamiento es parte del hilo que se pinta, pero NUNCA del contexto que
 // recibe el modelo: HistorialSesion (de donde sale el historial del chat) solo
 // lee messages.
@@ -88,9 +128,10 @@ func TestHistorialSesionNoIncluyeElProcesamiento(t *testing.T) {
 	}
 }
 
-// La migración 004 es aditiva: una base en v3 con conversación y razonamiento
-// pasa a v4 sin perder nada, y la columna nueva queda NULL en las filas viejas.
-func TestMigracion004AditivaConservaLosDatos(t *testing.T) {
+// Las migraciones 004 y 005 son aditivas: una base en v3 con conversación y
+// razonamiento pasa a v5 sin perder nada, y las columnas nuevas quedan NULL en
+// las filas viejas.
+func TestMigracion004Y005AditivasConservanLosDatos(t *testing.T) {
 	proyecto := proyectoTemporal(t)
 	dbPath, err := DBPath(proyecto)
 	if err != nil {
@@ -136,14 +177,14 @@ func TestMigracion004AditivaConservaLosDatos(t *testing.T) {
 	}
 
 	if err := migrate(db); err != nil {
-		t.Fatalf("migrate v3->v4: %v", err)
+		t.Fatalf("migrate v3->v5: %v", err)
 	}
 	var v int
 	if err := db.QueryRow("PRAGMA user_version").Scan(&v); err != nil {
 		t.Fatal(err)
 	}
-	if v != 4 {
-		t.Fatalf("user_version = %d, queremos 4", v)
+	if v != 5 {
+		t.Fatalf("user_version = %d, queremos 5", v)
 	}
 
 	// La conversación y su razonamiento siguen ahí; la duración vieja es NULL (-1).
@@ -158,9 +199,12 @@ func TestMigracion004AditivaConservaLosDatos(t *testing.T) {
 		t.Errorf("tokens/duración tras migrar: %+v", h[0])
 	}
 
-	// Y la tabla nueva ya acepta líneas de procesamiento.
+	// Y la tabla nueva ya acepta líneas de procesamiento, con su duración.
 	if err := InsertarChatEvento(db, &ChatEvento{SessionID: s.ID, Tipo: ChatTipoProceso, Content: "x"}); err != nil {
 		t.Fatalf("tras migrar, chat_evento debe existir: %v", err)
+	}
+	if err := InsertarChatEvento(db, &ChatEvento{SessionID: s.ID, Tipo: ChatTipoHerramienta, Content: "y", DuracionMS: 400}); err != nil {
+		t.Fatalf("tras migrar, chat_evento.duration_ms debe existir: %v", err)
 	}
 }
 

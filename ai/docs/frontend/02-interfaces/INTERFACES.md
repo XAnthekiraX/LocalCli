@@ -27,7 +27,7 @@ De [[backend/04-infrastructure/EVENTS]] llega cada evento y así reacciona la pa
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `token`                                     | Añade el fragmento al bloque de razonamiento o a la respuesta, en vivo                                                                                                                  |
 | `herramienta_invocada`                      | Abre la línea de herramienta en el chat con su verbo y su tema (la ruta, el patrón o el comando)                                                                                        |
-| `herramienta_resultado`                     | Completa esa misma línea: la marca, la medida del resultado y si se recortó                                                                                                             |
+| `herramienta_resultado`                     | Completa esa misma línea: la marca, la medida del resultado, si se recortó y cuánto tardó la ejecución                                                                                    |
 | `estado_sesion`                             | Actualiza el estado en el selector y en el panel                                                                                                                                        |
 | `titulo_sesion`                             | Renombra la sesión en el panel (si es la activa) y en su fila del modal de sesiones                                                                                                     |
 | `notificacion`                              | Marca el aviso de esa sesión aunque no sea la activa                                                                                                                                    |
@@ -49,20 +49,23 @@ Es lo que hace visible el trabajo del agente, y sin ella no habría nada que ver
 
 Con el contrato en prosa, la llamada a una herramienta viajaba dentro del texto del modelo y se veía sola. Con el canal nativo **la llamada sale del texto**: si la TUI no la pinta, mientras el agente lee un archivo o corre las pruebas la pantalla se queda quieta y de golpe aparece una respuesta como si nada.
 
-La línea es una sola: **nace al invocar y se completa al terminar**. Al invocar lleva el verbo y el tema; al llegar el resultado se le añade la marca, la medida y —si se recortó— el aviso:
+La línea es una sola: **nace al invocar y se completa al terminar**. Al invocar lleva el verbo y el tema; al llegar el resultado se le añade la marca, la medida, el tiempo que tardó y —si se recortó— el aviso:
 
 ```
   LEER [internal/tools/catalog.go]
-  ✓ LEER [internal/tools/catalog.go] · 70 líneas
-  ✓ EJEC [go test ./...] · 42 líneas · recortado
-  ✗ CREAR [nuevo.txt] · el archivo ya existe
+  ✓ LEER [internal/tools/catalog.go] · 70 líneas · 0.4 s
+  ✓ EJEC [go test ./...] · 42 líneas · recortado · 1.2 s
+  ✗ CREAR [nuevo.txt] · el archivo ya existe · 0.01 s
 ```
 
-Tres reglas de lo que se pinta y lo que no:
+Cuatro reglas de lo que se pinta y lo que no:
 
 - **El verbo, el tema y la medida.** El verbo es la etiqueta corta de la herramienta ([[backend/02-interfaces/TOOLS]]); el tema es el **argumento objetivo** que su catálogo declara (la ruta, el patrón, el comando, la consulta), colapsado y recortado. Es solo ese campo: el resto de argumentos —cuerpos de archivo, credenciales— no se expone, porque esto va a pantalla y a auditoría. La medida es el tamaño del resultado en su unidad (`líneas`, `coincidencias`, `entradas`).
 - **La salida, nunca.** El resultado va al modelo, no a la pantalla. Si quieres ver qué devolvió una herramienta, lo vas a ver explicado en la respuesta del agente.
 - **Si se recortó, se dice.** Un resultado recortado sin avisar es peor que no verlo: el agente puede actuar como si tuviera el resultado entero.
+- **Cuánto tardó, siempre que se sepa.** La duración de la ejecución va al final de la línea cerrada, con el separador de la línea (`· 0.4 s`) y con el mismo atenuado que el tiempo de la respuesta. No va entre paréntesis: ahí los paréntesis marcan «esto es el tiempo de una respuesta», y una línea de herramienta no lo es. Se pinta también cuando la ejecución falló —«✗ … · 0.01 s»—, porque tardó igual. El número sale del mismo formateador que el tiempo de la respuesta, de modo que los dos se leen igual. **Si la línea no tiene duración, no se pinta nada y el espacio no se deja reservado**: un hueco de medidas desiguales delata más que una omisión.
+
+La línea se pinta en vivo y se **recarga con su tiempo**: al volver a la sesión, la línea guardada llega ya cerrada y con su duración, así que el hilo recuperado se lee igual que el que se vio en directo. Ver [[database/02-rules/DATA_FLOW]] §Creación y [[specs/SPEC-INTERFAZ]] §El chat.
 
 El agente que la pidió no se pinta en la línea (sigue en el evento, para la auditoría).
 
@@ -162,6 +165,7 @@ Reglas, según [[specs/SPEC-INTERFAZ-ATAJOS]] y [[specs/SPEC-KEYBINDS]]:
 - Un pegado o arrastre se muestra como token: cada archivo `[nombre.ext]`, cada carpeta `[CARPETA N elementos]` y un texto de varias líneas `[PEGADO N líneas]` (un token por elemento si todas las líneas son rutas). Al enviar se expande al valor real: la ruta, el texto entero o, si es imagen, la imagen adjunta.
 - La caja de la entrada lleva en su pie el agente activo, el modelo en uso y sus capacidades (`sí`/`no`, o `?` mientras se desconoce), incluido el **interruptor de razonamiento** (`pensar [x]`/`pensar [ ]`): se pulsa con el ratón, llega apagado y solo se enseña si el modelo declara que razona. El conteo de tokens del turno se ve justo debajo de la caja.
 - **Si el modelo en uso no puede usar herramientas, se dice explícitamente** que el agente va a conversar sin ellas. Es una diferencia entre «todavía no lo sé» y «este modelo no puede», y confundirlas hace que el usuario espere un trabajo que no va a pasar. Ver [[specs/SPEC-OLLAMA-PERFIL]].
+- Cada línea de herramienta dice cuánto tardó su ejecución, y esa línea se guarda con su tiempo: al recargar la sesión, el hilo conserva las duraciones además de las medidas.
 - Mientras una herramienta se ejecuta, su línea está en el chat. Si la sesión espera permiso por una herramienta, la línea de la herramienta y la de aprobación coexisten.
 - Con la sesión trabajando, el primer `esc` pide confirmación («presiona esc otra vez para cancelar razonamiento») y el segundo cancela; cualquier otra tecla la descarta.
 - Si el usuario cierra una sesión con un flujo en marcha, la TUI muestra la pregunta de qué hacer con el flujo; la decisión la aplica `session`.

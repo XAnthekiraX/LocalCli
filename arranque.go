@@ -1147,6 +1147,14 @@ func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, p flow.PeticionEtapa) (
 	inicio := time.Now()
 	salida, err := e.ejecutor.Ejecutar(ctx, agente, modelo, p.Contexto, mensajesDeOllama(p.Historial), p.Imagenes, e.ad.ventana(modelo), p.SinHerramientas, sink)
 	if err != nil {
+		// Una etapa de flujo conserva su semántica: un turno sin respuesta vuelve
+		// a texto vacío y el motor la reintenta como hasta ahora (si sigue muda,
+		// la marca fallida con E_STAGE_FAILED). El chat —sin etapa— no: el error
+		// se propaga, la sesión queda en `error` y el motivo se ve, en vez de
+		// guardar «(respuesta vacía)» como si fuera la respuesta del agente.
+		if p.Etapa != "" && errors.Is(err, agent.ErrSinRespuesta) {
+			return flow.Resultado{}, nil
+		}
 		return flow.Resultado{}, err
 	}
 	duracion := int(time.Since(inicio).Milliseconds())
@@ -1293,7 +1301,8 @@ func (r *registroPorTurno) ProcesoEtapa(ctx context.Context, nombre string, fall
 	if sesion == "" {
 		return
 	}
-	_ = r.ad.chat.Registrar(sesion, store.ChatTipoProceso, tui.LineaProceso(nombre, fallida))
+	// Un sub-proceso no se mide: su línea va sin duración (-1 = NULL).
+	_ = r.ad.chat.Registrar(sesion, store.ChatTipoProceso, tui.LineaProceso(nombre, fallida), -1)
 }
 
 // optimizadorPorTurno implementa flow.Optimizador: condensa el resultado de una

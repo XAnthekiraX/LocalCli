@@ -459,7 +459,7 @@ func TestElTextoAntesYDespuésDeLaHerramientaVanEnSuOrden(t *testing.T) {
 	// La herramienta se interpone: lo dicho se cierra y su línea va debajo.
 	c.CerrarSegmento("")
 	c.AnotarInvocacion("LEER", "internal/tui/chat.go")
-	c.CerrarHerramienta("leer_archivo", true, false, "70 líneas", "")
+	c.CerrarHerramienta("leer_archivo", true, false, "70 líneas", "", 400*time.Millisecond)
 	// El modelo sigue tras el resultado: abre un globo nuevo.
 	c.Token("ya lo leí")
 	c.CerrarTurno("")
@@ -524,7 +524,7 @@ func TestLaDuraciónDelTurnoQueTerminaEnHerramientaNoSePierde(t *testing.T) {
 	c.Token("voy")
 	c.CerrarSegmento("")
 	c.AnotarInvocacion("LEER", "x")
-	c.CerrarHerramienta("leer_archivo", true, false, "", "")
+	c.CerrarHerramienta("leer_archivo", true, false, "", "", -1)
 	c.CerrarTurno("") // termina sin texto final
 
 	msgs := c.Mensajes()

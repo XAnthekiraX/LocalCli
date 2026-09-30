@@ -17,8 +17,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	lcexec "localcli/internal/exec"
 	"localcli/internal/fileops"
@@ -82,7 +84,7 @@ func registroDeHerramientas(ad *Adaptador, carpeta string, cambios *store.Cambio
 // hay suscriptores, el bus los descarta: no se bloquea nada.
 //
 // Además de emitir, guarda en el hilo la línea cerrada de cada herramienta
-// (`✓ LEER [ruta] · 70 líneas`): es parte del chat y debe sobrevivir al cambio
+// (`✓ LEER [ruta] · 70 líneas · 0.4 s`): es parte del chat y debe sobrevivir al cambio
 // de sesión. Se guarda solo al cerrarse, porque el mensaje es inmutable una vez
 // completo; por eso el publicador recuerda la línea abierta hasta su resultado.
 type publicadorBus struct {
@@ -117,7 +119,7 @@ func (p *publicadorBus) HerramientaInvocada(sesion, nombre, agente, verbo, tema 
 	}})
 }
 
-func (p *publicadorBus) HerramientaResultado(sesion, nombre string, ok bool, err string, truncado bool, medida string) {
+func (p *publicadorBus) HerramientaResultado(sesion, nombre string, ok bool, err string, truncado bool, medida string, duracion time.Duration) {
 	// La línea cerrada se compone con la misma función que la pinta la TUI: una
 	// sola forma para lo que se ve y lo que se guarda.
 	base := nombre
@@ -133,9 +135,12 @@ func (p *publicadorBus) HerramientaResultado(sesion, nombre string, ok bool, err
 		}
 		p.mu.Unlock()
 	}
-	linea := tui.LineaHerramientaCerrada(base, ok, truncado, medida, err)
+	linea := tui.LineaHerramientaCerrada(base, ok, truncado, medida, err, duracion)
+	ms := msDeDuracion(duracion)
 	if p.ad != nil && p.ad.chat != nil && sesion != "" {
-		_ = p.ad.chat.Registrar(sesion, store.ChatTipoHerramienta, linea)
+		// La línea se guarda con su duración, para que el hilo recuperado lleve
+		// los mismos tiempos que se vieron en vivo (DATA_FLOW.md §Creación).
+		_ = p.ad.chat.Registrar(sesion, store.ChatTipoHerramienta, linea, ms)
 	}
 	datos := map[string]string{
 		"sesion":      sesion,
@@ -143,11 +148,22 @@ func (p *publicadorBus) HerramientaResultado(sesion, nombre string, ok bool, err
 		"ok":          boolTexto(ok),
 		"truncado":    boolTexto(truncado),
 		"medida":      medida,
+		"duracion":    strconv.Itoa(ms),
 	}
 	if err != "" {
 		datos["error"] = err
 	}
 	p.bus.Emitir(tui.Evento{Nombre: tui.EventoHerramientaResultado, Datos: datos})
+}
+
+// msDeDuracion convierte la duración del evento en los milisegundos que viajan
+// en el payload y que guarda `chat_evento.duration_ms`. Sin medición (<= 0)
+// devuelve -1, que en la base se escribe como NULL («no se midió»).
+func msDeDuracion(d time.Duration) int {
+	if d <= 0 {
+		return -1
+	}
+	return int(d.Milliseconds())
 }
 
 func boolTexto(v bool) string {

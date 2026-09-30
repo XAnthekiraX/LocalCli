@@ -225,10 +225,10 @@ func columnasDeIndice(t *testing.T, db *sql.DB, indice string) []string {
 func TestMigracionIdempotente(t *testing.T) {
 	proyecto := proyectoTemporal(t)
 
-	// El valor se compara contra el literal 4 que fija MIGRATIONS.md, no contra
-	// la constante de producción: si ambas suben a 5, este test debe seguir
+	// El valor se compara contra el literal 5 que fija MIGRATIONS.md, no contra
+	// la constante de producción: si ambas suben a 6, este test debe seguir
 	// avisando de que la documentación y el código han divergido.
-	const versionEsperada = 4
+	const versionEsperada = 5
 	if schemaVersion != versionEsperada {
 		t.Errorf("schemaVersion = %d, queremos %d; MIGRATIONS.md fija la versión actual. Si el cambio es real, actualiza esa nota y este literal.", schemaVersion, versionEsperada)
 	}

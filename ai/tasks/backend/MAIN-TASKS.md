@@ -36,6 +36,8 @@ Fuente de verdad del progreso del backend. Derivada exclusivamente de `ai/docs/`
 | T-B029 | actualizar | hilo del chat persistente: líneas de procesamiento en `chat_evento` (migración 004) sin entrar al contexto, tokens y duración del turno en `messages`, y `contextoSesion` para el panel | T-B002, T-B010, T-B013, T-B014, T-B024, T-B027 | completada | `029-task-hilo-chat-tokens-duracion.md` |
 | T-B030 | actualizar | los agentes base se cargan de `.localcli/agents/` y la carpeta se versiona con el proyecto: `.gitignore` ignora solo el SQLite, y código, specs y tareas nombran la ruta nueva | T-B006, T-B023, T-B024 | completada | `030-task-agentes-en-localcli.md` |
 | T-B031 | actualizar | la etapa responde a su pregunta (brief + ventana con pregunta/respuesta; reintento y `E_STAGE_FAILED` si sigue muda) y los flujos son dato: fuera los flujos cableados y la cola resuelve su flujo del catálogo | T-B010, T-B012, T-B013, T-B027 | completada | `031-task-etapa-responde-y-flujos-dato.md` |
+| T-B032 | actualizar | duración de cada línea de herramienta: `chat_evento.duration_ms` (migración 005), medición en la capa universal, `herramienta_resultado.duracion` y tiempo en la línea pintada y recargada | T-B024, T-B026, T-B029 | completada | `032-task-tiempo-linea-herramienta.md` |
+| T-B033 | actualizar | un turno nunca se cierra mudo: la redacción final se reintenta una vez si vuelve a pedir herramientas y, si sigue sin texto, el turno falla con el motivo a la vista en vez de guardar `(respuesta vacía)` | T-B006, T-B031 | completada | `033-task-turno-sin-respuesta.md` |
 
 ## Referencias
 

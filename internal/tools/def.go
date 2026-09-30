@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Contexto es lo que recibe un handler al ejecutarse. `Ask` vive aquí y no
@@ -96,9 +97,11 @@ type Publicador interface {
 	// HerramientaInvocada anuncia la llamada con su verbo de pantalla y su
 	// objetivo (la ruta, el patrón o el comando sobre el que actúa).
 	HerramientaInvocada(sesion, nombre, agente, verbo, tema string)
-	// HerramientaResultado cierra la llamada con su desenlace y la medida del
-	// resultado («70 líneas», «3 coincidencias»).
-	HerramientaResultado(sesion, nombre string, ok bool, err string, truncado bool, medida string)
+	// HerramientaResultado cierra la llamada con su desenlace, la medida del
+	// resultado («70 líneas», «3 coincidencias») y cuánto tardó el handler.
+	// La duración es de la ejecución, no de la llamada: no cubre la búsqueda en
+	// el registro ni la espera de permiso, que no son de la herramienta.
+	HerramientaResultado(sesion, nombre string, ok bool, err string, truncado bool, medida string, duracion time.Duration)
 }
 
 // Registro es el conjunto de herramientas disponibles (las trece incluidas más
@@ -249,18 +252,41 @@ func (r *Registro) Ejecutar(ctx context.Context, p Peticion) (Resultado, error) 
 		Ask:      r.Ask,
 		Meta:     r.Meta,
 	}
+	// El rato que el usuario tarda en contestar una aprobación no es tiempo de la
+	// herramienta, es de la persona: el handler la pide por `c.Ask`, así que se
+	// acumula lo que se pasa ahí dentro y se descuenta de la medición
+	// (TOOLS.md §8 §Duración).
+	var esperaAprobacion time.Duration
+	if c.Ask != nil {
+		pedir := c.Ask
+		c.Ask = func(ctx context.Context, s Solicitud) (Decision, error) {
+			inicioEspera := time.Now()
+			d, err := pedir(ctx, s)
+			esperaAprobacion += time.Since(inicioEspera)
+			return d, err
+		}
+	}
+	// La medición envuelve SOLO el handler: buscar la herramienta, comprobar el
+	// permiso y validar los argumentos no son tiempo de la herramienta. Se
+	// reporta tanto si terminó bien como si falló —una ejecución que tardó cinco
+	// minutos y falló también tardó cinco minutos—.
+	inicio := time.Now()
 	var res Resultado
 	if h.Ejecutar == nil {
 		res = Resultado{Error: "la herramienta `" + h.Nombre + "` no está disponible en este momento"}
 	} else {
 		res, err = h.Ejecutar(ctx, args, c)
 	}
+	duracion := time.Since(inicio) - esperaAprobacion
+	if duracion < 0 {
+		duracion = 0
+	}
 	if err != nil {
 		if r.Hooks.DespuesDeEjecutar != nil {
 			r.Hooks.DespuesDeEjecutar(h.Nombre, res, err, nil)
 		}
 		if r.Eventos != nil {
-			r.Eventos.HerramientaResultado(p.SesionID, h.Nombre, false, err.Error(), false, MedidaDe(h, res))
+			r.Eventos.HerramientaResultado(p.SesionID, h.Nombre, false, err.Error(), false, MedidaDe(h, res), duracion)
 		}
 		return res, err
 	}
@@ -277,7 +303,7 @@ func (r *Registro) Ejecutar(ctx context.Context, p Peticion) (Resultado, error) 
 		r.Hooks.DespuesDeEjecutar(h.Nombre, res, nil, nil)
 	}
 	if r.Eventos != nil {
-		r.Eventos.HerramientaResultado(p.SesionID, h.Nombre, res.Error == "", res.Error, res.Truncado, MedidaDe(h, res))
+		r.Eventos.HerramientaResultado(p.SesionID, h.Nombre, res.Error == "", res.Error, res.Truncado, MedidaDe(h, res), duracion)
 	}
 	return res, nil
 }

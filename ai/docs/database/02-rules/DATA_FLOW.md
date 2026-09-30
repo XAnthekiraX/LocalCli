@@ -81,7 +81,7 @@ Un turno con el canal nativo de herramientas produce, por dentro, una secuencia 
 | La respuesta final del agente | Sí, en `messages` con `role = agent` |
 | El razonamiento del turno | Sí, en `reasoning` |
 
-La razón es que el detalle de las ejecuciones pertenece al momento en que ocurren. Al retomar una sesión, lo que interesa es qué se hizo y qué quedó, y eso ya está en el texto del agente: en su respuesta final dice qué archivos leyó, qué comandos corrió y qué cambió. Lo que se conserva además, en `chat_evento`, es la **línea** que se pintó —qué herramienta se usó, sobre qué y con qué medida—, no el contenido crudo que fue al modelo.
+La razón es que el detalle de las ejecuciones pertenece al momento en que ocurren. Al retomar una sesión, lo que interesa es qué se hizo y qué quedó, y eso ya está en el texto del agente: en su respuesta final dice qué archivos leyó, qué comandos corrió y qué cambió. Lo que se conserva además, en `chat_evento`, es la **línea** que se pintó —qué herramienta se usó, sobre qué, con qué medida y cuánto tardó—, no el contenido crudo que fue al modelo.
 
 Lo que se pierde es la posibilidad de reconstruir una ejecución concreta —qué argumento exacto se pasó a qué herramienta y qué devolvió—. Para eso están los eventos de la capa universal y, cuando aplica, `change_history`, que sí son permanentes. Ver [[backend/04-infrastructure/EVENTS]] y [[backend/DECISIONS]].
 
@@ -91,7 +91,7 @@ Lo que se pierde es la posibilidad de reconstruir una ejecución concreta —qu�
 
 Un turno con herramientas tiene más pasos por dentro, pero **`messages` solo recibe el primer y el último mensaje**. El bucle pide al modelo, ejecuta lo que le pidió y vuelve a pedir, todo en memoria. Lo que queda del medio, en la base, es su línea de pantalla en `chat_evento` (ver abajo). Ver [[database/01-schema/ENUMS]].
 
-**Crear una línea de procesamiento.** Cada vez que una etapa de un flujo arranca se inserta en `chat_evento` una fila con `tipo = proceso` y la línea «[Sub Proceso] <nombre>». Cuando termina una herramienta se inserta una fila con `tipo = herramienta` y la línea cerrada —«✓ LEER [ruta] · 70 líneas»—. Son datos de pantalla: se recuperan al abrir la sesión y **nunca** se le entregan al modelo. La línea de la herramienta se guarda al cerrarse, porque es inmutable una vez completa.
+**Crear una línea de procesamiento.** Cada vez que una etapa de un flujo arranca se inserta en `chat_evento` una fila con `tipo = proceso` y la línea «[Sub Proceso] <nombre>». Cuando termina una herramienta se inserta una fila con `tipo = herramienta` y la línea cerrada —«✓ LEER [ruta] · 70 líneas»— junto con `duration_ms`, la duración de esa ejecución. Son datos de pantalla: se recuperan al abrir la sesión y **nunca** se le entregan al modelo. La línea de la herramienta se guarda al cerrarse, porque es inmutable una vez completa, y se guarda **con su duración**, que es lo mismo que se guarda con la respuesta del turno: el hilo que se recupera después lleva los mismos tiempos que se vieron en vivo. Las líneas de sub-proceso no llevan duración: van en `NULL`. Ver [[database/01-schema/TABLES]] §`chat_evento`.
 
 **Crear una aprobación.** Cuando el agente pide permiso, se inserta una fila en `approvals` con `status = pendiente` y `resolved_at` en `NULL`, y la sesión pasa a `esperando_permiso`. Es un flujo que puede quedar a medias, así que ambas escrituras van en la misma transacción.
 
@@ -137,7 +137,7 @@ El orden importa cuando una operación prepara a la siguiente:
 
 El paso 7 nunca ocurre sin el 3 y el 4. La base no lo impide, pero la capa universal de herramientas sí: el permiso se comprueba antes de ejecutar nada. Ver [[database/02-rules/BUSINESS_RULES]] y [[backend/03-security/SECURITY]].
 
-Los pasos 3 y 5 pueden repetirse hasta un máximo de rondas. Al agotarlo, el turno se cierra con lo conseguido: es un límite duro, no un detalle, porque un modelo puede pedir herramientas en bucle. Ver [[specs/SPEC-AGENTE-BASE]].
+Los pasos 3 y 5 pueden repetirse hasta un máximo de rondas. Al agotarlo, **no se cierra el turno con lo conseguido**: se pide una redacción sin herramientas, y solo si el modelo tampoco entrega texto ahí el turno falla con el motivo. El límite es duro, no un detalle, porque un modelo puede pedir herramientas en bucle, pero hacer un límite al trabajo es poder escribir la entrega: una pasada de redacción, un reintento como mucho, y ningún turno se guarda mudo. Ver [[specs/SPEC-AGENTE-BASE]] §El ciclo de un turno.
 
 **Lo que se escribe en la base en este ciclo es solo:** la auditoría de contexto, el mensaje del usuario, las líneas de procesamiento (`chat_evento`), las aprobaciones que se abren y se resuelven, y el mensaje final del agente con sus tokens y su duración. El bucle de herramientas en sí no escribe en `messages`.
 

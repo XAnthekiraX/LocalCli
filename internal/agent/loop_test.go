@@ -336,6 +336,90 @@ func TestElBucleCierraConSintesisAlAgotarPasadas(t *testing.T) {
 	}
 }
 
+// TestUnaRedaccionQueVuelveAPedirHerramientasSeReintenta — si al redactar el
+// modelo vuelve a pedir herramientas (aunque no se le ofrezcan), se le responde
+// con una instrucción explícita y se reintenta UNA sola vez.
+func TestUnaRedaccionQueVuelveAPedirHerramientasSeReintenta(t *testing.T) {
+	d := NuevoDespachador(registroStub(nil))
+	g := &generadorGuion{pasadas: [][]ollama.Evento{
+		pedido("", llamada("leer_archivo", `{"ruta":"a.md"}`)),
+		pedido("", llamada("leer_archivo", `{"ruta":"b.md"}`)),
+		// Redacción: en vez de escribir, vuelve a pedir herramientas.
+		pedido("", llamada("leer_archivo", `{"ruta":"c.md"}`)),
+		// Reintento: ahora sí entrega.
+		respuesta("lo que conseguí"),
+	}}
+	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 2}
+	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+
+	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, nil)
+	if err != nil {
+		t.Fatalf("el reintento debe cerrar el turno con texto: %v", err)
+	}
+	if res.Texto != "lo que conseguí" {
+		t.Errorf("texto = %q, quiero la entrega del reintento", res.Texto)
+	}
+	if g.llamadas != 4 {
+		t.Errorf("llamadas = %d, quiero 4 (2 rondas + redacción + un reintento)", g.llamadas)
+	}
+	// El reintento no ofrece herramientas y lleva la instrucción explícita.
+	if len(g.ultimasHerramientas) != 0 {
+		t.Errorf("la redacción no ofrece herramientas: %+v", g.ultimasHerramientas)
+	}
+	ultimo := g.ultimos[len(g.ultimos)-1]
+	if ultimo.Role != "user" || !strings.Contains(ultimo.Content, "No pidas ninguna herramienta") {
+		t.Errorf("el reintento debe llevar la instrucción explícita: %+v", ultimo)
+	}
+}
+
+// TestLaRedaccionNoRepiteElReintento — el reintento es una sola pasada: un
+// modelo atascado no consume el doble callando igual.
+func TestLaRedaccionNoRepiteElReintento(t *testing.T) {
+	d := NuevoDespachador(registroStub(nil))
+	g := &generadorGuion{pasadas: [][]ollama.Evento{
+		pedido("", llamada("leer_archivo", `{"ruta":"a.md"}`)),
+		pedido("", llamada("leer_archivo", `{"ruta":"b.md"}`)),
+		pedido("", llamada("leer_archivo", `{"ruta":"c.md"}`)),
+		pedido("", llamada("leer_archivo", `{"ruta":"d.md"}`)),
+		pedido("", llamada("leer_archivo", `{"ruta":"e.md"}`)), // no debe llegar
+	}}
+	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 2}
+	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+
+	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, nil); !errors.Is(err, ErrSinRespuesta) {
+		t.Fatalf("err = %v, quiero ErrSinRespuesta", err)
+	}
+	if g.llamadas != 4 {
+		t.Errorf("llamadas = %d, quiero 4: la redacción se reintenta una sola vez", g.llamadas)
+	}
+}
+
+// TestUnTurnoSinTextoFinalFalla — un turno que no entrega texto no se cierra
+// como si hubiera respondido: devuelve un error distinguible, con el motivo.
+func TestUnTurnoSinTextoFinalFalla(t *testing.T) {
+	d := NuevoDespachador(registroStub(nil))
+	g := &generadorGuion{pasadas: [][]ollama.Evento{
+		pedido("", llamada("leer_archivo", `{"ruta":"a.md"}`)),
+		pedido("", llamada("leer_archivo", `{"ruta":"b.md"}`)),
+		pedido("", llamada("leer_archivo", `{"ruta":"c.md"}`)),
+		pedido("", llamada("leer_archivo", `{"ruta":"d.md"}`)),
+	}}
+	sink := &sinkGrabador{}
+	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 2}
+	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+
+	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, sink)
+	if !errors.Is(err, ErrSinRespuesta) {
+		t.Fatalf("err = %v, quiero E_NO_RESPONSE", err)
+	}
+	if res.Texto != "" || res.Razonamiento != "" {
+		t.Errorf("un turno mudo no devuelve resultado: %+v", res)
+	}
+	if !strings.Contains(err.Error(), "agotaron las rondas") || !strings.Contains(err.Error(), "no entregó") {
+		t.Errorf("el motivo debe decir qué pasó: %v", err)
+	}
+}
+
 // TestElBucleSinHerramientasNoLasOfrece — con `sinHerramientas` el turno no
 // presenta definiciones y cierra en la primera pasada con su texto.
 func TestElBucleSinHerramientasNoLasOfrece(t *testing.T) {

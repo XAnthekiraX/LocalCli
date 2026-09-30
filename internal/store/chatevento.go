@@ -26,7 +26,11 @@ type ChatEvento struct {
 	SessionID string
 	Tipo      string // "proceso" | "herramienta"
 	Content   string
-	CreatedAt string
+	// DuracionMS es cuánto tardó lo que la línea describe, en milisegundos.
+	// -1 = no se midió: una línea de sub-proceso no se mide y queda en NULL
+	// (TABLES.md §3: NULL es «no se midió», no «tardó cero»).
+	DuracionMS int
+	CreatedAt  string
 }
 
 // LineaChat es una línea del hilo de una sesión, ya fusionada para la vista:
@@ -39,7 +43,8 @@ type LineaChat struct {
 	CreatedAt    string
 }
 
-// InsertarChatEvento guarda una línea de procesamiento del hilo.
+// InsertarChatEvento guarda una línea de procesamiento del hilo. Una duración
+// negativa (no medida) se escribe como NULL.
 func InsertarChatEvento(db *sql.DB, e *ChatEvento) error {
 	now := e.CreatedAt
 	if now == "" {
@@ -50,9 +55,9 @@ func InsertarChatEvento(db *sql.DB, e *ChatEvento) error {
 		id = newID()
 	}
 	_, err := db.Exec(
-		`INSERT INTO chat_evento (id, session_id, tipo, content, created_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		id, e.SessionID, e.Tipo, e.Content, now,
+		`INSERT INTO chat_evento (id, session_id, tipo, content, duration_ms, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		id, e.SessionID, e.Tipo, e.Content, nullInt(e.DuracionMS), now,
 	)
 	if err != nil {
 		return traducirError(err)
@@ -64,7 +69,7 @@ func InsertarChatEvento(db *sql.DB, e *ChatEvento) error {
 // ChatEventosSesion lee las líneas de procesamiento de una sesión, en orden.
 func ChatEventosSesion(db *sql.DB, sessionID string) ([]ChatEvento, error) {
 	rows, err := db.Query(
-		`SELECT id, session_id, tipo, content, created_at
+		`SELECT id, session_id, tipo, content, COALESCE(duration_ms, -1), created_at
 		 FROM chat_evento WHERE session_id = ?
 		 ORDER BY created_at, rowid`, sessionID)
 	if err != nil {
@@ -74,7 +79,7 @@ func ChatEventosSesion(db *sql.DB, sessionID string) ([]ChatEvento, error) {
 	var out []ChatEvento
 	for rows.Next() {
 		var e ChatEvento
-		if err := rows.Scan(&e.ID, &e.SessionID, &e.Tipo, &e.Content, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.SessionID, &e.Tipo, &e.Content, &e.DuracionMS, &e.CreatedAt); err != nil {
 			return nil, traducirError(err)
 		}
 		out = append(out, e)
@@ -101,7 +106,7 @@ func HiloSesion(db *sql.DB, sessionID string) ([]LineaChat, error) {
 		 WHERE m.session_id = ?
 		 UNION ALL
 		 SELECT 'proceso' AS rol, e.content AS contenido, '' AS razonamiento,
-		        -1 AS duracion, e.created_at AS creado, 1 AS fuente, e.rowid AS seq
+		        COALESCE(e.duration_ms, -1) AS duracion, e.created_at AS creado, 1 AS fuente, e.rowid AS seq
 		 FROM chat_evento e
 		 WHERE e.session_id = ?
 		 ORDER BY creado, fuente, seq`, sessionID, sessionID)
@@ -136,9 +141,13 @@ type Chat struct{ db *sql.DB }
 // NuevoChat envuelve la conexión para operar sobre el hilo de procesamiento.
 func NuevoChat(db *sql.DB) *Chat { return &Chat{db: db} }
 
-// Registrar guarda una línea de procesamiento de la sesión.
-func (c *Chat) Registrar(sessionID, tipo, content string) error {
-	return InsertarChatEvento(c.db, &ChatEvento{SessionID: sessionID, Tipo: tipo, Content: content})
+// Registrar guarda una línea de procesamiento de la sesión. duracionMS es
+// cuánto tardó lo que la línea describe; -1 es «no se midió» y queda en NULL
+// (las líneas de sub-proceso no se miden).
+func (c *Chat) Registrar(sessionID, tipo, content string, duracionMS int) error {
+	return InsertarChatEvento(c.db, &ChatEvento{
+		SessionID: sessionID, Tipo: tipo, Content: content, DuracionMS: duracionMS,
+	})
 }
 
 // Hilo devuelve el hilo fusionado (conversación + procesamiento) de una sesión.

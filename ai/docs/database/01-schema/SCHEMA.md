@@ -161,9 +161,10 @@ Resumen estructural. Los valores permitidos, los `NULL` y los valores por defect
 | `session_id` | TEXT | FK → `sessions.id` | `ON DELETE CASCADE` |
 | `tipo` | TEXT | | `proceso` (sub-proceso de un flujo) o `herramienta` |
 | `content` | TEXT | | La línea tal como se pinta en el chat |
+| `duration_ms` | INTEGER | | Duración de lo que la línea describe, en ms. `NULL` si no se midió |
 | `created_at` | TEXT | | ISO 8601 UTC |
 
-`chat_evento` guarda las líneas que el chat muestra además de la conversación. Van en su propia tabla, y no en `messages`, porque son **líneas de pantalla**, no turnos: el contexto que recibe el modelo se arma solo de `messages`, así que una línea de procesamiento nunca entra al contexto. Ver [[database/01-schema/ENUMS]] y [[database/02-rules/DATA_FLOW]].
+`chat_evento` guarda las líneas que el chat muestra además de la conversación. Van en su propia tabla, y no en `messages`, porque son **líneas de pantalla**, no turnos: el contexto que recibe el modelo se arma solo de `messages`, así que una línea de procesamiento nunca entra al contexto. `duration_ms` es nullable y sin valor por defecto: las filas anteriores a la migración quedan en `NULL`, que es «no se midió». Ver [[database/01-schema/ENUMS]] y [[database/02-rules/DATA_FLOW]].
 
 ## Referencias
 
