@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,10 +12,13 @@ import (
 
 	"localcli/internal/session"
 	"localcli/internal/store"
+	"localcli/internal/tools"
 )
 
-// adaptadorConSesion deja un Adaptador con base real y una sesión activa, que
-// es lo que necesitan el publicador y el registro para atribuir la línea.
+// adaptadorConSesion deja un Adaptador con base real y el id de una sesión, que
+// es lo que necesitan el publicador y el registro para atribuir la línea. La
+// sesión ya no vive en el adaptador: viaja en cada llamada (y en el contexto,
+// para el registro), que es lo que la ata a su turno.
 func adaptadorConSesion(t *testing.T) (*Adaptador, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -34,7 +38,6 @@ func adaptadorConSesion(t *testing.T) (*Adaptador, string) {
 		t.Fatalf("CrearSesion: %v", err)
 	}
 	ad := &Adaptador{bus: session.NuevoBus(), chat: store.NuevoChat(conexion)}
-	ad.fijarSesion(ses.ID)
 	return ad, ses.ID
 }
 
@@ -43,8 +46,8 @@ func adaptadorConSesion(t *testing.T) (*Adaptador, string) {
 func TestElPublicadorGuardaLaLineaDeHerramientaEnElHilo(t *testing.T) {
 	ad, sesion := adaptadorConSesion(t)
 	pub := &publicadorBus{bus: ad.bus, ad: ad}
-	pub.HerramientaInvocada("leer_archivo", "plan", "LEER", "AGENTS.md")
-	pub.HerramientaResultado("leer_archivo", true, "", false, "93 líneas")
+	pub.HerramientaInvocada(sesion, "leer_archivo", "plan", "LEER", "AGENTS.md")
+	pub.HerramientaResultado(sesion, "leer_archivo", true, "", false, "93 líneas")
 
 	hilo, err := ad.chat.Hilo(sesion)
 	if err != nil {
@@ -65,7 +68,7 @@ func TestElPublicadorGuardaLaLineaDeHerramientaEnElHilo(t *testing.T) {
 func TestElRegistroGuardaElSubProcesoEnElHilo(t *testing.T) {
 	ad, sesion := adaptadorConSesion(t)
 	reg := &registroPorTurno{ad: ad}
-	reg.ProcesoEtapa("Entender el problema", false)
+	reg.ProcesoEtapa(tools.ConSesion(context.Background(), sesion), "Entender el problema", false)
 
 	hilo, err := ad.chat.Hilo(sesion)
 	if err != nil {

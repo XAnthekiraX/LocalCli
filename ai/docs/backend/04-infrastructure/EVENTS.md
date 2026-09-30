@@ -78,6 +78,8 @@ Por eso los emite `tools` y no `agent`: la capa universal ya está en ese punto 
 
 Los payloads llevan lo mínimo para que el consumidor pueda pintar o decidir. No duplican lo que ya está en la base: llevan identificadores, y quien necesite el detalle lo lee del esquema.
 
+**Todo evento de una sesión lleva su `sesion`** (el identificador de la sesión que lo produjo): la vista pinta la sesión activa y descarta lo de las demás, que siguen vivas en segundo plano. La sesión viaja en el contexto del turno (`tools.ConSesion`), estampada una vez por turno, y no en una variable global: con varias sesiones concurrentes, cada evento se atribuye a la suya. Los eventos de alcance de proyecto (`cola_actualizada`, `elemento_bloqueado`, `cambio_aplicado`) no la llevan; `notificacion` sí, y aun así se pinta aunque no sea la sesión activa ([[specs/SPEC-SESIONES]]).
+
 - **`token`:** el texto del fragmento y si es razonamiento o respuesta final. Es lo único que va token a token, porque la pantalla lo muestra en vivo. Ver [[specs/SPEC-INTERFAZ]].
 - **`estado_sesion`:** el identificador de la sesión y el nuevo estado. El nombre de la capa y la marca de tiempo se leen de la base si hacen falta. Ver [[database/01-schema/TABLES]].
 - **`titulo_sesion`:** el identificador de la sesión y su nuevo nombre (el título que el modelo generó a partir de la primera petición). El id no viaja cambiado: renombrar solo toca el nombre. Ver [[specs/SPEC-SESIONES]].

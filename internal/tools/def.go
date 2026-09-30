@@ -89,14 +89,16 @@ type Peticion struct {
 }
 
 // Publicador recibe los avisos de la capa universal. Lo implementa el cableado
-// (el bus de eventos); `tools` no conoce la TUI ni `session`.
+// (el bus de eventos); `tools` no conoce la TUI ni `session`. Cada aviso viaja
+// con la sesión que lo produjo, para que el bus no tenga que adivinarla de una
+// variable global.
 type Publicador interface {
 	// HerramientaInvocada anuncia la llamada con su verbo de pantalla y su
 	// objetivo (la ruta, el patrón o el comando sobre el que actúa).
-	HerramientaInvocada(nombre, agente, verbo, tema string)
+	HerramientaInvocada(sesion, nombre, agente, verbo, tema string)
 	// HerramientaResultado cierra la llamada con su desenlace y la medida del
 	// resultado («70 líneas», «3 coincidencias»).
-	HerramientaResultado(nombre string, ok bool, err string, truncado bool, medida string)
+	HerramientaResultado(sesion, nombre string, ok bool, err string, truncado bool, medida string)
 }
 
 // Registro es el conjunto de herramientas disponibles (las trece incluidas más
@@ -233,7 +235,7 @@ func (r *Registro) Ejecutar(ctx context.Context, p Peticion) (Resultado, error) 
 	}
 	resumen := TemaDe(h, args)
 	if r.Eventos != nil {
-		r.Eventos.HerramientaInvocada(h.Nombre, p.Agente, VerboDe(h), resumen)
+		r.Eventos.HerramientaInvocada(p.SesionID, h.Nombre, p.Agente, VerboDe(h), resumen)
 	}
 	if r.Hooks.AntesDeEjecutar != nil {
 		r.Hooks.AntesDeEjecutar(h.Nombre, args, nil)
@@ -258,7 +260,7 @@ func (r *Registro) Ejecutar(ctx context.Context, p Peticion) (Resultado, error) 
 			r.Hooks.DespuesDeEjecutar(h.Nombre, res, err, nil)
 		}
 		if r.Eventos != nil {
-			r.Eventos.HerramientaResultado(h.Nombre, false, err.Error(), false, MedidaDe(h, res))
+			r.Eventos.HerramientaResultado(p.SesionID, h.Nombre, false, err.Error(), false, MedidaDe(h, res))
 		}
 		return res, err
 	}
@@ -275,7 +277,7 @@ func (r *Registro) Ejecutar(ctx context.Context, p Peticion) (Resultado, error) 
 		r.Hooks.DespuesDeEjecutar(h.Nombre, res, nil, nil)
 	}
 	if r.Eventos != nil {
-		r.Eventos.HerramientaResultado(h.Nombre, res.Error == "", res.Error, res.Truncado, MedidaDe(h, res))
+		r.Eventos.HerramientaResultado(p.SesionID, h.Nombre, res.Error == "", res.Error, res.Truncado, MedidaDe(h, res))
 	}
 	return res, nil
 }

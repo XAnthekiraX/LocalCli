@@ -155,6 +155,7 @@ func TestEventosDeTodaEjecucion(t *testing.T) {
 	r.Eventos = pub
 	_, err := r.Ejecutar(context.Background(), Peticion{
 		Agente:      AgenteBuild,
+		SesionID:    "s1",
 		Permisos:    AccionesDeBuild(),
 		Herramienta: "leer_archivo",
 		Argumentos:  json.RawMessage(`{"ruta":"a.md"}`),
@@ -164,6 +165,9 @@ func TestEventosDeTodaEjecucion(t *testing.T) {
 	}
 	if pub.invocada != 1 || pub.resultado != 1 {
 		t.Fatalf("eventos: invocada=%d resultado=%d, quiero 1 y 1", pub.invocada, pub.resultado)
+	}
+	if pub.sesion != "s1" {
+		t.Errorf("el evento debe decir de qué sesión es: %q", pub.sesion)
 	}
 	if pub.agente != AgenteBuild {
 		t.Errorf("el evento debe decir qué agente la pidió: %q", pub.agente)
@@ -181,19 +185,21 @@ func TestEventosDeTodaEjecucion(t *testing.T) {
 }
 
 type publicadorGrabador struct {
-	invocada, resultado int
-	agente, verbo, tema string
-	medida              string
+	invocada, resultado   int
+	sesion, agente, verbo string
+	tema                  string
+	medida                string
 }
 
-func (p *publicadorGrabador) HerramientaInvocada(nombre, agente, verbo, tema string) {
+func (p *publicadorGrabador) HerramientaInvocada(sesion, nombre, agente, verbo, tema string) {
 	p.invocada++
+	p.sesion = sesion
 	p.agente = agente
 	p.verbo = verbo
 	p.tema = tema
 }
 
-func (p *publicadorGrabador) HerramientaResultado(nombre string, ok bool, err string, truncado bool, medida string) {
+func (p *publicadorGrabador) HerramientaResultado(sesion, nombre string, ok bool, err string, truncado bool, medida string) {
 	p.resultado++
 	p.medida = medida
 }

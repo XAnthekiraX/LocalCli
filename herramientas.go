@@ -99,16 +99,17 @@ type herramientaPendiente struct {
 	sesion  string
 }
 
-func (p *publicadorBus) HerramientaInvocada(nombre, agente, verbo, tema string) {
+func (p *publicadorBus) HerramientaInvocada(sesion, nombre, agente, verbo, tema string) {
 	if p.ad != nil {
 		p.mu.Lock()
 		p.pendientes = append(p.pendientes, herramientaPendiente{
 			abierta: tui.LineaHerramientaAbierta(verbo, tema),
-			sesion:  p.ad.sesionActual(),
+			sesion:  sesion,
 		})
 		p.mu.Unlock()
 	}
 	p.bus.Emitir(tui.Evento{Nombre: tui.EventoHerramientaInvocada, Datos: map[string]string{
+		"sesion":      sesion,
 		"herramienta": nombre,
 		"agente":      agente,
 		"verbo":       verbo,
@@ -116,16 +117,19 @@ func (p *publicadorBus) HerramientaInvocada(nombre, agente, verbo, tema string) 
 	}})
 }
 
-func (p *publicadorBus) HerramientaResultado(nombre string, ok bool, err string, truncado bool, medida string) {
+func (p *publicadorBus) HerramientaResultado(sesion, nombre string, ok bool, err string, truncado bool, medida string) {
 	// La línea cerrada se compone con la misma función que la pinta la TUI: una
 	// sola forma para lo que se ve y lo que se guarda.
-	base, sesion := nombre, ""
+	base := nombre
 	if p.ad != nil {
 		p.mu.Lock()
 		if len(p.pendientes) > 0 {
 			ult := p.pendientes[0]
 			p.pendientes = p.pendientes[1:]
-			base, sesion = ult.abierta, ult.sesion
+			base = ult.abierta
+			if sesion == "" {
+				sesion = ult.sesion
+			}
 		}
 		p.mu.Unlock()
 	}
@@ -134,6 +138,7 @@ func (p *publicadorBus) HerramientaResultado(nombre string, ok bool, err string,
 		_ = p.ad.chat.Registrar(sesion, store.ChatTipoHerramienta, linea)
 	}
 	datos := map[string]string{
+		"sesion":      sesion,
 		"herramienta": nombre,
 		"ok":          boolTexto(ok),
 		"truncado":    boolTexto(truncado),
@@ -200,7 +205,7 @@ func opsDe(carpeta string, cambios *store.Cambios, ad *Adaptador, c tools.Contex
 	return &fileops.Ops{
 		Proyecto:  carpeta,
 		Historial: cambios,
-		SesionID:  ad.sesionActual(),
+		SesionID:  c.SesionID,
 		Aprobador: aprobadorDeContexto(c),
 		Motivo:    motivoDe(args),
 	}
@@ -213,7 +218,7 @@ func opsDe(carpeta string, cambios *store.Cambios, ad *Adaptador, c tools.Contex
 func opsLectura(carpeta string, ad *Adaptador, c tools.Contexto, args any) *fileops.Ops {
 	return &fileops.Ops{
 		Proyecto:  carpeta,
-		SesionID:  ad.sesionActual(),
+		SesionID:  c.SesionID,
 		Aprobador: aprobadorDeContexto(c),
 		Motivo:    motivoDe(args),
 	}
@@ -416,12 +421,12 @@ func salidaDeComando(r tools.RespuestaEjecutarComando) string {
 // la anuncia al bus para que la vea el panel. El modelo ve la lista resultante
 // en el propio resultado, así que no necesita una herramienta de lectura.
 func herramientaActualizarTodo(ad *Adaptador, todos *store.Todos) tools.Ejecutar {
-	return func(ctx context.Context, args any, _ tools.Contexto) (tools.Resultado, error) {
+	return func(ctx context.Context, args any, c tools.Contexto) (tools.Resultado, error) {
 		p, ok := args.(*tools.PeticionActualizarTodo)
 		if !ok {
 			return tools.Resultado{}, fmt.Errorf("arranque: petición de TODO desconocida %T", args)
 		}
-		sesion := ad.sesionActual()
+		sesion := c.SesionID
 		if sesion == "" {
 			return corregible(fmt.Errorf("no hay una sesión activa donde guardar la lista de pasos"))
 		}

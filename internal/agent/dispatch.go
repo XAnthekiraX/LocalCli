@@ -77,6 +77,7 @@ func (d *Despachador) Despachar(ctx context.Context, a Agente, s SolicitudHerram
 	}
 	return d.registro.Ejecutar(ctx, tools.Peticion{
 		Agente:      a.Nombre,
+		SesionID:    tools.SesionDe(ctx),
 		Permisos:    a.Acciones(),
 		Herramienta: s.Nombre,
 		Argumentos:  s.Argumentos,
