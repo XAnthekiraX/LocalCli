@@ -1,20 +1,21 @@
 package tools
 
-// catalog.go — el catálogo cerrado de las catorce herramientas.
+// catalog.go — el catálogo cerrado de las quince herramientas.
 //
-// Fuente de verdad: ai/docs/backend/02-interfaces/TOOLS.md §1 (las catorce, su
+// Fuente de verdad: ai/docs/backend/02-interfaces/TOOLS.md §1 (las quince, su
 // categoría, si leen o escriben y a qué agente pertenecen) y
-// ai/docs/specs/SPEC-TOOLS.md §Catálogo (las mismas catorce).
+// ai/docs/specs/SPEC-TOOLS.md §Catálogo (las mismas quince).
 //
 // "Cerrado" significa cerrado: el agente no puede pedir nada fuera de esta
 // lista salvo lo que el usuario declare en `.localcli/tools/`. El nombre es la
 // clave: es exactamente lo que el modelo escribe al pedirla.
 //
 // El reparto por agente NO vive aquí. El catálogo solo describe cada
-// herramienta (categoría, modo, descripción, esquema); quién puede pedirla se
-// decide con los `permisos` del JSON del agente (SPEC-AGENTE-BASE) y la `Accion`
-// se DEDUCE de su categoría y su modo: no hay un campo aparte que pueda
-// contradecirlos y debilitar la garantía (SECURITY.md §2).
+// herramienta (categoría, permiso, modo, descripción, esquema); quién puede
+// pedirla se decide con los `permissions` del `agent.yaml` (SPEC-AGENTE-BASE) y
+// el `Permiso` es un dato declarado de la herramienta: el reparto se decide
+// comparándolo con los permisos del agente, no con un `switch` en el enrutado
+// (SECURITY.md §2).
 //
 // El `Ejecutar` de cada herramienta es su handler propio, no una categoría: se
 // rellena en el cableado y una herramienta nueva no obliga a tocar un `switch`
@@ -66,41 +67,38 @@ func (m Modo) String() string {
 	return "lee"
 }
 
-// Accion es el permiso de alto nivel que gobierna un grupo de herramientas. Un
-// agente declara permisos por acción (`permitir`/`denegar`) y de ahí se deriva
-// su catálogo efectivo (SPEC-AGENTE-BASE).
-type Accion string
+// Permiso es el de alto nivel que gobierna un grupo de herramientas. Un agente
+// declara sus `permissions` (mapa de permiso a efecto) y de ahí se deriva su
+// catálogo efectivo (SPEC-AGENTE-BASE).
+type Permiso string
 
 const (
-	// AccionLeer: mirar archivos del proyecto.
-	AccionLeer Accion = "leer"
-	// AccionEditar: crear, modificar o borrar archivos y carpetas.
-	AccionEditar Accion = "editar"
-	// AccionEjecutar: lanzar comandos de consulta en el proyecto.
-	AccionEjecutar Accion = "ejecutar"
-	// AccionInternet: salir de la máquina (con LOCALCLI_ALLOW_INTERNET).
-	AccionInternet Accion = "internet"
-	// AccionTareas: llevar la lista de pasos de la sesión. No escribe archivos
-	// del proyecto, así que no entra en la garantía de escritura y la conceden
-	// los dos agentes.
-	AccionTareas Accion = "tareas"
+	// PermisoRead: no cambia el proyecto: mirar y buscar archivos, la terminal
+	// de consulta, internet y la lista de pasos de la sesión. No escribe
+	// archivos del proyecto, así que la conceden los dos agentes.
+	PermisoRead Permiso = "read"
+	// PermisoWrite: crear, sobrescribir o borrar un archivo o una carpeta.
+	PermisoWrite Permiso = "write"
+	// PermisoEdit: editar contenido existente, sin reemplazarlo entero. Solo
+	// `editar_archivo` cae aquí.
+	PermisoEdit Permiso = "edit"
 )
 
-func (a Accion) String() string { return string(a) }
+func (p Permiso) String() string { return string(p) }
 
-// Valida informa si la acción es una de las del catálogo.
-func (a Accion) Valida() bool {
-	switch a {
-	case AccionLeer, AccionEditar, AccionEjecutar, AccionInternet, AccionTareas:
+// Valida informa si el permiso es uno del vocabulario.
+func (p Permiso) Valida() bool {
+	switch p {
+	case PermisoRead, PermisoWrite, PermisoEdit:
 		return true
 	}
 	return false
 }
 
-// Permitida informa si la acción está entre las concedidas.
-func (a Accion) Permitida(permisos []Accion) bool {
-	for _, p := range permisos {
-		if p == a {
+// Permitida informa si el permiso está entre los concedidos.
+func (p Permiso) Permitida(permisos []Permiso) bool {
+	for _, q := range permisos {
+		if q == p {
 			return true
 		}
 	}
@@ -113,7 +111,11 @@ type Herramienta struct {
 	Nombre      string
 	Descripcion string
 	Categoria   Categoria
-	Modo        Modo
+	// Permiso es lo que el agente concede para usar la herramienta: `read`,
+	// `write` o `edit`. Es un dato del catálogo, no un `switch` en el enrutado:
+	// el reparto se decide comparándolo con los `permissions` del agente.
+	Permiso Permiso
+	Modo    Modo
 	// Verbo es la etiqueta corta con la que la TUI nombra la herramienta
 	// («LEER», «EJEC»). No viaja al modelo: es presentación.
 	Verbo string
@@ -132,26 +134,11 @@ type Herramienta struct {
 }
 
 // SoloBuild informa si la herramienta modifica el proyecto y por tanto solo
-// pertenece a `build` (columna "Agente" de TOOLS.md §1). Lo decide la acción
-// `editar`, no el modo: la lista de pasos de la sesión (`tareas`) escribe estado
-// de la sesión, no archivos, y la tienen los dos agentes.
-func (h Herramienta) SoloBuild() bool { return h.Accion() == AccionEditar }
-
-// Accion deduce el permiso de alto nivel de la herramienta a partir de su
-// categoría y su modo. Es la única fuente de la acción.
-func (h Herramienta) Accion() Accion {
-	switch h.Categoria {
-	case CatTerminal:
-		return AccionEjecutar
-	case CatInternet:
-		return AccionInternet
-	case CatTareas:
-		return AccionTareas
-	}
-	if h.Modo == Escribe {
-		return AccionEditar
-	}
-	return AccionLeer
+// pertenece a `build` (columna "Agente" de TOOLS.md §1). Lo deciden los permisos
+// `write` y `edit`; la lista de pasos de la sesión es `read` y la tienen los dos
+// agentes.
+func (h Herramienta) SoloBuild() bool {
+	return h.Permiso == PermisoWrite || h.Permiso == PermisoEdit
 }
 
 // catalogo es la lista cerrada, en el orden documentado: archivos de lectura,
@@ -160,30 +147,40 @@ func (h Herramienta) Accion() Accion {
 // `crear_archivo` y `escribir_archivo` están separadas a propósito: el agente
 // no destruye algo por accidente cuando pretendía crear (TOOLS.md §1).
 var catalogo = []Herramienta{
-	// Archivos de lectura — acción `leer`.
-	{Nombre: "leer_archivo", Categoria: CatArchivos, Modo: Lee, Verbo: "LEER", Tema: "ruta", Unidad: "línea", Descripcion: "Lee el contenido de un archivo del proyecto."},
-	{Nombre: "listar_carpeta", Categoria: CatArchivos, Modo: Lee, Verbo: "LISTAR", Tema: "ruta", Unidad: "entrada", Descripcion: "Lista las entradas de un nivel de una carpeta."},
-	{Nombre: "buscar_archivos", Categoria: CatArchivos, Modo: Lee, Verbo: "BUSCAR", Tema: "patron", Unidad: "coincidencia", Descripcion: "Busca archivos por nombre."},
-	{Nombre: "buscar_en_archivos", Categoria: CatArchivos, Modo: Lee, Verbo: "GREP", Tema: "patron", Unidad: "coincidencia", Descripcion: "Busca texto dentro del contenido de los archivos."},
+	// Archivos de lectura — permiso `read`.
+	{Nombre: "leer_archivo", Categoria: CatArchivos, Permiso: PermisoRead, Modo: Lee, Verbo: "LEER", Tema: "ruta", Unidad: "línea", Descripcion: "Lee el contenido de un archivo del proyecto."},
+	{Nombre: "listar_carpeta", Categoria: CatArchivos, Permiso: PermisoRead, Modo: Lee, Verbo: "LISTAR", Tema: "ruta", Unidad: "entrada", Descripcion: "Lista las entradas de un nivel de una carpeta."},
+	{Nombre: "buscar_archivos", Categoria: CatArchivos, Permiso: PermisoRead, Modo: Lee, Verbo: "BUSCAR", Tema: "patron", Unidad: "coincidencia", Descripcion: "Busca archivos por nombre."},
+	{Nombre: "buscar_en_archivos", Categoria: CatArchivos, Permiso: PermisoRead, Modo: Lee, Verbo: "GREP", Tema: "patron", Unidad: "coincidencia", Descripcion: "Busca texto dentro del contenido de los archivos."},
 
-	// Archivos de escritura — acción `editar`.
-	{Nombre: "crear_archivo", Categoria: CatArchivos, Modo: Escribe, Verbo: "CREAR", Tema: "ruta", Descripcion: "Crea un archivo nuevo; falla si ya existe."},
-	{Nombre: "escribir_archivo", Categoria: CatArchivos, Modo: Escribe, Verbo: "ESCRIBIR", Tema: "ruta", Descripcion: "Sobrescribe el contenido entero de un archivo."},
-	{Nombre: "editar_archivo", Categoria: CatArchivos, Modo: Escribe, Verbo: "EDITAR", Tema: "ruta", Descripcion: "Aplica una edición parcial a un archivo."},
-	{Nombre: "eliminar_archivo", Categoria: CatArchivos, Modo: Escribe, Verbo: "BORRAR", Tema: "ruta", Descripcion: "Borra un archivo del proyecto."},
-	{Nombre: "crear_carpeta", Categoria: CatArchivos, Modo: Escribe, Verbo: "MKDIR", Tema: "ruta", Descripcion: "Crea una carpeta; falla si ya existe."},
-	{Nombre: "eliminar_carpeta", Categoria: CatArchivos, Modo: Escribe, Verbo: "RMDIR", Tema: "ruta", Descripcion: "Borra una carpeta del proyecto."},
+	// Archivos de escritura — permiso `write` (salvo `editar_archivo`, `edit`).
+	{Nombre: "crear_archivo", Categoria: CatArchivos, Permiso: PermisoWrite, Modo: Escribe, Verbo: "CREAR", Tema: "ruta", Descripcion: "Crea un archivo nuevo; falla si ya existe."},
+	{Nombre: "escribir_archivo", Categoria: CatArchivos, Permiso: PermisoWrite, Modo: Escribe, Verbo: "ESCRIBIR", Tema: "ruta", Descripcion: "Sobrescribe el contenido entero de un archivo."},
+	{Nombre: "editar_archivo", Categoria: CatArchivos, Permiso: PermisoEdit, Modo: Escribe, Verbo: "EDITAR", Tema: "ruta", Descripcion: "Aplica una edición parcial a un archivo."},
+	{Nombre: "eliminar_archivo", Categoria: CatArchivos, Permiso: PermisoWrite, Modo: Escribe, Verbo: "BORRAR", Tema: "ruta", Descripcion: "Borra un archivo del proyecto."},
+	{Nombre: "crear_carpeta", Categoria: CatArchivos, Permiso: PermisoWrite, Modo: Escribe, Verbo: "MKDIR", Tema: "ruta", Descripcion: "Crea una carpeta; falla si ya existe."},
+	{Nombre: "eliminar_carpeta", Categoria: CatArchivos, Permiso: PermisoWrite, Modo: Escribe, Verbo: "RMDIR", Tema: "ruta", Descripcion: "Borra una carpeta del proyecto."},
 
-	// Terminal — acción `ejecutar`.
-	{Nombre: "ejecutar_comando", Categoria: CatTerminal, Modo: Lee, Verbo: "EJEC", Tema: "comando", Unidad: "línea", Descripcion: "Ejecuta un comando de la lista blanca dentro del proyecto."},
+	// Terminal — permiso `read`.
+	{Nombre: "ejecutar_comando", Categoria: CatTerminal, Permiso: PermisoRead, Modo: Lee, Verbo: "EJEC", Tema: "comando", Unidad: "línea", Descripcion: "Ejecuta un comando de la lista blanca dentro del proyecto."},
 
-	// Internet — acción `internet`.
-	{Nombre: "buscar_en_internet", Categoria: CatInternet, Modo: Lee, Verbo: "WEB", Tema: "consulta", Unidad: "resultado", Descripcion: "Busca en internet; solo sale la consulta de la máquina."},
-	{Nombre: "abrir_pagina", Categoria: CatInternet, Modo: Lee, Verbo: "ABRIR", Tema: "direccion", Unidad: "línea", Descripcion: "Descarga y devuelve el texto de una página."},
+	// Internet — permiso `read`.
+	{Nombre: "buscar_en_internet", Categoria: CatInternet, Permiso: PermisoRead, Modo: Lee, Verbo: "WEB", Tema: "consulta", Unidad: "resultado", Descripcion: "Busca en internet; solo sale la consulta de la máquina."},
+	{Nombre: "abrir_pagina", Categoria: CatInternet, Permiso: PermisoRead, Modo: Lee, Verbo: "ABRIR", Tema: "direccion", Unidad: "línea", Descripcion: "Descarga y devuelve el texto de una página."},
 
-	// Sesión — acción `tareas` (la tienen los dos agentes).
-	{Nombre: "actualizar_todo", Categoria: CatTareas, Modo: Escribe, Verbo: "TODO", Unidad: "paso", Descripcion: descripcionActualizarTodo},
+	// Sesión — permiso `read` (la tienen los dos agentes).
+	{Nombre: "crear_todo", Categoria: CatTareas, Permiso: PermisoRead, Modo: Escribe, Verbo: "TODO", Tema: "contenido", Unidad: "paso", Descripcion: descripcionCrearTodo},
+	{Nombre: "actualizar_todo", Categoria: CatTareas, Permiso: PermisoRead, Modo: Escribe, Verbo: "TODO", Unidad: "paso", Descripcion: descripcionActualizarTodo},
 }
+
+// descripcionCrearTodo es la política que ve el modelo para añadir un paso:
+// solo describe lo que esta herramienta hace —añadir al final sin tocar los
+// demás—, para que no se confunda con `actualizar_todo` (SPEC-TOOLS).
+const descripcionCrearTodo = "Añade UN paso al final de la lista de pasos de la sesión, sin tocar los que ya había. " +
+	"Úsala cuando quieras registrar un paso nuevo y los anteriores ya estén como deben; los pasos que no mandas no cambian. " +
+	"No la uses para reordenar, cancelar un paso ni cambiar el estado de los que ya están: para eso está `actualizar_todo`. " +
+	"Estados: `pendiente`, `en_progreso`, `completada` y `cancelada`. Solo un paso puede estar `en_progreso` a la vez: si ya hay uno, usa `actualizar_todo` para cambiarlo. " +
+	"Prioridad opcional: `alta`, `media` o `baja`."
 
 // descripcionActualizarTodo es la política que ve el modelo: no describe la
 // implementación, dice cuándo usar la lista y cómo mantenerla (SPEC-TOOLS).
@@ -196,7 +193,7 @@ const descripcionActualizarTodo = "Crea y mantiene la lista de pasos de la sesi�
 	"Si algo bloquea un paso, déjalo en `en_progreso` y añade otro elemento que describa el bloqueo. " +
 	"Prioridad opcional: `alta`, `media` o `baja`."
 
-// El esquema de cada una de las catorce se deriva de su DTO al cargar el paquete:
+// El esquema de cada una de las quince se deriva de su DTO al cargar el paquete:
 // no hay un esquema escrito a mano al lado que pueda divergir.
 func init() {
 	for i := range catalogo {
@@ -243,7 +240,7 @@ func Existe(nombre string) bool {
 	return ok
 }
 
-// NombresCatalogo devuelve los catorce nombres, en orden.
+// NombresCatalogo devuelve los quince nombres, en orden.
 func NombresCatalogo() []string {
 	out := make([]string, 0, len(catalogo))
 	for _, h := range catalogo {
@@ -263,24 +260,24 @@ func NombresDeCategoria(c Categoria) []string {
 	return out
 }
 
-// NombresDeAccion devuelve los nombres de las herramientas de una acción, en el
-// orden del catálogo.
-func NombresDeAccion(a Accion) []string {
+// NombresDePermiso devuelve los nombres de las herramientas de un permiso, en
+// el orden del catálogo.
+func NombresDePermiso(p Permiso) []string {
 	var out []string
 	for _, h := range catalogo {
-		if h.Accion() == a {
+		if h.Permiso == p {
 			out = append(out, h.Nombre)
 		}
 	}
 	return out
 }
 
-// AccionDe devuelve la acción de una herramienta del catálogo. El segundo valor
-// es false si el nombre no existe.
-func AccionDe(nombre string) (Accion, bool) {
+// PermisoDe devuelve el permiso de una herramienta del catálogo. El segundo
+// valor es false si el nombre no existe.
+func PermisoDe(nombre string) (Permiso, bool) {
 	h, ok := buscarCatalogo(nombre)
 	if !ok {
 		return "", false
 	}
-	return h.Accion(), true
+	return h.Permiso, true
 }

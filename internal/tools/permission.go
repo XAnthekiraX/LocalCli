@@ -8,10 +8,11 @@ package tools
 //
 // La garantía central no es que este módulo "bloquee" la escritura para `plan`:
 // es que `plan` **no tiene** ninguna herramienta de escritura en su catálogo
-// efectivo, porque sus permisos no conceden `editar`. El catálogo efectivo se
-// DERIVA de los permisos contra el catálogo cerrado (`agent.HerramientasDe`), y
-// la comprobación de la capa universal vuelve a mirar la acción: la herramienta
-// pertenece a una acción y el agente concede o no esa acción.
+// efectivo, porque sus permisos no conceden `write` ni `edit`. El catálogo
+// efectivo se DERIVA de los permisos contra el catálogo cerrado
+// (`agent.HerramientasDe`), y la comprobación de la capa universal vuelve a
+// mirar el permiso: la herramienta declara el suyo y el agente concede o no ese
+// permiso.
 
 // Identidad de los dos agentes base (specs/SPEC-AGENTE-BASE).
 const (
@@ -19,47 +20,42 @@ const (
 	AgenteBuild = "build"
 )
 
-// HerramientasDePlan devuelve el catálogo del agente base `plan`: leer,
-// ejecutar, internet y tareas, nunca editar. Se conserva como valor por defecto
-// y para los tests; el catálogo real de cada agente sale de sus `permisos`
-// (agent.HerramientasDe).
+// HerramientasDePlan devuelve el catálogo del agente base `plan`: solo
+// herramientas de lectura, nunca de escritura. Se conserva como valor por
+// defecto y para los tests; el catálogo real de cada agente sale de sus
+// `permissions` (agent.HerramientasDe).
 func HerramientasDePlan() []string {
-	var out []string
-	out = append(out, NombresDeAccion(AccionLeer)...)
-	out = append(out, NombresDeAccion(AccionEjecutar)...)
-	out = append(out, NombresDeAccion(AccionInternet)...)
-	out = append(out, NombresDeAccion(AccionTareas)...)
-	return out
+	return NombresDePermiso(PermisoRead)
 }
 
 // HerramientasDeBuild devuelve el catálogo completo.
 func HerramientasDeBuild() []string { return NombresCatalogo() }
 
-// AccionesDePlan y AccionesDeBuild son los permisos por acción de los agentes
-// base, para las pruebas y el respaldo.
-func AccionesDePlan() []Accion {
-	return []Accion{AccionLeer, AccionEjecutar, AccionInternet, AccionTareas}
+// PermisosDePlan y PermisosDeBuild son los permisos de los agentes base, para
+// las pruebas y el respaldo.
+func PermisosDePlan() []Permiso {
+	return []Permiso{PermisoRead}
 }
 
-func AccionesDeBuild() []Accion {
-	return []Accion{AccionLeer, AccionEditar, AccionEjecutar, AccionInternet, AccionTareas}
+func PermisosDeBuild() []Permiso {
+	return []Permiso{PermisoRead, PermisoWrite, PermisoEdit}
 }
 
-// ComprobarPermiso valida la petición contra las acciones del agente.
+// ComprobarPermiso valida la petición contra los permisos del agente.
 //
 //   - Una herramienta fuera del catálogo cerrado es E_TOOL_UNKNOWN, sin importar
 //     el agente.
-//   - Una acción que el agente no concede es E_TOOL_NOT_ALLOWED. Es el caso de
+//   - Un permiso que el agente no concede es E_TOOL_NOT_ALLOWED. Es el caso de
 //     `plan` pidiendo escritura: no la tiene, así que se rechaza.
-func ComprobarPermiso(permisos []Accion, nombre string) error {
+func ComprobarPermiso(permisos []Permiso, nombre string) error {
 	h, ok := Buscar(nombre)
 	if !ok {
 		return nuevoError(CodigoHerramientaDesconocida,
 			"la herramienta "+nombre+" no está en el catálogo cerrado")
 	}
-	if !h.Accion().Permitida(permisos) {
+	if !h.Permiso.Permitida(permisos) {
 		return nuevoError(CodigoHerramientaNoPermitida,
-			"el agente no tiene la acción `"+h.Accion().String()+"`, que es la de "+nombre)
+			"el agente no tiene el permiso `"+h.Permiso.String()+"`, que es el de "+nombre)
 	}
 	return nil
 }

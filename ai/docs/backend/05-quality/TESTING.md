@@ -19,9 +19,9 @@ Qué se prueba, cómo, y qué debe sostenerse con una prueba. Ver [[PROJECT]] pa
 | Nivel | Qué cubre | Cómo |
 |---|---|---|
 | Unitario | Lógica pura: grafo de dependencias, selección de contexto, orden de la cola, comprobación de permisos, reparto de herramientas, validación de rutas | Funciones aisladas, sin base de datos ni red |
-| De integración | Conexión y streaming con Ollama, ciclo completo de una etapa con lectura, aplicación de un cambio con su aprobación, ciclo de la cola | Ollama real, base temporal, sistema de archivos temporal |
+| De integración | Conexión y streaming con el proveedor, ciclo completo de una etapa con lectura, aplicación de un cambio con su aprobación, ciclo de la cola | Un proveedor real —Ollama o `llama-server`—, base temporal, sistema de archivos temporal |
 | De aislamiento | Un intento de escribir en el proyecto a través de la terminal, que debe fallar | Landlock real, no simulado |
-| De contexto | Que el recorte reduzca de forma medible frente a leer el proyecto entero, y que lo entregado quepa en el límite del modelo | Ollama real, con el modelo que elija la prueba |
+| De contexto | Que el recorte reduzca de forma medible frente a leer el proyecto entero, y que lo entregado quepa en el límite del modelo | Un proveedor real, con el modelo que elija la prueba |
 
 La prueba de aislamiento es la que sostiene la garantía de Landlock. Si pasa con Landlock simulado, no prueba nada: tiene que usar el mecanismo real.
 
@@ -38,7 +38,8 @@ Cobertura esperada por módulo:
 | `tools` | Una herramienta fuera del catálogo se rechaza; una herramienta que el agente no tiene se rechaza; el enrutado va al módulo correcto |
 | `fileops` | Dentro de la carpeta se escribe con aprobación; fuera sin explicación no; borrar pide confirmación; cada cambio queda registrado con el antes y el después |
 | `exec` | La lista blanca corre sin preguntar; un comando fuera de la lista pide permiso; la salida sin fin se corta; la terminal no puede escribir en el proyecto |
-| `ollama` | El streaming entrega token a token; el razonamiento se distingue de la respuesta; el perfil de hardware avisa si el modelo no cabe |
+| `llm` | La frontera neutra resuelve capacidades y ventana igual contra los dos proveedores; la cola serializa por orden de llegada; el tajo de inferencia se toma por petición, no por ejecución completa |
+| `ollama`, `openai` | El streaming entrega token a token (NDJSON y SSE); el razonamiento se distingue de la respuesta; las capacidades y la ventana se leen del servidor; el perfil de hardware avisa si el modelo no cabe |
 | `store` | Las escrituras son transaccionales; el borrado de sesión deja `change_history` intacto; WAL permite leer mientras se escribe; un flujo compuesto que falla en un paso no deja escrituras a medias; las escrituras concurrentes no se pierden; `id` no admite nulo en ninguna tabla; un esquema con `user_version` correcto pero DDL viejo se rechaza |
 | `session` | El estado de una sesión cambia correctamente; una sesión en segundo plano sigue al cambiar de vista; el contenido no se filtra entre sesiones |
 | `flow` | Las etapas van en orden; una etapa que falla detiene el flujo; un flujo pausado se retoma donde estaba; cancelar no deja etapas corriendo |
@@ -46,7 +47,7 @@ Cobertura esperada por módulo:
 ## 3. Fixtures y mocks
 
 - **Base de datos:** base en memoria o archivo temporal por prueba, creada desde el esquema y destruida al terminar. Nunca se usa la base de un proyecto real. Ver [[database/03-operations/SEEDING]].
-- **Ollama:** para las pruebas de integración, un Ollama real. Si el test debe ser rápido, se puede sustituir el cliente con un doble que emita tokens fijos, pero eso no prueba el streaming de verdad.
+- **Proveedor de modelo:** para las pruebas de integración, un proveedor real —Ollama o `llama-server`—. Si el test debe ser rápido, se puede sustituir `llm.Proveedor` con un doble que emita tokens fijos, pero eso no prueba el streaming de verdad.
 - **Sistema de archivos:** un directorio temporal por prueba. El proyecto de prueba tiene su propia carpeta, y las rutas se resuelven siempre relativas a ella.
 - **Landlock:** no se simula en la prueba de aislamiento. Si el sistema no lo tiene, esa prueba se salta, pero no se da por buena.
 - **Reloj y esperas:** para la cola y los flujos pausados, el tiempo se controla o se inyecta un reloj falso, para que las pruebas no dependan de dormir.

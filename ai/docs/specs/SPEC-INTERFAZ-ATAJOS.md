@@ -75,7 +75,7 @@ Ejemplo: `24afd397 | leer ~/Imágenes/picture.jpeg (fuera) | aprobar | declinar`
 - [ ] Se listan los atajos disponibles y la acción de cada uno, incluidas las secuencias con líder (el propio modal de atajos se abre con `Ctrl+P`).
 - [ ] `Ctrl+X m` abre el modal de modelos y `Ctrl+X l` el modal de sesiones desde cualquier vista; `Enter` en el modal de sesiones abre la sesión elegida.
 - [ ] `Esc` cierra cualquier modal abierto sin cambiar nada.
-- [ ] `Tab` recorre los agentes disponibles (los base `plan` y `build` y los propios de `.localcli/agents/*.json`) y el indicador junto al input se actualiza.
+- [ ] `Tab` recorre los agentes disponibles (los base `plan` y `build` y los propios de `.localcli/agents/<carpeta>/`) y el indicador junto al input se actualiza.
 - [ ] Se puede cambiar un atajo y el cambio queda guardado.
 - [ ] El panel muestra las aprobaciones pendientes de todas las sesiones.
 - [ ] Cada aprobación se resuelve de forma independiente.

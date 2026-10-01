@@ -1321,20 +1321,26 @@ func (o *optimizadorPorTurno) Optimizar(ctx context.Context, flujo, etapa, resul
 	return strings.TrimSpace(crudo), nil
 }
 
-// agenteBase carga los agentes del proyecto desde `.localcli/agents/*.json`: los dos
-// base (`plan`, `build`) y cualquier agente propio que el usuario deje ahí. El
-// nombre de cada archivo no decide nada: manda el campo `nombre` del JSON.
+// agenteBase carga los agentes del proyecto desde `.localcli/agents/`: los dos
+// base (`plan`, `build`) y cualquier agente propio que el usuario deje ahí. Cada
+// SUBcarpeta es un agente y el nombre lo decide el campo `name`, no el de la
+// carpeta.
 //
-// Un archivo inválido se ignora con un aviso por stderr, no tumba el arranque
+// Una carpeta inválida se ignora con un aviso por stderr, no tumba el arranque
 // (CONFIGURATION.md 5: la vista sigue viva), y `plan` y `build` siempre quedan
-// disponibles aunque su JSON falte o esté roto: son los que arrancan los flujos
-// oficiales.
+// disponibles aunque falten o estén rotos: son los que arrancan los flujos
+// oficiales. Un `*.json` suelto es el formato antiguo: se avisa nombrándolo y no
+// se carga, para que el usuario no vea su agente desaparecer en silencio.
 func agenteBase(raiz string) map[string]agent.Agente {
 	dir := filepath.Join(raiz, ".localcli", "agents")
 	out := map[string]agent.Agente{}
 	if entradas, err := os.ReadDir(dir); err == nil {
 		for _, e := range entradas {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			if !e.IsDir() {
+				if strings.HasSuffix(e.Name(), ".json") {
+					fmt.Fprintln(os.Stderr, "aviso: el agente `"+e.Name()+"` está en el formato antiguo; "+
+						"conviértelo a una carpeta `.localcli/agents/<nombre>/` con `agent.yaml` y `prompt.md`")
+				}
 				continue
 			}
 			a, err := agent.Cargar(filepath.Join(dir, e.Name()))
@@ -1353,14 +1359,15 @@ func agenteBase(raiz string) map[string]agent.Agente {
 	return out
 }
 
-// agenteDeRespaldo es el agente mínimo que se usa cuando falta o no carga su
-// JSON: prompt de identidad y sin permisos (solo conversación). No inventa
-// herramientas; si el usuario quiere que las tenga, escribe su `.localcli/agents`.
+// agenteDeRespaldo es el agente mínimo que se usa cuando falta o no carga la
+// carpeta del agente: prompt de identidad y sin permisos (solo conversación). No
+// inventa herramientas; si el usuario quiere que las tenga, crea
+// `.localcli/agents/<nombre>/agent.yaml` con sus `permissions` y
+// `.localcli/agents/<nombre>/prompt.md` con sus instrucciones.
 func agenteDeRespaldo(nombre string) agent.Agente {
 	return agent.Agente{
 		Nombre: nombre,
 		Prompt: "Eres el agente `" + nombre + "` de LocalCli. Responde en español, concreto y breve.",
-		Skills: []string{},
 	}
 }
 

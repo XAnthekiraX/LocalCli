@@ -15,7 +15,7 @@ func TestInternetDesactivadaDeniega(t *testing.T) {
 	r := registroStub("x", &llamado)
 	_, err := r.Ejecutar(context.Background(), Peticion{
 		Agente:      AgenteBuild,
-		Permisos:    AccionesDeBuild(),
+		Permisos:    PermisosDeBuild(),
 		Herramienta: "buscar_en_internet",
 		Argumentos:  json.RawMessage(`{"consulta":"docs"}`),
 	})
@@ -35,7 +35,7 @@ func TestInternetHabilitadaPasa(t *testing.T) {
 	r := registroStub("x", &llamado)
 	if _, err := r.Ejecutar(context.Background(), Peticion{
 		Agente:      AgenteBuild,
-		Permisos:    AccionesDeBuild(),
+		Permisos:    PermisosDeBuild(),
 		Herramienta: "abrir_pagina",
 		Argumentos:  json.RawMessage(`{"direccion":"https://example.com"}`),
 	}); err != nil {

@@ -30,7 +30,7 @@ import (
 	"localcli/internal/tui"
 )
 
-// registroDeHerramientas arma el registro de producción: las catorce incluidas
+// registroDeHerramientas arma el registro de producción: las quince incluidas
 // con sus handlers, más las que declare el usuario en `.localcli/tools/`.
 func registroDeHerramientas(ad *Adaptador, carpeta string, cambios *store.Cambios, todos *store.Todos, externo *lcexec.Ejecutor) (*tools.Registro, error) {
 	handlers := map[string]tools.Ejecutar{
@@ -47,6 +47,7 @@ func registroDeHerramientas(ad *Adaptador, carpeta string, cambios *store.Cambio
 		"ejecutar_comando":   herramientaEjecutarComando(carpeta),
 		"buscar_en_internet": herramientaBuscarInternet(),
 		"abrir_pagina":       herramientaAbrirPagina(),
+		"crear_todo":         herramientaCrearTodo(ad, todos),
 		"actualizar_todo":    herramientaActualizarTodo(ad, todos),
 	}
 
@@ -459,6 +460,52 @@ func herramientaActualizarTodo(ad *Adaptador, todos *store.Todos) tools.Ejecutar
 		}})
 		return tools.Resultado{Salida: textoDeTodo(items)}, nil
 	}
+}
+
+// herramientaCrearTodo añade un paso al final de la lista de la sesión activa,
+// sin tocar los que ya había, y la anuncia al bus. Devuelve el mismo checklist
+// que `actualizar_todo`, para que el modelo vea la lista resultante sin
+// distinguir qué herramienta la cambió.
+func herramientaCrearTodo(ad *Adaptador, todos *store.Todos) tools.Ejecutar {
+	return func(ctx context.Context, args any, c tools.Contexto) (tools.Resultado, error) {
+		p, ok := args.(*tools.PeticionCrearTodo)
+		if !ok {
+			return tools.Resultado{}, fmt.Errorf("arranque: petición de TODO desconocida %T", args)
+		}
+		sesion := c.SesionID
+		if sesion == "" {
+			return corregible(fmt.Errorf("no hay una sesión activa donde guardar la lista de pasos"))
+		}
+		actuales, err := todos.Leer(sesion)
+		if err != nil {
+			return corregible(err)
+		}
+		if err := tools.ValidarCrearTodo(p, elementosDeTodo(actuales)); err != nil {
+			return corregible(err)
+		}
+		if err := todos.Agregar(sesion, store.Todo{Contenido: p.Contenido, Estado: p.Estado, Prioridad: p.Prioridad}); err != nil {
+			return corregible(err)
+		}
+		items, err := todos.Leer(sesion)
+		if err != nil {
+			return corregible(err)
+		}
+		ad.bus.Emitir(tui.Evento{Nombre: tui.EventoTodoActualizada, Datos: map[string]string{
+			"sesion":    sesion,
+			"elementos": codificarTodo(items),
+		}})
+		return tools.Resultado{Salida: textoDeTodo(items)}, nil
+	}
+}
+
+// elementosDeTodo traduce la lista guardada a la forma que valida `tools`, para
+// comprobar contra ella la regla de un solo paso `en_progreso`.
+func elementosDeTodo(items []store.Todo) []tools.ElementoTodo {
+	out := make([]tools.ElementoTodo, len(items))
+	for i, it := range items {
+		out[i] = tools.ElementoTodo{Contenido: it.Contenido, Estado: it.Estado, Prioridad: it.Prioridad}
+	}
+	return out
 }
 
 // todoDeEvento es la forma mínima de un paso en el evento todo_actualizada: lo

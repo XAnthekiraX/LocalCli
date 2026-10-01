@@ -123,7 +123,7 @@ func handlersDeArchivos(ops *fileops.Ops) map[string]tools.Ejecutar {
 func peticion(herramienta string, args string) tools.Peticion {
 	return tools.Peticion{
 		Agente:      tools.AgenteBuild,
-		Permisos:    tools.AccionesDeBuild(),
+		Permisos:    tools.PermisosDeBuild(),
 		Herramienta: herramienta,
 		Argumentos:  json.RawMessage(args),
 	}
@@ -198,7 +198,7 @@ func TestPlanNoPuedeEscribirNiConAprobadorAbierto(t *testing.T) {
 	registro, ops, _ := canalDeHerramientas(t, aprobadorTotal(), tools.HerramientasDePlan())
 	_, err := registro.Ejecutar(context.Background(), tools.Peticion{
 		Agente:      tools.AgentePlan,
-		Permisos:    tools.AccionesDePlan(),
+		Permisos:    tools.PermisosDePlan(),
 		Herramienta: "crear_archivo",
 		Argumentos:  json.RawMessage(`{"ruta":"colado.txt","contenido":"x"}`),
 	})

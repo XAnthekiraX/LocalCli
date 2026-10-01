@@ -73,6 +73,8 @@ func Validar(nombre string, peticion any) error {
 		return requerido(nombre, "consulta", p.Consulta)
 	case *PeticionAbrirPagina:
 		return requerido(nombre, "direccion", p.Direccion)
+	case *PeticionCrearTodo:
+		return ValidarCrearTodo(p, nil)
 	case *PeticionActualizarTodo:
 		return validarTodo(nombre, p)
 	}
@@ -93,17 +95,49 @@ var (
 // vocabulario es E_BAD_ARGS y vuelve al modelo para que corrija.
 func validarTodo(nombre string, p *PeticionActualizarTodo) error {
 	for i, e := range p.Elementos {
-		if strings.TrimSpace(e.Contenido) == "" {
-			return nuevoError(CodigoArgumentosInvalidos,
-				fmt.Sprintf("el elemento %d de %s no tiene `contenido`", i, nombre))
+		if err := validarPaso(nombre, i, e.Contenido, e.Estado, e.Prioridad); err != nil {
+			return err
 		}
-		if !estadosDeTodo[e.Estado] {
+	}
+	return nil
+}
+
+// validarPaso comprueba un paso contra el vocabulario compartido por las dos
+// herramientas de la lista: contenido no vacío, estado y prioridad dentro de su
+// vocabulario. Es la fuente única del vocabulario, para que `crear_todo` y
+// `actualizar_todo` no puedan divergir.
+func validarPaso(nombre string, i int, contenido, estado, prioridad string) error {
+	if strings.TrimSpace(contenido) == "" {
+		return nuevoError(CodigoArgumentosInvalidos,
+			fmt.Sprintf("el elemento %d de %s no tiene `contenido`", i, nombre))
+	}
+	if !estadosDeTodo[estado] {
+		return nuevoError(CodigoArgumentosInvalidos,
+			fmt.Sprintf("el estado %q del elemento %d de %s no es válido: usa pendiente, en_progreso, completada o cancelada", estado, i, nombre))
+	}
+	if prioridad != "" && !prioridadesDeTodo[prioridad] {
+		return nuevoError(CodigoArgumentosInvalidos,
+			fmt.Sprintf("la prioridad %q del elemento %d de %s no es válida: usa alta, media o baja", prioridad, i, nombre))
+	}
+	return nil
+}
+
+// ValidarCrearTodo comprueba el paso de `crear_todo` contra el vocabulario de la
+// lista y, cuando `existentes` no es nil, contra la regla de un solo
+// `en_progreso`: añadir un segundo paso en curso es E_BAD_ARGS corregible que
+// nombra `actualizar_todo` como la vía para cambiarlo. Con `existentes` nil solo
+// se valida el vocabulario (es lo que corre durante la decodificación).
+func ValidarCrearTodo(p *PeticionCrearTodo, existentes []ElementoTodo) error {
+	if err := validarPaso("crear_todo", 0, p.Contenido, p.Estado, p.Prioridad); err != nil {
+		return err
+	}
+	if p.Estado != "en_progreso" {
+		return nil
+	}
+	for _, e := range existentes {
+		if e.Estado == "en_progreso" {
 			return nuevoError(CodigoArgumentosInvalidos,
-				fmt.Sprintf("el estado %q del elemento %d de %s no es válido: usa pendiente, en_progreso, completada o cancelada", e.Estado, i, nombre))
-		}
-		if e.Prioridad != "" && !prioridadesDeTodo[e.Prioridad] {
-			return nuevoError(CodigoArgumentosInvalidos,
-				fmt.Sprintf("la prioridad %q del elemento %d de %s no es válida: usa alta, media o baja", e.Prioridad, i, nombre))
+				"ya hay un paso `en_progreso`: usa `actualizar_todo` para cambiar cuál está en curso antes de añadir otro")
 		}
 	}
 	return nil

@@ -149,8 +149,8 @@ func TestHerramientaDelUsuarioEsDeLecturaYNoUsaEsquemaPropio(t *testing.T) {
 	if h.Modo != Lee || h.SoloBuild() {
 		t.Errorf("una herramienta del usuario es de lectura: %+v", h)
 	}
-	if h.Accion() != AccionLeer {
-		t.Errorf("acción = %s, quiero leer", h.Accion())
+	if h.Permiso != PermisoRead {
+		t.Errorf("permiso = %s, quiero read", h.Permiso)
 	}
 	if h.Esquema == nil || h.Esquema.Type != "object" || len(h.Esquema.Properties) != 0 {
 		t.Errorf("esquema = %+v, quiero un objeto sin campos", h.Esquema)

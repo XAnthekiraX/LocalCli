@@ -23,7 +23,7 @@ func TestHooksSeInvocaAntesYDespues(t *testing.T) {
 	}
 	if _, err := r.Ejecutar(context.Background(), Peticion{
 		Agente:      AgenteBuild,
-		Permisos:    AccionesDeBuild(),
+		Permisos:    PermisosDeBuild(),
 		Herramienta: "leer_archivo",
 		Argumentos:  json.RawMessage(`{"ruta":"a.md"}`),
 	}); err != nil {
@@ -46,7 +46,7 @@ func TestDefinirHerramientaAdaptaElCatalogo(t *testing.T) {
 			return nombre + "_v2", e
 		},
 	}
-	defs := r.Definiciones(AccionesDePlan())
+	defs := r.Definiciones(PermisosDePlan())
 	found := false
 	for _, d := range defs {
 		if d.Nombre == "leer_archivo_v2" {
@@ -58,16 +58,16 @@ func TestDefinirHerramientaAdaptaElCatalogo(t *testing.T) {
 	}
 }
 
-// TestDefinicionesRepartenPorAccion — el catálogo efectivo sale de las acciones:
+// TestDefinicionesRepartenPorPermiso — el catálogo efectivo sale de los permisos:
 // `plan` no ve ninguna de escritura, `build` las ve todas.
-func TestDefinicionesRepartenPorAccion(t *testing.T) {
+func TestDefinicionesRepartenPorPermiso(t *testing.T) {
 	r := registroStub("ok", nil)
-	for _, d := range r.Definiciones(AccionesDePlan()) {
+	for _, d := range r.Definiciones(PermisosDePlan()) {
 		if h, ok := Buscar(d.Nombre); ok && h.SoloBuild() {
 			t.Errorf("plan no puede ver %s en sus definiciones", d.Nombre)
 		}
 	}
-	if got := len(r.Definiciones(AccionesDeBuild())); got != len(NombresCatalogo()) {
+	if got := len(r.Definiciones(PermisosDeBuild())); got != len(NombresCatalogo()) {
 		t.Errorf("build ve %d herramientas, quiero %d", got, len(NombresCatalogo()))
 	}
 }

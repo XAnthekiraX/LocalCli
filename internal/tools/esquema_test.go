@@ -70,7 +70,7 @@ func TestElEsquemaLlevaElMotivoOpcional(t *testing.T) {
 	}
 }
 
-// TestEsquemaDeTodasLasHerramientas — las catorce tienen esquema y ninguna queda
+// TestEsquemaDeTodasLasHerramientas — las quince tienen esquema y ninguna queda
 // sin describir.
 func TestEsquemaDeTodasLasHerramientas(t *testing.T) {
 	for _, h := range Herramientas() {

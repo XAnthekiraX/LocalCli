@@ -30,7 +30,7 @@ Los que el usuario puede encontrarse y merece la pena distinguir:
 
 | Situación | Qué ve el usuario | Qué hace el sistema |
 |---|---|---|
-| Ollama no está corriendo | Aviso de que no se puede generar | El harness sigue vivo; la interfaz funciona |
+| El proveedor de modelo no está corriendo | Aviso de que no se puede generar, nombrando el proveedor y cómo levantarlo | El harness sigue vivo; la interfaz funciona |
 | El modelo elegido no cabe en la VRAM | Aviso de que irá a RAM, más lento | Lo carga igual, sin fallar en silencio |
 | Falta Landlock | Aviso de que la garantía de la terminal es más débil | Sigue funcionando con la garantía reducida |
 | Una etapa pide un documento que no existe | Aviso de qué falta | La etapa se detiene; no se supone nada |
@@ -48,7 +48,7 @@ Los que el usuario puede encontrarse y merece la pena distinguir:
 
 | Código | Significado |
 |---|---|
-| `E_OLLAMA_UNAVAILABLE` | Ollama no responde |
+| `E_PROVEEDOR_NO_DISPONIBLE` | El proveedor de modelo no responde |
 | `E_MODEL_TOO_BIG` | El modelo no cabe en la VRAM; se avisa y va a RAM |
 | `E_NO_LANDLOCK` | Landlock no disponible; la garantía es más débil |
 | `E_TOOL_UNKNOWN` | El modelo pidió una herramienta fuera del catálogo |
@@ -93,6 +93,7 @@ Go no tiene excepciones, así que el "manejo" es explícito en cada punto donde 
 - **Escritura de archivo:** `E_PATH_OUTSIDE`, `E_PATH_EXISTS`, `E_NEEDS_APPROVAL`, `E_APPROVAL_DECLINED`, `E_NEEDS_CONFIRM` (al borrar), `E_BAD_ARGS`. Al aplicar, si falla la base, el archivo puede quedar sin registrar; se deja constancia. Ver [[database/02-rules/DATA_FLOW]].
 - **Lectura de archivo:** `E_PATH_OUTSIDE` (fuera de la carpeta sin permiso), `E_BAD_ARGS`, y un error de archivo que no existe.
 - **Comando de terminal:** `E_CMD_NOT_WHITELISTED`, `E_NEEDS_APPROVAL`, `E_CMD_TIMEOUT`, `E_CMD_OUTPUT_TRUNCATED`. Un comando que sale con error no es un `E_`: es un resultado con la salida de error, y el agente sigue.
+- **Lista de pasos de la sesión (`crear_todo` y `actualizar_todo`):** `E_BAD_ARGS` si el contenido está vacío, el estado no está en `pendiente`/`en_progreso`/`completada`/`cancelada`, o la prioridad no está en `alta`/`media`/`baja`. `crear_todo` produce además un `E_BAD_ARGS` corregible si intenta añadir un segundo paso `en_progreso`: el mensaje nombra `actualizar_todo` como la vía para cambiar cuál está en curso. Un fallo de la base al guardar no es `E_BAD_ARGS`: es de otra capa.
 - **Internet:** `E_BAD_ARGS` si la consulta o la dirección no valen. Lo que vuelve es contenido sin confianza, no un error.
 - **Contexto:** `E_DOC_NOT_FOUND`, `E_CONTEXT_TOO_BIG`, `E_DOC_PARSE`.
 - **Carga de documentación:** un frontmatter roto de UN archivo es un `E_DOC_PARSE` localizado:
@@ -104,7 +105,7 @@ Go no tiene excepciones, así que el "manejo" es explícito en cada punto donde 
 - **Flujo:** `E_STAGE_FAILED` (una etapa falla o no responde a su pregunta tras el reintento), `E_FLOW_CANCELLED`.
 - **Sesiones:** `E_NOT_A_PROJECT` al abrir; `E_NO_RESPONSE` cuando un turno de chat no entrega texto (la sesión queda en `error` con el motivo); los demás casos son operacionales, no de arranque.
 - **Base de datos:** `E_DB_UNAVAILABLE`, `E_DB_SCHEMA_OUTDATED`, `E_DB_CONSTRAINT`, `E_DB_FOREIGN_KEY`, `E_DB_CONFLICT`, `E_DB_LOCKED`. Ninguno de ellos es `E_BAD_ARGS`: ese código es para el contrato de una herramienta, y un fallo de la base es de otra capa. Ver [[database/02-rules/DATA_FLOW]].
-- **Ollama:** `E_OLLAMA_UNAVAILABLE`, `E_MODEL_TOO_BIG`. Ver [[backend/04-infrastructure/INTEGRATIONS]].
+- **Proveedor de modelo:** `E_PROVEEDOR_NO_DISPONIBLE`, `E_MODEL_TOO_BIG`. Ver [[backend/04-infrastructure/INTEGRATIONS]].
 
 ## Referencias
 

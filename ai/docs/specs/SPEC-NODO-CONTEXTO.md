@@ -3,7 +3,7 @@ title: SPEC — Nodo de contexto
 tags: [specs, requisito]
 depende_de:
   - "[[IDEA]]"
-  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
   - "[[specs/SPEC-MOTOR-FLUJOS]]"
   - "[[specs/SPEC-ARCHIVOS]]"
 ---
@@ -77,7 +77,7 @@ Un documento de APIs declara que usa los DTOs de respuesta. El documento de esos
 
 ## Dependencias funcionales
 
-- [[specs/SPEC-OLLAMA-PERFIL]]
+- [[specs/SPEC-MODELO-PROVEEDOR]]
 - [[specs/SPEC-MOTOR-FLUJOS]]
 - [[specs/SPEC-ARCHIVOS]]
 

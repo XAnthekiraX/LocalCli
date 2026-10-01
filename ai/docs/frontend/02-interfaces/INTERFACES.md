@@ -9,7 +9,7 @@ relacionado:
     - "[[specs/SPEC-SESIONES]]"
     - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
     - "[[specs/SPEC-TOOLS]]"
-    - "[[specs/SPEC-OLLAMA-PERFIL]]"
+    - "[[specs/SPEC-MODELO-PROVEEDOR]]"
     - "[[database/03-operations/QUERIES]]"
 ---
 
@@ -164,7 +164,7 @@ Reglas, según [[specs/SPEC-INTERFAZ-ATAJOS]] y [[specs/SPEC-KEYBINDS]]:
 - La línea de entrada envuelve en varias filas lo que no cabe en el ancho, sin recortarlo, y reajusta el reparto al redimensionar la terminal; `Enter` envía y no inserta saltos. En el chat, lo del usuario y lo del agente se pintan en globos con color propio.
 - Un pegado o arrastre se muestra como token: cada archivo `[nombre.ext]`, cada carpeta `[CARPETA N elementos]` y un texto de varias líneas `[PEGADO N líneas]` (un token por elemento si todas las líneas son rutas). Al enviar se expande al valor real: la ruta, el texto entero o, si es imagen, la imagen adjunta.
 - La caja de la entrada lleva en su pie el agente activo, el modelo en uso y sus capacidades (`sí`/`no`, o `?` mientras se desconoce), incluido el **interruptor de razonamiento** (`pensar [x]`/`pensar [ ]`): se pulsa con el ratón, llega apagado y solo se enseña si el modelo declara que razona. El conteo de tokens del turno se ve justo debajo de la caja.
-- **Si el modelo en uso no puede usar herramientas, se dice explícitamente** que el agente va a conversar sin ellas. Es una diferencia entre «todavía no lo sé» y «este modelo no puede», y confundirlas hace que el usuario espere un trabajo que no va a pasar. Ver [[specs/SPEC-OLLAMA-PERFIL]].
+- **Si el modelo en uso no puede usar herramientas, se dice explícitamente** que el agente va a conversar sin ellas. Es una diferencia entre «todavía no lo sé» y «este modelo no puede», y confundirlas hace que el usuario espere un trabajo que no va a pasar. Ver [[specs/SPEC-MODELO-PROVEEDOR]].
 - Cada línea de herramienta dice cuánto tardó su ejecución, y esa línea se guarda con su tiempo: al recargar la sesión, el hilo conserva las duraciones además de las medidas.
 - Mientras una herramienta se ejecuta, su línea está en el chat. Si la sesión espera permiso por una herramienta, la línea de la herramienta y la de aprobación coexisten.
 - Con la sesión trabajando, el primer `esc` pide confirmación («presiona esc otra vez para cancelar razonamiento») y el segundo cancela; cualquier otra tecla la descarta.

@@ -53,6 +53,29 @@ func ReemplazarTodos(db *sql.DB, sessionID string, items []Todo) error {
 	})
 }
 
+// AgregarTodo inserta UNA fila al final de la lista de una sesión: la posición
+// es el número de pasos actuales, así que no renumera nada ni toca los que ya
+// había. Es la semántica de `crear_todo`, distinta de ReemplazarTodos, que
+// sustituye la lista entera.
+func AgregarTodo(db *sql.DB, sessionID string, it Todo) error {
+	return EjecutarTX(db, func(tx *sql.Tx) error {
+		var n int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM todos WHERE session_id = ?`, sessionID).Scan(&n); err != nil {
+			return traducirError(err)
+		}
+		prioridad := it.Prioridad
+		if prioridad == "" {
+			prioridad = prioridadPorDefecto
+		}
+		now := nowISO()
+		_, err := tx.Exec(
+			`INSERT INTO todos (session_id, position, content, status, priority, created_at, updated_at)
+ VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			sessionID, n, it.Contenido, it.Estado, prioridad, now, now)
+		return traducirError(err)
+	})
+}
+
 // reemplazarTodos es la versión que acepta un ejecutor, para poder correr dentro
 // de la transacción que abre ReemplazarTodos.
 func reemplazarTodos(e ejecutor, sessionID string, items []Todo) error {

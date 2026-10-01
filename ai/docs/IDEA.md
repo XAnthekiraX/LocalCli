@@ -35,7 +35,7 @@ Sus tres pilares:
 
 4. **Varias sesiones por proyecto.** Cada carpeta abierta es un proyecto y puede tener varias sesiones. Cada sesión tiene su contexto completamente independiente: se puede dejar una sesión ejecutando el frontend en segundo plano y abrir otra para el backend. El trabajo sigue corriendo aunque no estés mirando esa sesión.
 
-Además, las tareas, la documentación, las skills y los agentes se guardan en base de datos local.
+Además, las tareas y la documentación se guardan en base de datos local. Los agentes, en cambio, son archivos de texto del proyecto —`.localcli/agents/<carpeta>/`, con `agent.yaml` y `prompt.md`—, porque su configuración se edita a mano y se versiona con el proyecto; lo que se guarda en la base es el estado de la sesión, no su definición.
 
 ## Público
 
@@ -59,7 +59,7 @@ Incluye:
 Personalización (se puede diferir sin bloquear el resto):
 - Agentes propios definidos por el usuario.
 - Flujos propios definidos por el usuario.
-- Carga de skills.
+- Carga de skills (capacidad P3, aún no implementada: hoy no hay skills). Ver [[specs/SPEC-SKILLS]].
 
 No incluye en esta primera versión:
 

@@ -30,7 +30,7 @@ Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TE
 - **`approvals`** — Lo que una sesión necesita que decidas antes de seguir. El panel de aprobaciones las lee todas, de cualquier sesión. Ver [[specs/SPEC-INTERFAZ-ATAJOS]].
 - **`context_audit`** — La traza de qué documentación recibió el modelo en cada etapa y qué se descartó, con el motivo. Es lo que hace auditable el nodo de contexto. Ver [[specs/SPEC-NODO-CONTEXTO]].
 - **`change_history`** — Cada cambio aplicado a un archivo del proyecto, con lo que había antes y lo que quedó. Nunca se borra. Ver [[database/02-rules/BUSINESS_RULES]].
-- **`todos`** — La lista de pasos de una sesión: el plan que el agente mantiene con `actualizar_todo`. Es estado de ejecución de la sesión, no un documento del proyecto: se reescribe entera y cae con su sesión. Ver [[specs/SPEC-TOOLS]].
+- **`todos`** — La lista de pasos de una sesión: el plan que el agente mantiene con `crear_todo` y `actualizar_todo`. Es estado de ejecución de la sesión, no un documento del proyecto: `actualizar_todo` la reescribe entera y `crear_todo` le añade un paso al final. Cae con su sesión. Ver [[specs/SPEC-TOOLS]].
 - **`flow_context`** — El bloque de contexto de un flujo con `bloque_contexto`: una aportación por etapa, ya optimizada por el modelo. Es lo que permite que la composición final arme la entrega a partir de todo el trabajo de las etapas. Es estado de ejecución de la sesión: se reemplaza en cada ejecución del flujo y cae con su sesión. Ver [[specs/SPEC-MOTOR-FLUJOS]].
 - **`chat_evento`** — Las líneas de procesamiento del chat: el sub-proceso de cada etapa de un flujo y la línea de cada herramienta. Son parte del hilo que se muestra y se recuerdan al volver a una sesión, pero **no son contexto**: al modelo solo se le entregan los turnos de `messages`. Cae en cascada con su sesión. Ver [[database/02-rules/DATA_FLOW]].
 
@@ -131,7 +131,13 @@ Hay un registro por documento y por etapa. `reason` es `NULL` cuando `decision` 
 | `created_at` | Cuándo se escribió la lista | ISO 8601 UTC | No | — |
 | `updated_at` | Última reescritura | ISO 8601 UTC | No | — |
 
-La clave primaria es `(session_id, position)` y no hay `id` de fila: la lista llega entera y se numera por su índice, así que no hay identificadores que puedan quedar obsoletos. Cada llamada a `actualizar_todo` borra la lista de la sesión y la reinserta con sus posiciones. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su lista.
+La clave primaria es `(session_id, position)` y no hay `id` de fila: los pasos se numera por su índice, así que no hay identificadores que puedan quedar obsoletos. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su lista.
+
+**Las dos herramientas de la lista escriben de forma distinta, y la tabla no lo nota.** `actualizar_todo` borra la lista de la sesión y la reinserta con sus posiciones, en un solo paso atómico: o queda la lista nueva entera, o queda la anterior. `crear_todo` inserta **una fila** en la posición siguiente, y con eso un paso más: no borra nada, así que no puede perder los pasos que ya estaban ni dejar la lista a medias.
+
+Que `crear_todo` inserte y no reescriba es justo lo que hace segura la operación: añadir un paso no tiene forma de degenerar en «se me olvidó alguno». Y como la clave primaria es `(session_id, position)`, añadir es insertar en `position` = número de pasos actuales; no hace falta renumerar nada porque nada se mueve.
+
+El esquema no cambia con `crear_todo`: no hay migración, ni columna nueva, ni tabla nueva. Es la misma tabla con una segunda forma de escribirla.
 
 ### `flow_context`
 

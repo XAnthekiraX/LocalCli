@@ -33,8 +33,8 @@ type Contexto struct {
 	Ctx      context.Context
 	SesionID string
 	Agente   string
-	// Permisos son las acciones del agente activo, ya resueltas.
-	Permisos []Accion
+	// Permisos son los permisos del agente activo, ya resueltos.
+	Permisos []Permiso
 	// Ask pide la decisión del usuario. Puede ser nil (sin aprobador): entonces
 	// una herramienta que lo necesite falla cerrada.
 	Ask func(ctx context.Context, s Solicitud) (Decision, error)
@@ -82,9 +82,9 @@ type Decision struct {
 type Peticion struct {
 	Agente   string
 	SesionID string
-	// Permisos son las acciones del agente activo: de ellas depende la
+	// Permisos son los permisos del agente activo: de ellos depende la
 	// comprobación de permiso, que vive ANTES de ejecutar nada.
-	Permisos    []Accion
+	Permisos    []Permiso
 	Herramienta string
 	Argumentos  any
 }
@@ -175,17 +175,17 @@ func (r *Registro) Nombres() []string {
 	return out
 }
 
-// Definiciones devuelve las herramientas que corresponden a las acciones dadas,
-// listas para viajar al modelo. El filtro aplica a las trece y a las del
+// Definiciones devuelve las herramientas que corresponden a los permisos dados,
+// listas para viajar al modelo. El filtro aplica a las incluidas y a las del
 // usuario por igual: una declarada de lectura llega a los dos agentes.
-func (r *Registro) Definiciones(permisos []Accion) []Definicion {
+func (r *Registro) Definiciones(permisos []Permiso) []Definicion {
 	if r == nil {
 		return nil
 	}
 	var out []Definicion
 	for _, nombre := range r.orden {
 		h := r.herramientas[nombre]
-		if !h.Accion().Permitida(permisos) {
+		if !h.Permiso.Permitida(permisos) {
 			continue
 		}
 		d := Definicion{Nombre: h.Nombre, Descripcion: h.Descripcion, Esquema: h.Esquema}
@@ -214,9 +214,9 @@ func (r *Registro) Ejecutar(ctx context.Context, p Peticion) (Resultado, error) 
 	}
 	// El permiso va ANTES de validar: si el agente no tiene la herramienta, no
 	// tiene sentido explicarle qué le falta a sus argumentos.
-	if !h.Accion().Permitida(p.Permisos) {
+	if !h.Permiso.Permitida(p.Permisos) {
 		return Resultado{}, fmt.Errorf("%w: el agente %q no tiene la herramienta %q (`%s`)",
-			ErrHerramientaNoPermitida, p.Agente, h.Nombre, h.Accion())
+			ErrHerramientaNoPermitida, p.Agente, h.Nombre, h.Permiso)
 	}
 	// Las de internet son las únicas que salen de la máquina: sin la variable,
 	// el cliente no llega a ver la petición (SECURITY.md §4).

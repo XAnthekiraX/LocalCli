@@ -1,16 +1,15 @@
 package agent
 
-// loader.go — T-B006-02: cargar los JSON de `.localcli/agents/*.json` validando
-// estructura y tipos.
+// loader.go — T-B034-05: cargar un agente desde su CARPETA.
 //
 // Fuente de verdad: ai/docs/specs/SPEC-AGENTE-BASE.md §Dónde se definen (cada
-// agente es un `.localcli/agents/*.json`) y ai/docs/backend/01-domain/DOMAIN.md ("El
-// agente base existe, pero no está hardcodeado. No está en Go: vive en un
-// JSON"). Los agentes son datos: este módulo solo los lee.
+// agente es una carpeta con `agent.yaml` y `prompt.md`; los dos obligatorios) y
+// ai/docs/backend/04-infrastructure/CONFIGURATION.md §Agentes del proyecto.
 //
-// Cada error de carga nombra el archivo, para que un JSON roto no se confunda
-// con otro. La estructura y los tipos los impone DecodificarAgente (que además
-// deriva el catálogo efectivo); los permisos los valida ValidarPermisos.
+// Los agentes son datos: este módulo solo los lee. Cada error de carga nombra la
+// carpeta, para que un YAML roto no se confunda con otro. El nombre del agente
+// sale del campo `name`, no del nombre de la carpeta. El `prompt.md` se lee
+// íntegro, sin recortar, y un archivo vacío hace que el agente no cargue.
 
 import (
 	"os"
@@ -21,25 +20,42 @@ import (
 	"localcli/internal/tools"
 )
 
-// Cargar lee y valida un agente desde una ruta concreta.
-func Cargar(ruta string) (Agente, error) {
-	datos, err := os.ReadFile(ruta)
+// Los dos archivos de una carpeta de agente.
+const (
+	ArchivoConfig = "agent.yaml"
+	ArchivoPrompt = "prompt.md"
+)
+
+// Cargar lee y valida un agente desde una carpeta: `agent.yaml` y `prompt.md`
+// son los dos obligatorios. El nombre del agente sale de `name`, no del nombre
+// de la carpeta; el `prompt.md` se lee íntegro, sin recortar, y un archivo vacío
+// hace que el agente no cargue.
+func Cargar(dir string) (Agente, error) {
+	rutaConfig := filepath.Join(dir, ArchivoConfig)
+	datos, err := os.ReadFile(rutaConfig)
 	if err != nil {
-		return Agente{}, errAgente("no se pudo leer " + ruta + ": " + err.Error())
+		return Agente{}, errAgente("no se pudo leer " + rutaConfig + ": " + err.Error())
 	}
 	a, err := DecodificarAgente(datos)
 	if err != nil {
-		return Agente{}, errAgente(ruta + ": " + err.Error())
+		return Agente{}, errAgente(dir + ": " + err.Error())
 	}
-	if err := ValidarPermisos(a); err != nil {
-		return Agente{}, errAgente(ruta + ": " + err.Error())
+	rutaPrompt := filepath.Join(dir, ArchivoPrompt)
+	prompt, err := os.ReadFile(rutaPrompt)
+	if err != nil {
+		return Agente{}, errAgente(dir + ": falta `" + ArchivoPrompt + "`: " + err.Error())
 	}
+	if strings.TrimSpace(string(prompt)) == "" {
+		return Agente{}, errAgente(dir + ": `" + ArchivoPrompt + "` está vacío")
+	}
+	a.Prompt = string(prompt)
 	return a, nil
 }
 
-// CargarCarpeta lee todos los `*.json` de un directorio, en orden alfabético.
-// Un archivo roto detiene la carga: no se arranca con un catálogo de agentes a
-// medias sin avisar.
+// CargarCarpeta lee todos los agentes de un directorio de agentes: cada
+// SUBcarpeta es un agente, en orden alfabético. Un archivo suelto se ignora (el
+// arranque avisa aparte de los `*.json` del formato antiguo). Un agente roto
+// detiene la carga: no se arranca con un catálogo a medias sin avisar.
 func CargarCarpeta(dir string) ([]Agente, error) {
 	entradas, err := os.ReadDir(dir)
 	if err != nil {
@@ -47,7 +63,7 @@ func CargarCarpeta(dir string) ([]Agente, error) {
 	}
 	nombres := make([]string, 0, len(entradas))
 	for _, e := range entradas {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+		if !e.IsDir() {
 			continue
 		}
 		nombres = append(nombres, e.Name())

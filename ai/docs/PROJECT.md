@@ -14,7 +14,7 @@ LocalCli
 
 ## Descripción
 
-Harness de terminal en Go que planifica y ejecuta desarrollo de software con un modelo local de Ollama, entregando a cada etapa solo el contexto que necesita y pidiendo tu aprobación antes de aplicar cualquier cambio.
+Harness de terminal en Go que planifica y ejecuta desarrollo de software con un modelo local (Ollama o llama.cpp), entregando a cada etapa solo el contexto que necesita y pidiendo tu aprobación antes de aplicar cualquier cambio.
 
 ## Alcance funcional aprobado
 
@@ -25,7 +25,7 @@ Definido en 19 especificaciones funcionales bajo `ai/docs/specs/`.
 - [[specs/SPEC-AGENTE-BASE]] — los dos agentes incluidos y el relevo entre ellos.
 - [[specs/SPEC-TOOLS]] — catálogo de herramientas, reparto por agente y herramientas del usuario.
 - [[specs/SPEC-ARCHIVOS]] — reglas de acceso y permiso sobre archivos y carpetas.
-- [[specs/SPEC-OLLAMA-PERFIL]] — conexión a Ollama, perfil de hardware, capacidad de herramientas y concurrencia.
+- [[specs/SPEC-MODELO-PROVEEDOR]] — conexión al proveedor de modelo, perfil de hardware, capacidad de herramientas y concurrencia.
 - [[specs/SPEC-NODO-CONTEXTO]] — selección y recorte del contexto por etapa.
 - [[specs/SPEC-SESIONES]] — varias sesiones con contexto independiente.
 - [[specs/SPEC-HISTORIAL-CONVERSACION]] — memoria del chat y compactación del historial.
@@ -48,7 +48,7 @@ Definido en 19 especificaciones funcionales bajo `ai/docs/specs/`.
 
 - [[specs/SPEC-AGENTE-PERSONALIZADO]]
 - [[specs/SPEC-FLUJO-PERSONALIZADO]]
-- [[specs/SPEC-SKILLS]]
+- [[specs/SPEC-SKILLS]] — capacidad **no implementada**: no hay skills ni sitio donde declararlas.
 
 ## Stack tecnológico
 
@@ -58,10 +58,10 @@ Definido en 19 especificaciones funcionales bajo `ai/docs/specs/`.
 | Interfaz de terminal | Bubble Tea + Lip Gloss (charmbracelet) |
 | Aislamiento de terminal | Landlock (mecanismo del kernel en Linux, sin privilegios) |
 | Persistencia | SQLite con driver puro Go (`modernc.org/sqlite`), sin cgo |
-| Modelo | Ollama local por API HTTP; el modelo lo elige el usuario |
+| Modelo | Proveedor local por API HTTP (Ollama o llama.cpp); el modelo lo elige el usuario |
 | Distribución | Un único binario, sin runtime externo |
 
-No hay Node, ni Python, ni gestor de procesos. La herramienta arranca sin terminal multiplexer y sin dependencias de sistema, aparte de Ollama.
+No hay Node, ni Python, ni gestor de procesos. La herramienta arranca sin terminal multiplexer y sin dependencias de sistema, aparte de un proveedor de modelo.
 
 ## Arquitectura general
 
@@ -72,8 +72,10 @@ cmd/localcli/      punto de entrada
 internal/
   tui/             chat, panel de datos, selector de sesiones, aprobaciones
   session/         creación, cambio, memoria de conversación y ejecución en segundo plano de sesiones
-  agent/           carga de agentes (.localcli/agents/*.json: nombres, prompts, permisos y relevo)
-  ollama/          cliente HTTP, streaming, razonamiento, canal de herramientas, perfil y capacidades del modelo
+  agent/           carga de agentes (.localcli/agents/<carpeta>/: agent.yaml con nombre y permisos, prompt.md con las instrucciones)
+  llm/             contrato neutro del modelo: tipos, interfaz Proveedor, cola y regla de la ventana
+  ollama/          adaptador de Ollama: cliente HTTP, streaming NDJSON, perfil y capacidades
+  openai/          adaptador compatible con OpenAI (llama.cpp): SSE, /v1/chat/completions y /props
   context/         grafo de frontmatter, selección, recorte y auditoría
   flow/            motor de etapas y encadenamiento
   queue/           cola por capa y orden por dependencias
@@ -91,7 +93,7 @@ internal/
 2. `session` responde la petición como chat; solo arranca un flujo cuando la línea es un comando explícito (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`).
 3. `context` arma el contexto de la etapa: lee el grafo de dependencias, filtra, deja que el modelo elija y recorta hasta el límite.
 4. `agent` construye la llamada con el prompt de `plan` o de `build` y los esquemas de las herramientas de ese agente, sin escribir el catálogo en el prompt.
-5. `ollama` envía la petición y devuelve el token a token, junto con las peticiones de herramienta que el modelo formule.
+5. La capa de proveedor (`llm`) envía la petición por el adaptador elegido y devuelve el token a token, junto con las peticiones de herramienta que el modelo formule.
 6. `tui` muestra el razonamiento en vivo y después la respuesta.
 7. Si el agente pide una herramienta, `tools` comprueba el permiso, valida los argumentos, ejecuta el handler, recorta la salida y emite el evento. Cada petición del modelo puede ir en una vuelta del bucle; hay un máximo de rondas.
 8. El resultado de la etapa pasa a `flow`, que decide si sigue, si se detiene o si espera tu aprobación.
@@ -123,11 +125,11 @@ Hay dos planos, y la separación es deliberada.
 
 La cola se deriva de los archivos de tarea y se reconstruye al arrancar en memoria; no hay tabla de cola en SQLite. Si los dos divergen, manda el archivo.
 
-**Preferencias del usuario: fuera del proyecto.** El mapa de teclas y las preferencias —último modelo y último agente usados— viven en `~/.config/localcli/` (`keys.json` y `config.json`). Son globales del usuario, no del proyecto: no se versionan con el contenido ni se guardan en SQLite. Ver [[backend/04-infrastructure/CONFIGURATION]] y [[frontend/FRONTEND]].
+**Preferencias del usuario: fuera del proyecto.** El mapa de teclas y las preferencias —último modelo, último agente y último proveedor usados— viven en `~/.config/localcli/` (`keys.json` y `config.json`). Son globales del usuario, no del proyecto: no se versionan con el contenido ni se guardan en SQLite. Ver [[backend/04-infrastructure/CONFIGURATION]] y [[frontend/FRONTEND]].
 
 ## Integraciones
 
-- **Ollama.** API HTTP en local. Peticiones en streaming para poder mostrar el razonamiento mientras llega.
+- **Proveedores de modelo.** Ollama y llama.cpp (`llama-server`), API HTTP en local. Peticiones en streaming para poder mostrar el razonamiento mientras llega.
 - **Búsqueda en internet.** Es la única integración que hace salir información de la máquina, y solo sale la consulta. El contenido que vuelve entra al mismo presupuesto de contexto que el resto y queda registrado.
 - **Herramientas del usuario.** El usuario declara herramientas en `.localcli/tools/*.json` y se ejecutan como subproceso con la lista blanca y el aislamiento de la terminal. Siempre piden permiso y solo pueden leer. Ver [[backend/02-interfaces/TOOLS]].
 
@@ -142,7 +144,7 @@ La cola se deriva de los archivos de tarea y se reconstruye al arrancar en memor
 ## Pruebas
 
 - **Unitarias.** Grafo de dependencias y selección de contexto, orden de la cola por dependencias, comprobación de permisos, reparto de herramientas por agente, validación de rutas, generación de esquemas y recorte de la salida de una herramienta.
-- **De integración.** Conexión y streaming con Ollama, ciclo completo de una etapa con las herramientas de lectura, aplicación de un cambio con su aprobación, ciclo de cola, turno con varias herramientas encadenadas.
+- **De integración.** Conexión y streaming con el proveedor, ciclo completo de una etapa con las herramientas de lectura, aplicación de un cambio con su aprobación, ciclo de cola, turno con varias herramientas encadenadas.
 - **Del aislamiento.** Un caso que intente escribir en el proyecto a través de la terminal y debe fallar. Es la prueba que sostiene la garantía de Landlock.
 - **De contexto.** Que el recorte reduzca de forma medible frente a leer el proyecto completo, y que lo entregado quepa en el límite del modelo.
 - **De herramientas del usuario.** Que un `.json` mal formado se salte sin romper el arranque, que toda ejecución pida permiso y que la salida se recorte antes de volver al modelo.
@@ -150,7 +152,7 @@ La cola se deriva de los archivos de tarea y se reconstruye al arrancar en memor
 ## Despliegue
 
 - Compilación cruzada a un binario único con `go build`.
-- Requisitos en la máquina: Ollama instalado y corriendo, y Landlock disponible si se quiere el aislamiento fuerte (Linux 5.13 o superior).
+- Requisitos en la máquina: un proveedor de modelo instalado y corriendo (Ollama o `llama-server`), y Landlock disponible si se quiere el aislamiento fuerte (Linux 5.13 o superior).
 - Sin servicios adicionales, sin migraciones que aplicar a mano, sin configuración obligatoria.
 
 ## Decisiones técnicas
@@ -166,7 +168,7 @@ La cola se deriva de los archivos de tarea y se reconstruye al arrancar en memor
 
 ## Límites conocidos
 
-- **Las sesiones concurrentes comparten un solo modelo.** Ollama con 4 GB de VRAM solo tiene un modelo cargado. Varias sesiones pueden estar activas a la vez, pero sus respuestas se serializan: mientras una genera, la otra espera. Es una consecuencia del hardware, no un defecto del diseño.
+- **Las sesiones concurrentes comparten un solo modelo.** El proveedor con 4 GB de VRAM solo tiene un modelo cargado. Varias sesiones pueden estar activas a la vez, pero sus respuestas se serializan: mientras una genera, la otra espera. Es una consecuencia del hardware, no un defecto del diseño.
 - **El aislamiento fuerte es de Linux.** Landlock solo existe ahí. En otros sistemas la terminal tiene una garantía más débil y la documentación lo dice.
 - **Un 7B no cabe en 4 GB de VRAM.** Si eliges uno, el harness avisa y no lo carga en silencio; irá a RAM, que es más lento y aprieta los 16 GB.
 - **La inferencia no se puede paralelizar** entre sesiones, por lo mismo.

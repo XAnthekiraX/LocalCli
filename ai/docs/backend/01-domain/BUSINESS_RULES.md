@@ -96,9 +96,16 @@ Las reglas que rigen el motor. Las que dependen de cómo se guardan los datos es
 - El relevo es explícito: `plan` investiga, propone, tú apruebas, cambias a `build`, `build` aplica.
 - Una aprobación vale para el cambio propuesto, no para lo que siga. Si `build` necesita algo que `plan` no propuso, vuelve a preguntar.
 - El relevo no se puede saltar cambiando de agente con un trick: no hay interruptor, son dos catálogos distintos.
-- Los agentes se definen en archivos JSON, no en el código. El agente base existe, y se puede modificar o derivar de él otros sin recompilar.
-- Un agente cuyos permisos deniegan `editar` no puede escribir, aunque se le pida. Es lo que hace que la garantía se sostenga en datos y no en una promesa del código.
-- **No hay skills por defecto.** Las crea el usuario, en markdown. El motor no trae ninguna.
+- Los agentes se definen en carpetas con dos archivos —`agent.yaml` y `prompt.md`—, no en el código. El agente base existe en disco, y se puede modificar o derivar de él otros sin recompilar.
+- El nombre del agente lo decide `name`, no el nombre de la carpeta.
+- Un `agent.yaml` con un campo desconocido se rechaza, incluidos `prompt`, `herramientas` y `skills`. Un `*.json` de agente, del formato antiguo, se avisa nombrándolo y no se carga.
+- `permissions` es un mapa de permiso a efecto con tres permisos (`read`, `write`, `edit`); el catálogo efectivo se deriva de él y no se declara aparte.
+- `default` es opcional y solo admite `deny`; ausente equivale a `deny`. Un `default: allow` se rechaza con el motivo, porque concedería todo en silencio.
+- Un permiso o un efecto fuera de vocabulario se rechaza, no se ignora.
+- Sin `permissions`, el agente es de solo conversación.
+- Un agente sin `write` ni `edit` no puede escribir en el proyecto, aunque se le pida. Es lo que hace que la garantía se sostenga en datos y no en una promesa del código.
+- **`crear_todo` añade un paso al final y no toca los que ya había; `actualizar_todo` reemplaza la lista entera.** Las dos devuelven la lista resultante.
+- **No hay skills.** No es que no haya ninguna por defecto: la capacidad no está implementada y ningún sitio las declara. Ver [[specs/SPEC-SKILLS]].
 - En el chat, cada agente responde con las herramientas derivadas de sus permisos; el chat no añade ni quita herramientas.
 
 ### Herramientas y terminal
@@ -117,7 +124,7 @@ Las reglas que rigen el motor. Las que dependen de cómo se guardan los datos es
 Condiciones que siempre se cumplen, sin excepción:
 
 - **Ninguna escritura sin aprobación.** Ni dentro de la carpeta, ni fuera, ni dentro de un flujo en curso.
-- **`plan` nunca escribe.** No es una política que se pueda desactivar: sencillamente no tiene la herramienta en su JSON.
+- **`plan` nunca escribe.** No es una política que se pueda desactivar: sencillamente no tiene en su catálogo ninguna herramienta de escritura ni de edición.
 - **El modelo nunca ve el proyecto entero.** Ve lo que el nodo de contexto decidió y recortó.
 - **Lo que entra al contexto se leyó antes** y **lo que salió queda registrado**.
 - **La cola refleja los archivos de tarea**, no una copia que pueda quedar vieja.

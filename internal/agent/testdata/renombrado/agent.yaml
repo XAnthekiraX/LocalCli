@@ -1,0 +1,4 @@
+name: research
+description: Su carpeta se llama distinto.
+permissions:
+  read: allow

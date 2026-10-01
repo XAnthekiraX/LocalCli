@@ -35,11 +35,8 @@ func registroCaptura(capturado *any) *tools.Registro {
 func TestDespachoLLevaLaSolicitudATools(t *testing.T) {
 	var capturado any
 	d := NuevoDespachador(registroCaptura(&capturado))
-	a := Agente{Nombre: tools.AgenteBuild, Permisos: []Permiso{
-		{Accion: "leer", Efecto: EfectoPermitir},
-		{Accion: "editar", Efecto: EfectoPermitir},
-		{Accion: "ejecutar", Efecto: EfectoPermitir},
-		{Accion: "internet", Efecto: EfectoPermitir},
+	a := Agente{Nombre: tools.AgenteBuild, Permissions: map[string]string{
+		"read": "allow", "write": "allow", "edit": "allow",
 	}}
 
 	res, err := d.Despachar(context.Background(), a, SolicitudHerramienta{
@@ -77,15 +74,10 @@ func TestDespachoNoSaltaElPermiso(t *testing.T) {
 // las acciones: `plan` no ve ninguna de escritura.
 func TestDefinicionesDelAgente(t *testing.T) {
 	d := NuevoDespachador(registroCaptura(nil))
-	plan := Agente{Nombre: tools.AgentePlan, Permisos: []Permiso{
-		{Accion: "leer", Efecto: EfectoPermitir},
-		{Accion: "ejecutar", Efecto: EfectoPermitir},
-		{Accion: "internet", Efecto: EfectoPermitir},
-		{Accion: "tareas", Efecto: EfectoPermitir},
-	}}
+	plan := Agente{Nombre: tools.AgentePlan, Permissions: map[string]string{"read": "allow"}}
 	defs := d.Definiciones(plan)
-	if len(defs) != 8 {
-		t.Fatalf("plan ve %d herramientas, quiero 8", len(defs))
+	if len(defs) != 9 {
+		t.Fatalf("plan ve %d herramientas, quiero 9", len(defs))
 	}
 	for _, def := range defs {
 		if h, ok := tools.Buscar(def.Function.Name); ok && h.SoloBuild() {

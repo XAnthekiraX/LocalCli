@@ -1,7 +1,0 @@
-{
-  "nombre": "lector",
-  "descripcion": "Agente de prueba que solo lee.",
-  "prompt": "Eres un agente de prueba.",
-  "permisos": [{ "accion": "leer", "efecto": "permitir" }],
-  "skills": ["demo"]
-}

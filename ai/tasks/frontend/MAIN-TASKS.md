@@ -47,6 +47,7 @@ Fuente de verdad del progreso del frontend. Derivada exclusivamente de `ai/docs/
 | T-F040 | actualizar | ratón: la selección se resalta en video inverso y la rueda no la cancela (anclada al texto); al soltar se copia, el realce desaparece y sale el aviso `[Copiado]` | T-F024 | completada | `040-task-seleccion-resaltada.md` |
 | T-F041 | actualizar | rediseño de la vista principal: chat con burbujas e icono, sidebar con línea vertical y caja de entrada con borde y pie (agente · modelo · capacidades) | T-F036 | completada | `041-task-layout-sidebar-caja.md` |
 | T-F042 | actualizar | hilo y contexto: al cargar una sesión se pintan sub-procesos y líneas de herramienta con su tiempo, y CONTEXTO muestra el total del chat (no el último turno) | T-F005, T-F033, T-F037, T-F041 | completada | `042-task-hilo-y-contexto.md` |
+| T-F043 | actualizar | el modal de modelos y la línea de estado nombran al proveedor | T-F013, T-F025 | pendiente | `043-task-proveedor-en-modal.md` |
 
 ## Referencias
 

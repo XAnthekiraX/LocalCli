@@ -18,7 +18,7 @@ relacionado:
 
 # FRONTEND — LocalCli
 
-La capa de interfaz: una TUI en terminal construida con Bubble Tea y Lip Gloss. Es el único consumidor del motor y su único trabajo es pintar lo que llega y enviar lo que pulsas. No ejecuta nada por su cuenta: no habla con Ollama, no escribe en SQLite y no toca archivos.
+La capa de interfaz: una TUI en terminal construida con Bubble Tea y Lip Gloss. Es el único consumidor del motor y su único trabajo es pintar lo que llega y enviar lo que pulsas. No ejecuta nada por su cuenta: no habla con el proveedor de modelo, no escribe en SQLite y no toca archivos.
 
 Este documento es el mapa de navegación del frontend. El motor está en [[backend/BACKEND]]; los datos, en [[database/DATABASE]].
 
@@ -42,13 +42,13 @@ internal/tui/
   reasoning.go  estado del razonamiento en vivo (texto revelado u oculto)
   approvals.go  panel de aprobaciones pendientes de todas las sesiones
   notify.go     línea de aviso de aprobaciones pendientes con el panel cerrado
-  modelsmodal.go modal de modelos (Ctrl+X m): lista de Ollama cargada bajo demanda
+  modelsmodal.go modal de modelos (Ctrl+X m): lista del proveedor activo cargada bajo demanda
   sessionsmodal.go modal de sesiones (Ctrl+X l): al aplicar abre esa sesión
   keysmodal.go  modal de atajos (Ctrl+P): listado de acción + tecla
   keymap.go     mapa central de teclas: acciones, bindings múltiples y tecla líder
   keyresolver.go KeyResolver: líder ctrl+x, timeout, contexto y acciones
   keys.go       persistencia del mapa de teclas en ~/.config/localcli/keys.json
-  config.go     preferencias del usuario: último modelo y último agente
+  config.go     preferencias del usuario: último modelo, último agente y último proveedor
   adjuntos.go   tokens de archivo, carpeta o texto pegados o arrastrados ([nombre.ext], [CARPETA N elementos], [PEGADO N líneas]) y su expansión al valor real
   selection.go  selección con el ratón y copia al portapapeles
   styles.go     estilos Lip Gloss y render de bloques

@@ -9,7 +9,7 @@ import (
 )
 
 // TestPeticionesFixtureDecodifican — T-B007-02: hay un fixture JSON por cada
-// una de las catorce herramientas y todos decodifican en su tipo de contrato sin
+// una de las quince herramientas y todos decodifican en su tipo de contrato sin
 // rechazo. Es el contrato de request de TOOLS-DTO.md §2 ejercitado de verdad.
 func TestPeticionesFixtureDecodifican(t *testing.T) {
 	bruto, err := os.ReadFile(filepath.Join("testdata", "peticiones.json"))
@@ -30,8 +30,8 @@ func TestPeticionesFixtureDecodifican(t *testing.T) {
 			t.Errorf("%s: el fixture no decodifica: %v", nombre, err)
 		}
 	}
-	if len(fixtures) != 14 {
-		t.Errorf("el fixture tiene %d entradas, quiero 14", len(fixtures))
+	if len(fixtures) != 15 {
+		t.Errorf("el fixture tiene %d entradas, quiero 15", len(fixtures))
 	}
 }
 

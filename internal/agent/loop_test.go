@@ -231,7 +231,7 @@ func TestElBucleEjecutaHerramientaYVuelveAlModelo(t *testing.T) {
 		respuesta("listo"),
 	}}
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
-	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+	ag := Agente{Nombre: "plan", Permissions: map[string]string{"read": "allow"}}
 
 	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, nil)
 	if err != nil {
@@ -268,7 +268,7 @@ func TestElBucleEjecutaEnElOrdenPedido(t *testing.T) {
 		respuesta("hecho"),
 	}}
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
-	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+	ag := Agente{Nombre: "plan", Permissions: map[string]string{"read": "allow"}}
 	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, nil); err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
@@ -287,7 +287,7 @@ func TestElBucleUnRechazoNoCortaElTurno(t *testing.T) {
 		respuesta("no puedo"),
 	}}
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
-	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+	ag := Agente{Nombre: "plan", Permissions: map[string]string{"read": "allow"}}
 
 	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, nil)
 	if err != nil {
@@ -319,7 +319,7 @@ func TestElBucleCierraConSintesisAlAgotarPasadas(t *testing.T) {
 		respuesta("síntesis final"),
 	}}
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 2}
-	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+	ag := Agente{Nombre: "plan", Permissions: map[string]string{"read": "allow"}}
 
 	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, nil)
 	if err != nil {
@@ -350,7 +350,7 @@ func TestUnaRedaccionQueVuelveAPedirHerramientasSeReintenta(t *testing.T) {
 		respuesta("lo que conseguí"),
 	}}
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 2}
-	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+	ag := Agente{Nombre: "plan", Permissions: map[string]string{"read": "allow"}}
 
 	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, nil)
 	if err != nil {
@@ -384,7 +384,7 @@ func TestLaRedaccionNoRepiteElReintento(t *testing.T) {
 		pedido("", llamada("leer_archivo", `{"ruta":"e.md"}`)), // no debe llegar
 	}}
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 2}
-	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+	ag := Agente{Nombre: "plan", Permissions: map[string]string{"read": "allow"}}
 
 	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, nil); !errors.Is(err, ErrSinRespuesta) {
 		t.Fatalf("err = %v, quiero ErrSinRespuesta", err)
@@ -406,7 +406,7 @@ func TestUnTurnoSinTextoFinalFalla(t *testing.T) {
 	}}
 	sink := &sinkGrabador{}
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 2}
-	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+	ag := Agente{Nombre: "plan", Permissions: map[string]string{"read": "allow"}}
 
 	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, sink)
 	if !errors.Is(err, ErrSinRespuesta) {
@@ -426,7 +426,7 @@ func TestElBucleSinHerramientasNoLasOfrece(t *testing.T) {
 	d := NuevoDespachador(registroStub(nil))
 	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("compuesto")}}
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
-	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+	ag := Agente{Nombre: "plan", Permissions: map[string]string{"read": "allow"}}
 
 	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, true, nil)
 	if err != nil {
@@ -486,7 +486,7 @@ func TestElTestigoSeTomaPorPeticion(t *testing.T) {
 			return fn(ctx)
 		},
 	}
-	ag := Agente{Nombre: "plan", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+	ag := Agente{Nombre: "plan", Permissions: map[string]string{"read": "allow"}}
 	if _, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -506,7 +506,7 @@ func TestSinHerramientasDegradaAConversacion(t *testing.T) {
 		Despachar:         NuevoDespachador(registroStub(nil)),
 		PuedeHerramientas: func(modelo string) bool { return false },
 	}
-	ag := Agente{Nombre: "plan", Prompt: "p", Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}}}
+	ag := Agente{Nombre: "plan", Prompt: "p", Permissions: map[string]string{"read": "allow"}}
 	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, sink)
 	if err != nil {
 		t.Fatal(err)

@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -180,22 +181,28 @@ func TestUnaEtapaMudaSeReintentaYfallaComoAntes(t *testing.T) {
 }
 
 // agenteBase carga los agentes base y cualquier agente propio de
-// `.localcli/agents/*.json`; un archivo roto se ignora sin tumbar el arranque, y los
-// base siguen disponibles aunque falte su JSON.
-func TestAgenteBaseCargaAgentesPropios(t *testing.T) {
+// `.localcli/agents/`; cada SUBcarpeta es un agente. Una carpeta rota se ignora
+// sin tumbar el arranque, y los base siguen disponibles con un respaldo.
+func TestAgenteBaseCargaCarpetas(t *testing.T) {
 	raiz := t.TempDir()
 	dir := filepath.Join(raiz, ".localcli", "agents")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	escribir := func(nombre, contenido string) {
-		if err := os.WriteFile(filepath.Join(dir, nombre), []byte(contenido), 0o644); err != nil {
+	escribirAgente := func(nombre, yaml, prompt string) {
+		sub := filepath.Join(dir, nombre)
+		if err := os.MkdirAll(sub, 0o755); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.WriteFile(filepath.Join(sub, "agent.yaml"), []byte(yaml), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if prompt != "" {
+			if err := os.WriteFile(filepath.Join(sub, "prompt.md"), []byte(prompt), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
-	escribir("plan.json", `{"nombre":"plan","prompt":"soy plan","permisos":[{"accion":"leer","efecto":"permitir"}]}`)
-	escribir("revisor.json", `{"nombre":"revisor","prompt":"soy revisor","permisos":[{"accion":"leer","efecto":"permitir"}]}`)
-	escribir("roto.json", `{no es json`)
+	escribirAgente("plan", "name: plan\ndescription: d\npermissions:\n  read: allow\n", "soy plan")
+	escribirAgente("revisor", "name: revisor\ndescription: d\npermissions:\n  read: allow\n", "soy revisor")
+	escribirAgente("roto", "name: roto\ndescription: \"sin cierre\n", "soy roto")
 
 	agentes := agenteBase(raiz)
 	if _, ok := agentes["plan"]; !ok {
@@ -205,11 +212,44 @@ func TestAgenteBaseCargaAgentesPropios(t *testing.T) {
 		t.Error("el agente propio de .localcli/agents se carga")
 	}
 	if _, ok := agentes["roto"]; ok {
-		t.Error("un JSON de agente roto se ignora")
+		t.Error("una carpeta de agente rota se ignora")
 	}
-	// build no tiene archivo: queda el de respaldo, para que los flujos
+	// build no tiene carpeta: queda el de respaldo, para que los flujos
 	// oficiales sigan teniendo a quién referirse.
 	if _, ok := agentes["build"]; !ok {
-		t.Error("build debe existir aunque falte su JSON")
+		t.Error("build debe existir aunque falte su carpeta")
+	}
+}
+
+// TestUnJsonAntiguoSeAvisaNombrandolo — un `*.json` suelto en
+// `.localcli/agents/` es el formato antiguo: produce un aviso que nombra el
+// archivo y no se carga, para que el agente no desaparezca en silencio.
+func TestUnJsonAntiguoSeAvisaNombrandolo(t *testing.T) {
+	raiz := t.TempDir()
+	dir := filepath.Join(raiz, ".localcli", "agents")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "viejo.json"), []byte(`{"nombre":"viejo"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	original := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	agentes := agenteBase(raiz)
+	_ = w.Close()
+	os.Stderr = original
+	salida, _ := io.ReadAll(r)
+	_ = r.Close()
+
+	if _, ok := agentes["viejo"]; ok {
+		t.Error("el formato antiguo no se carga")
+	}
+	if !strings.Contains(string(salida), "viejo.json") {
+		t.Errorf("el aviso debe nombrar el archivo: %q", salida)
 	}
 }

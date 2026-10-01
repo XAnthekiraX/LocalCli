@@ -4,7 +4,7 @@ tags: [backend, infraestructura]
 depende_de:
   - "[[PROJECT]]"
   - "[[backend/DECISIONS]]"
-  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
   - "[[specs/SPEC-SESIONES]]"
 relacionado:
   - "[[backend/03-security/SECURITY]]"
@@ -31,12 +31,16 @@ Ninguna es obligatoria. No hay variables que apliques por omisión.
 | Variable | Propósito | Por defecto | Obligatoria |
 |---|---|---|---|
 | `LOCALCLI_DB_PATH` | Sobrescribe la ruta del archivo SQLite del proyecto | Derivada de la carpeta de ejecución | No |
-| `LOCALCLI_CONTEXT_LIMIT` | Tope de la ventana de contexto (`num_ctx`) que se pide a Ollama y de los tokens que se respetan al recortar | `16384`, o la ventana del modelo si es menor | No |
+| `LOCALCLI_PROVEEDOR` | Runtime del modelo: `ollama`, `llamacpp` o `auto` | `ollama` | No |
+| `LOCALCLI_LLAMACPP_URL` | Dirección del servidor `llama-server` cuando el proveedor es `llamacpp` | `http://localhost:8080` | No |
+| `LOCALCLI_CONTEXT_LIMIT` | Tope de la ventana de contexto y de los tokens que se respetan al recortar | `16384`, o la ventana del modelo si es menor | No |
 | `LOCALCLI_ALLOW_INTERNET` | Permite las herramientas de internet | Desactivado | No |
 
 `LOCALCLI_DB_PATH` existe solo para casos raros, como trabajar con la base en otro sitio. En el uso normal no hace falta.
 
-`LOCALCLI_CONTEXT_LIMIT` es el tope de la ventana de contexto que cada petición declara a Ollama (`num_ctx`). Sin él, la ventana es la menor entre lo que declara el modelo y 16384; el nodo de contexto y el presupuesto del historial se derivan de ahí. Bajarlo en máquinas muy justas de memoria es lo habitual. Ver [[specs/SPEC-OLLAMA-PERFIL]] y [[backend/DECISIONS]].
+`LOCALCLI_PROVEEDOR` elige el runtime del modelo y no se cambia con la sesión viva. Sin declararlo se usa `ollama`, para que el comportamiento por defecto no dependa de lo que haya instalado. `ollama` y `llamacpp` fijan uno y solo uno: si no responde, se avisa y no se cae al otro. `auto` es opcional a propósito: quien lo declara quiere que se use el primero que responde, empezando por `ollama`. `LOCALCLI_LLAMACPP_URL` solo se lee con `llamacpp` y da la dirección del servidor. Ver [[specs/SPEC-MODELO-PROVEEDOR]] y [[backend/04-infrastructure/INTEGRATIONS]].
+
+`LOCALCLI_CONTEXT_LIMIT` es el tope de la ventana de contexto y del presupuesto con que se recorta: la ventana efectiva nunca lo supera y el nodo de contexto y el historial se derivan de ahí. Bajarlo en máquinas muy justas de memoria es lo habitual. Ver [[backend/DECISIONS]].
 
 Sobre `LOCALCLI_ALLOW_INTERNET`: es la única integración que saca información de la máquina, así que no viene activada. El usuario la habilita. Ver [[backend/03-security/SECURITY]].
 
@@ -44,14 +48,14 @@ Sobre `LOCALCLI_ALLOW_INTERNET`: es la única integración que saca información
 
 **No hay variable de entorno para el modelo, y no hay modelo por defecto.** El flujo es:
 
-1. `LocalCli` ya está conectado a Ollama. No hay que configurarlo a mano.
-2. Extrae los modelos disponibles con `ollama list`.
-3. La interfaz muestra esa lista para que el usuario elija.
+1. `LocalCli` elige el proveedor: el declarado en `LOCALCLI_PROVEEDOR`, u `ollama` si no hay ninguno.
+2. Se conecta a él y extrae los modelos disponibles que declara el servidor.
+3. La interfaz muestra esa lista para que el usuario elija, con el nombre del proveedor a la vista.
 4. El harness comprueba si el modelo elegido cabe en la máquina y avisa si no.
 
-El modelo lo elige el usuario, siempre. Ver [[specs/SPEC-OLLAMA-PERFIL]] y [[backend/04-infrastructure/INTEGRATIONS]].
+El modelo lo elige el usuario, siempre. La lista es la del proveedor activo, no la de Ollama. Ver [[specs/SPEC-MODELO-PROVEEDOR]] y [[backend/04-infrastructure/INTEGRATIONS]].
 
-El tamaño de contexto no se configura por modelo: cada petición lo declara (`num_ctx`) como la menor entre la ventana que reporta el modelo en `/api/tags` y el tope (`LOCALCLI_CONTEXT_LIMIT`, 16384 por defecto). Es lo que evita que Ollama use su valor de servidor (pequeño) y corte los turnos con herramientas. Ver [[backend/DECISIONS]].
+El tamaño de contexto no se configura por modelo. Con Ollama se declara por petición (`num_ctx`) como la menor entre lo que reporta el modelo en `/api/tags` y el tope (`LOCALCLI_CONTEXT_LIMIT`, 16384 por defecto). Con llama.cpp se lee del servidor, que lo fijó quien lo arrancó con `-c`, y la efectiva es la menor entre ese valor y el tope. Si no alcanza para un turno con herramientas, se avisa con la instrucción de levantar el servidor con más contexto y el turno se recorta. Ver [[backend/DECISIONS]].
 
 ## 4. Rutas
 
@@ -64,7 +68,7 @@ Todo se deriva de la carpeta desde la que se ejecuta `localcli`:
 | Documentación | `ai/docs/` dentro del proyecto |
 | TODO de trabajo | `ai/tasks/` dentro del proyecto |
 | Herramientas del usuario | `.localcli/tools/*.json` dentro del proyecto |
-| Agentes del proyecto | `.localcli/agents/*.json` dentro del proyecto |
+| Agentes del proyecto | `.localcli/agents/<carpeta>/` dentro del proyecto, con `agent.yaml` y `prompt.md` |
 | Archivos y carpetas | Todo lo que cuelgue de la carpeta del proyecto |
 
 El proyecto es la carpeta abierta. El chat de una carpeta nunca aparece en otra. Ver [[specs/SPEC-SESIONES]].
@@ -75,7 +79,32 @@ De `.localcli/` solo se ignora el estado: `state.db` y sus archivos `-shm` y `-w
 
 ### Agentes del proyecto
 
-Cada archivo `.json` de `.localcli/agents/` declara un agente; los dos base, `plan` y `build`, se versionan con el proyecto. No hay nada que activar: si el archivo está, el agente existe y `Tab` lo recorre. Un archivo mal formado se avisa y se salta, y `plan` y `build` quedan disponibles con un prompt de respaldo aunque falten, porque los flujos oficiales los referencian. Ver [[specs/SPEC-AGENTE-BASE]] y [[backend/02-interfaces/INTERFACES-GENERAL]].
+Cada **carpeta** de `.localcli/agents/` declara un agente, y dentro de ella los dos archivos son obligatorios:
+
+```
+.localcli/agents/build/
+├── agent.yaml
+└── prompt.md
+```
+
+- **`agent.yaml`** — la configuración: `name`, `description` y `permissions`. El nombre del agente lo decide `name`; el de la carpeta es solo donde vive.
+- **`prompt.md`** — las instrucciones del modelo, que se inyectan íntegras como mensaje de sistema.
+
+Los dos base, `plan` y `build`, se versionan con el proyecto. No hay nada que activar: si la carpeta está, el agente existe y `Tab` lo recorre. Una carpeta mal formada se avisa y se salta, y `plan` y `build` quedan disponibles con un prompt de respaldo aunque falten, porque los flujos oficiales los referencian. Un `*.json` suelto en `.localcli/agents/` —el formato antiguo— se avisa nombrándolo, sin cargar: la migración es manual. Ver [[specs/SPEC-AGENTE-BASE]] y [[backend/02-interfaces/INTERFACES-GENERAL]].
+
+El ejemplo, tal cual está en disco:
+
+```yaml
+name: build
+description: Implementa los cambios propuestos y verificados por el usuario.
+permissions:
+  default: deny
+  read: allow
+  write: allow
+  edit: allow
+```
+
+Lo que no se nombre queda en `deny`, y `default: allow` no se admite: un `allow` donde se quería un `deny` concedería todo en silencio. Un campo desconocido —`skills`, `herramientas`, `prompt`— hace que el agente no cargue.
 
 ### Herramientas del usuario
 
@@ -112,10 +141,10 @@ El tercer modo no es un flag: depende de si Landlock está disponible en el sist
 
 | Servicio | Necesario para | Si no está |
 |---|---|---|
-| Ollama, corriendo en local | Generar respuestas y listar los modelos disponibles | El harness no puede generar nada; la interfaz sigue viva |
+| Un proveedor de modelo corriendo en local —Ollama o `llama-server`— | Generar respuestas y listar los modelos disponibles | El harness no puede generar nada; la interfaz sigue viva y avisa de cómo levantarlo |
 | Landlock (Linux 5.13+) | El bloqueo estructural de escritura en la terminal | La terminal sigue funcionando, con garantía más débil, y el harness lo dice |
 
-No hay más servicios. No hay base de datos que levantar, ni migraciones que aplicar a mano, ni cuentas que crear. Ver [[specs/SPEC-OLLAMA-PERFIL]].
+No hay más servicios. No hay base de datos que levantar, ni migraciones que aplicar a mano, ni cuentas que crear. Ver [[specs/SPEC-MODELO-PROVEEDOR]].
 
 ## 7. Preferencias del usuario
 
@@ -125,21 +154,22 @@ Además de `~/.config/localcli/keys.json` (el mapa de teclas), el usuario tiene 
 {
   "ultimo_modelo": "llama3.2",
   "ultimo_agente": "build",
+  "ultimo_proveedor": "ollama",
   "historial_tokens": 4096
 }
 ```
 
 - Son **globales del usuario**, no de un proyecto: viven fuera de la carpeta y no se versionan.
-- Al arrancar se reutiliza `ultimo_modelo` si sigue instalado en Ollama; si no, se autodetecta. El agente recordado lo aplica la vista.
+- Al arrancar se reutiliza `ultimo_modelo` **solo si su proveedor es el elegido**: el mismo nombre no significa lo mismo en los dos runtimes, así que con otro proveedor se autodetecta. El agente recordado lo aplica la vista.
 - `historial_tokens` es el presupuesto de tokens del historial de conversación que se le entrega al modelo; sin él se usa `LOCALCLI_CONTEXT_LIMIT` y, en su defecto, un valor por defecto. Ver [[specs/SPEC-HISTORIAL-CONVERSACION]].
 - Un archivo ausente o ilegible no rompe el arranque: se usan los valores por defecto (`plan` como agente, autodetección como modelo).
-- La interfaz los escribe al elegir modelo o al cambiar de agente; no hay que editar el archivo a mano. Ver [[specs/SPEC-OLLAMA-PERFIL]].
+- La interfaz los escribe al elegir modelo o al cambiar de agente; no hay que editar el archivo a mano. Ver [[specs/SPEC-MODELO-PROVEEDOR]].
 
 ## Referencias
 
 - [[backend/02-interfaces/TOOLS]] — el contrato de una herramienta del usuario y cómo se ejecuta.
 - [[specs/SPEC-TOOLS]] — la especificación funcional del catálogo.
-- [[backend/04-infrastructure/INTEGRATIONS]] — cómo se habla con Ollama y cómo se listan los modelos.
+- [[backend/04-infrastructure/INTEGRATIONS]] — cómo se habla con los proveedores de modelo y cómo se listan los modelos.
 - [[backend/03-security/SECURITY]] — los límites de lo que puede hacer una herramienta.
 - [[backend/DECISIONS]] — decisiones de configuración ya cerradas.
 - [[PROJECT]] — requisitos en la máquina y despliegue.

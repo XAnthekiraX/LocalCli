@@ -13,11 +13,11 @@ relacionado:
   - "[[backend/05-quality/VALIDATION]]"
   - "[[backend/04-infrastructure/EVENTS]]"
   - "[[specs/SPEC-ARCHIVOS]]"
-  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
 ---
 # TOOLS — Catálogo de herramientas
 
-Las catorce herramientas incluidas, su reparto y sus controles, la capa universal que envuelve toda ejecución, y el punto de extensión para las herramientas del usuario. La especificación funcional está en [[specs/SPEC-TOOLS]]; aquí está el contrato para quien implemente. Los payloads están en [[backend/02-interfaces/dto/TOOLS-DTO]].
+Las quince herramientas incluidas, su reparto y sus controles, la capa universal que envuelve toda ejecución, y el punto de extensión para las herramientas del usuario. La especificación funcional está en [[specs/SPEC-TOOLS]]; aquí está el contrato para quien implemente. Los payloads están en [[backend/02-interfaces/dto/TOOLS-DTO]].
 
 ## 1. El catálogo incluido
 
@@ -25,39 +25,46 @@ Cerrado. El agente no puede inventar herramientas fuera de esta lista.
 
 ### Archivos
 
-| Herramienta | Lee o escribe | Agente | Contrato |
-|---|---|---|---|
-| `leer_archivo` | Lee | Ambos | Ruta relativa al proyecto; devuelve el contenido como texto |
-| `listar_carpeta` | Lee | Ambos | Ruta relativa; devuelve la lista de entradas de un nivel |
-| `buscar_archivos` | Lee | Ambos | Patrón; devuelve las rutas que coinciden |
-| `buscar_en_archivos` | Lee | Ambos | Patrón; devuelve las coincidencias con archivo y línea |
-| `crear_archivo` | Escribe | Solo `build` | Ruta y contenido; falla si el archivo ya existe |
-| `escribir_archivo` | Escribe | Solo `build` | Ruta y contenido; sobrescribe |
-| `editar_archivo` | Escribe | Solo `build` | Ruta y el cambio; aplica una edición parcial |
-| `eliminar_archivo` | Escribe | Solo `build` | Ruta; pide confirmación explícita |
-| `crear_carpeta` | Escribe | Solo `build` | Ruta; falla si ya existe |
-| `eliminar_carpeta` | Escribe | Solo `build` | Ruta; pide confirmación explícita |
+| Herramienta | Lee o escribe | Permiso | Agente | Contrato |
+|---|---|---|---|---|
+| `leer_archivo` | Lee | `read` | Ambos | Ruta relativa al proyecto; devuelve el contenido como texto |
+| `listar_carpeta` | Lee | `read` | Ambos | Ruta relativa; devuelve la lista de entradas de un nivel |
+| `buscar_archivos` | Lee | `read` | Ambos | Patrón; devuelve las rutas que coinciden |
+| `buscar_en_archivos` | Lee | `read` | Ambos | Patrón; devuelve las coincidencias con archivo y línea |
+| `crear_archivo` | Escribe | `write` | Solo `build` | Ruta y contenido; falla si el archivo ya existe |
+| `escribir_archivo` | Escribe | `write` | Solo `build` | Ruta y contenido; sobrescribe |
+| `editar_archivo` | Escribe | `edit` | Solo `build` | Ruta y el cambio; aplica una edición parcial |
+| `eliminar_archivo` | Escribe | `write` | Solo `build` | Ruta; pide confirmación explícita |
+| `crear_carpeta` | Escribe | `write` | Solo `build` | Ruta; falla si ya existe |
+| `eliminar_carpeta` | Escribe | `write` | Solo `build` | Ruta; pide confirmación explícita |
+
+`editar_archivo` es la única herramienta de edición parcial, así que es la única que cae en `edit`; el resto de las de escritura van en `write`. Los tres permisos son independientes: un agente con `write: deny` y `edit: allow` puede parchear archivos pero no crearlos, sobrescribirlos ni borrarlos.
 
 ### Terminal
 
-| Herramienta | Lee o escribe | Agente | Contrato |
-|---|---|---|---|
-| `ejecutar_comando` | Lee | Ambos | Comando y carpeta de trabajo; devuelve salida, error y si terminó |
+| Herramienta | Lee o escribe | Permiso | Agente | Contrato |
+|---|---|---|---|---|
+| `ejecutar_comando` | Lee | `read` | Ambos | Comando y carpeta de trabajo; devuelve salida, error y si terminó |
 
 ### Internet
 
-| Herramienta | Lee o escribe | Agente | Contrato |
-|---|---|---|---|
-| `buscar_en_internet` | Lee | Ambos | Consulta; devuelve título, dirección y fragmento de cada resultado |
-| `abrir_pagina` | Lee | Ambos | Dirección; devuelve el contenido de la página |
+| Herramienta | Lee o escribe | Permiso | Agente | Contrato |
+|---|---|---|---|---|
+| `buscar_en_internet` | Lee | `read` | Ambos | Consulta; devuelve título, dirección y fragmento de cada resultado |
+| `abrir_pagina` | Lee | `read` | Ambos | Dirección; devuelve el contenido de la página |
 
 ### Sesión
 
-| Herramienta | Lee o escribe | Agente | Contrato |
-|---|---|---|---|
-| `actualizar_todo` | Escribe | Ambos | La lista de pasos de la sesión, completa; reemplaza la anterior y devuelve el checklist |
+| Herramienta | Lee o escribe | Permiso | Agente | Contrato |
+|---|---|---|---|---|
+| `crear_todo` | Sesión | `read` | Ambos | Un paso —contenido, estado y prioridad opcional—; lo añade al final y devuelve la lista resultante |
+| `actualizar_todo` | Sesión | `read` | Ambos | La lista de pasos de la sesión, completa; reemplaza la anterior y devuelve el checklist |
 
-`actualizar_todo` escribe estado de la sesión, no archivos del proyecto: por eso pertenece a la acción `tareas` y la tienen los dos agentes, sin tocar la garantía de escritura de §2.
+`crear_todo` y `actualizar_todo` escriben estado de la sesión, no archivos del proyecto: por eso caen en el permiso `read` y la tienen los dos agentes, sin tocar la garantía de escritura de §2.
+
+Una **añade** y la otra **sustituye**, y la diferencia es el contrato, no una preferencia. `crear_todo` no recibe los pasos anteriores porque no los toca: no hay forma de que añadir uno borre los que ya estaban. `actualizar_todo` recibe la lista entera y la sustituye, que es lo que hace falta para reordenar, cancelar un paso o dejar la lista vacía. Las dos devuelven la lista resultante, para que el modelo tenga el estado sin preguntar.
+
+Ninguna de las dos recibe un identificador de paso: el orden es la posición y un identificador solo daría material para que un modelo cite mal.
 
 `crear_archivo` y `escribir_archivo` están separadas a propósito: el agente no destruye algo por accidente cuando pretendía crear.
 
@@ -80,16 +87,17 @@ Cada herramienta declara, además de su contrato, tres datos de presentación qu
 | `ejecutar_comando` | `EJEC` | `comando` | línea |
 | `buscar_en_internet` | `WEB` | `consulta` | resultado |
 | `abrir_pagina` | `ABRIR` | `direccion` | línea |
+| `crear_todo` | `TODO` | `contenido` | paso |
 | `actualizar_todo` | `TODO` | — | paso |
 
 Solo se muestra el **tema**: el resto de argumentos —el contenido de un archivo, un cambio— no se expone, porque la línea va a pantalla y a auditoría. Una herramienta del usuario no declara estos datos: cae en su propio nombre como verbo y no tiene tema ni unidad.
 
 ## 2. El reparto: `plan` mira, `build` escribe
 
-El reparto sale de los `permisos` del agente ([[specs/SPEC-AGENTE-BASE]]), no de una lista de herramientas declarada. Cada herramienta pertenece a una **acción** según su categoría y su modo: archivos de lectura → `leer`; archivos de escritura → `editar`; terminal → `ejecutar`; internet → `internet`; la lista de pasos de la sesión → `tareas`.
+El reparto sale de los `permissions` del agente ([[specs/SPEC-AGENTE-BASE]]), no de una lista de herramientas declarada. Cada herramienta pertenece a un **permiso** fijo, el de la columna de las tablas de §1, y no hay forma de declararlo de otro modo: `leer_archivo`, `listar_carpeta`, `buscar_archivos`, `buscar_en_archivos`, `ejecutar_comando`, `buscar_en_internet`, `abrir_pagina`, `crear_todo` y `actualizar_todo` son `read`; `crear_archivo`, `escribir_archivo`, `eliminar_archivo`, `crear_carpeta` y `eliminar_carpeta` son `write`; `editar_archivo` es `edit`.
 
-- `plan` permite `leer`, `ejecutar`, `internet` y `tareas`, y deniega `editar`. No tiene ninguna herramienta que escriba en el proyecto.
-- `build` permite las cinco acciones y recibe el catálogo completo. Es el único que crea, modifica y borra archivos.
+- `plan` permite solo `read` y deniega `write` y `edit`. No tiene ninguna herramienta que escriba en el proyecto.
+- `build` permite los tres y recibe el catálogo completo. Es el único que crea, modifica y borra archivos.
 
 El catálogo efectivo de cada agente se deriva de sus permisos contra el catálogo. No hay dos listas que puedan contradecirse.
 
@@ -178,11 +186,14 @@ type Herramienta struct {
     Nombre      string
     Descripcion string
     Categoria   Categoria     // archivos | terminal | internet | tareas | usuario
+    Permiso     Permiso       // read | write | edit: lo que hay que conceder para usarla
     Modo        Modo          // lee | escribe
     Esquema     *Esquema      // se deriva del tipo de petición
     Ejecutar    Ejecutar      // handler propio; nil significa "sin implementar"
 }
 ```
+
+`Permiso` es lo que el agente concede: el reparto se decide comparando el `Permiso` de la herramienta contra los `permissions` del agente, y por eso es un dato del catálogo, no un `switch` en el enrutado. `Categoria` y `Modo` no deciden nada de eso: sirven para agrupar y para la interfaz, y `Modo` es lo que distingue una herramienta del usuario de una incluida. Los dos vivos conviven a propósito; lo que se añade es el permiso, no se sustituye el modo.
 
 Tres cosas de este contrato que no existían antes:
 
@@ -205,7 +216,7 @@ De ahí sale un JSON Schema: tipo, obligatoriedad y descripción por campo. Un c
 
 La descripción se escribe **para el modelo**, no para quien lee el código. Dice cuándo usar la herramienta y qué significa el argumento, no cómo está implementado. La comprobación cruzada de que el esquema generado coincide con el documentado en [[backend/02-interfaces/dto/TOOLS-DTO]] es un test: si divergen, falla la suite.
 
-`tools` **no** reutiliza el estimador de `internal/context`. `context` ya depende de `ollama`, `store` y `docs`; que `tools` lo importara convertiría un módulo de capa baja en uno que arrastra capa alta. El truncado (§8) lleva su propio estimador, que es pequeño.
+`tools` **no** reutiliza el estimador de `internal/context`. `context` ya depende de `llm`, `store` y `docs`; que `tools` lo importara convertiría un módulo de capa baja en uno que arrastra capa alta. El truncado (§8) lleva su propio estimador, que es pequeño.
 
 ## 8. La capa universal
 
@@ -218,7 +229,7 @@ func (r *Registro) Ejecutar(ctx context.Context, peticion Peticion) Resultado
 En orden:
 
 1. **Buscar** la herramienta en el registro. Si no existe, resultado con error: el modelo ha pedido algo que no hay.
-2. **Comprobar el permiso.** La herramienta debe estar en el catálogo efectivo del agente (`peticion.Agente` resuelve los permisos). Este paso es el que sostiene §2, y por eso vive **antes** de ejecutar nada.
+2. **Comprobar el permiso.** El `Permiso` de la herramienta tiene que estar concedido en los `permissions` del agente (`peticion.Agente` los resuelve). Este paso es el que sostiene §2, y por eso vive **antes** de ejecutar nada.
 3. **Validar** los argumentos contra `Esquema`. Aquí se decodifica el JSON que el modelo envió.
 4. **Emitir** `herramienta_invocada` con el verbo y el tema (el campo objetivo que declara el catálogo: la ruta, el patrón, el comando).
 5. **Ejecutar** el handler, con el `Contexto` montado, y medir cuánto tarda.
@@ -321,31 +332,31 @@ type Hooks struct {
 }
 ```
 
-- **`AntesDeEjecutar` / `DespuesDeEjecutar`** — auditoría y métricas. El único sitio donde se registra "se ejecutó esta herramienta con estos argumentos y terminó así", sin instrumentar trece handlers.
+- **`AntesDeEjecutar` / `DespuesDeEjecutar`** — auditoría y métricas. El único sitio donde se registra "se ejecutó esta herramienta con estos argumentos y terminó así", sin instrumentar quince handlers.
 - **`DefinirHerramienta`** — puede ajustar nombre, descripción y esquema antes de que lleguen al modelo. Es el punto de extensión para adaptar el catálogo a un modelo concreto sin tocar el catálogo.
 
 Se conectan en el cableado. Si no hay ninguno, la capa universal funciona igual: los hooks son opcionales por diseño, no un punto de fallo.
 
 ## 11. El cable: cómo llegan al modelo
 
-`tools` no habla con `ollama`. `agent` pide los esquemas y los pone en la petición; `ollama` los serializa.
+`tools` no habla con ningún proveedor. `agent` pide los esquemas y los pone en la petición; la capa de proveedor (`llm`) los entrega al adaptador, que los serializa en el formato de su runtime.
 
 1. `agent` pide a `tools` el **esquema** de las herramientas del agente activo.
-2. `agent` construye `ollama.GenerarRequest` con esa lista en el campo `tools`.
-3. `ollama` lo serializa como el array que `/api/chat` espera.
+2. `agent` construye una petición neutra (`llm.Peticion`) con esa lista en el campo de herramientas.
+3. La frontera `llm.Proveedor` la pasa al adaptador del proveedor elegido: `ollama` la serializa para `/api/chat` y `openai` para `/v1/chat/completions`.
 4. El modelo responde pidiendo una por su nombre con los argumentos ya formados.
-5. `ollama` entrega las peticiones acumuladas; `agent` itera y llama a `Registro.Ejecutar`.
-6. El resultado vuelve al modelo como un mensaje propio de herramienta.
+5. El adaptador entrega las peticiones acumuladas; `agent` itera y llama a `Registro.Ejecutar`.
+6. El resultado vuelve al modelo como un mensaje propio de herramienta, con el formato que su proveedor espera.
 
 El catálogo **no** viaja en el mensaje de sistema. `PromptDeSistema` se queda con el prompt del agente.
 
-El formato exacto del lado de Ollama está en [[specs/SPEC-OLLAMA-PERFIL]]; el de los mensajes de herramienta que no se persisten, en [[database/01-schema/ENUMS]].
+El formato exacto de cada proveedor está en [[specs/SPEC-MODELO-PROVEEDOR]] y en [[backend/04-infrastructure/INTEGRATIONS]]; el de los mensajes de herramienta que no se persisten, en [[database/01-schema/ENUMS]].
 
 ## Referencias
 
 - [[specs/SPEC-TOOLS]] — la especificación funcional y los criterios de aceptación.
 - [[specs/SPEC-ARCHIVOS]] — reglas de permiso sobre archivos.
-- [[specs/SPEC-OLLAMA-PERFIL]] — el canal de herramientas y la capacidad del modelo.
+- [[specs/SPEC-MODELO-PROVEEDOR]] — el canal de herramientas y la capacidad del modelo.
 - [[backend/02-interfaces/INTERFACES-GENERAL]] — las superficies.
 - [[backend/02-interfaces/dto/TOOLS-DTO]] — los payloads de cada herramienta y sus esquemas.
 - [[backend/03-security/SECURITY]] — la garantía de escritura, el bloqueo de la terminal y el aislamiento de las herramientas del usuario.

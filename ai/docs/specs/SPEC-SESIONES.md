@@ -5,7 +5,7 @@ depende_de:
   - "[[IDEA]]"
   - "[[specs/SPEC-ARCHIVOS]]"
   - "[[specs/SPEC-MOTOR-FLUJOS]]"
-  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
 ---
 # SPEC — Sesiones por proyecto
 
@@ -82,7 +82,7 @@ Se abre una sesión y se deja una tarea de frontend trabajando. Se abre otra ses
 
 - [[specs/SPEC-ARCHIVOS]]
 - [[specs/SPEC-MOTOR-FLUJOS]]
-- [[specs/SPEC-OLLAMA-PERFIL]]
+- [[specs/SPEC-MODELO-PROVEEDOR]]
 
 ## Supuestos
 

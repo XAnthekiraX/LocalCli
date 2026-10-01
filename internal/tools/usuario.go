@@ -155,6 +155,7 @@ func NuevaHerramientaUsuario(h HerramientaUsuario, r Runner) Herramienta {
 		Nombre:      h.Nombre,
 		Descripcion: h.Descripcion,
 		Categoria:   CatUsuario,
+		Permiso:     PermisoRead,
 		Modo:        Lee,
 		Esquema:     EsquemaObjeto(),
 		Ejecutar:    ejecutarUsuario(h, r),

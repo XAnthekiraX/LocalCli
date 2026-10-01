@@ -1,30 +1,31 @@
 package agent
 
 import (
-	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 
 	"localcli/internal/tools"
 )
 
-// TestAgenteTieneExactamenteCincoCampos — el round-trip del JSON solo produce
-// los cinco campos del contrato (DECISIONS.md).
-func TestAgenteTieneExactamenteCincoCampos(t *testing.T) {
+// TestAgenteSinSkills — el contrato tiene solo tres campos. Una codificación
+// del agente no produce `skills` (ni `prompt` ni `herramientas`): el campo
+// desapareció del contrato.
+func TestAgenteSinSkills(t *testing.T) {
 	a := Agente{
 		Nombre:      "x",
 		Descripcion: "d",
-		Prompt:      "p",
-		Permisos:    []Permiso{{Accion: "leer", Efecto: EfectoPermitir}},
-		Skills:      []string{"s"},
+		Permissions: map[string]string{"read": "allow"},
 	}
-	b, err := json.Marshal(a)
+	b, err := yaml.Marshal(a)
 	if err != nil {
 		t.Fatalf("no codifica: %v", err)
 	}
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(b, &m); err != nil {
-		t.Fatalf("JSON inválido: %v", err)
+	var m map[string]any
+	if err := yaml.Unmarshal(b, &m); err != nil {
+		t.Fatalf("YAML inválido: %v", err)
 	}
 	if len(m) != len(CamposDelAgente) {
 		t.Fatalf("el agente tiene %d campos, quiero %d: %s", len(m), len(CamposDelAgente), b)
@@ -34,61 +35,123 @@ func TestAgenteTieneExactamenteCincoCampos(t *testing.T) {
 			t.Errorf("falta el campo %q", campo)
 		}
 	}
+	for _, muerto := range []string{"skills", "prompt", "herramientas"} {
+		if _, ok := m[muerto]; ok {
+			t.Errorf("el contrato no admite %q: %s", muerto, b)
+		}
+	}
 }
 
-// TestHeredaDeSeRechaza — no hay herencia entre agentes: un campo `hereda_de`
-// no se ignora, rompe la carga.
+// TestYamlConCampoDesconocidoSeRechaza — un campo desconocido rompe la carga
+// nombrando el campo, no se ignora.
+func TestYamlConCampoDesconocidoSeRechaza(t *testing.T) {
+	datos := []byte("name: x\ndescription: d\nskills: []\n")
+	if _, err := DecodificarAgente(datos); err == nil {
+		t.Fatal("un agente con un campo desconocido no puede cargarse")
+	} else if !strings.Contains(err.Error(), "skills") {
+		t.Errorf("el error debe nombrar el campo: %v", err)
+	}
+}
+
+// TestPromptEnElYamlSeRechaza — el prompt vive en `prompt.md`, no en el YAML.
+func TestPromptEnElYamlSeRechaza(t *testing.T) {
+	datos := []byte("name: x\ndescription: d\nprompt: hola\n")
+	if _, err := DecodificarAgente(datos); err == nil {
+		t.Fatal("un `prompt:` en el YAML no puede cargarse")
+	}
+}
+
+// TestCampoHerramientasSeRechaza — el catálogo se deriva de `permissions`; un
+// `herramientas:` escrito por costumbre rompe la carga.
+func TestCampoHerramientasSeRechaza(t *testing.T) {
+	datos := []byte("name: x\ndescription: d\npermissions:\n  read: allow\nherramientas:\n  - leer_archivo\n")
+	if _, err := DecodificarAgente(datos); err == nil {
+		t.Fatal("un agente con `herramientas:` no puede cargarse")
+	}
+}
+
+// TestHeredaDeSeRechaza — no hay herencia entre agentes: `hereda_de` rompe la
+// carga.
 func TestHeredaDeSeRechaza(t *testing.T) {
-	if _, err := Cargar(filepath.Join("testdata", "hereda.json")); err == nil {
+	datos := []byte("name: x\ndescription: d\nhereda_de: plan\n")
+	if _, err := DecodificarAgente(datos); err == nil {
 		t.Fatal("un agente con `hereda_de` no puede cargarse")
 	}
 }
 
-// TestPermisoInventadoSeRechaza — el catálogo de acciones es cerrado: un
-// agente que declara un permiso sobre una acción que no existe no se carga.
-func TestPermisoInventadoSeRechaza(t *testing.T) {
-	if _, err := Cargar(filepath.Join("testdata", "inventada.json")); err == nil {
-		t.Fatal("un agente con una acción de permiso inventada no puede cargarse")
+// TestDefaultAllowSeRechaza — `default` solo admite `deny`: un `allow` donde se
+// quería un `deny` concedería todo en silencio.
+func TestDefaultAllowSeRechaza(t *testing.T) {
+	if _, err := HerramientasDe(map[string]string{"default": "allow", "read": "allow"}); err == nil {
+		t.Fatal("`default: allow` no puede cargarse")
 	}
 }
 
-// TestPermisosContradictoriosSeRechazan — `permitir` y `denegar` sobre la
-// misma acción es un contrato que se contradice: no se carga.
-func TestPermisosContradictoriosSeRechazan(t *testing.T) {
-	if _, err := Cargar(filepath.Join("testdata", "contradictorio.json")); err == nil {
-		t.Fatal("unos permisos contradictorios no pueden cargarse")
+// TestPermisoDesconocidoSeRechaza — un permiso fuera del vocabulario se rechaza
+// nombrandolo.
+func TestPermisoDesconocidoSeRechaza(t *testing.T) {
+	err := ValidarPermisos(Agente{Permissions: map[string]string{"borrar_el_mundo": "allow"}})
+	if err == nil {
+		t.Fatal("un permiso inventado no puede cargarse")
+	}
+	if !strings.Contains(err.Error(), "borrar_el_mundo") {
+		t.Errorf("el error debe nombrar el permiso: %v", err)
 	}
 }
 
-// TestCampoHerramientasSeRechaza — el contrato ya no declara la lista de
-// herramientas: `permisos` es la fuente. Un JSON viejo con `herramientas` no
-// se ignora, rompe la carga.
-func TestCampoHerramientasSeRechaza(t *testing.T) {
-	datos := []byte(`{"nombre":"viejo","descripcion":"","prompt":"p","herramientas":["leer_archivo"],"skills":[]}`)
-	if _, err := DecodificarAgente(datos); err == nil {
-		t.Fatal("un agente con el campo viejo `herramientas` no puede cargarse")
+// TestAgenteSinPermissionsSoloConversa — sin `permissions` el agente es válido
+// y de solo conversación, sin error.
+func TestAgenteSinPermissionsSoloConversa(t *testing.T) {
+	hs, err := HerramientasDe(nil)
+	if err != nil {
+		t.Fatalf("un agente sin permisos no es un error: %v", err)
+	}
+	if len(hs) != 0 {
+		t.Fatalf("sin permisos no hay herramientas: %v", hs)
+	}
+	a := Agente{Nombre: "charla", Prompt: "p", Herramientas: hs}
+	if !a.SoloConversacion() {
+		t.Error("un agente sin permisos debe ser de solo conversación")
+	}
+	if err := tools.ComprobarPermiso(a.Permisos(), "leer_archivo"); err == nil {
+		t.Error("un agente de solo conversación no puede pedir herramientas")
 	}
 }
 
-// TestJSONRotoDaErrorLocalizado — un archivo ilegible falla nombrando el
-// archivo, sin tumbar el proceso.
-func TestJSONRotoDaErrorLocalizado(t *testing.T) {
-	ruta := filepath.Join("testdata", "roto.json")
-	if _, err := Cargar(ruta); err == nil {
-		t.Fatal("un JSON roto no puede cargarse")
+// TestCarpetaSinPromptNoCarga — los dos archivos son obligatorios.
+func TestCarpetaSinPromptNoCarga(t *testing.T) {
+	if _, err := Cargar(filepath.Join("testdata", "sin_prompt")); err == nil {
+		t.Fatal("una carpeta sin `prompt.md` no puede cargarse")
 	}
 }
 
-// TestCargarAgenteValido — un fixture con los cinco campos carga, deriva el
-// catálogo efectivo de sus permisos y conserva sus datos.
-func TestCargarAgenteValido(t *testing.T) {
-	a, err := Cargar(filepath.Join("testdata", "valido.json"))
+// TestElNombreVieneDeName — el nombre del agente lo decide `name`, no el de la
+// carpeta.
+func TestElNombreVieneDeName(t *testing.T) {
+	a, err := Cargar(filepath.Join("testdata", "renombrado"))
 	if err != nil {
 		t.Fatalf("Cargar: %v", err)
 	}
-	// `leer` son las cuatro herramientas de lectura: el catálogo se deriva.
-	if a.Nombre != "lector" || len(a.Herramientas) != 4 || len(a.Skills) != 1 {
-		t.Fatalf("agente cargado inesperado: %+v", a)
+	if a.Nombre != "research" {
+		t.Errorf("nombre = %q, quiero `research` (el campo `name`)", a.Nombre)
+	}
+}
+
+// TestCargarAgenteValido — un fixture válido carga, lee su prompt entero y
+// deriva el catálogo efectivo de sus permisos.
+func TestCargarAgenteValido(t *testing.T) {
+	a, err := Cargar(filepath.Join("testdata", "valido"))
+	if err != nil {
+		t.Fatalf("Cargar: %v", err)
+	}
+	if a.Nombre != "lector" {
+		t.Fatalf("nombre = %q", a.Nombre)
+	}
+	if a.Prompt != "Eres un agente de prueba que solo lee." {
+		t.Errorf("prompt = %q, quiero el de `prompt.md`", a.Prompt)
+	}
+	if len(a.Herramientas) != len(tools.HerramientasDePlan()) {
+		t.Errorf("un agente con `read: allow` tiene %d herramientas, quiero %d", len(a.Herramientas), len(tools.HerramientasDePlan()))
 	}
 	for _, h := range a.Herramientas {
 		if !a.Declara(h) {
@@ -96,58 +159,54 @@ func TestCargarAgenteValido(t *testing.T) {
 		}
 	}
 	if a.TieneEscritura() {
-		t.Error("un agente con solo `leer` no puede tener escritura")
+		t.Error("un agente con solo `read` no puede tener escritura")
 	}
 }
 
-// TestAgenteSinHerramientasEsSoloConversacion — T-B006-08: `herramientas`
-// vacío es válido y produce un agente sin ruta hacia `tools`.
-func TestAgenteSinHerramientasEsSoloConversacion(t *testing.T) {
-	a, err := Cargar(filepath.Join("testdata", "solo_conversacion.json"))
-	if err != nil {
-		t.Fatalf("Cargar: %v", err)
-	}
-	if !a.SoloConversacion() {
-		t.Error("un agente sin herramientas debe ser de solo conversación")
-	}
-	// Sin acciones, no puede pedir ninguna: tools lo rechaza.
-	if err := tools.ComprobarPermiso(a.Acciones(), "leer_archivo"); err == nil {
-		t.Error("un agente de solo conversación no puede pedir herramientas")
+// TestElYamlRotoDaErrorLocalizado — un archivo ilegible falla nombrando la
+// carpeta, sin tumbar el proceso.
+func TestElYamlRotoDaErrorLocalizado(t *testing.T) {
+	if _, err := Cargar(filepath.Join("testdata", "roto")); err == nil {
+		t.Fatal("un YAML roto no puede cargarse")
 	}
 }
 
-// TestAgentesBaseDocumentados — T-B006-04: los dos agentes base cargan desde
-// `.localcli/agents/` y `plan` no contiene ninguna herramienta de escritura.
+// TestElPlanDelRepoNoTieneHerramientasDeEscritura y
+// TestElBuildDelRepoTieneElCatalogoCompleto — los agentes base versionados en
+// `.localcli/agents/` cargan desde sus carpetas y conservan el reparto.
+func TestElPlanDelRepoNoTieneHerramientasDeEscritura(t *testing.T) {
+	plan := agenteDelRepo(t, "plan")
+	if plan.TieneEscritura() {
+		t.Error("plan no puede tener ninguna herramienta de escritura")
+	}
+	for _, h := range plan.Herramientas {
+		if o, ok := tools.Buscar(h); ok && o.SoloBuild() {
+			t.Errorf("plan no puede declarar %s", h)
+		}
+	}
+}
+
+func TestElBuildDelRepoTieneElCatalogoCompleto(t *testing.T) {
+	build := agenteDelRepo(t, "build")
+	if !build.TieneEscritura() {
+		t.Error("build debe tener herramientas de escritura")
+	}
+	if len(build.Herramientas) != len(tools.NombresCatalogo()) {
+		t.Errorf("build declara %d herramientas, quiero %d", len(build.Herramientas), len(tools.NombresCatalogo()))
+	}
+}
+
 func TestAgentesBaseDocumentados(t *testing.T) {
 	dir := filepath.Join("..", "..", ".localcli", "agents")
 	agentes, err := CargarCarpeta(dir)
 	if err != nil {
 		t.Fatalf("CargarCarpeta: %v", err)
 	}
-	if len(agentes) < 2 {
-		t.Fatalf("se esperan al menos plan y build, hay %d", len(agentes))
-	}
-
-	plan, ok := PorNombre(agentes, "plan")
-	if !ok {
+	if _, ok := PorNombre(agentes, tools.AgentePlan); !ok {
 		t.Fatal("falta el agente base plan")
 	}
-	if plan.TieneEscritura() {
-		t.Error("plan no puede tener ninguna herramienta de escritura")
-	}
-	if len(plan.Herramientas) != 8 {
-		t.Errorf("plan declara %d herramientas, quiero 8 (lectura, ejecución, internet y tareas)", len(plan.Herramientas))
-	}
-
-	build, ok := PorNombre(agentes, "build")
-	if !ok {
+	if _, ok := PorNombre(agentes, tools.AgenteBuild); !ok {
 		t.Fatal("falta el agente base build")
-	}
-	if len(build.Herramientas) != 14 {
-		t.Errorf("build declara %d herramientas, quiero 14", len(build.Herramientas))
-	}
-	if !build.TieneEscritura() {
-		t.Error("build debe tener herramientas de escritura")
 	}
 }
 
@@ -173,4 +232,13 @@ func TestOrdenarNombresPoneLosBasePrimero(t *testing.T) {
 	if len(OrdenarNombres(nil)) != 0 {
 		t.Error("un catálogo vacío da una lista vacía")
 	}
+}
+
+func agenteDelRepo(t *testing.T, nombre string) Agente {
+	t.Helper()
+	a, err := Cargar(filepath.Join("..", "..", ".localcli", "agents", nombre))
+	if err != nil {
+		t.Fatalf("Cargar(%s): %v", nombre, err)
+	}
+	return a
 }

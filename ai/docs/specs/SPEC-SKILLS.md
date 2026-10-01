@@ -11,6 +11,14 @@ depende_de:
 
 Prioridad: P3 (personalización, diferible)
 
+## Estado: no implementada
+
+**Esta spec describe una capacidad que no existe en el código.** No hay carga de skills desde disco, ni ámbito de sesión, ni resolución de markdown, ni skills por defecto, ni forma de declararlas: el contrato del agente tiene tres campos —`name`, `description` y `permissions`— y ninguno es una skill. Un `skills:` en un `agent.yaml` se rechaza como campo desconocido. Ver [[specs/SPEC-AGENTE-BASE]] §Dónde se definen.
+
+Se conserva como especificación aprobada de lo que habrá, no como descripción de lo que hay: **ningún criterio de aceptación de este documento está cumplido**, y ninguno se verificará hasta que la capacidad se implemente.
+
+Lo que falta para que deje de estarlo: un lugar donde declarar una skill, una carga que la lea, un ámbito —de sesión o de agente— y una forma de aplicarla al turno. Las reglas de negocio y los criterios de aceptación de abajo se mantienen como están porque no dependen de esas decisiones previas; lo que sí queda por resolver es el de dónde vienen y en qué formato, en el supuesto de cierre.
+
 ## Propósito
 
 Cargar skills que añaden una capacidad concreta al agente cuando la tarea lo necesita.

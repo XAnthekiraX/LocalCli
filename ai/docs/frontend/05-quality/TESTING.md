@@ -21,7 +21,7 @@ Qué se prueba en la capa de presentación y cómo. La estrategia global está e
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Unitario       | Funciones puras de render: recorte de líneas, formato del bloque de razonamiento, formato del contador, formato del tiempo de respuesta, detección de atajos duplicados | Funciones aisladas, sin bucle de Bubble Tea                                                   |
 | De componente  | `update` y `view` de cada componente ante secuencias fijas de eventos                                                                                                   | Bubble Tea en proceso, con el arnés de pruebas de la librería, inyectando mensajes sintéticos |
-| De integración | El recorrido completo: tecla → petición a `session` → evento de vuelta → pantalla                                                                                       | `session` real con base temporal y un doble de `ollama` que emita tokens fijos                |
+| De integración | El recorrido completo: tecla → petición a `session` → evento de vuelta → pantalla                                                                                       | `session` real con base temporal y un doble de proveedor (`llm.Proveedor`) que emita tokens fijos                |
 
 ## 2. Qué debe probarse
 
@@ -46,22 +46,23 @@ Qué se prueba en la capa de presentación y cómo. La estrategia global está e
 - La línea de herramienta cerrada se pinta con su duración al recargar la sesión, igual que en vivo: el hilo recuperado no pierde los tiempos.
 - La duración de una línea de herramienta y la de su respuesta salen del mismo formateador —milisegundos por debajo del segundo, décimas de segundo por debajo del minuto, minutos y segundos a partir de ahí— con el mismo atenuado; y una duración ausente no produce ni un `0` ni un hueco reservado.
 - El chat respeta el orden de ejecución: el texto que precede a una herramienta queda en un globo arriba de su línea y el que viene después abre un globo nuevo, con su propio razonamiento; los segmentos de texto de un turno no se funden en uno solo.
-- Al ejecutar la aplicación se ve la bienvenida centrada: logotipo ASCII, nombre con versión, la línea con el modelo en uso y una línea de entrada; sin panel de contexto, sin aprobaciones y sin lista de modelos visible. `Ctrl+X m` abre el modal con los modelos de Ollama (aviso «sin modelos» si no responde); `↑`/`↓` navegan, `Enter` aplica y viaja con la primera petición, `Esc` cierra sin cambios.
+- Al ejecutar la aplicación se ve la bienvenida centrada: logotipo ASCII, nombre con versión, la línea con el modelo en uso y una línea de entrada; sin panel de contexto, sin aprobaciones y sin lista de modelos visible. `Ctrl+X m` abre el modal con los modelos del proveedor activo, cada fila rotulada (aviso «sin modelos» si no responde); `↑`/`↓` navegan, `Enter` aplica y viaja con la primera petición, `Esc` cierra sin cambios.
 - La primera petición escrita en la bienvenida llega a `session` y aparece como primer mensaje del chat al cambiar de vista, sin repetirse ni pedir confirmación.
-- La bienvenida se pinta sin Ollama ni base: se comprueba con ambos no disponibles.
+- La bienvenida se pinta sin proveedor ni base: se comprueba con ambos no disponibles.
+- El modal de modelos se abre igual contra los dos proveedores y rotula cada fila con el suyo.
 - El logotipo se compara byte a byte contra la salida dorada `internal/tui/testdata/logo.txt`: 6 filas × 53 columnas, arte fijo, sin variaciones. La definición canónica está en [[specs/SPEC-INTERFAZ]].
 
 ## 3. Reglas para nuevos tests
 
 - **Las vistas se comparan contra salidas doradas** (golden files) en lo que a formato respecta: un cambio de estilo se revisa a la vista, no a ciegas.
 - **No hay `sleep` ni esperas fijas.** Los eventos se inyectan y se espera la condición, no un tiempo.
-- **Una prueba de componente no toca la base ni la red.** Los eventos son valores, no llamadas; el doble de `ollama` solo entra en las pruebas de integración.
+- **Una prueba de componente no toca la base ni la red.** Los eventos son valores, no llamadas; el doble de proveedor solo entra en las pruebas de integración.
 - **Una prueba, una regla**, igual que en el backend: el nombre dice la regla que comprueba.
 - Los criterios de aceptación de [[specs/SPEC-INTERFAZ]] y [[specs/SPEC-INTERFAZ-ATAJOS]] son la lista de verificación manual final.
 
 ## Referencias
 
-- [[backend/05-quality/TESTING]] — estrategia global y dobles de Ollama.
+- [[backend/05-quality/TESTING]] — estrategia global y dobles de proveedor.
 - [[frontend/02-interfaces/INTERFACES]] — la frontera que estas pruebas cubren.
 - [[specs/SPEC-INTERFAZ]] — criterios de aceptación de la disposición.
 - [[specs/SPEC-INTERFAZ-ATAJOS]] — criterios de aceptación de atajos y aprobaciones.

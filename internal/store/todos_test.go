@@ -49,6 +49,46 @@ func TestReemplazarYLeerTodos(t *testing.T) {
 	}
 }
 
+// TestAgregarTodoNoPierdeLosAnteriores — `crear_todo` inserta una fila al final
+// sin borrar nada: los pasos que ya estaban siguen igual y el nuevo es el
+// último. Es lo que lo distingue de `actualizar_todo`, que reemplaza.
+func TestAgregarTodoNoPierdeLosAnteriores(t *testing.T) {
+	db := abrirBaseTemporal(t)
+	ses, err := CrearSesion(db, "s", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ReemplazarTodos(db, ses.ID, []Todo{
+		{Contenido: "primero", Estado: "completada"},
+		{Contenido: "segundo", Estado: "en_progreso"},
+		{Contenido: "tercero", Estado: "pendiente"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := AgregarTodo(db, ses.ID, Todo{Contenido: "cuarto", Estado: "pendiente", Prioridad: "alta"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LeerTodos(db, ses.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 4 {
+		t.Fatalf("tras agregar hay %d pasos, quiero 4: %+v", len(got), got)
+	}
+	quiere := []string{"primero", "segundo", "tercero", "cuarto"}
+	for i, c := range quiere {
+		if got[i].Contenido != c {
+			t.Errorf("paso %d = %q, quiero %q (los anteriores no se tocan)", i, got[i].Contenido, c)
+		}
+	}
+	if got[0].Estado != "completada" || got[1].Estado != "en_progreso" {
+		t.Errorf("agregar no debe cambiar los estados anteriores: %+v", got)
+	}
+	if got[3].Prioridad != "alta" {
+		t.Errorf("la prioridad del nuevo paso se guarda: %+v", got[3])
+	}
+}
+
 // TestTodosCaenEnCascadaConLaSesion — borrar la sesión se lleva su lista.
 func TestTodosCaenEnCascadaConLaSesion(t *testing.T) {
 	db := abrirBaseTemporal(t)

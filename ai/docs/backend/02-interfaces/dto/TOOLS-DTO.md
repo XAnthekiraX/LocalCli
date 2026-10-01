@@ -9,7 +9,7 @@ relacionado:
   - "[[backend/01-domain/DOMAIN]]"
   - "[[backend/05-quality/ERRORS]]"
   - "[[database/01-schema/TABLES]]"
-  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
 ---
 # TOOLS-DTO — Payloads de las herramientas
 
@@ -109,12 +109,17 @@ Todas las herramientas de archivos admiten además `motivo` (string, **opcional*
 
 | Herramienta | Campo | Tipo | Obligatorio | `desc` |
 |---|---|---|---|---|
+| `crear_todo` | `contenido` | string | Sí | Qué hay que hacer; una acción concreta |
+| `crear_todo` | `estado` | string | Sí | `pendiente` \| `en_progreso` \| `completada` \| `cancelada` |
+| `crear_todo` | `prioridad` | string | No | `alta` \| `media` \| `baja` (opcional; por defecto `media`) |
 | `actualizar_todo` | `elementos` | array de objeto | Sí | La lista completa de pasos; reemplaza la anterior |
 | `actualizar_todo` | `elementos[].contenido` | string | Sí | Qué hay que hacer; una acción concreta |
 | `actualizar_todo` | `elementos[].estado` | string | Sí | `pendiente` \| `en_progreso` \| `completada` \| `cancelada` |
 | `actualizar_todo` | `elementos[].prioridad` | string | No | `alta` \| `media` \| `baja` (opcional; por defecto `media`) |
 
-`elementos` es un `array` cuyo `items` expone el objeto de cada paso: el esquema anida `contenido`, `estado` y `prioridad`, no un `object` vacío. Lo que llega es la lista entera, no un delta: una lista vacía deja la lista en blanco. La capa universal comprueba que el estado y la prioridad estén en su vocabulario, y un valor fuera vuelve al modelo como `E_BAD_ARGS` corregible. Ver [[specs/SPEC-TOOLS]].
+`crear_todo` lleva un paso, no una lista: el esquema es un objeto plano y **no tiene campo `elementos`**. Su argumento es deliberadamente más pequeño que el de `actualizar_todo`, porque no puede tocar lo que ya está: añadir y sustituir son contratos distintos, no el mismo con un atajo.
+
+`elementos` es un `array` cuyo `items` expone el objeto de cada paso: el esquema anida `contenido`, `estado` y `prioridad`, no un `object` vacío. Lo que llega es la lista entera, no un delta: una lista vacía deja la lista en blanco. La capa universal comprueba que el estado y la prioridad estén en su vocabulario, en las dos herramientas, y un valor fuera vuelve al modelo como `E_BAD_ARGS` corregible. En `crear_todo` la comprobación incluye que no haya ya un paso `en_progreso` —regla que hasta ahora solo era instrucción en la descripción—: el error nombra `actualizar_todo` como la vía para cambiarlo. Ver [[specs/SPEC-TOOLS]].
 
 ### Del usuario
 
@@ -187,7 +192,10 @@ Lo que vuelve entra al presupuesto de contexto, se recorta y se audita como cual
 
 | Herramienta | Devuelve | Tipo |
 |---|---|---|
+| `crear_todo` | La lista de pasos resultante, como checklist de texto (`[ ]`, `[•]`, `[✓]`, `[x]`) | string |
 | `actualizar_todo` | La lista de pasos resultante, como checklist de texto (`[ ]`, `[•]`, `[✓]`, `[x]`) | string |
+
+Las dos devuelven lo mismo a propósito: la lista entera, en el mismo formato. El modelo no tiene que distinguir «esto es lo que había más lo que añadí» de «esto es la lista nueva», y una herramienta de añadir no necesita inventar un formato de respuesta propio.
 
 El modelo ve la lista resultante en el propio resultado, así que no necesita una herramienta de lectura. La lista además se persiste por sesión y se anuncia al panel con el evento `todo_actualizada`. Ver [[backend/04-infrastructure/EVENTS]] y [[database/01-schema/TABLES]].
 
@@ -207,6 +215,6 @@ La salida de error del ejecutable **no** se distingue de la normal: se concatena
 - [[backend/02-interfaces/TOOLS]] — el catálogo, la capa universal y su comportamiento.
 - [[backend/05-quality/VALIDATION]] — qué campos son obligatorios y cómo se validan.
 - [[specs/SPEC-TOOLS]] — la especificación funcional y las herramientas del usuario.
-- [[specs/SPEC-OLLAMA-PERFIL]] — el canal por el que viajan los esquemas.
+- [[specs/SPEC-MODELO-PROVEEDOR]] — el canal por el que viajan los esquemas.
 - [[database/01-schema/TABLES]] — dónde queda lo que las herramientas de escritura registran.
 

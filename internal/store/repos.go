@@ -85,6 +85,11 @@ func (t *Todos) Reemplazar(sessionID string, items []Todo) error {
 	return ReemplazarTodos(t.db, sessionID, items)
 }
 
+// Agregar añade un paso al final de la lista de una sesión.
+func (t *Todos) Agregar(sessionID string, item Todo) error {
+	return AgregarTodo(t.db, sessionID, item)
+}
+
 // Leer devuelve la lista de pasos de una sesión, en orden.
 func (t *Todos) Leer(sessionID string) ([]Todo, error) { return LeerTodos(t.db, sessionID) }
 

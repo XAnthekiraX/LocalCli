@@ -134,6 +134,15 @@ type PeticionActualizarTodo struct {
 	Elementos []ElementoTodo `json:"elementos" desc:"La lista completa de pasos; reemplaza la anterior"`
 }
 
+// PeticionCrearTodo añade UN paso al final de la lista de la sesión, sin tocar
+// los que ya había. Su argumento es un objeto plano: no lleva `elementos`, a
+// diferencia de `actualizar_todo`, porque no puede perder lo que ya está.
+type PeticionCrearTodo struct {
+	Contenido string `json:"contenido" desc:"Qué hay que hacer; una acción concreta"`
+	Estado    string `json:"estado" desc:"pendiente | en_progreso | completada | cancelada"`
+	Prioridad string `json:"prioridad,omitempty" desc:"alta | media | baja (opcional; por defecto media)"`
+}
+
 // peticiones asocia cada nombre del catálogo con un valor vacío de su tipo.
 // Es el punto único del contrato: el enrutado y la validación parten de aquí,
 // así que una herramienta sin entrada en esta tabla no se puede enrutar ni
@@ -152,6 +161,7 @@ var peticiones = map[string]func() any{
 	"ejecutar_comando":   func() any { return &PeticionEjecutarComando{} },
 	"buscar_en_internet": func() any { return &PeticionBuscarInternet{} },
 	"abrir_pagina":       func() any { return &PeticionAbrirPagina{} },
+	"crear_todo":         func() any { return &PeticionCrearTodo{} },
 	"actualizar_todo":    func() any { return &PeticionActualizarTodo{} },
 }
 

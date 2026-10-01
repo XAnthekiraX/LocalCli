@@ -7,7 +7,7 @@ depende_de:
   - "[[specs/SPEC-ARCHIVOS]]"
   - "[[specs/SPEC-NODO-CONTEXTO]]"
   - "[[specs/SPEC-RESOLVER]]"
-  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
 relacionado:
   - "[[backend/DECISIONS]]"
   - "[[specs/SPEC-SKILLS]]"
@@ -23,7 +23,7 @@ Definir qué herramientas tiene el agente para trabajar, cuáles puede usar para
 ## Alcance
 
 Incluye el catálogo incluido, el reparto por agente, las reglas de la terminal y de internet, la capa universal que envuelve toda ejecución, el descubrimiento de herramientas del usuario en `.localcli/tools/` y la degradación cuando el modelo no sabe usarlas.
-No incluye las reglas de permiso sobre archivos, que están en [[specs/SPEC-ARCHIVOS]], ni la selección de contexto, que está en [[specs/SPEC-NODO-CONTEXTO]], ni la conexión con Ollama, que está en [[specs/SPEC-OLLAMA-PERFIL]].
+No incluye las reglas de permiso sobre archivos, que están en [[specs/SPEC-ARCHIVOS]], ni la selección de contexto, que está en [[specs/SPEC-NODO-CONTEXTO]], ni la conexión con el proveedor de modelo, que está en [[specs/SPEC-MODELO-PROVEEDOR]].
 
 ## Actores
 
@@ -65,11 +65,20 @@ No incluye las reglas de permiso sobre archivos, que están en [[specs/SPEC-ARCH
 
 ### Sesión
 
-| Herramienta | Lee o escribe | Agente |
-|---|---|---|
-| `actualizar_todo` | Escribe | Ambos |
+| Herramienta | Lee o escribe | Permiso | Agente |
+|---|---|---|---|
+| `crear_todo` | No toca el proyecto | `read` | Ambos |
+| `actualizar_todo` | No toca el proyecto | `read` | Ambos |
 
-`actualizar_todo` mantiene la lista de pasos de la sesión: el plan de trabajo de varios pasos que el usuario ve en el panel. No escribe en el proyecto —es estado de la sesión—, así que la tienen los dos agentes.
+Son las dos que mantienen la lista de pasos de la sesión: el plan de trabajo de varios pasos que el usuario ve en el panel. No escriben en el proyecto —es estado de la sesión—, así que la tienen los dos agentes.
+
+**Una añade y la otra reemplaza, y no se confunden.** `crear_todo` **añade un paso al final** de la lista y nada más: no toca los que ya había. `actualizar_todo` **sustituye la lista entera** por la que mande. La primera es la vía normal para planning; la segunda, para reordenar, cancelar un paso o cambiar estados sin añadir.
+
+La separación no es cosmética. Con una sola herramienta que sustituye, un modelo que Cree estar «actualizando un paso» reescribe la lista con lo que recuerda y **borra los demás sin saberlo**. Con `crear_todo` delante, añadir es un verbo que no puede perder nada, y el modelo solo llama a `actualizar_todo` cuando de verdad quiere reescribir todo.
+
+Ninguna de las dos necesita saber si la lista existe: **las dos devuelven la lista resultante**, así que el modelo tiene el estado en su propio contexto y no tiene que preguntar. Y ninguna necesita un identificador de paso: el orden es la posición en la lista, y un identificador solo serviría para que un modelo lo cite mal.
+
+Ver «La lista de pasos» para las reglas de estado.
 
 ### Del usuario
 
@@ -163,19 +172,33 @@ Una herramienta del usuario no puede llamarse igual que una incluida. Si el arch
 
 ## El reparto: `plan` mira, `build` escribe
 
-El reparto sale de los `permisos` de cada agente, que se declaran **por acción**: `leer` (archivos de lectura), `editar` (archivos de escritura), `ejecutar` (terminal), `internet` y `tareas` (la lista de pasos de la sesión). El catálogo efectivo de herramientas se deriva de ahí contra el catálogo: no hay una lista de herramientas suelta que pueda contradecir los permisos.
+El reparto sale de los `permissions` de cada agente, que se declaran **por permiso**, con tres: `read` (mirar el proyecto, la terminal de consulta, internet y la lista de pasos de la sesión), `write` (crear, sobrescribir o borrar archivos y carpetas) y `edit` (parchear contenido existente). El catálogo efectivo de herramientas se deriva de ahí contra el catálogo: no hay una lista de herramientas suelta que pueda contradecir los permisos. El detalle de qué herramienta cae en qué permiso está en «Quién puede usar qué» de [[specs/SPEC-AGENTE-BASE]].
 
-`plan` permite `leer`, `ejecutar`, `internet` y `tareas`, y deniega `editar`. Nunca recibe una herramienta que escriba en el proyecto. Existe para entender el proyecto, decidir qué hay que hacer y proponerlo.
+`plan` permite solo `read` y deniega los otros dos. Nunca recibe una herramienta que escriba en el proyecto. Existe para entender el proyecto, decidir qué hay que hacer y proponerlo.
 
-`build` permite las cinco acciones y recibe el catálogo completo. Es el único que crea, modifica y borra.
+`build` permite los tres y recibe el catálogo completo. Es el único que crea, modifica y borra.
 
 Esto no es una restricción de estilo: es la garantía de que nada cambia en tu proyecto sin que `plan` lo haya propuesto antes y tú lo hayas aprobado.
 
 **Las herramientas del usuario respetan el mismo reparto.** Una declarada `"modo": "escribe"` nunca llega a `plan`, y las de lectura llegan a los dos. Extender el catálogo no abre una puerta trasera a la garantía.
 
+## La lista de pasos
+
+La lista de pasos de la sesión es estado de la sesión, no del proyecto, y por eso la tienen los dos agentes bajo el permiso `read`. La mantienen dos herramientas, y la diferencia entre las dos es qué le pasa a lo que ya había.
+
+`crear_todo` **añade un paso al final**. Recibe `contenido` —qué hay que hacer— y `estado`; `prioridad` es opcional y por defecto es `media`. No recibe los pasos anteriores: no los necesita, porque no los toca. Lo que hace es insertar uno y devolver la lista completa, así que añadir un paso nunca puede perder los que ya estaban.
+
+`actualizar_todo` **sustituye la lista entera** por la que mande, en un solo paso atómico. Es la herramienta para reordenar, cancelar un paso, cambiar estados de golpe o dejar la lista vacía: casos en los que «añadir un paso» no basta porque hay que quitar o cambiar algo de lo anterior.
+
+El vocabulario es cerrado y lo comparten las dos: el estado de un paso es `pendiente`, `en_progreso`, `completada` o `cancelada`, y la prioridad es `alta`, `media` o `baja`. Un estado o una prioridad fuera de ese conjunto no se guarda: se devuelve al modelo el motivo y lo reintenta, como cualquier otro argumento mal formado.
+
+Y se mantiene la regla de que **solo un paso puede estar `en_progreso` a la vez**, que hasta ahora era una instrucción en la descripción de la herramienta y no una comprobación. Añadir un paso ya en curso cuando otro lo está tiene que ser un error corregible, no un conflicto silencioso: `crear_todo` lo rechaza y le dice al modelo que use `actualizar_todo` para cambiar el que está en curso.
+
+Ninguna de las dos herramientas necesita preguntar por el estado actual de la lista, y por eso devuelven la lista resultante. El modelo la ve y decide el siguiente paso sin una ronda extra. Ver [[database/01-schema/TABLES]] para cómo se guarda.
+
 ## Cuando el modelo no sabe usar herramientas
 
-No todos los modelos que se pueden elegir en Ollama saben pedir herramientas. La capacidad se puede preguntar antes de elegir, y hay modelos que responden que no.
+No todos los modelos que se pueden elegir en el proveedor saben pedir herramientas. La capacidad se puede preguntar antes de elegir, y hay modelos que responden que no.
 
 Un modelo sin esa capacidad **no puede usar herramientas, ni las incluidas ni las del usuario**, porque no hay forma nativa de pedirlas y LocalCli no las presenta en texto para que las imite.
 
@@ -280,7 +303,7 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - Toda salida de herramienta se recorta, sea del tamaño que sea, y se avisa de que se ha recortado.
 - Las ejecuciones son secuenciales, en el orden pedido.
 - Un turno tiene un máximo de pasadas; al agotarlo, termina con lo conseguido.
-- El catálogo incluido son catorce herramientas y no se amplía desde fuera sin declararlas en `.localcli/tools/`.
+- El catálogo incluido son quince herramientas y no se amplía desde fuera sin declararlas en `.localcli/tools/`.
 - Las herramientas del usuario se cargan de `.localcli/tools/*.json`; un archivo inválido se ignora y el arranque sigue.
 - Una herramienta del usuario se ejecuta como una lista de argumentos, sin shell.
 - Una herramienta del usuario siempre pide aprobación y nunca entra en la lista blanca.
@@ -289,7 +312,9 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - Una herramienta del usuario no puede llamar a otras herramientas ni ampliar el catálogo.
 - El nombre de una herramienta del usuario no puede coincidir con una incluida; si coincide, no se carga.
 - Las herramientas del usuario se reparten con las mismas reglas que las incluidas: `plan` nunca recibe una de escritura.
-- El reparto sale de acciones (`leer`, `editar`, `ejecutar`, `internet`, `tareas`) declaradas como `permitir`/`denegar`; el catálogo efectivo se deriva de ellas.
+- El reparto sale de permisos (`read`, `write`, `edit`) declarados como `allow`/`deny`, con `default: deny`; el catálogo efectivo se deriva de ellos.
+- Un `permissions` con `default: allow` no carga: el default solo admite `deny`.
+- Un permiso o un efecto fuera de vocabulario no carga, no se ignora.
 - Un modelo que no declara capacidad de herramientas no recibe ninguna y el agente cae a modo conversación, avisando en la interfaz. No se le impide usarlo.
 - `plan` no tiene ninguna forma de escribir en el proyecto; sí mantiene la lista de pasos de la sesión.
 - `build` tiene el catálogo completo.
@@ -319,6 +344,11 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - [ ] `plan` no tiene ninguna herramienta que cree, modifique o borre.
 - [ ] `build` tiene el catálogo completo.
 - [ ] `plan` y `build` mantienen la lista de pasos de la sesión, y la lista se ve en el panel.
+- [ ] `crear_todo` añade un paso al final y no cambia los que ya había.
+- [ ] `crear_todo` con `contenido` vacío no añade nada y devuelve el motivo.
+- [ ] `crear_todo` devuelve la lista resultante, sin importar si la lista estaba vacía.
+- [ ] `crear_todo` con un `estado` o una `prioridad` fuera del vocabulario devuelve al modelo un error corregible y no guarda nada.
+- [ ] `crear_todo` con un segundo paso `en_progreso` no lo añade y le dice al modelo que use `actualizar_todo`.
 - [ ] `actualizar_todo` reemplaza la lista entera; una lista vacía la deja en blanco.
 - [ ] Un estado o una prioridad fuera del vocabulario devuelve al modelo un error corregible y no guarda nada.
 - [ ] Nada se escribe sin que `plan` lo haya propuesto y tú lo hayas aprobado.
@@ -343,6 +373,7 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - [ ] Un modelo que no declara capacidad de herramientas no recibe ninguna y el turno responde en modo conversación.
 - [ ] Bajo la entrada se ve si el modelo en uso puede usar herramientas, y si no puede se dice que el agente va a conversar.
 - [ ] En el chat, el agente activo usa exactamente las herramientas derivadas de sus permisos.
+- [ ] El reparto sale de `read`, `write` y `edit`: `editar_archivo` va a `edit`, y crear, escribir, eliminar y las carpetas van a `write`.
 - [ ] Mientras una herramienta se ejecuta, se ve en pantalla cuál es —su verbo y su objetivo (la ruta, el patrón, el comando)— y, al terminar, si fue bien y el tamaño del resultado («70 líneas»).
 
 ## Requisitos no funcionales
@@ -358,7 +389,7 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - [[specs/SPEC-ARCHIVOS]]
 - [[specs/SPEC-NODO-CONTEXTO]]
 - [[specs/SPEC-RESOLVER]]
-- [[specs/SPEC-OLLAMA-PERFIL]]
+- [[specs/SPEC-MODELO-PROVEEDOR]]
 
 ## Supuestos
 

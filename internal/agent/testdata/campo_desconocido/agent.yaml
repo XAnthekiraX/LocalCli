@@ -1,0 +1,5 @@
+name: costumbrista
+description: Declara un skills por costumbre.
+permissions:
+  read: allow
+skills: []

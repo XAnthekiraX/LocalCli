@@ -6,7 +6,7 @@ depende_de:
   - "[[specs/SPEC-ARCHIVOS]]"
   - "[[specs/SPEC-TOOLS]]"
 relacionado:
-  - "[[specs/SPEC-OLLAMA-PERFIL]]"
+  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
   - "[[backend/01-domain/DOMAIN]]"
   - "[[backend/02-interfaces/TOOLS]]"
   - "[[backend/04-infrastructure/CONFIGURATION]]"
@@ -30,17 +30,17 @@ No hay roles de usuario. La autorización se resuelve en tres capas, y por eso e
 
 | Capa | Módulo | Qué decide |
 |---|---|---|
-| Qué puede pedir el agente | `agent` | Qué herramientas tiene `plan` (lectura, ejecución, internet y la lista de pasos, sin escritura de proyecto) y `build` (todas) |
+| Qué puede pedir el agente | `agent` | Qué herramientas tiene `plan` (las del permiso `read`) y `build` (los tres permisos) |
 | Si la petición está permitida | `tools` | Que la herramienta exista y que el agente la tenga |
 | Si el efecto se aplica | `fileops`, `exec` | La aprobación concreta, la frontera de rutas, la lista blanca y Landlock |
 
-El paso 2 ocurre en **la capa universal de `tools`**, antes de que se ejecute nada y antes de que se toque el disco. Es el mismo punto para las catorce herramientas incluidas y para las del usuario: no hay un camino alternativo que se salte la comprobación.
+El paso 2 ocurre en **la capa universal de `tools`**, antes de que se ejecute nada y antes de que se toque el disco. Es el mismo punto para las quince herramientas incluidas y para las del usuario: no hay un camino alternativo que se salte la comprobación.
 
-La garantía central: **`plan` no tiene herramientas que escriban en el proyecto**. No es que las tenga bloqueadas, es que no existen para él. La acción `tareas` (la lista de pasos de la sesión) no escribe en el proyecto —es estado de la sesión—, así que la tienen los dos agentes sin debilitar la garantía. Ver [[backend/DECISIONS]].
+La garantía central: **`plan` no tiene herramientas que escriban en el proyecto**. No es que las tenga bloqueadas, es que no existen para él, porque su `agent.yaml` concede solo `read` y todo lo demás cae en el `default: deny`. La lista de pasos de la sesión también es `read` —es estado de la sesión, no del proyecto—, así que la tienen los dos agentes sin debilitar la garantía. Ver [[specs/SPEC-AGENTE-BASE]] y [[backend/02-interfaces/TOOLS]] §2.
 
 **Una aprobación vale para el cambio propuesto, no para lo que siga.** Si `build` necesita algo que `plan` no propuso, vuelve a preguntar.
 
-**La aprobación es un mecanismo único.** Vive en `Contexto.Ask`, no dentro de los handlers. Eso significa que toda herramienta —incluida una escrita por el usuario— pasa por el mismo camino, y que no puede existir una herramienta cuya aprobación se comporte de otra manera. Una política de permiso repartida en catorce sitios es una política que en algún sitio se olvidó.
+**La aprobación es un mecanismo único.** Vive en `Contexto.Ask`, no dentro de los handlers. Eso significa que toda herramienta —incluida una escrita por el usuario— pasa por el mismo camino, y que no puede existir una herramienta cuya aprobación se comporte de otra manera. Una política de permiso repartida en quince sitios es una política que en algún sitio se olvidó.
 
 ## 3. Protección de las operaciones
 
@@ -87,6 +87,15 @@ Un `.json` en `.localcli/tools/` añade una herramienta. Eso abre una superficie
 
 **El coste de aceptar esto.** El esquema que ve el modelo para una herramienta del usuario es genérico —un objeto, sin properties— porque el harness no puede saber qué argumentos espera un ejecutable que no es suyo. En la práctica eso significa que el modelo improvisa los argumentos de una herramienta del usuario, y que un error de nombre de argumento se descubre al ejecutar, no antes. Es un precio asumido a cambio de que añadir una herramienta no requiera recompilar; queda dicho aquí y en [[backend/02-interfaces/dto/TOOLS-DTO]] para que no sorprenda.
 
+## 3.2 El servidor del proveedor de modelo
+
+El harness trata al proveedor como una caja de la que solo consume inferencia; el estado del servidor —qué modelos tiene, con qué ventana— es de quien lo levanta. Eso fija dos requisitos:
+
+- **`llama-server` tiene que levantarse sin las banderas que sirven el sistema de archivos por HTTP.** Con `--tools`, `--agent` o `--mcp-servers-json` activos, el servidor expone lectura o escritura de archivos por su propia API, al margen de la frontera de rutas y de la aprobación del harness. Un servidor así **no es un proveedor admisible**: la garantía de que nada toca el proyecto sin aprobación no se sostiene. Se documenta la instrucción de levantarlo sin esas banderas. Ver [[backend/04-infrastructure/INTEGRATIONS]].
+- **No hay descarga automática de modelos.** El harness no llama a `POST /models` (descarga), ni a `POST /models/load` (carga), ni a `POST /props` (cambiar la ventana): no pide pesos a la red ni muta el servidor. Si el modelo no está, lo dice; no lo trae.
+
+Que `llama-server` acepte `--api-key` no cambia la frontera: el servidor es de loopback y LocalCli no le pone clave, porque al que se le da una clave es al que hay que enseñarla. Ver [[backend/04-infrastructure/CONFIGURATION]].
+
 ## 4. Frontera de internet
 
 Las dos herramientas de internet son las únicas que hacen salir información de la máquina, y ahí la regla es estrecha:
@@ -103,10 +112,11 @@ Las dos herramientas de internet son las únicas que hacen salir información de
 
 ## 6. Riesgos relevantes
 
-- **Rate limiting:** no aplica. No hay red pública. Lo equivalente es el presupuesto de contexto, que recorta la entrada y evita que una respuesta o un comando desborden. Ver [[specs/SPEC-OLLAMA-PERFIL]].
+- **Rate limiting:** no aplica. No hay red pública. Lo equivalente es el presupuesto de contexto, que recorta la entrada y evita que una respuesta o un comando desborden. Ver [[specs/SPEC-MODELO-PROVEEDOR]].
 - **CORS:** no aplica. No hay navegador ni servidor.
-- **Secrets:** Ollama corre en local, sin credenciales. La búsqueda por internet es la única salida y solo lleva la consulta. LocalCli no guarda ni pide claves de API. Una herramienta del usuario puede llevar sus propias credenciales en sus argumentos, que viajan al modelo y al registro de auditoría: quien declare una sabe que el argumento queda visible ahí.
+- **Secrets:** los dos proveedores de modelo corren en local, sin credenciales (el `--api-key` opcional de `llama-server` no se usa). La búsqueda por internet es la única salida y solo lleva la consulta. LocalCli no guarda ni pide claves de API. Una herramienta del usuario puede llevar sus propias credenciales en sus argumentos, que viajan al modelo y al registro de auditoría: quien declare una sabe que el argumento queda visible ahí.
 - **Aislamiento en sistemas sin Landlock:** en sistemas que no son Linux, o en Linux sin Landlock, la terminal no tiene el bloqueo estructural. La garantía es más débil y queda documentada como tal; el proyecto lo asume. Ver [[backend/04-infrastructure/CONFIGURATION]]. **Las herramientas del usuario heredan esta limitación tal cual**: sin Landlock no tienen el bloqueo de escritura, y su única defensa restante es la aprobación, que es una decisión del usuario y no una garantía.
+- **El servidor del proveedor con acceso al sistema de archivos.** Un `llama-server` levantado con `--tools`, `--agent` o `--mcp-servers-json` sirve lectura o escritura de archivos por HTTP, fuera de la frontera de rutas y de la aprobación del harness; por eso no es un proveedor admisible. Ver §3.2.
 - **El modelo no es de fiar para decidir permisos.** `plan` y `build` tienen herramientas fijas, y el permiso lo comprueban módulos, no el modelo. El modelo no puede concederse permisos.
 - **Confiar en el texto del comando es un error.** Cualquier intento de validar la terminal leyendo el comando es frágil por diseño; por eso el bloqueo es estructural. Y por eso las herramientas del usuario pasan una lista de argumentos en vez de una línea de texto: quitar el shell es quitar esa clase de ataque entera, no cerrar sus casos sueltos.
 - **Un error de herramienta no termina el turno.** El fallo se le devuelve al modelo para que lo corrija. Eso es intencionado, y es también un riesgo: un modelo puede insistir en una herramienta que falla. Por eso el máximo de pasadas por turno es un límite duro, no un detalle de implementación.
@@ -118,4 +128,4 @@ Las dos herramientas de internet son las únicas que hacen salir información de
 - [[backend/02-interfaces/TOOLS]] — el reparto `plan`/`build`, la capa universal y el punto de extensión.
 - [[backend/02-interfaces/dto/TOOLS-DTO]] — los esquemas derivados y el caso genérico del usuario.
 - [[backend/DECISIONS]] — por qué Landlock, por qué `plan` no escribe y por qué no hay shell en las herramientas del usuario.
-- [[backend/04-infrastructure/INTEGRATIONS]] — la integración de Ollama e internet.
+- [[backend/04-infrastructure/INTEGRATIONS]] — la integración de los proveedores de modelo e internet.

@@ -512,10 +512,12 @@ Las dos salidas son válidas; lo que no es válido es tener código, spec y deci
 `internal/agent/model.go:54`
 
 **Problema:**
-`Skills []string` se declara y se puebla con `[]` en `arranque.go:1091`. Es el único uso del símbolo en todo el código no-test. No hay carga desde `.localcli/agents/*.json`, ni ámbito de sesión, ni resolución de markdown, ni skills por defecto.
+`Skills []string` se declara y se puebla con `[]` en `arranque.go:1091`. Es el único uso del símbolo en todo el código no-test. No hay carga desde `.localcli/agents/<carpeta>/`, ni ámbito de sesión, ni resolución de markdown, ni skills por defecto.
 
 **Impacto:**
-SPEC-SKILLS completo: **0 de 6 criterios implementados**. El campo `skills` forma parte del contrato de cinco campos que declara [[backend/DECISIONS]], así que la decisión le_TEMPLATE da por vigente algo que no hace nada. Un `plan` sin skills escribe un prompt que promete capacidades que no tiene.
+SPEC-SKILLS completo: **0 de 6 criterios implementados**. El campo `skills` forma parte del contrato de cinco campos que declara [[backend/DECISIONS]], así que la decisión le da por vigente algo que no hace nada. Un `plan` sin skills escribe un prompt que promete capacidades que no tiene.
+
+**Resuelto en documentación (T-B034).** [[specs/SPEC-SKILLS]] queda marcada como capacidad no implementada y el contrato del agente baja a tres campos —`name`, `description` y `permissions`—, sin `skills`. La eliminación del campo en Go corresponde a T-B034; este hallazgo deja de ser una contradicción entre spec y código y pasa a ser trabajo pendiente de la tarea.
 
 **Evidencia:**
 ```go
@@ -527,7 +529,9 @@ Skills: []string{},
 ```
 
 **Recomendación:**
-Dos caminos, y hay que elegir uno explícitamente: implementar la spec (carga de `ai/skills/`, ámbito,markdown), o declarar SPEC-SKILLS como no aprobada en la v1 y retirar el campo del JSON de agente y de [[backend/DECISIONS]]. La segunda es más barata y coherente con el resto de la v1.
+Dos caminos, y hay que elegir uno explícitamente: implementar la spec (carga de `ai/skills/`, ámbito, markdown), o declarar SPEC-SKILLS como no aprobada en la v1 y retirar el campo del archivo de agente y de [[backend/DECISIONS]]. La segunda es más barata y coherente con el resto de la v1.
+
+**Elegido: la segunda.** La spec se conserva como aprobado de lo que habrá, marcada como no implementada, y el contrato del agente se queda sin `skills`. Ver T-B034 en [[backend/BACKEND]] §Tareas.
 
 **Justificación:**
 Un campo que se serializa, se documenta como decisão y no se lee es peor que un campo ausente: induce a error al que lea la spec.
@@ -1521,7 +1525,7 @@ Es la firma clásica de «suite verde, producto incompleto»: cada test pasa por
 
 **Desglose de la columna «no implementados» (25 criterios).**
 
-- **SPEC-SKILLS (6/6)** — sin carga desde `.localcli/agents/*.json`, sin ámbito de sesión, sin resolución de markdown, sin skills por defecto. `agent/model.go:54` declara el campo y `arranque.go:1091` lo fija a `[]`. → AUD-014.
+- **SPEC-SKILLS (6/6)** — sin carga desde `.localcli/agents/<carpeta>/`, sin ámbito de sesión, sin resolución de markdown, sin skills por defecto. `agent/model.go:54` declara el campo y `arranque.go:1091` lo fija a `[]`. → AUD-014, resuelto en documentación por T-B034.
 - **SPEC-CICLO-PLANIFICACION (3)** — el flujo `/planificar` tiene 8 etapas **todas con `tools.AgentePlan`** (`flow/plan.go:25-34`), y su propio comentario admite que no escribe. `flow.GenerarTODO` no tiene llamador productivo. El orden de capas BD→backend→frontend, el máximo de 5 preguntas por tanda, la regla «un archivo = una responsabilidad», el prefijo numérico y el idioma forzado no tienen ninguna comprobación en código. → AUD-010, AUD-029.
 - **SPEC-CICLO-TRABAJO (4)** — etapa `documentacion` con `Agente: tools.AgentePlan` (`flow/work.go:37`) pese a su comentario «con `build` escribiendo tras aprobar». La entrada `verificar` existe como acción (`task/model.go:38`) pero no hay comando ni flujo (`flow/work.go:28` solo genera `crear|actualizar|eliminar`). La coincidencia de acción entre elemento y tarea principal, y la búsqueda de referencias antes de eliminar, no tienen código.
 - **SPEC-COLA-TAREAS (4)** — reanudación inalcanzable (`session/pause.go:111` existe; `arranque.go:544-546` solo expone `Pausar`/`Cancelar`; `AccionPausar` tiene binding `{}` en `keymap.go:183`). `Rederrivar` no se llama desde arranque ni TUI. «Una petición ordenada crea su propio TODO» solo produce un mensaje de sistema con una sugerencia de `/ejecutar` (`session/run.go:130-136`). «El estado de la cola se ve desde cualquier sesión» no se cumple: el panel muestra la sesión activa. → AUD-013.
@@ -1620,7 +1624,7 @@ Documentos de `ai/docs/` citados en este informe:
 - [[specs/SPEC-CICLO-TRABAJO]] / [[specs/SPEC-CICLO-PLANIFICACION]] / [[specs/SPEC-MOTOR-FLUJOS]] / [[specs/SPEC-COLA-TAREAS]] / [[specs/SPEC-FLUJO-PERSONALIZADO]] — motor de flujo y cola; SPEC-CICLO-PLANIFICACION es la peor cobertura (14%, AUD-024).
 - [[specs/SPEC-OLLAMA-PERFIL]] / [[specs/SPEC-NODO-CONTEXTO]] / [[specs/SPEC-PANEL-CONTEXTO]] / [[specs/SPEC-HISTORIAL-CONVERSACION]] / [[specs/SPEC-SESIONES]] / [[specs/SPEC-RESOLVER]] — modelo, contexto y sesiones.
 - [[specs/SPEC-INTERFAZ]] / [[specs/SPEC-INTERFAZ-ATAJOS]] / [[specs/SPEC-KEYBINDS]] — superficie de TUI y teclado; 100% y 82% de implementación.
-- [[specs/SPEC-SKILLS]] — **0% de implementación** (AUD-014, AUD-023).
+- [[specs/SPEC-SKILLS]] — **0% de implementación** (AUD-014, AUD-023). Marcada como capacidad no implementada; la limpieza del campo corresponde a T-B034.
 
 Fuentes de proceso auditadas: `ai/tasks/backend/MAIN-TASKS.md`, `ai/tasks/frontend/MAIN-TASKS.md`, `ai/DOCS-VALIDATION-REPORT.md`.
 

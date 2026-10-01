@@ -1,0 +1,7 @@
+name: build
+description: Implementa exactamente los cambios aprobados, un elemento del TODO por iteración, y verifica el resultado antes de cerrar la tarea.
+permissions:
+  default: deny
+  read: allow
+  write: allow
+  edit: allow

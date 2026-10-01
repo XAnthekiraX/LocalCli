@@ -29,8 +29,8 @@ func TestPeticionLlevaElPromptYElCanalDeHerramientas(t *testing.T) {
 
 	reg := registroStub(nil)
 	defs := NuevoDespachador(reg).Definiciones(Agente{
-		Nombre:   "lector",
-		Permisos: []Permiso{{Accion: "leer", Efecto: EfectoPermitir}},
+		Nombre:      "lector",
+		Permissions: map[string]string{"read": "allow"},
 	})
 	a := Agente{Nombre: "lector", Prompt: "PROMPT-DEL-JSON"}
 	runner := Runner{Cliente: ollama.NewClient(srv.URL)}
@@ -57,7 +57,7 @@ func TestPeticionLlevaElPromptYElCanalDeHerramientas(t *testing.T) {
 	}
 	// Viaja por el canal de herramientas: un objeto por herramienta.
 	herramientas, ok := cuerpo["tools"].([]any)
-	if !ok || len(herramientas) != 4 {
+	if !ok || len(herramientas) != len(tools.HerramientasDePlan()) {
 		t.Fatalf("tools = %v, quiero las herramientas de lectura del agente", cuerpo["tools"])
 	}
 	primeraHerr, _ := herramientas[0].(map[string]any)
@@ -72,7 +72,7 @@ func TestPromptNoLlevaCatalogo(t *testing.T) {
 	a := Agente{
 		Nombre:       "plan",
 		Prompt:       "Eres plan.",
-		Permisos:     []Permiso{{Accion: "leer", Efecto: EfectoPermitir}},
+		Permissions:  map[string]string{"read": "allow"},
 		Herramientas: tools.HerramientasDePlan(),
 	}
 	p := PromptDeSistema(a)

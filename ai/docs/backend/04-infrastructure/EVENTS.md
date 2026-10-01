@@ -21,7 +21,7 @@ No hay webhooks ni cola de mensajes externa. Los "eventos" aquí son notificacio
 
 | Evento | Quién lo emite | Para qué |
 |---|---|---|
-| `token` | `ollama` | Un fragmento de respuesta o de razonamiento, para el streaming en vivo |
+| `token` | adaptador del proveedor | Un fragmento de respuesta o de razonamiento, para el streaming en vivo |
 | `estado_sesion` | `session` | La sesión cambió de estado (inactiva, trabajando, esperando permiso, terminada, con error) |
 | `titulo_sesion` | `session` | La sesión cambió de nombre: el modelo generó su título a partir de la primera petición |
 | `notificacion` | `session`, `flow` | Aviso de que una sesión espera permiso o ha terminado, aunque el usuario no la esté viendo |
@@ -38,7 +38,7 @@ No hay webhooks ni cola de mensajes externa. Los "eventos" aquí son notificacio
 | `flujo_cancelado` | `flow` | El usuario canceló el flujo |
 | `cola_actualizada` | `queue` | La cola cambió: se re-derivó, una tarea empezó, terminó o se bloqueó |
 | `elemento_bloqueado` | `queue` | Un elemento del TODO no puede arrancar por falta de lo que depende |
-| `todo_actualizada` | adaptador de arranque | La lista de pasos de la sesión se reescribió; el panel la repinta |
+| `todo_actualizada` | adaptador de arranque | La lista de pasos de la sesión cambió, la haya reescrito `actualizar_todo` o la haya ampliado `crear_todo`; el panel la repinta |
 | `cambio_aplicado` | `fileops` | Un cambio se aplicó y quedó registrado en `change_history` |
 | `contexto_auditado` | `context` | Una etapa terminó de armar su contexto; se registró la auditoría |
 
@@ -50,13 +50,13 @@ Con el contrato en prosa, la llamada a una herramienta viajaba dentro del texto 
 
 Sin un evento, el efecto sería que mientras el agente lee un archivo o corre las pruebas la pantalla se queda quieta, y de repente aparece una respuesta como si nada. En el caso peor —una escritura esperando tu aprobación— el silencio es justo lo que más confunde.
 
-Por eso los emite `tools` y no `agent`: la capa universal ya está en ese punto para todas las herramientas, incluidas las del usuario, y es el único sitio donde se puede emitir **antes** de ejecutar y **después**, sin instrumentar catorce handlers.
+Por eso los emite `tools` y no `agent`: la capa universal ya está en ese punto para todas las herramientas, incluidas las del usuario, y es el único sitio donde se puede emitir **antes** de ejecutar y **después**, sin instrumentar quince handlers.
 
 ## 2. Productores y consumidores
 
 | Evento | Consumidor principal | Otros consumidores |
 |---|---|---|
-| `token` | `tui` | `ollama` lo produce; nadie más lo consume |
+| `token` | `tui` | El adaptador del proveedor lo produce; nadie más lo consume |
 | `estado_sesion` | `tui` | `queue` lo usa para saber si puede tomar una tarea |
 | `titulo_sesion` | `tui` | Actualiza el nombre en el panel (si es la sesión activa) y en la fila del modal de sesiones |
 | `notificacion` | `tui` | Llega aunque la sesión no sea la que se está viendo, o el usuario esté en otra carpeta |
@@ -89,7 +89,7 @@ Los payloads llevan lo mínimo para que el consumidor pueda pintar o decidir. No
 - **`etapa_terminada`:** el identificador de la etapa, su nombre y un resumen de su resultado. Lo que recibió la etapa y qué entregó está en `context_audit`.
 - **`cambio_aplicado`:** el identificador del cambio y la ruta del archivo. El antes y el después están en `change_history`.
 - **`cola_actualizada`:** la capa y un resumen de la cola (cuántas pendientes, cuál activa, cuál bloqueada). El detalle viene de los archivos de tarea.
-- **`todo_actualizada`:** el identificador de la sesión y la lista completa de pasos, cada uno con su contenido y su estado. No lleva la prioridad: el panel no la muestra. La lista entera reemplaza a la anterior; el panel solo la aplica si la sesión es la activa.
+- **`todo_actualizada`:** el identificador de la sesión y la lista completa de pasos, cada uno con su contenido y su estado. No lleva la prioridad: el panel no la muestra. El payload es siempre la lista entera, también cuando lo que ha cambiado es un paso añadido, porque el panel no distingue y no necesita: aplica la lista que le llega. El panel solo la aplica si la sesión es la activa.
 - **`herramienta_invocada`:** el nombre de la herramienta, el agente que la pidió, su **verbo** de pantalla («LEER», «EJEC») y su **tema**: el objetivo declarado por el catálogo (la ruta, el patrón, el comando, la consulta), colapsado y recortado. El tema es lo único de los argumentos que viaja —y solo ese campo—: el resto (cuerpos de archivo, credenciales) no se expone, porque esto va a la pantalla y a la auditoría.
 - **`herramienta_resultado`:** el nombre de la herramienta, si terminó bien, si hubo error, la **medida** del resultado («70 líneas», «3 coincidencias»), si la salida se recortó y la **duración** de la ejecución. **No lleva la salida.** El resultado va al modelo, no a la pantalla: en la TUI bastan el nombre, el estado, la medida y el tiempo que tardó. La duración es el dato que permite pintar cuánto tardó cada línea del hilo y conservarlo al recuperar la sesión; lo mide la capa universal, no la herramienta.
 - **`tokens_turno`:** los tokens de entrada y de salida del turno, más el total del contexto del chat (`contexto`) y su límite (`limite`). Mientras el turno corre, la TUI aproxima el consumo del turno contando los fragmentos de `token`; al llegar este evento, el valor exacto lo corrige. `contexto` es la estimación del chat que forma el contexto de la sesión (mensajes de usuario y agente; las líneas de procesamiento no cuentan) y `limite`, la ventana del modelo: juntos alimentan la fila CONTEXTO del panel. Ver [[specs/SPEC-PANEL-CONTEXTO]].

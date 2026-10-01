@@ -109,7 +109,7 @@ Mapeo con los comandos y skills del proyecto:
 
 ## Especificaciones funcionales
 
-17 specs aprobadas en `ai/docs/specs/` (núcleo P0, importante P1, interfaz P2 y
+19 specs aprobadas en `ai/docs/specs/` (núcleo P0, importante P1, interfaz P2 y
 personalización P3). El índice completo está en [[PROJECT]].
 
 ## Tareas

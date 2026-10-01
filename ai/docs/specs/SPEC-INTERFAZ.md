@@ -96,8 +96,8 @@ El logotipo es fijo y esta es su definición, que sirve de salida dorada para la
 - No entra al contexto del modelo ni a ningún historial: es arte de la aplicación.
 
 - Solo hay el logotipo sobre el fondo, la caja de entrada con su línea de agente y modelo, la barra de pistas de teclado y la versión. Ni paneles ni datos. Los modelos NO se listan en la bienvenida: se consultan y eligen desde un modal.
-- **Caja de entrada**: mientras está vacía muestra el placeholder `"Escribe para iniciar la conversacion"` entre comillas; lo escrito se pinta con su cursor. Bajo el texto va la **línea de estado** con el agente activo y el modelo en uso (`[plan] • llama3.2`). La **barra de pistas** recuerda los atajos vigentes (`TAB agentes`, `Ctrl+P comandos`, `Ctrl+X M modelos`), generados desde el mapa de teclas. El placeholder y las etiquetas de la barra (`agentes`, `comandos`, `modelos`) van en un tono sutil propio (`#828BB8`); las teclas (`TAB`, `Ctrl+P`, `Ctrl+X M`) y el modelo en uso, en blanco. Una línea en blanco separa el texto escrito del modelo en la caja. No hay lista de modelos visible en la bienvenida.
-- **Modal de modelos**: la secuencia líder `Ctrl+X` seguida de `m` abre un modal centrado con la lista de modelos locales que reporta Ollama, con uno resaltado. `↑`/`↓` mueven la selección, `Enter` aplica el elegido y cierra el modal, `Esc` cierra sin cambiar nada. La lista se pide a Ollama al abrir el modal (no en el arranque); si Ollama no responde, el modal muestra el aviso «sin modelos» y se puede cerrar con `Esc` sin bloquear nada. Mientras el modal está abierto, las teclas son solo del modal: la escritura de la bienvenida no las recibe. Lo elegido pasa al motor como modelo de la sesión y se refleja en la línea de modelo de la bienvenida. La elección del usuario prevalece sobre la autodetección del arranque ([[specs/SPEC-OLLAMA-PERFIL]]: el modelo lo elige el usuario). El mecanismo de la secuencia está en [[specs/SPEC-KEYBINDS]].
+- **Caja de entrada**: mientras está vacía muestra el placeholder `"Escribe para iniciar la conversacion"` entre comillas; lo escrito se pinta con su cursor. Bajo el texto va la **línea de estado** con el agente activo y el modelo en uso, rotulado con su proveedor (`[plan] • qwen3:8b (llama.cpp)`). La **barra de pistas** recuerda los atajos vigentes (`TAB agentes`, `Ctrl+P comandos`, `Ctrl+X M modelos`), generados desde el mapa de teclas. El placeholder y las etiquetas de la barra (`agentes`, `comandos`, `modelos`) van en un tono sutil propio (`#828BB8`); las teclas (`TAB`, `Ctrl+P`, `Ctrl+X M`) y el modelo en uso, en blanco. Una línea en blanco separa el texto escrito del modelo en la caja. No hay lista de modelos visible en la bienvenida.
+- **Modal de modelos**: la secuencia líder `Ctrl+X` seguida de `m` abre un modal centrado con la lista de modelos locales que reporta el proveedor activo, con uno resaltado (cada fila rotula el proveedor). `↑`/`↓` mueven la selección, `Enter` aplica el elegido y cierra el modal, `Esc` cierra sin cambiar nada. La lista se pide al proveedor al abrir el modal (no en el arranque); si no responde, el modal muestra el aviso «sin modelos» y se puede cerrar con `Esc` sin bloquear nada. Mientras el modal está abierto, las teclas son solo del modal: la escritura de la bienvenida no las recibe. Lo elegido pasa al motor como modelo de la sesión y se refleja en la línea de modelo de la bienvenida. La elección del usuario prevalece sobre la autodetección del arranque ([[specs/SPEC-MODELO-PROVEEDOR]]: el modelo lo elige el usuario). El mecanismo de la secuencia está en [[specs/SPEC-KEYBINDS]].
 - Lo que se escribe es la **primera petición de la sesión**: se envía tal cual, igual que se enviaría desde el chat.
 - La línea de entrada de la bienvenida despliega también la **paleta de comandos de flujo** al escribir `/` (§Zonas 2): escribir filtra, `↑`/`↓` la recorren, `Tab` autocompleta y `Enter` ejecuta. Un comando crea la sesión y lleva a la vista principal igual que una primera petición.
 - Al enviarla, la vista cambia a la interfaz principal y la petición aparece como primer mensaje del chat. La transición no repite la petición ni pide confirmación.
@@ -126,7 +126,7 @@ El logotipo es fijo y esta es su definición, que sirve de salida dorada para la
 - El texto se edita en cualquier punto: las flechas mueven el cursor, `home`/`end` van al principio y al final y `ctrl+b`/`ctrl+e` son sus equivalentes. Los atajos que coincidan con una acción (por ejemplo `ctrl+a`) siguen resolviéndose como acción y no editan.
 - La **caja de la entrada** lleva el texto con una celda de aire arriba, abajo y a cada lado, y bajo él una línea de estado con el agente activo, el modelo en uso y sus chapas: `tool [*]` en verde si usa herramientas y en rojo si no (atenuada mientras no se sabe), `pensar [x]`/`pensar [ ]` —el interruptor de razonamiento, apagado por defecto y **pulsable con el ratón**; solo se enseña si el modelo declara la capacidad `thinking`—, `[v]` si acepta visión y `[T]` siempre (texto). El fondo de la caja es `#1E2030`. Cuando hay consumo que mostrar, el conteo de tokens del turno (`tokens: 54k`) se pinta justo debajo de la caja. La caja queda **siempre pegada al pie** de la columna, aunque el historial sea corto (el chat se rellena con celdas de fondo hasta la separación). La línea de entrada de la bienvenida se edita igual que esta.
 - Justo encima de la caja, mientras el modelo trabaja, se pinta la **línea de actividad**: un glifo que gira y la etiqueta de lo que pasa —`[⠋ Pensando]` si aún no hay respuesta, `[⠋ Usando herramienta: X]` si corre una herramienta, `[⠋ Generando]` si ya llega respuesta— más el tiempo transcurrido. Sustituye al volcado crudo del razonamiento.
-- **Indicador de agente en el pie de la caja**: en la línea de estado dentro de la caja de entrada se muestra el agente activo (p. ej. `[plan]`). Cambia al instante con `Tab`, que recorre los agentes disponibles (los base `plan` y `build` más los que el usuario añada en `.localcli/agents/*.json`). En la bienvenida el indicador va delante de la línea (`[plan] > `).
+- **Indicador de agente en el pie de la caja**: en la línea de estado dentro de la caja de entrada se muestra el agente activo (p. ej. `[plan]`). Cambia al instante con `Tab`, que recorre los agentes disponibles (los base `plan` y `build` más los que el usuario añada en `.localcli/agents/<carpeta>/`). En la bienvenida el indicador va delante de la línea (`[plan] > `).
 - El agente activo responde con el catálogo derivado de sus permisos: `plan` solo lee y propone; `build` escribe con aprobación. Quién responde lo decide el indicador, no el texto escrito.
 
 ### 3. Sidebar de datos
@@ -176,7 +176,7 @@ ni se disfraza de árbol limpio: la fila dice `sin iniciar`. Es un dato, no un �
 
 Los datos de contexto se calculan y se interpretan según [[specs/SPEC-PANEL-CONTEXTO]].
 
-La sección «LISTA DE TAREAS» muestra la lista de pasos del agente (`actualizar_todo`) con `[•]` en curso, `[✓]` hecho, `[x]` cancelado y `[ ]` pendiente. Se oculta cuando no hay nada accionable. Ver [[specs/SPEC-TOOLS]].
+La sección «LISTA DE TAREAS» muestra la lista de pasos del agente —la que mantienen `crear_todo` y `actualizar_todo`— con `[•]` en curso, `[✓]` hecho, `[x]` cancelado y `[ ]` pendiente. Se oculta cuando no hay nada accionable. Ver [[specs/SPEC-TOOLS]].
 
 ## Razonamiento del modelo
 
@@ -193,7 +193,7 @@ Tres modales centrados comparten el mismo comportamiento: uno abierto a la vez, 
 
 | Modal        | Cómo se abre | Contenido                                                                                                                                                                                   | Al aplicar                                                                                                                       |
 | ------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Modelos**  | `Ctrl+X m`   | Lista de modelos locales de Ollama, cargada al abrir; el resaltado arranca en el modelo en uso; los que no declaran capacidad de herramientas se marcan; aviso «sin modelos» si no responde | El modelo elegido pasa a ser el de la sesión y se ve en la línea de modelo; si no puede usar herramientas, se avisa sin bloquear |
+| **Modelos**  | `Ctrl+X m`   | Lista de modelos locales del proveedor activo, cada uno rotulado con su proveedor, cargada al abrir; el resaltado arranca en el modelo en uso; los que no declaran capacidad de herramientas se marcan; aviso «sin modelos» si no responde | El modelo elegido pasa a ser el de la sesión y se ve en la línea de modelo; si no puede usar herramientas, se avisa sin bloquear |
 | **Sesiones** | `Ctrl+X l`   | Lista de las sesiones creadas anteriormente en el proyecto (nombre y estado, incluidas las de segundo plano)                                                                                | Se abre esa sesión: el chat pasa a su historial sin detener lo que corre                                                         |
 | **Atajos**   | `Ctrl+P`     | Tabla de los atajos existentes agrupada por categorías (General, Chat, Vista, Modales, Aprobaciones, Entrada), con la tecla y su acción alineadas, incluidas las secuencias con líder       | No aplica nada: es solo lectura; `Esc` lo cierra                                                                                 |
 
@@ -261,7 +261,7 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - Con la paleta desplegada, `↑`/`↓` la recorren, `Tab` autocompleta el comando resaltado en vez de ciclar el agente y `Enter` ejecuta; escribir un espacio retira la paleta y deja paso a la petición.
 - Si una petición parece trabajo ordenado, el sistema puede proponer un TODO, pero no lo ejecuta hasta que el usuario confirme o escriba el comando.
 - El agente activo responde con las herramientas derivadas de sus permisos; el chat no añade ni quita herramientas.
-- La bienvenida se pinta sin esperar a Ollama ni a la base: no depende de nada externo para mostrarse.
+- La bienvenida se pinta sin esperar al proveedor ni a la base: no depende de nada externo para mostrarse.
 
 ## Criterios de aceptación
 
@@ -309,8 +309,8 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] Al ejecutar `localcli` se ve la pantalla de bienvenida con el logotipo sobre el fondo, la caja de entrada (placeholder `"Escribe para iniciar la conversacion"` y línea `[plan] • modelo`), la barra de pistas de teclado y la versión en la esquina inferior derecha, sin lista de modelos visible.
 - [ ] El conjunto de la bienvenida (logotipo, caja de entrada y barra de pistas) aparece centrado en horizontal y en vertical dentro de la terminal, sin recortar el arte; el entorno del logotipo es el fondo de la pantalla.
 - [ ] La barra de pistas se genera desde el mapa de teclas vigente (`TAB agentes`, `Ctrl+P comandos`, `Ctrl+X M modelos`).
-- [ ] `Ctrl+X m` abre el modal de modelos con la lista de Ollama; `↑`/`↓` navegan, `Enter` aplica el resaltado y `Esc` cierra sin cambios. El modelo aplicado se usa para la primera petición y aparece en la línea de estado de la caja.
-- [ ] Sin Ollama disponible, la bienvenida se muestra igual (usa el modelo por defecto del arranque); al abrir el modal aparece el aviso «sin modelos» y se puede escribir y enviar sin él.
+- [ ] `Ctrl+X m` abre el modal de modelos con la lista del proveedor activo, cada fila rotulada; `↑`/`↓` navegan, `Enter` aplica el resaltado y `Esc` cierra sin cambios. El modelo aplicado se usa para la primera petición y aparece en la línea de estado de la caja.
+- [ ] Sin proveedor disponible, la bienvenida se muestra igual (usa el modelo por defecto del arranque); al abrir el modal aparece el aviso «sin modelos» y se puede escribir y enviar sin él.
 - [ ] La primera petición escrita en la bienvenida aparece como primer mensaje del chat al cambiar de vista.
 - [ ] La primera petición desde la bienvenida crea una sesión nueva y su nombre pasa a ser un título generado por el modelo.
 - [ ] Al borrar la última sesión, la vista vuelve a la bienvenida.
@@ -323,7 +323,7 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] `Enter` con la paleta desplegada ejecuta el comando resaltado y el flujo se arranca por el motor; su eco aparece en el chat.
 - [ ] La paleta también se despliega en la bienvenida; ejecutar un comando desde ahí crea la sesión y lleva a la vista principal.
 - [ ] Una petición sin comando se responde en el chat con las herramientas del agente activo.
-- [ ] La bienvenida se muestra aunque Ollama no esté disponible.
+- [ ] La bienvenida se muestra aunque el proveedor no esté disponible.
 - [ ] Con la líder pulsada (`Ctrl+X`) pero sin segunda tecla, no se abre ningún modal y tras el timeout el indicador de líder desaparece.
 - [ ] El logotipo coincide byte a byte con la salida dorada de `internal/tui/testdata/logo.txt`.
 

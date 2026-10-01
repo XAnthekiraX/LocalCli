@@ -49,7 +49,7 @@ func TestEjecutarLlegaAlHandlerDeCadaHerramienta(t *testing.T) {
 	r := registroStub("ok", nil)
 	res, err := r.Ejecutar(context.Background(), Peticion{
 		Agente:      AgenteBuild,
-		Permisos:    AccionesDeBuild(),
+		Permisos:    PermisosDeBuild(),
 		Herramienta: "listar_carpeta",
 		Argumentos:  json.RawMessage(`{"ruta":"."}`),
 	})
@@ -68,7 +68,7 @@ func TestPermisoAntesDeValidarYDeEjecutar(t *testing.T) {
 	r := registroStub("x", &llamado)
 	_, err := r.Ejecutar(context.Background(), Peticion{
 		Agente:      AgentePlan,
-		Permisos:    AccionesDePlan(),
+		Permisos:    PermisosDePlan(),
 		Herramienta: "crear_archivo",
 		// Argumentos INCOMPLETOS a propósito: el permiso va antes.
 		Argumentos: json.RawMessage(`{}`),
@@ -87,7 +87,7 @@ func TestValidacionVuelveCorregible(t *testing.T) {
 	r := registroStub("x", nil)
 	res, err := r.Ejecutar(context.Background(), Peticion{
 		Agente:      AgenteBuild,
-		Permisos:    AccionesDeBuild(),
+		Permisos:    PermisosDeBuild(),
 		Herramienta: "leer_archivo",
 		Argumentos:  json.RawMessage(`{}`),
 	})
@@ -108,7 +108,7 @@ func TestHerramientaFueraDelCatalogoNoSeEjecuta(t *testing.T) {
 	r := registroStub("x", nil)
 	res, err := r.Ejecutar(context.Background(), Peticion{
 		Agente:      AgenteBuild,
-		Permisos:    AccionesDeBuild(),
+		Permisos:    PermisosDeBuild(),
 		Herramienta: "borrar_todo",
 		Argumentos:  json.RawMessage(`{}`),
 	})
@@ -133,7 +133,7 @@ func TestRecorteUniversal(t *testing.T) {
 	}
 	res, err := r.Ejecutar(context.Background(), Peticion{
 		Agente:      AgenteBuild,
-		Permisos:    AccionesDeBuild(),
+		Permisos:    PermisosDeBuild(),
 		Herramienta: "leer_archivo",
 		Argumentos:  json.RawMessage(`{"ruta":"a.md"}`),
 	})
@@ -157,7 +157,7 @@ func TestEventosDeTodaEjecucion(t *testing.T) {
 	_, err := r.Ejecutar(context.Background(), Peticion{
 		Agente:      AgenteBuild,
 		SesionID:    "s1",
-		Permisos:    AccionesDeBuild(),
+		Permisos:    PermisosDeBuild(),
 		Herramienta: "leer_archivo",
 		Argumentos:  json.RawMessage(`{"ruta":"a.md"}`),
 	})
@@ -235,7 +235,7 @@ func TestLaEsperaDeAprobacionNoEsTiempoDeLaHerramienta(t *testing.T) {
 	if _, err := r.Ejecutar(context.Background(), Peticion{
 		Agente:      AgenteBuild,
 		SesionID:    "s1",
-		Permisos:    AccionesDeBuild(),
+		Permisos:    PermisosDeBuild(),
 		Herramienta: "crear_archivo",
 		Argumentos:  json.RawMessage(`{"ruta":"a.txt","contenido":"hola"}`),
 	}); err != nil {
@@ -276,7 +276,7 @@ func TestElResultadoLlevaLaDuracionDelHandler(t *testing.T) {
 			if _, err := r.Ejecutar(context.Background(), Peticion{
 				Agente:      AgenteBuild,
 				SesionID:    "s1",
-				Permisos:    AccionesDeBuild(),
+				Permisos:    PermisosDeBuild(),
 				Herramienta: "leer_archivo",
 				Argumentos:  json.RawMessage(`{"ruta":"a.md"}`),
 			}); err != nil && caso.nombre == "termina bien" {

@@ -8,10 +8,10 @@ package agent
 // las peticiones del modelo a `Registro.Ejecutar`) y §8 (la capa universal).
 //
 // `agent` no ejecuta la herramienta ni decide permisos: convierte la petición
-// del modelo en la `Peticion` de `tools` —con las ACCIONES del agente— y deja
+// del modelo en la `Peticion` de `tools` —con los PERMISOS del agente— y deja
 // que la capa universal compruebe el permiso, valide y ejecute. El modelo no
 // puede concederse permisos: lo único que aporta es el nombre y los argumentos,
-// y la política la pone el motor desde el JSON del agente.
+// y la política la pone el motor desde el `agent.yaml` del agente.
 
 import (
 	"context"
@@ -47,13 +47,13 @@ func (d *Despachador) Registro() *tools.Registro {
 }
 
 // Definiciones traduce el catálogo efectivo del agente al formato que espera
-// `/api/chat`: las herramientas de las acciones que el agente concede. Incluye
+// `/api/chat`: las herramientas de los permisos que el agente concede. Incluye
 // las del usuario, que se reparten con las mismas reglas.
 func (d *Despachador) Definiciones(a Agente) []ollama.Herramienta {
 	if d == nil || d.registro == nil {
 		return nil
 	}
-	defs := d.registro.Definiciones(a.Acciones())
+	defs := d.registro.Definiciones(a.Permisos())
 	out := make([]ollama.Herramienta, 0, len(defs))
 	for _, def := range defs {
 		out = append(out, ollama.Herramienta{
@@ -78,7 +78,7 @@ func (d *Despachador) Despachar(ctx context.Context, a Agente, s SolicitudHerram
 	return d.registro.Ejecutar(ctx, tools.Peticion{
 		Agente:      a.Nombre,
 		SesionID:    tools.SesionDe(ctx),
-		Permisos:    a.Acciones(),
+		Permisos:    a.Permisos(),
 		Herramienta: s.Nombre,
 		Argumentos:  s.Argumentos,
 	})

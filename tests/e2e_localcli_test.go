@@ -252,15 +252,15 @@ func TestLaColaRealConsumeElTODOCompleto(t *testing.T) {
 	}
 }
 
-// TestElCatalogoSigueCerradoYCompleto — las catorce herramientas del catálogo,
+// TestElCatalogoSigueCerradoYCompleto — las quince herramientas del catálogo,
 // con el reparto plan/build intacto: la frontera de la garantía al final del
 // ciclo completo.
 func TestElCatalogoSigueCerradoYCompleto(t *testing.T) {
 	nombres := tools.NombresCatalogo()
-	if len(nombres) != 14 {
-		t.Fatalf("catálogo = %d herramientas, quiero 14", len(nombres))
+	if len(nombres) != 15 {
+		t.Fatalf("catálogo = %d herramientas, quiero 15", len(nombres))
 	}
-	plan := tools.AccionesDePlan()
+	plan := tools.PermisosDePlan()
 	for _, n := range nombres {
 		err := tools.ComprobarPermiso(plan, n)
 		h, _ := tools.Buscar(n)

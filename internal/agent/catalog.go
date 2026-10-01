@@ -1,66 +1,75 @@
 package agent
 
-// catalog.go — T-B006-03 y T-B006-08: derivar el catálogo efectivo de un
-// agente a partir de sus permisos, y validar esos permisos.
+// catalog.go — T-B034-04: derivar el catálogo efectivo de un agente a partir de
+// sus `permissions`, y validar esos permisos.
 //
-// Fuente de verdad: ai/docs/specs/SPEC-AGENTE-BASE.md §Dónde se definen y
-// ai/docs/backend/DECISIONS.md ("`permisos` es la fuente; el catálogo efectivo
-// se deriva contra el catálogo cerrado de `tools`").
+// Fuente de verdad: ai/docs/specs/SPEC-AGENTE-BASE.md §Los permisos y
+// ai/docs/backend/01-domain/BUSINESS_RULES.md §Agentes (`permissions` es un mapa
+// de permiso a efecto con tres permisos; el catálogo efectivo se deriva).
 //
 // El catálogo cerrado es una sola fuente de verdad y vive en `tools`: aquí no
-// se duplica la lista de las trece, se pregunta por acción. Un agente sin
-// permisos es válido: es un agente de solo conversación.
+// se duplica la lista de herramientas, se compara el `Permiso` de cada una
+// contra los permisos del agente. Un agente sin `permissions` es válido: es un
+// agente de solo conversación.
 
 import (
 	"fmt"
+	"strings"
 
 	"localcli/internal/tools"
 )
 
 // errAgente construye un error localizado de carga de agente. No usa ningún
-// código `E_` porque ERRORS.md no define uno para un JSON de agente inválido:
-// fingir un código ajeno sería peor que un mensaje claro.
+// código `E_` porque ERRORS.md no define uno para un agente inválido: fingir un
+// código ajeno sería peor que un mensaje claro.
 func errAgente(msg string) error { return fmt.Errorf("agente: %s", msg) }
 
 // HerramientasDe deriva el catálogo efectivo de un agente a partir de sus
-// permisos. Default deny: una acción que no aparece como `permitir` no está.
-// La acción de cada herramienta la decide `tools` (categoría + modo); aquí no
-// se repite esa tabla.
+// `permissions`. Default deny: un permiso que no aparece como `allow` no está.
+// El permiso de cada herramienta lo declara `tools`: aquí no se repite esa
+// tabla.
 //
-// Rechaza una acción o un efecto desconocidos, y dos permisos contradictorios
-// sobre la misma acción (`permitir` + `denegar`): un contrato que se
-// contradice no se carga.
-func HerramientasDe(permisos []Permiso) ([]string, error) {
-	visto := map[tools.Accion]string{}
-	for _, p := range permisos {
-		accion := tools.Accion(p.Accion)
-		if !accion.Valida() {
-			return nil, errAgente("acción de permiso desconocida: " + p.Accion)
+// Rechaza un permiso o un efecto fuera del vocabulario, y un `default` con un
+// valor distinto de `deny`. Sin `permissions` —o vacío— el agente es de solo
+// conversación y no es un error.
+func HerramientasDe(permissions map[string]string) ([]string, error) {
+	concedidos := map[tools.Permiso]bool{}
+	for clave, bruto := range permissions {
+		efecto := strings.TrimSpace(bruto)
+		if clave == ClaveDefault {
+			if efecto != EfectoDeny {
+				return nil, errAgente("`default` solo admite `deny`: un `allow` concedería todo en silencio")
+			}
+			continue
 		}
-		switch p.Efecto {
-		case EfectoPermitir, EfectoDenegar:
+		p := tools.Permiso(clave)
+		if !p.Valida() {
+			return nil, errAgente("permiso desconocido: " + clave)
+		}
+		switch efecto {
+		case EfectoAllow:
+			concedidos[p] = true
+		case EfectoDeny:
+			// Un `deny` explícito es redundante con el default y se admite:
+			// documenta que la denegación es deliberada.
 		default:
-			return nil, errAgente("efecto de permiso desconocido: " + p.Efecto)
+			return nil, errAgente("efecto desconocido para `" + clave + "`: " + bruto)
 		}
-		if previo, ok := visto[accion]; ok && previo != p.Efecto {
-			return nil, errAgente("permisos contradictorios para la acción " + p.Accion)
-		}
-		visto[accion] = p.Efecto
 	}
 
 	out := make([]string, 0, len(tools.NombresCatalogo()))
 	for _, h := range tools.Herramientas() {
-		if visto[h.Accion()] == EfectoPermitir {
+		if concedidos[h.Permiso] {
 			out = append(out, h.Nombre)
 		}
 	}
 	return out, nil
 }
 
-// ValidarPermisos comprueba que los permisos de un agente son válidos: acciones
-// y efectos conocidos y sin contradicciones.
+// ValidarPermisos comprueba que los permisos de un agente son válidos: permisos
+// y efectos conocidos y sin un `default` que conceda todo.
 func ValidarPermisos(a Agente) error {
-	_, err := HerramientasDe(a.Permisos)
+	_, err := HerramientasDe(a.Permissions)
 	return err
 }
 
@@ -75,22 +84,16 @@ func (a Agente) Declara(nombre string) bool {
 	return false
 }
 
-// Acciones devuelve las acciones que el agente concede (`permitir`), sin
-// repetir ninguna. Es lo que alimenta el reparto de la capa universal y las
-// definiciones que viajan al modelo: las del usuario entran por la misma vía.
-func (a Agente) Acciones() []tools.Accion {
-	vistas := map[tools.Accion]bool{}
-	var out []tools.Accion
-	for _, p := range a.Permisos {
-		if p.Efecto != EfectoPermitir {
-			continue
+// Permisos devuelve los permisos que el agente concede (`allow`), en el orden
+// del vocabulario y sin repetir ninguno. Es lo que alimenta el reparto de la
+// capa universal y las definiciones que viajan al modelo: las herramientas del
+// usuario entran por la misma vía.
+func (a Agente) Permisos() []tools.Permiso {
+	var out []tools.Permiso
+	for _, p := range []tools.Permiso{tools.PermisoRead, tools.PermisoWrite, tools.PermisoEdit} {
+		if strings.TrimSpace(a.Permissions[string(p)]) == EfectoAllow {
+			out = append(out, p)
 		}
-		acc := tools.Accion(p.Accion)
-		if !acc.Valida() || vistas[acc] {
-			continue
-		}
-		vistas[acc] = true
-		out = append(out, acc)
 	}
 	return out
 }

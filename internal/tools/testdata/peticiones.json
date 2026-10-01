@@ -43,6 +43,11 @@
   "abrir_pagina": {
     "direccion": "https://example.com/docs"
   },
+  "crear_todo": {
+    "contenido": "Añadir la herramienta crear_todo",
+    "estado": "en_progreso",
+    "prioridad": "alta"
+  },
   "actualizar_todo": {
     "elementos": [
       { "contenido": "Añadir la tabla todos", "estado": "en_progreso", "prioridad": "alta" },

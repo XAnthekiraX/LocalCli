@@ -5,18 +5,18 @@ import (
 	"testing"
 )
 
-// TestCatalogoTieneCatorceHerramientas — T-B007-01: el registro contiene
-// exactamente las catorce herramientas documentadas. Una más o una menos
+// TestCatalogoTieneQuinceHerramientas — T-B007-01: el registro contiene
+// exactamente las quince herramientas documentadas. Una más o una menos
 // rompería la garantía: una de más que escriba sería un agujero, y una de
 // menos dejaría al agente sin poder trabajar.
-func TestCatalogoTieneCatorceHerramientas(t *testing.T) {
+func TestCatalogoTieneQuinceHerramientas(t *testing.T) {
 	h := Herramientas()
-	if len(h) != 14 {
-		t.Fatalf("el catálogo tiene %d herramientas, quiero 14: %v", len(h), NombresCatalogo())
+	if len(h) != 15 {
+		t.Fatalf("el catálogo tiene %d herramientas, quiero 15: %v", len(h), NombresCatalogo())
 	}
 }
 
-// TestCatalogoNombresDocumentados — los catorce nombres exactos de TOOLS.md §1.
+// TestCatalogoNombresDocumentados — los quince nombres exactos de TOOLS.md §1.
 // El nombre es la clave con la que el modelo pide la herramienta y la que el
 // JSON del agente declara, así que un nombre distinto rompe el contrato en
 // los dos extremos.
@@ -27,7 +27,7 @@ func TestCatalogoNombresDocumentados(t *testing.T) {
 		"crear_carpeta", "eliminar_carpeta",
 		"ejecutar_comando",
 		"buscar_en_internet", "abrir_pagina",
-		"actualizar_todo",
+		"crear_todo", "actualizar_todo",
 	}
 	got := NombresCatalogo()
 	if len(got) != len(want) {
@@ -51,30 +51,30 @@ func TestHerramientaInventadaNoExiste(t *testing.T) {
 	}
 }
 
-// TestSoloBuildCorrespondeAEscritura — el reparto por agente sale de la acción
-// `editar`: las seis que escriben en el proyecto son "solo build"; el resto
-// —las de lectura y la lista de pasos de la sesión— son de ambos (TOOLS.md §1 y
-// §2, SPEC-TOOLS §El reparto).
+// TestSoloBuildCorrespondeAEscritura — el reparto por agente sale de los
+// permisos `write` y `edit`: las seis que escriben en el proyecto son "solo
+// build"; el resto —las de lectura y la lista de pasos de la sesión— son de
+// ambos (TOOLS.md §1 y §2, SPEC-TOOLS §El reparto).
 func TestSoloBuildCorrespondeAEscritura(t *testing.T) {
 	var escritura, otros int
 	for _, h := range Herramientas() {
 		if h.SoloBuild() {
 			escritura++
-			if h.Accion() != AccionEditar {
-				t.Errorf("%s: SoloBuild con acción %s", h.Nombre, h.Accion())
+			if h.Permiso != PermisoWrite && h.Permiso != PermisoEdit {
+				t.Errorf("%s: SoloBuild con permiso %s", h.Nombre, h.Permiso)
 			}
 			continue
 		}
 		otros++
-		if h.Accion() == AccionEditar {
+		if h.Permiso == PermisoWrite || h.Permiso == PermisoEdit {
 			t.Errorf("%s: herramienta de escritura que no es SoloBuild", h.Nombre)
 		}
 	}
 	if escritura != 6 {
 		t.Errorf("herramientas de escritura = %d, quiero 6 (crear, escribir, editar, eliminar archivo, crear y eliminar carpeta)", escritura)
 	}
-	if otros != 8 {
-		t.Errorf("herramientas no exclusivas de build = %d, quiero 8 (4 de archivo, 1 de terminal, 2 de internet y la lista de pasos)", otros)
+	if otros != 9 {
+		t.Errorf("herramientas no exclusivas de build = %d, quiero 9 (4 de archivo, 1 de terminal, 2 de internet y las dos de la lista de pasos)", otros)
 	}
 }
 
@@ -89,7 +89,7 @@ func TestCategoriasRepartenLasHerramientas(t *testing.T) {
 		{CatArchivos, 10},
 		{CatTerminal, 1},
 		{CatInternet, 2},
-		{CatTareas, 1},
+		{CatTareas, 2},
 	}
 	for _, c := range casos {
 		if got := len(NombresDeCategoria(c.cat)); got != c.want {
@@ -112,52 +112,60 @@ func TestHerramientasDevuelveCopia(t *testing.T) {
 	}
 }
 
-// TestAccionSeDerivaDeCategoriaYModo — el reparto por acción sale de un solo
-// dato (categoría + modo), sin un campo aparte que pueda contradecirlo.
-func TestAccionSeDerivaDeCategoriaYModo(t *testing.T) {
+// TestCadaHerramientaDeclaraSuPermiso — el reparto sale de un dato declarado
+// del catálogo (`Herramienta.Permiso`), no de un `switch` que lo deduzca.
+func TestCadaHerramientaDeclaraSuPermiso(t *testing.T) {
 	casos := []struct {
-		nombre string
-		accion Accion
+		nombre  string
+		permiso Permiso
 	}{
-		{"leer_archivo", AccionLeer},
-		{"buscar_en_archivos", AccionLeer},
-		{"crear_archivo", AccionEditar},
-		{"eliminar_carpeta", AccionEditar},
-		{"ejecutar_comando", AccionEjecutar},
-		{"buscar_en_internet", AccionInternet},
-		{"abrir_pagina", AccionInternet},
+		{"leer_archivo", PermisoRead},
+		{"buscar_en_archivos", PermisoRead},
+		{"ejecutar_comando", PermisoRead},
+		{"buscar_en_internet", PermisoRead},
+		{"abrir_pagina", PermisoRead},
+		{"actualizar_todo", PermisoRead},
+		{"crear_archivo", PermisoWrite},
+		{"escribir_archivo", PermisoWrite},
+		{"eliminar_archivo", PermisoWrite},
+		{"crear_carpeta", PermisoWrite},
+		{"eliminar_carpeta", PermisoWrite},
+		{"editar_archivo", PermisoEdit},
 	}
 	for _, c := range casos {
-		got, ok := AccionDe(c.nombre)
+		got, ok := PermisoDe(c.nombre)
 		if !ok {
 			t.Errorf("%s no está en el catálogo", c.nombre)
 			continue
 		}
-		if got != c.accion {
-			t.Errorf("%s: acción = %s, quiero %s", c.nombre, got, c.accion)
+		if got != c.permiso {
+			t.Errorf("%s: permiso = %s, quiero %s", c.nombre, got, c.permiso)
 		}
 	}
 }
 
-// TestNombresDeAccionReparteLasHerramientas — las cinco acciones cubren las
-// catorce herramientas sin solaparse: la partición que sostiene el catálogo
+// TestNombresDePermisoReparteLasHerramientas — los tres permisos cubren las
+// quince herramientas sin solaparse: la partición que sostiene el catálogo
 // derivado.
-func TestNombresDeAccionReparteLasHerramientas(t *testing.T) {
+func TestNombresDePermisoReparteLasHerramientas(t *testing.T) {
 	var total int
-	for _, a := range []Accion{AccionLeer, AccionEditar, AccionEjecutar, AccionInternet, AccionTareas} {
-		total += len(NombresDeAccion(a))
+	for _, p := range []Permiso{PermisoRead, PermisoWrite, PermisoEdit} {
+		total += len(NombresDePermiso(p))
 	}
 	if total != len(NombresCatalogo()) {
-		t.Errorf("las acciones cubren %d herramientas, quiero %d", total, len(NombresCatalogo()))
+		t.Errorf("los permisos cubren %d herramientas, quiero %d", total, len(NombresCatalogo()))
 	}
-	if len(NombresDeAccion(AccionEditar)) != 6 {
-		t.Errorf("`editar` tiene %d herramientas, quiero 6", len(NombresDeAccion(AccionEditar)))
+	if len(NombresDePermiso(PermisoWrite)) != 5 {
+		t.Errorf("`write` tiene %d herramientas, quiero 5", len(NombresDePermiso(PermisoWrite)))
 	}
-	if len(NombresDeAccion(AccionTareas)) != 1 {
-		t.Errorf("`tareas` tiene %d herramientas, quiero 1", len(NombresDeAccion(AccionTareas)))
+	if len(NombresDePermiso(PermisoRead)) != 9 {
+		t.Errorf("`read` tiene %d herramientas, quiero 9", len(NombresDePermiso(PermisoRead)))
 	}
-	if Accion("inventada").Valida() {
-		t.Error("una acción fuera de las cinco no puede ser válida")
+	if len(NombresDePermiso(PermisoEdit)) != 1 {
+		t.Errorf("`edit` tiene %d herramientas, quiero 1 (editar_archivo)", len(NombresDePermiso(PermisoEdit)))
+	}
+	if Permiso("inventada").Valida() {
+		t.Error("un permiso fuera de los tres no puede ser válido")
 	}
 }
 
@@ -178,18 +186,18 @@ func TestNuevaHerramientaConectaElHandler(t *testing.T) {
 	}
 }
 
-// TestAccionesBase — las acciones de los agentes base salen de SPEC-TOOLS: plan
-// no concede `editar` pero sí `tareas`; build concede las cinco.
-func TestAccionesBase(t *testing.T) {
-	if AccionEditar.Permitida(AccionesDePlan()) {
-		t.Error("plan no puede conceder `editar`")
+// TestPermisosBase — los permisos de los agentes base salen de SPEC-TOOLS: plan
+// solo concede `read`; build concede los tres.
+func TestPermisosBase(t *testing.T) {
+	if PermisoWrite.Permitida(PermisosDePlan()) || PermisoEdit.Permitida(PermisosDePlan()) {
+		t.Error("plan no puede conceder `write` ni `edit`")
 	}
-	if !AccionTareas.Permitida(AccionesDePlan()) {
-		t.Error("plan sí concede `tareas` (la lista de pasos de la sesión)")
+	if !PermisoRead.Permitida(PermisosDePlan()) {
+		t.Error("plan sí concede `read`")
 	}
-	for _, a := range []Accion{AccionLeer, AccionEditar, AccionEjecutar, AccionInternet, AccionTareas} {
-		if !a.Permitida(AccionesDeBuild()) {
-			t.Errorf("build debe conceder %s", a)
+	for _, p := range []Permiso{PermisoRead, PermisoWrite, PermisoEdit} {
+		if !p.Permitida(PermisosDeBuild()) {
+			t.Errorf("build debe conceder %s", p)
 		}
 	}
 }
