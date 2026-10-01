@@ -6,34 +6,34 @@ import (
 	"strings"
 	"testing"
 
-	"localcli/internal/ollama"
+	"localcli/internal/llm"
 	"localcli/internal/tools"
 )
 
 // generadorGuion es un doble de `Generador`: en cada llamada emite el siguiente
 // guion de eventos. Evita Ollama y hace determinista el bucle.
 type generadorGuion struct {
-	pasadas             [][]ollama.Evento
+	pasadas             [][]llm.Evento
 	llamadas            int
-	ultimos             []ollama.Mensaje
-	ultimasHerramientas []ollama.Herramienta
+	ultimos             []llm.Mensaje
+	ultimasHerramientas []llm.Herramienta
 	ultimoNumCtx        int
 	// ultimoPensar es el `think` de la última pasada: nil quiere decir que el
 	// campo no viajó.
 	ultimoPensar *bool
 }
 
-func (g *generadorGuion) Generar(ctx context.Context, a Agente, modelo string, mensajes []ollama.Mensaje, herramientas []ollama.Herramienta, numCtx int, pensar *bool) (<-chan ollama.Evento, error) {
-	g.ultimos = append([]ollama.Mensaje(nil), mensajes...)
-	g.ultimasHerramientas = append([]ollama.Herramienta(nil), herramientas...)
+func (g *generadorGuion) Generar(ctx context.Context, a Agente, modelo string, mensajes []llm.Mensaje, herramientas []llm.Herramienta, numCtx int, pensar *bool) (<-chan llm.Evento, error) {
+	g.ultimos = append([]llm.Mensaje(nil), mensajes...)
+	g.ultimasHerramientas = append([]llm.Herramienta(nil), herramientas...)
 	g.ultimoNumCtx = numCtx
 	g.ultimoPensar = pensar
-	var evs []ollama.Evento
+	var evs []llm.Evento
 	if g.llamadas < len(g.pasadas) {
 		evs = g.pasadas[g.llamadas]
 	}
 	g.llamadas++
-	ch := make(chan ollama.Evento, len(evs))
+	ch := make(chan llm.Evento, len(evs))
 	for _, e := range evs {
 		ch <- e
 	}
@@ -53,28 +53,28 @@ func (s *sinkGrabador) Aviso(texto string)               { s.avisos = append(s.a
 // --- constructores de guiones ------------------------------------------------
 
 // respuesta es una pasada que termina con texto y sin peticiones.
-func respuesta(texto string) []ollama.Evento {
-	var evs []ollama.Evento
+func respuesta(texto string) []llm.Evento {
+	var evs []llm.Evento
 	if texto != "" {
-		evs = append(evs, ollama.Evento{Tipo: ollama.EventoToken, Texto: texto})
+		evs = append(evs, llm.Evento{Tipo: llm.EventoToken, Texto: texto})
 	}
-	evs = append(evs, ollama.Evento{
-		Tipo: ollama.EventoDone,
-		Done: &ollama.RespuestaFinal{Texto: texto, Done: true},
+	evs = append(evs, llm.Evento{
+		Tipo: llm.EventoDone,
+		Done: &llm.RespuestaFinal{Texto: texto, Done: true},
 	})
 	return evs
 }
 
 // pedido es una pasada que termina pidiendo herramientas, con su texto.
-func pedido(texto string, calls ...ollama.ToolCall) []ollama.Evento {
+func pedido(texto string, calls ...llm.ToolCall) []llm.Evento {
 	evs := respuesta(texto)
 	evs[len(evs)-1].Done.ToolCalls = calls
 	return evs
 }
 
 // llamada arma una petición de herramienta con sus argumentos.
-func llamada(nombre, args string) ollama.ToolCall {
-	var c ollama.ToolCall
+func llamada(nombre, args string) llm.ToolCall {
+	var c llm.ToolCall
 	c.Function.Name = nombre
 	c.Function.Arguments = []byte(args)
 	return c
@@ -107,7 +107,7 @@ func registroStub(orden *[]string) *tools.Registro {
 // TestElBucleRespondeSinHerramientasEnUnaPasada — si el modelo no pide nada,
 // el bucle cierra en la primera pasada con el texto completo.
 func TestElBucleRespondeSinHerramientasEnUnaPasada(t *testing.T) {
-	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("hola mundo")}}
+	g := &generadorGuion{pasadas: [][]llm.Evento{respuesta("hola mundo")}}
 	sink := &sinkGrabador{}
 	e := &Ejecutor{Runner: g}
 	res, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, 0, false, sink)
@@ -129,7 +129,7 @@ func TestElBucleRespondeSinHerramientasEnUnaPasada(t *testing.T) {
 // hace que el interruptor del pie llegue al modelo.
 func TestElTurnoMandaElRazonamientoQueLePiden(t *testing.T) {
 	si := true
-	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("ok")}}
+	g := &generadorGuion{pasadas: [][]llm.Evento{respuesta("ok")}}
 	e := &Ejecutor{Runner: g, Pensar: func(modelo string) *bool { return &si }}
 	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "chat"}, "qwen3:4b", "ctx", nil, nil, 0, false, nil); err != nil {
 		t.Fatalf("Ejecutar: %v", err)
@@ -142,7 +142,7 @@ func TestElTurnoMandaElRazonamientoQueLePiden(t *testing.T) {
 // Sin función que lo decida no se manda nada: el harness no decide por su cuenta
 // que un modelo razone.
 func TestSinDecisionDeRazonamientoNoSeMandaNada(t *testing.T) {
-	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("ok")}}
+	g := &generadorGuion{pasadas: [][]llm.Evento{respuesta("ok")}}
 	e := &Ejecutor{Runner: g}
 	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "chat"}, "llama3.2", "ctx", nil, nil, 0, false, nil); err != nil {
 		t.Fatalf("Ejecutar: %v", err)
@@ -157,7 +157,7 @@ func TestSinDecisionDeRazonamientoNoSeMandaNada(t *testing.T) {
 func TestElRazonamientoNoCambiaEntrePasadas(t *testing.T) {
 	no := false
 	consultas := 0
-	g := &generadorGuion{pasadas: [][]ollama.Evento{
+	g := &generadorGuion{pasadas: [][]llm.Evento{
 		pedido("voy", llamada("leer_archivo", `{"ruta":"a.md"}`)),
 		respuesta("listo"),
 	}}
@@ -183,9 +183,9 @@ func TestElRazonamientoNoCambiaEntrePasadas(t *testing.T) {
 
 // El historial de conversación se antepone al contexto del turno.
 func TestElBucleAnteponeElHistorialAlContexto(t *testing.T) {
-	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("ok")}}
+	g := &generadorGuion{pasadas: [][]llm.Evento{respuesta("ok")}}
 	e := &Ejecutor{Runner: g}
-	historial := []ollama.Mensaje{
+	historial := []llm.Mensaje{
 		{Role: "user", Content: "hola"},
 		{Role: "assistant", Content: "qué tal"},
 	}
@@ -205,10 +205,10 @@ func TestElBucleAnteponeElHistorialAlContexto(t *testing.T) {
 
 // Las imágenes del turno viajan solo en el mensaje de usuario del turno actual.
 func TestElTurnoLlevaImagenesAlModelo(t *testing.T) {
-	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("ok")}}
+	g := &generadorGuion{pasadas: [][]llm.Evento{respuesta("ok")}}
 	e := &Ejecutor{Runner: g}
 	imgs := []string{"aG9sYQ=="}
-	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", []ollama.Mensaje{{Role: "user", Content: "hola"}}, imgs, 0, false, nil); err != nil {
+	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", []llm.Mensaje{{Role: "user", Content: "hola"}}, imgs, 0, false, nil); err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
 	if len(g.ultimos[0].Images) != 0 {
@@ -226,7 +226,7 @@ func TestElTurnoLlevaImagenesAlModelo(t *testing.T) {
 func TestElBucleEjecutaHerramientaYVuelveAlModelo(t *testing.T) {
 	var orden []string
 	d := NuevoDespachador(registroStub(&orden))
-	g := &generadorGuion{pasadas: [][]ollama.Evento{
+	g := &generadorGuion{pasadas: [][]llm.Evento{
 		pedido("", llamada("leer_archivo", `{"ruta":"a.md"}`)),
 		respuesta("listo"),
 	}}
@@ -263,7 +263,7 @@ func TestElBucleEjecutaHerramientaYVuelveAlModelo(t *testing.T) {
 func TestElBucleEjecutaEnElOrdenPedido(t *testing.T) {
 	var orden []string
 	d := NuevoDespachador(registroStub(&orden))
-	g := &generadorGuion{pasadas: [][]ollama.Evento{
+	g := &generadorGuion{pasadas: [][]llm.Evento{
 		pedido("", llamada("listar_carpeta", `{"ruta":"."}`), llamada("buscar_archivos", `{"patron":"*.go"}`)),
 		respuesta("hecho"),
 	}}
@@ -281,7 +281,7 @@ func TestElBucleEjecutaEnElOrdenPedido(t *testing.T) {
 // como resultado y el turno continúa.
 func TestElBucleUnRechazoNoCortaElTurno(t *testing.T) {
 	d := NuevoDespachador(registroStub(nil))
-	g := &generadorGuion{pasadas: [][]ollama.Evento{
+	g := &generadorGuion{pasadas: [][]llm.Evento{
 		// `plan` no tiene escritura: la petición es E_TOOL_NOT_ALLOWED.
 		pedido("", llamada("crear_archivo", `{"ruta":"a.md","contenido":"x"}`)),
 		respuesta("no puedo"),
@@ -313,7 +313,7 @@ func TestElBucleUnRechazoNoCortaElTurno(t *testing.T) {
 // la última petición.
 func TestElBucleCierraConSintesisAlAgotarPasadas(t *testing.T) {
 	d := NuevoDespachador(registroStub(nil))
-	g := &generadorGuion{pasadas: [][]ollama.Evento{
+	g := &generadorGuion{pasadas: [][]llm.Evento{
 		pedido("voy a mirar a", llamada("leer_archivo", `{"ruta":"a.md"}`)),
 		pedido("voy a mirar b", llamada("leer_archivo", `{"ruta":"b.md"}`)),
 		respuesta("síntesis final"),
@@ -341,7 +341,7 @@ func TestElBucleCierraConSintesisAlAgotarPasadas(t *testing.T) {
 // con una instrucción explícita y se reintenta UNA sola vez.
 func TestUnaRedaccionQueVuelveAPedirHerramientasSeReintenta(t *testing.T) {
 	d := NuevoDespachador(registroStub(nil))
-	g := &generadorGuion{pasadas: [][]ollama.Evento{
+	g := &generadorGuion{pasadas: [][]llm.Evento{
 		pedido("", llamada("leer_archivo", `{"ruta":"a.md"}`)),
 		pedido("", llamada("leer_archivo", `{"ruta":"b.md"}`)),
 		// Redacción: en vez de escribir, vuelve a pedir herramientas.
@@ -376,7 +376,7 @@ func TestUnaRedaccionQueVuelveAPedirHerramientasSeReintenta(t *testing.T) {
 // modelo atascado no consume el doble callando igual.
 func TestLaRedaccionNoRepiteElReintento(t *testing.T) {
 	d := NuevoDespachador(registroStub(nil))
-	g := &generadorGuion{pasadas: [][]ollama.Evento{
+	g := &generadorGuion{pasadas: [][]llm.Evento{
 		pedido("", llamada("leer_archivo", `{"ruta":"a.md"}`)),
 		pedido("", llamada("leer_archivo", `{"ruta":"b.md"}`)),
 		pedido("", llamada("leer_archivo", `{"ruta":"c.md"}`)),
@@ -398,7 +398,7 @@ func TestLaRedaccionNoRepiteElReintento(t *testing.T) {
 // como si hubiera respondido: devuelve un error distinguible, con el motivo.
 func TestUnTurnoSinTextoFinalFalla(t *testing.T) {
 	d := NuevoDespachador(registroStub(nil))
-	g := &generadorGuion{pasadas: [][]ollama.Evento{
+	g := &generadorGuion{pasadas: [][]llm.Evento{
 		pedido("", llamada("leer_archivo", `{"ruta":"a.md"}`)),
 		pedido("", llamada("leer_archivo", `{"ruta":"b.md"}`)),
 		pedido("", llamada("leer_archivo", `{"ruta":"c.md"}`)),
@@ -424,7 +424,7 @@ func TestUnTurnoSinTextoFinalFalla(t *testing.T) {
 // presenta definiciones y cierra en la primera pasada con su texto.
 func TestElBucleSinHerramientasNoLasOfrece(t *testing.T) {
 	d := NuevoDespachador(registroStub(nil))
-	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("compuesto")}}
+	g := &generadorGuion{pasadas: [][]llm.Evento{respuesta("compuesto")}}
 	e := &Ejecutor{Runner: g, Despachar: d, MaxPasadas: 3}
 	ag := Agente{Nombre: "plan", Permissions: map[string]string{"read": "allow"}}
 
@@ -443,7 +443,7 @@ func TestElBucleSinHerramientasNoLasOfrece(t *testing.T) {
 // TestElBuclePropagaElErrorDelModelo — un fallo del stream se propaga tal cual.
 func TestElBuclePropagaElErrorDelModelo(t *testing.T) {
 	fallo := errors.New("modelo caído")
-	g := &generadorGuion{pasadas: [][]ollama.Evento{{{Tipo: ollama.EventoError, Error: fallo}}}}
+	g := &generadorGuion{pasadas: [][]llm.Evento{{{Tipo: llm.EventoError, Error: fallo}}}}
 	e := &Ejecutor{Runner: g}
 	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, 0, false, nil); !errors.Is(err, fallo) {
 		t.Fatalf("err = %v, quiero %v", err, fallo)
@@ -453,9 +453,9 @@ func TestElBuclePropagaElErrorDelModelo(t *testing.T) {
 // TestAcumulaLosTokensDelTurno — T-B024-13: el conteo de tokens del evento de
 // fin se consume en vez de descartarse.
 func TestAcumulaLosTokensDelTurno(t *testing.T) {
-	g := &generadorGuion{pasadas: [][]ollama.Evento{{
-		{Tipo: ollama.EventoToken, Texto: "hola"},
-		{Tipo: ollama.EventoDone, Done: &ollama.RespuestaFinal{Texto: "hola", Done: true, TokensEntr: 11, TokensSal: 3}},
+	g := &generadorGuion{pasadas: [][]llm.Evento{{
+		{Tipo: llm.EventoToken, Texto: "hola"},
+		{Tipo: llm.EventoDone, Done: &llm.RespuestaFinal{Texto: "hola", Done: true, TokensEntr: 11, TokensSal: 3}},
 	}}}
 	e := &Ejecutor{Runner: g}
 	res, err := e.Ejecutar(context.Background(), Agente{Nombre: "plan"}, "m", "ctx", nil, nil, 0, false, nil)
@@ -472,7 +472,7 @@ func TestAcumulaLosTokensDelTurno(t *testing.T) {
 // aprobación entre pasadas no retiene el modelo.
 func TestElTestigoSeTomaPorPeticion(t *testing.T) {
 	d := NuevoDespachador(registroStub(nil))
-	g := &generadorGuion{pasadas: [][]ollama.Evento{
+	g := &generadorGuion{pasadas: [][]llm.Evento{
 		pedido("", llamada("leer_archivo", `{"ruta":"a.md"}`)),
 		respuesta("listo"),
 	}}
@@ -499,7 +499,7 @@ func TestElTestigoSeTomaPorPeticion(t *testing.T) {
 // capacidad de herramientas, no se le presentan y el agente avisa de que va a
 // conversar.
 func TestSinHerramientasDegradaAConversacion(t *testing.T) {
-	g := &generadorGuion{pasadas: [][]ollama.Evento{respuesta("converso")}}
+	g := &generadorGuion{pasadas: [][]llm.Evento{respuesta("converso")}}
 	sink := &sinkGrabador{}
 	e := &Ejecutor{
 		Runner:            g,

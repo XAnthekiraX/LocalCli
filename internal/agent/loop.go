@@ -26,7 +26,7 @@ import (
 	"context"
 	"strings"
 
-	"localcli/internal/ollama"
+	"localcli/internal/llm"
 )
 
 // pasadasPorDefecto acota cuántas veces puede pedir herramientas un turno
@@ -96,7 +96,7 @@ func (e *Ejecutor) pensarDelTurno(modelo string) *bool {
 // corren en paralelo y pueden tener modelos con ventanas distintas.
 // `sinHerramientas` corre el turno sin presentar herramientas al modelo: lo usa
 // la etapa de composición de un flujo, que solo redacta a partir de su contexto.
-func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto string, historial []ollama.Mensaje, imagenes []string, numCtx int, sinHerramientas bool, sink Sink) (Resultado, error) {
+func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto string, historial []llm.Mensaje, imagenes []string, numCtx int, sinHerramientas bool, sink Sink) (Resultado, error) {
 	max := e.MaxPasadas
 	if max <= 0 {
 		max = pasadasPorDefecto
@@ -105,7 +105,7 @@ func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto stri
 	// Degradación honesta: si el modelo no declara capacidad de herramientas, no
 	// se le presentan. No se le impide usarlo; el agente conversa.
 	var aviso string
-	var herramientas []ollama.Herramienta
+	var herramientas []llm.Herramienta
 	if sinHerramientas {
 		// El turno no ofrece herramientas: no hay nada que degradar ni avisar.
 	} else if e.PuedeHerramientas != nil && !e.PuedeHerramientas(modelo) {
@@ -117,9 +117,9 @@ func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto stri
 		herramientas = e.Despachar.Definiciones(a)
 	}
 
-	mensajes := make([]ollama.Mensaje, 0, len(historial)+1)
+	mensajes := make([]llm.Mensaje, 0, len(historial)+1)
 	mensajes = append(mensajes, historial...)
-	mensajes = append(mensajes, ollama.Mensaje{Role: "user", Content: contexto, Images: imagenes})
+	mensajes = append(mensajes, llm.Mensaje{Role: "user", Content: contexto, Images: imagenes})
 
 	// El razonamiento se decide una vez por turno: todas las pasadas llevan lo
 	// mismo, y el interruptor no cambia a mitad de una respuesta.
@@ -147,7 +147,7 @@ func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto stri
 
 		// El mensaje del asistente con sus peticiones, y después un mensaje de
 		// herramienta por cada resultado, en el orden en que se pidieron.
-		mensajes = append(mensajes, ollama.Mensaje{
+		mensajes = append(mensajes, llm.Mensaje{
 			Role:      "assistant",
 			Content:   texto,
 			ToolCalls: pedidos,
@@ -166,7 +166,7 @@ func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto stri
 			if strings.TrimSpace(salida) == "" {
 				salida = "(sin salida)"
 			}
-			mensajes = append(mensajes, ollama.Mensaje{
+			mensajes = append(mensajes, llm.Mensaje{
 				Role:     "tool",
 				Content:  salida,
 				ToolName: llamada.Nombre(),
@@ -195,8 +195,8 @@ func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto stri
 	// dejar un turno mudo, y no se repite.
 	if strings.TrimSpace(texto) == "" && len(pedidos) > 0 {
 		mensajes = append(mensajes,
-			ollama.Mensaje{Role: "assistant", Content: texto, ToolCalls: pedidos},
-			ollama.Mensaje{Role: "user", Content: instruccionDeRedaccion},
+			llm.Mensaje{Role: "assistant", Content: texto, ToolCalls: pedidos},
+			llm.Mensaje{Role: "user", Content: instruccionDeRedaccion},
 		)
 		texto, razon, _, err = e.unaPasada(ctx, a, modelo, mensajes, nil, numCtx, pensar, sink, &tokensIn, &tokensOut)
 		if err != nil {
@@ -237,9 +237,9 @@ const instruccionDeRedaccion = "No hay más herramientas disponibles: has agotad
 // su texto, su razonamiento y las peticiones de herramienta de la señal de fin.
 // Suma los tokens del turno en los contadores recibidos. Es el bloque que
 // comparten las rondas con herramientas y la síntesis final sin herramientas.
-func (e *Ejecutor) unaPasada(ctx context.Context, a Agente, modelo string, mensajes []ollama.Mensaje, herramientas []ollama.Herramienta, numCtx int, pensar *bool, sink Sink, tokensIn, tokensOut *uint64) (string, string, []ollama.ToolCall, error) {
+func (e *Ejecutor) unaPasada(ctx context.Context, a Agente, modelo string, mensajes []llm.Mensaje, herramientas []llm.Herramienta, numCtx int, pensar *bool, sink Sink, tokensIn, tokensOut *uint64) (string, string, []llm.ToolCall, error) {
 	var texto, razon strings.Builder
-	var pedidos []ollama.ToolCall
+	var pedidos []llm.ToolCall
 
 	err := e.conTestigo(ctx, func(c context.Context) error {
 		ch, gErr := e.Runner.Generar(c, a, modelo, mensajes, herramientas, numCtx, pensar)
@@ -248,17 +248,17 @@ func (e *Ejecutor) unaPasada(ctx context.Context, a Agente, modelo string, mensa
 		}
 		for ev := range ch {
 			switch ev.Tipo {
-			case ollama.EventoToken:
+			case llm.EventoToken:
 				texto.WriteString(ev.Texto)
 				if sink != nil {
 					sink.Token(ev.Texto, false)
 				}
-			case ollama.EventoRazonamiento:
+			case llm.EventoRazonamiento:
 				razon.WriteString(ev.Texto)
 				if sink != nil {
 					sink.Token(ev.Texto, true)
 				}
-			case ollama.EventoDone:
+			case llm.EventoDone:
 				// Las peticiones de herramienta llegan con la señal de fin;
 				// el texto ya se ha emitido token a token.
 				if ev.Done != nil {
@@ -266,7 +266,7 @@ func (e *Ejecutor) unaPasada(ctx context.Context, a Agente, modelo string, mensa
 					*tokensOut += ev.Done.TokensSal
 					pedidos = append(pedidos, ev.Done.ToolCalls...)
 				}
-			case ollama.EventoError:
+			case llm.EventoError:
 				return ev.Error
 			}
 		}
@@ -289,7 +289,7 @@ func (e *Ejecutor) conTestigo(ctx context.Context, fn func(context.Context) erro
 
 // Definiciones expone las definiciones de herramientas del agente: es lo que el
 // cableado necesita para saber si un agente tiene alguna ruta hacia `tools`.
-func (e *Ejecutor) Definiciones(a Agente) []ollama.Herramienta {
+func (e *Ejecutor) Definiciones(a Agente) []llm.Herramienta {
 	if e.Despachar == nil {
 		return nil
 	}

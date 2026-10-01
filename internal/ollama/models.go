@@ -8,20 +8,9 @@ package ollama
 import (
 	"context"
 	"encoding/json"
-)
 
-// Modelo es una entrada de `ollama list`. SizeBytes puede ser 0 si el
-// servidor no lo reporta; en ese caso CabenNo lo sabe y trata como
-// desconocido (el perfil informa, no decide).
-type Modelo struct {
-	Nombre      string
-	Familia     string
-	Parametros  string
-	TamanoBytes int64
-	// ContextLength es la ventana máxima que declara el modelo. 0 = no la
-	// reporta; el arranque decide entonces con su tope.
-	ContextLength int
-}
+	"localcli/internal/llm"
+)
 
 // respuestaTags es la forma cruda de /api/tags.
 type respuestaTags struct {
@@ -48,12 +37,7 @@ func (c *Client) ListarModelos(ctx context.Context) ([]Modelo, error) {
 	defer resp.Body.Close()
 	var r respuestaTags
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-		return nil, &ErrorOllama{
-			Codigo:   CodigoOllamaNoDisponible,
-			Mensaje:  "respuesta ilegible de la lista de modelos",
-			Detalle:  err.Error(),
-			sentinel: ErrOllamaNoDisponible,
-		}
+		return nil, llm.NuevoErrorNoDisponible("respuesta ilegible de la lista de modelos", err.Error())
 	}
 	out := make([]Modelo, 0, len(r.Modelos))
 	for _, m := range r.Modelos {

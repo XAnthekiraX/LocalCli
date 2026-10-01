@@ -1,103 +1,75 @@
-// errors.go — T-B005-08: errores tipados del contrato con Ollama.
+// errors.go — T-B005-08 / T-B036-04: errores del adaptador sobre el error
+// tipado neutro de `llm`.
 //
-// Fuente de verdad: ai/docs/backend/05-quality/ERRORS.md [19-20, 34-35].
-// Reglas que implementan aquí:
-//   - "Ollama no está corriendo" → aviso de que no se puede generar; el
-//     harness sigue vivo. Es decir: connection refused u otros fallos de
-//     red NO matan la UI ni entran en pánico: se mapean al error tipado
-//     E_OLLAMA_UNAVAILABLE y se propagan como valor (un error es un valor,
-//     no una excepción).
-//   - "El modelo elegido no cabe en la VRAM" → aviso de que irá a RAM, más
-//     lento; se carga igual, sin fallar en silencio. Por eso E_MODEL_TOO_BIG
-//     es un AVISO: los helpers de perfil lo devuelven junto con el resultado,
-//     nunca abortan la carga.
+// Fuente de verdad: ai/docs/backend/05-quality/ERRORS.md. El tipo y los códigos
+// viven en `llm` (T-B036-03); aquí solo queda lo que es específico de Ollama:
+// su instrucción de arranque, la clasificación de fallos de red y el parseo del
+// cuerpo de error del servidor.
 package ollama
 
 import (
-	"errors"
-	"net"
+	"encoding/json"
+	"io"
+	"net/http"
 	"strings"
+
+	"localcli/internal/llm"
 )
 
-// Códigos internos documentados en ERRORS.md §3. Se comparan con
-// errors.Is / ErrorsAs sobre ErrorOllama.Codigo.
-const (
-	CodigoOllamaNoDisponible = "E_OLLAMA_UNAVAILABLE"
-	CodigoModeloNoCabe       = "E_MODEL_TOO_BIG"
-)
-
-// ErrorOllama es el error tipado del módulo. El Código es para el motor y
-// los tests; el Mensaje es para la persona (dice qué pasó y, cuando aplica,
-// qué hacer), según ERRORS.md §1.
-type ErrorOllama struct {
-	Codigo   string
-	Mensaje  string
-	Detalle  string // causa técnica cruda, para logs/tests
-	sentinel error  // centinela para errors.Is
-}
-
-func (e *ErrorOllama) Error() string {
-	if e.Detalle != "" {
-		return e.Codigo + ": " + e.Mensaje + " (" + e.Detalle + ")"
-	}
-	return e.Codigo + ": " + e.Mensaje
-}
-
-// Unwrap expone el centinela para que errors.Is(err, ErrOllamaNoDisponible)
-// funcione sobre cualquier envoltorio intermedio.
-func (e *ErrorOllama) Unwrap() error { return e.sentinel }
-
-// Centinelas comparables con errors.Is.
-var (
-	ErrOllamaNoDisponible = errors.New(CodigoOllamaNoDisponible)
-	ErrModeloNoCabe       = errors.New(CodigoModeloNoCabe)
-)
-
-// mensajeLevantarOllama explica cómo actuar, tal pide SPEC-OLLAMA-PERFIL
-// ("si Ollama no está disponible, avisa con una instrucción clara").
+// mensajeLevantarOllama explica cómo actuar: Ollama no responde y hay que
+// levantarlo.
 const mensajeLevantarOllama = "no se puede generar: Ollama no responde en la dirección configurada; levántalo con `ollama serve`"
 
-// clasificarFalloRed mapea cualquier fallo de conexión contra el servidor
-// local al error documentado. Nunca devuelve nil: si no es reconocible como
-// problema de red, lo deja pasar envuelto pero con código de indisponibilidad
-// solo cuando hay señales de red (refused/reset/timeouts/DNS).
-//
-// Devuelve (errTipada, true) si el fallo es de conexión; (nil, false) si el
-// llamante debe tratarlo como otro tipo de error (p. ej. status HTTP 500).
-func clasificarFalloRed(err error) (*ErrorOllama, bool) {
-	if err == nil {
-		return nil, false
-	}
-	var ne net.Error
-	esRed := errors.As(err, &ne) ||
-		errors.Is(err, ErrOllamaNoDisponible) ||
-		strings.Contains(err.Error(), "connection refused") ||
-		strings.Contains(err.Error(), "connect: network is unreachable")
-	if !esRed {
-		return nil, false
-	}
-	return &ErrorOllama{
-		Codigo:   CodigoOllamaNoDisponible,
-		Mensaje:  mensajeLevantarOllama,
-		Detalle:  err.Error(),
-		sentinel: ErrOllamaNoDisponible,
-	}, true
+// clasificarFalloRed mapea un fallo de conexión contra el servidor local al
+// error tipado documentado.
+func clasificarFalloRed(err error) (*llm.ErrorProveedor, bool) {
+	return llm.ClasificarFalloRed(err, mensajeLevantarOllama)
 }
 
-// nuevoModeloNoCabe construye el aviso tipado por modelo que no cabe. Como
-// es un aviso (no un fallo), el flujo de carga continúa; ver profile.go.
-func nuevoModeloNoCabe(modelo string, requiereMB, vramMB int64) *ErrorOllama {
-	return &ErrorOllama{
-		Codigo: CodigoModeloNoCabe,
-		Mensaje: "el modelo " + modelo + " no cabe en la VRAM (" +
-			itob(requiereMB) + " MB estimados frente a " + itob(vramMB) +
-			" MB); se cargará en RAM, más lento",
-		sentinel: ErrModeloNoCabe,
+// errorDeStatus construye el error tipado de una respuesta HTTP no-200. Lee el
+// cuerpo de Ollama —que trae el motivo real en `{"error": …}`— y lo deja en el
+// Detalle: sin él, un fallo como «no user query found in messages» llegaba a la
+// pantalla como un «(500)» pelado.
+func errorDeStatus(resp *http.Response) error {
+	detalle := cuerpoDeError(resp)
+	if detalle == "" {
+		detalle = http.StatusText(resp.StatusCode)
 	}
+	return llm.NuevoErrorNoDisponible(
+		"Ollama respondió con un error ("+itoa(resp.StatusCode)+")",
+		detalle,
+	)
 }
 
-// itob evita arrastrar strconv/fmt para dos números en un mensaje.
-func itob(n int64) string {
+// cuerpoDeError lee el motivo de una respuesta de error: si el cuerpo es el
+// `{"error": "…"}` de Ollama, devuelve ese texto; si no, el cuerpo crudo
+// colapsado. Vacío si no hay nada legible.
+func cuerpoDeError(resp *http.Response) string {
+	defer resp.Body.Close()
+	datos, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	texto := strings.TrimSpace(string(datos))
+	var envoltura struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(texto), &envoltura); err == nil && envoltura.Error != "" {
+		texto = envoltura.Error
+	}
+	texto = strings.Join(strings.Fields(texto), " ")
+	const maximo = 300
+	if r := []rune(texto); len(r) > maximo {
+		texto = string(r[:maximo]) + "…"
+	}
+	return texto
+}
+
+// nuevoModeloNoCabe construye el aviso tipado (E_MODEL_TOO_BIG) por modelo que
+// no cabe. Es un aviso: el flujo de carga continúa.
+func nuevoModeloNoCabe(modelo string, requiereMB, vramMB int64) *llm.ErrorProveedor {
+	return llm.NuevoModeloNoCabe(modelo, requiereMB, vramMB)
+}
+
+// itoa evita arrastrar strconv para un entero en un mensaje.
+func itoa(n int) string {
 	if n == 0 {
 		return "0"
 	}

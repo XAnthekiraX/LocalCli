@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"localcli/internal/llm"
 )
 
 // --- helpers -------------------------------------------------------------
@@ -184,9 +186,9 @@ func TestStreamChatSeparaTextoYRazonamiento(t *testing.T) {
 		}
 		w.Write(fixture)
 	})
-	events, err := c.Chat(context.Background(), GenerarRequest{
-		Model:    "qwen3",
-		Messages: []Mensaje{{Role: "user", Content: "p"}},
+	events, err := c.Chat(context.Background(), llm.Peticion{
+		Modelo:   "qwen3",
+		Mensajes: []Mensaje{{Role: "user", Content: "p"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -229,9 +231,9 @@ func TestChatEnviaImagenes(t *testing.T) {
 		_, _ = w.Write([]byte("{\"model\":\"llava\",\"done\":true}\n"))
 	})
 	imgs := []string{"aG9sYQ==", "bXVuZG8="}
-	events, err := c.Chat(context.Background(), GenerarRequest{
-		Model:    "llava",
-		Messages: []Mensaje{{Role: "user", Content: "¿qué hay aquí?", Images: imgs}},
+	events, err := c.Chat(context.Background(), llm.Peticion{
+		Modelo:   "llava",
+		Mensajes: []Mensaje{{Role: "user", Content: "¿qué hay aquí?", Images: imgs}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -255,9 +257,9 @@ func TestChatOmiteImagenesSinAdjuntos(t *testing.T) {
 		crudo, _ = io.ReadAll(r.Body)
 		_, _ = w.Write([]byte("{\"model\":\"m\",\"done\":true}\n"))
 	})
-	events, err := c.Chat(context.Background(), GenerarRequest{
-		Model:    "m",
-		Messages: []Mensaje{{Role: "user", Content: "hola"}},
+	events, err := c.Chat(context.Background(), llm.Peticion{
+		Modelo:   "m",
+		Mensajes: []Mensaje{{Role: "user", Content: "hola"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -386,10 +388,10 @@ func TestChatSerializaElCanalDeHerramientas(t *testing.T) {
 		crudo, _ = io.ReadAll(r.Body)
 		_, _ = w.Write([]byte("{\"model\":\"m\",\"done\":true}\n"))
 	})
-	events, err := c.Chat(context.Background(), GenerarRequest{
-		Model:    "m",
-		Messages: []Mensaje{{Role: "user", Content: "hola"}},
-		Tools: []Herramienta{{Type: "function", Function: Definicion{
+	events, err := c.Chat(context.Background(), llm.Peticion{
+		Modelo:   "m",
+		Mensajes: []Mensaje{{Role: "user", Content: "hola"}},
+		Herramientas: []Herramienta{{Type: "function", Function: Definicion{
 			Name:        "leer_archivo",
 			Description: "Lee un archivo.",
 			Parameters:  map[string]any{"type": "object"},
@@ -428,7 +430,7 @@ func TestChatOmiteToolsSinHerramientas(t *testing.T) {
 		crudo, _ = io.ReadAll(r.Body)
 		_, _ = w.Write([]byte("{\"model\":\"m\",\"done\":true}\n"))
 	})
-	events, err := c.Chat(context.Background(), GenerarRequest{Model: "m", Messages: []Mensaje{{Role: "user", Content: "hola"}}})
+	events, err := c.Chat(context.Background(), llm.Peticion{Modelo: "m", Mensajes: []Mensaje{{Role: "user", Content: "hola"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -467,9 +469,9 @@ func TestChatLlevaNumCtx(t *testing.T) {
 		crudo, _ = io.ReadAll(r.Body)
 		_, _ = w.Write([]byte("{\"model\":\"m\",\"done\":true}\n"))
 	})
-	events, err := c.Chat(context.Background(), GenerarRequest{
-		Model:    "m",
-		Messages: []Mensaje{{Role: "user", Content: "hola"}},
+	events, err := c.Chat(context.Background(), llm.Peticion{
+		Modelo:   "m",
+		Mensajes: []Mensaje{{Role: "user", Content: "hola"}},
 		NumCtx:   16384,
 	})
 	if err != nil {
@@ -500,7 +502,7 @@ func TestChatOmiteNumCtxSinVentana(t *testing.T) {
 		crudo, _ = io.ReadAll(r.Body)
 		_, _ = w.Write([]byte("{\"model\":\"m\",\"done\":true}\n"))
 	})
-	events, err := c.Chat(context.Background(), GenerarRequest{Model: "m", Messages: []Mensaje{{Role: "user", Content: "hola"}}})
+	events, err := c.Chat(context.Background(), llm.Peticion{Modelo: "m", Mensajes: []Mensaje{{Role: "user", Content: "hola"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -518,7 +520,7 @@ func TestElErrorIncluyeElMotivoDeOllama(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = io.WriteString(w, `{"error":"no user query found in messages"}`)
 	})
-	_, err := c.Chat(context.Background(), GenerarRequest{Model: "m", Messages: []Mensaje{{Role: "user", Content: "hola"}}})
+	_, err := c.Chat(context.Background(), llm.Peticion{Modelo: "m", Mensajes: []Mensaje{{Role: "user", Content: "hola"}}})
 	if err == nil {
 		t.Fatal("quiero error del 500")
 	}

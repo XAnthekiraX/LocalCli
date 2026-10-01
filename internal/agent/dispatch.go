@@ -17,7 +17,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"localcli/internal/ollama"
+	"localcli/internal/llm"
 	"localcli/internal/tools"
 )
 
@@ -46,19 +46,19 @@ func (d *Despachador) Registro() *tools.Registro {
 	return d.registro
 }
 
-// Definiciones traduce el catálogo efectivo del agente al formato que espera
-// `/api/chat`: las herramientas de los permisos que el agente concede. Incluye
-// las del usuario, que se reparten con las mismas reglas.
-func (d *Despachador) Definiciones(a Agente) []ollama.Herramienta {
+// Definiciones traduce el catálogo efectivo del agente a las definiciones
+// neutras que viajan al modelo: las herramientas de los permisos que el agente
+// concede. Incluye las del usuario, que se reparten con las mismas reglas.
+func (d *Despachador) Definiciones(a Agente) []llm.Herramienta {
 	if d == nil || d.registro == nil {
 		return nil
 	}
 	defs := d.registro.Definiciones(a.Permisos())
-	out := make([]ollama.Herramienta, 0, len(defs))
+	out := make([]llm.Herramienta, 0, len(defs))
 	for _, def := range defs {
-		out = append(out, ollama.Herramienta{
+		out = append(out, llm.Herramienta{
 			Type: "function",
-			Function: ollama.Definicion{
+			Function: llm.Definicion{
 				Name:        def.Nombre,
 				Description: def.Descripcion,
 				Parameters:  def.Esquema,

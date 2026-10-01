@@ -20,26 +20,9 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+
+	"localcli/internal/llm"
 )
-
-// TipoEvento distingue qué lleva un Evento.
-type TipoEvento int
-
-const (
-	EventoToken        TipoEvento = iota // token de texto final
-	EventoRazonamiento                   // token de razonamiento (reasoning.go)
-	EventoDone                           // último evento: respuesta completa + métricas
-	EventoError                          // fallo del stream; cierra el canal
-)
-
-// Evento es lo que consume la TUI y el agente. Texto trae el fragmento; Done
-// trae la RespuestaFinal acumulada.
-type Evento struct {
-	Tipo  TipoEvento
-	Texto string
-	Done  *RespuestaFinal
-	Error error
-}
 
 // lineaJSON es la forma cruda de una línea NDJSON de /api/generate o
 // /api/chat: chat mete el token de texto dentro de message.content y el de
@@ -79,11 +62,7 @@ func procesarLinea(linea []byte, acc *acumulador) ([]Evento, error) {
 	}
 	var l lineaJSON
 	if err := json.Unmarshal(linea, &l); err != nil {
-		return nil, &ErrorOllama{
-			Codigo:  CodigoOllamaNoDisponible,
-			Mensaje: "respuesta ilegible del modelo",
-			Detalle: err.Error(),
-		}
+		return nil, llm.NuevoErrorNoDisponible("respuesta ilegible del modelo", err.Error())
 	}
 	var evs []Evento
 	// Orden dentro de la línea: primero razonamiento, luego texto. Es el orden
@@ -171,11 +150,7 @@ func bombear(ctx context.Context, cuerpo io.ReadCloser, out chan<- Evento) {
 			enviar(ctx, out, Evento{Tipo: EventoError, Error: tipado})
 			return
 		}
-		enviar(ctx, out, Evento{Tipo: EventoError, Error: &ErrorOllama{
-			Codigo:  CodigoOllamaNoDisponible,
-			Mensaje: "el stream se cortó antes de terminar",
-			Detalle: err.Error(),
-		}})
+		enviar(ctx, out, Evento{Tipo: EventoError, Error: llm.NuevoErrorNoDisponible("el stream se cortó antes de terminar", err.Error())})
 		return
 	}
 	if vioDone {
@@ -184,10 +159,7 @@ func bombear(ctx context.Context, cuerpo io.ReadCloser, out chan<- Evento) {
 	// Stream terminado sin línea done (servidor cortó limpio): no inventamos
 	// EventoDone; segnalamos error para que el consumidor no crea que hay
 	// respuesta completa.
-	enviar(ctx, out, Evento{Tipo: EventoError, Error: &ErrorOllama{
-		Codigo:  CodigoOllamaNoDisponible,
-		Mensaje: "el stream terminó sin la señal de fin",
-	}})
+	enviar(ctx, out, Evento{Tipo: EventoError, Error: llm.NuevoErrorNoDisponible("el stream terminó sin la señal de fin", "")})
 }
 
 // enviar entrega ev respetando la cancelación. Devuelve false si el contexto

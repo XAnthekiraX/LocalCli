@@ -38,7 +38,9 @@ import (
 	lcexec "localcli/internal/exec"
 	"localcli/internal/flow"
 	gitrepo "localcli/internal/git"
+	"localcli/internal/llm"
 	"localcli/internal/ollama"
+	"localcli/internal/openai"
 	"localcli/internal/queue"
 	"localcli/internal/session"
 	"localcli/internal/store"
@@ -61,7 +63,7 @@ type Arranque struct {
 	cerrarDB func() error
 	Bus      *session.Bus
 	Gest     *session.Gestor
-	Infer    *ollama.ColaInferencia
+	Infer    *llm.ColaInferencia
 
 	puerto *Adaptador
 }
@@ -91,9 +93,10 @@ type Adaptador struct {
 	// comandos contra él.
 	catalogo *flow.Catalogo
 
-	// cliente es Ollama: solo se usa para la lista del selector de modelos de
-	// la bienvenida (SPEC-INTERFAZ §Reglas); el arranque no le escribe nada.
-	cliente *ollama.Client
+	// proveedor es el runtime elegido al arrancar (Ollama o llama.cpp): se usa
+	// para listar modelos, leer capacidades y correr los turnos. El proveedor no
+	// cambia con la sesión viva (SPEC-MODELO-PROVEEDOR).
+	proveedor llm.Proveedor
 	// modeloMu protege el modelo elegido: lo fija la autodetección al arrancar
 	// y lo cambia el usuario desde el selector (FijarModelo). El motor lo lee
 	// en cada turno — la elección del usuario prevalece (SPEC-OLLAMA-PERFIL).
@@ -119,6 +122,10 @@ type Adaptador struct {
 	// ella se decide si se le manda `think` y si se le presentan herramientas. Un
 	// modelo sin ficha NO se cachea: un fallo de red no debe fijar «no puede».
 	capacidades map[string][]string
+	// ventanaServidor cachea la ventana que fija el servidor cuando el proveedor
+	// la lee (llama.cpp): se lee una vez de `/props` y no en cada turno.
+	ventanaServidor int
+	ventanaLeida    bool
 	// pensar es el interruptor de razonamiento —apagado por defecto— que el
 	// usuario cambia con un clic en el pie. Lo lee el turno que corre en otra
 	// goroutine, así que va bajo `mu`, como la sesión activa.
@@ -138,15 +145,41 @@ func topeVentana() int {
 	if n := tcontext.LimiteDeEntorno(); n > 0 {
 		return n
 	}
-	return ollama.TopeVentanaPorDefecto
+	return llm.TopeVentanaPorDefecto
 }
 
-// ventana devuelve el `num_ctx` a pedir para el modelo dado: el menor entre su
-// ventana declarada y el tope. Es lo que evita que Ollama recorte la lista de
-// mensajes y responda `no user query found in messages` en los turnos con
-// herramientas (el servidor usa por defecto ~4096, que es demasiado poco).
+// ventana devuelve la ventana de contexto efectiva para el modelo dado: la
+// menor entre lo que declara el modelo, lo que fija el servidor (cuando el
+// proveedor la lee, como llama.cpp) y el tope (LOCALCLI_CONTEXT_LIMIT). Es lo
+// que evita que el servidor recorte la lista de mensajes y corte un turno con
+// herramientas.
 func (ad *Adaptador) ventana(modelo string) int {
-	return ollama.VentanaDeModelo(ollama.Modelo{ContextLength: ad.largoDeContexto(modelo)}, topeVentana())
+	delServidor := ad.ventanaDeServidor(modelo)
+	return llm.VentanaEfectiva(ad.largoDeContexto(modelo), delServidor, topeVentana())
+}
+
+// ventanaDeServidor lee (una vez) la ventana que fija el servidor cuando el
+// proveedor la lee. Un proveedor que la declara por petición (Ollama) devuelve
+// 0: ahí la declara el harness con `num_ctx`.
+func (ad *Adaptador) ventanaDeServidor(modelo string) int {
+	if ad.proveedor == nil {
+		return 0
+	}
+	ad.mu.Lock()
+	leida, n := ad.ventanaLeida, ad.ventanaServidor
+	ad.mu.Unlock()
+	if leida {
+		return n
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
+	defer cancel()
+	if v, declarada, err := ad.proveedor.VentanaDeContexto(ctx, modelo); err == nil && !declarada {
+		n = v
+	}
+	ad.mu.Lock()
+	ad.ventanaServidor, ad.ventanaLeida = n, true
+	ad.mu.Unlock()
+	return n
 }
 
 // largoDeContexto devuelve la ventana que declara el modelo, cacheada. Si no
@@ -162,7 +195,7 @@ func (ad *Adaptador) largoDeContexto(modelo string) int {
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
 	defer cancel()
-	modelos, err := ad.cliente.ListarModelos(ctx)
+	modelos, err := ad.proveedor.ListarModelos(ctx)
 	if err != nil {
 		return 0
 	}
@@ -197,14 +230,22 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	cerrarDB := conexion.Close
 
 	bus := session.NuevoBus()
-	infer := ollama.NewColaInferencia()
-	cliente := ollama.NewClient("")
+	infer := llm.NewColaInferencia()
+	// El proveedor se elige al arrancar y no cambia con la sesión viva. Un
+	// proveedor que no responde no impide arrancar (CONFIGURATION.md §5).
+	proveedor, proveedorElegido := nuevoProveedor()
 
 	// El último modelo y el último agente que el usuario usó se recuerdan entre
 	// ejecuciones (config.json, preferencia global del usuario). El modelo se
 	// reutiliza si sigue instalado; el agente lo aplica la vista al construirse.
 	prefs, _ := tui.CargarPreferencias()
-	modelo, err := elegirModelo(cliente, prefs.Modelo)
+	// Se recuerda el proveedor elegido: el modelo recordado solo se reutiliza si
+	// su proveedor coincide (SPEC-MODELO-PROVEEDOR). Best-effort.
+	if prefs.Proveedor != proveedorElegido {
+		prefs.Proveedor = proveedorElegido
+		_ = tui.GuardarPreferencias(prefs)
+	}
+	modelo, err := elegirModelo(proveedor, modeloRecordado(prefs, proveedorElegido))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "aviso:", err, "(la interfaz arranca sin modelo)")
 	}
@@ -214,7 +255,7 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	// montarse), así que el registro puede construirse antes de que el gestor
 	// exista.
 	cambios := store.NuevosCambios(conexion)
-	ad := &Adaptador{aprobar: aprobar, cerrar: turnos, auditar: store.NuevasAuditorias(conexion), todos: store.NuevosTodos(conexion), bloques: store.NuevosBloques(conexion), chat: store.NuevoChat(conexion), bus: bus, dir: carpeta, pendientas: map[string]chan string{}, contextos: map[string]int{}, capacidades: map[string][]string{}, cliente: cliente}
+	ad := &Adaptador{aprobar: aprobar, cerrar: turnos, auditar: store.NuevasAuditorias(conexion), todos: store.NuevosTodos(conexion), bloques: store.NuevosBloques(conexion), chat: store.NuevoChat(conexion), bus: bus, dir: carpeta, pendientas: map[string]chan string{}, contextos: map[string]int{}, capacidades: map[string][]string{}, proveedor: proveedor}
 	ad.modelo = modelo
 	ad.agenteRecordado = prefs.Agente
 	// El razonamiento arranca donde lo dejó el usuario; sin preferencia, apagado.
@@ -229,7 +270,7 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	}
 	despachador := agent.NuevoDespachador(registro)
 
-	agenteRunner := agent.Runner{Cliente: cliente}
+	agenteRunner := agent.Runner{Proveedor: proveedor}
 	grafo, gErr := tcontext.GrafoDeDocumentos(carpeta)
 	if gErr != nil {
 		// Sin grafo no hay nodo de contexto; el motor fallará con un mensaje
@@ -286,7 +327,7 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 	// lleva el id de sesión y etapa para auditar). Se los inyectamos mediante
 	// una función que reconstruye esas piezas sobre el mismo motor antes de
 	// cada turno: es el sitio del arranque, no de session ni de flow.
-	motorFlows.Contexto = &nodoPorTurno{ad: ad, grafo: grafo, cliente: cliente, modelo: modelo}
+	motorFlows.Contexto = &nodoPorTurno{ad: ad, grafo: grafo, proveedor: proveedor, modelo: modelo}
 	// El bucle conversacional (agente → modelo → herramientas → modelo) vive en
 	// `agent`; aquí solo se le dan sus dependencias reales y el mapa de agentes.
 	//
@@ -299,7 +340,7 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 		Despachar:  despachador,
 		MaxPasadas: 3,
 		Testigo: func(ctx context.Context, fn func(context.Context) error) error {
-			return infer.Encolar(ctx, ollama.OpcionesEncolar{IdSesion: tools.SesionDe(ctx)}, fn)
+			return infer.Encolar(ctx, llm.OpcionesEncolar{IdSesion: tools.SesionDe(ctx)}, fn)
 		},
 		PuedeHerramientas: func(m string) bool {
 			caps, ok := ad.fichaDe(m)
@@ -308,7 +349,7 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 				// quitarle el trabajo al modelo por una ficha que no llegó.
 				return true
 			}
-			return ollama.PuedeUsarHerramientas(caps)
+			return llm.PuedeUsarHerramientas(caps)
 		},
 		// Qué se le manda al modelo sobre su razonamiento. Solo lo recibe quien
 		// declara la capacidad: a los demás, `think` les pide algo que no
@@ -316,7 +357,7 @@ func nuevoArranque(carpeta string) (*Arranque, error) {
 		// modelo piense.
 		Pensar: func(m string) *bool {
 			caps, ok := ad.fichaDe(m)
-			if !ok || !ollama.PuedePensar(caps) {
+			if !ok || !llm.PuedePensar(caps) {
 				return nil
 			}
 			v := ad.razonar()
@@ -423,7 +464,7 @@ func (ad *Adaptador) Eliminar(sesionID string) error {
 func (ad *Adaptador) Modelos() ([]tui.ModeloLocal, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
 	defer cancel()
-	modelos, err := ad.cliente.ListarModelos(ctx)
+	modelos, err := ad.proveedor.ListarModelos(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -448,8 +489,8 @@ func (ad *Adaptador) Modelos() ([]tui.ModeloLocal, error) {
 			caps, conocido := ad.capacidadesDe(ctx, nombre)
 			out[i] = tui.ModeloLocal{Nombre: nombre, CapacidadesSinDato: !conocido}
 			if conocido {
-				out[i].SinHerramientas = !ollama.PuedeUsarHerramientas(caps)
-				out[i].SinVision = !ollama.PuedeVer(caps)
+				out[i].SinHerramientas = !llm.PuedeUsarHerramientas(caps)
+				out[i].SinVision = !llm.PuedeVer(caps)
 			}
 		}(i, m.Nombre)
 	}
@@ -461,7 +502,7 @@ func (ad *Adaptador) Modelos() ([]tui.ModeloLocal, error) {
 // ficha no se declara ninguna capacidad: la vista no avisa ni asegura nada
 // (mejor callar que alarmar), y por eso el «conocido» viaja aparte.
 func (ad *Adaptador) capacidadesDe(ctx context.Context, nombre string) ([]string, bool) {
-	caps, err := ad.cliente.Capacidades(ctx, nombre)
+	caps, err := ad.proveedor.Capacidades(ctx, nombre)
 	if err != nil {
 		return nil, false
 	}
@@ -483,7 +524,7 @@ func (ad *Adaptador) fichaDe(modelo string) ([]string, bool) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
 	defer cancel()
-	caps, err := ad.cliente.Capacidades(ctx, modelo)
+	caps, err := ad.proveedor.Capacidades(ctx, modelo)
 	if err != nil {
 		return nil, false
 	}
@@ -515,12 +556,17 @@ func (ad *Adaptador) Pensar(v bool) {
 // elección del usuario, o apagado si no hay ninguna.
 func (ad *Adaptador) PensarRecordado() bool { return ad.razonar() }
 
-// ModeloActual devuelve el modelo con el que trabaja el motor ahora mismo: el
-// que detectó el arranque o el último que eligió el usuario en el modal de
-// modelos. Es lo que la línea de modelo de la bienvenida muestra
-// (SPEC-INTERFAZ §Línea de modelo); es una lectura en memoria, sin llamar a
-// Ollama, así que la pantalla se pinta sin esperar a nada externo.
-func (ad *Adaptador) ModeloActual() string { return ad.modeloElegido() }
+// ModeloActual devuelve el modelo con el que trabaja el motor ahora mismo, con
+// la etiqueta del runtime cuando es llama.cpp (`qwen3:8b (llama.cpp)`), para que
+// la línea de modelo sepa contra qué proveedor se habla (SPEC-MODELO-PROVEEDOR).
+// Es una lectura en memoria, sin llamar al proveedor.
+func (ad *Adaptador) ModeloActual() string {
+	modelo := ad.modeloElegido()
+	if modelo != "" && ad.proveedor != nil && ad.proveedor.Nombre() == "llamacpp" {
+		return modelo + " (llama.cpp)"
+	}
+	return modelo
+}
 
 // Carpeta devuelve la carpeta del proyecto —la desde la que se ejecutó
 // `localcli`—, que el arranque ya tenía resuelta al abrir la base. Es el dato
@@ -544,14 +590,14 @@ func (ad *Adaptador) Git() (string, int) { return gitrepo.Estado(ad.dir) }
 func (ad *Adaptador) CapacidadesModelo(nombre string) (tui.Capacidades, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
 	defer cancel()
-	caps, err := ad.cliente.Capacidades(ctx, nombre)
+	caps, err := ad.proveedor.Capacidades(ctx, nombre)
 	if err != nil {
 		return tui.Capacidades{}, err
 	}
 	return tui.Capacidades{
-		Herramientas: ollama.PuedeUsarHerramientas(caps),
-		Vision:       ollama.PuedeVer(caps),
-		Pensar:       ollama.PuedePensar(caps),
+		Herramientas: llm.PuedeUsarHerramientas(caps),
+		Vision:       llm.PuedeVer(caps),
+		Pensar:       llm.PuedePensar(caps),
 	}, nil
 }
 
@@ -1045,16 +1091,64 @@ func textoPlano(html string) string {
 
 // --- piezas del motor, ligadas a la sesión del turno -------------------------
 
-// elegirModelo detecta el modelo local (CONFIGURATION.md §3: "se detecta, no se
-// configura"): si el usuario ya usó uno y sigue instalado, ese manda; si no,
-// lista los modelos de Ollama y toma el primero que cabe en la máquina. Si
-// Ollama no responde, devuelve error y el arranque sigue sin modelo.
-func elegirModelo(cliente *ollama.Client, preferido string) (string, error) {
+// modeloRecordado devuelve el modelo que se puede reutilizar al arrancar: el
+// guardado solo si su proveedor coincide con el elegido (o si no se declaró
+// ninguno, caso del archivo antiguo). Con otro proveedor se autodetecta, porque
+// el mismo nombre no significa lo mismo en los dos runtimes.
+func modeloRecordado(prefs tui.Preferencias, proveedorElegido string) string {
+	if prefs.Proveedor != "" && prefs.Proveedor != proveedorElegido {
+		return ""
+	}
+	return prefs.Modelo
+}
+
+// nuevoProveedor resuelve el runtime del modelo desde `LOCALCLI_PROVEEDOR`
+// (CONFIGURATION.md §2). Sin declarar → `ollama`; `ollama`/`llamacpp` fijan uno
+// y solo uno; `auto` usa el primero que responde, empezando por Ollama. Devuelve
+// el proveedor y su clave. El proveedor no cambia con la sesión viva.
+func nuevoProveedor() (llm.Proveedor, string) {
+	clave := strings.ToLower(strings.TrimSpace(os.Getenv("LOCALCLI_PROVEEDOR")))
+	o := ollama.NewClient("")
+	l := openai.NewClient(os.Getenv("LOCALCLI_LLAMACPP_URL"))
+	switch clave {
+	case "llamacpp":
+		return l, "llamacpp"
+	case "auto":
+		if respondeProveedor(o) {
+			return o, "ollama"
+		}
+		if respondeProveedor(l) {
+			return l, "llamacpp"
+		}
+		return o, "ollama"
+	default: // vacío o "ollama": el comportamiento por defecto no depende de
+		// lo que haya instalado.
+		return o, "ollama"
+	}
+}
+
+// respondeProveedor comprueba si un proveedor contesta, para `auto`. No muta
+// nada: solo pregunta.
+func respondeProveedor(p llm.Proveedor) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
 	defer cancel()
-	modelos, err := cliente.ListarModelos(ctx)
+	if ping, ok := p.(interface{ Ping(context.Context) error }); ok {
+		return ping.Ping(ctx) == nil
+	}
+	_, err := p.ListarModelos(ctx)
+	return err == nil
+}
+
+// elegirModelo detecta el modelo local (CONFIGURATION.md §3: "se detecta, no se
+// configura"): si el usuario ya usó uno y sigue instalado, ese manda; si no,
+// lista los modelos del proveedor y toma el primero que cabe en la máquina. Si
+// el proveedor no responde, devuelve error y el arranque sigue sin modelo.
+func elegirModelo(proveedor llm.Proveedor, preferido string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutDeteccion)
+	defer cancel()
+	modelos, err := proveedor.ListarModelos(ctx)
 	if err != nil {
-		return "", fmt.Errorf("no hay conexión con Ollama: %w", err)
+		return "", fmt.Errorf("no hay conexión con el proveedor del modelo: %w", err)
 	}
 	// El último modelo usado prevalece si sigue disponible (SPEC-OLLAMA-PERFIL:
 	// el modelo lo elige el usuario y su elección se recuerda).
@@ -1075,16 +1169,16 @@ func elegirModelo(cliente *ollama.Client, preferido string) (string, error) {
 		// en Ollama y el aviso de tamaño ya se mostró al listar.
 		return modelos[0].Nombre, nil
 	}
-	return "", errors.New("Ollama no tiene modelos instalados")
+	return "", errors.New("el proveedor del modelo no tiene modelos instalados")
 }
 
 // nodoPorTurno implementa flow.Contexto: arma el nodo de contexto con la sesión
 // del turno actual. El nodo es efímero por diseño (una selección por petición).
 type nodoPorTurno struct {
-	ad      *Adaptador
-	grafo   tcontext.Grafo
-	cliente *ollama.Client
-	modelo  string
+	ad        *Adaptador
+	grafo     tcontext.Grafo
+	proveedor llm.Proveedor
+	modelo    string
 }
 
 func (n *nodoPorTurno) ContextoPara(ctx context.Context, etapa, objetivo string) (string, error) {
@@ -1094,7 +1188,7 @@ func (n *nodoPorTurno) ContextoPara(ctx context.Context, etapa, objetivo string)
 	}
 	nodo := &tcontext.Nodo{
 		Grafo:     n.grafo,
-		Modelo:    &tcontext.ModeloOllama{Cliente: n.cliente, Modelo: modelo},
+		Modelo:    &tcontext.ModeloLLM{Cliente: n.proveedor, Modelo: modelo},
 		Auditor:   n.ad.auditar,
 		SessionID: tools.SesionDe(ctx),
 		// El bloque de contexto se queda por debajo de la ventana del modelo:
@@ -1122,7 +1216,7 @@ func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, p flow.PeticionEtapa) (
 	// de la bienvenida, esa elección es la que corre (SPEC-OLLAMA-PERFIL).
 	modelo := e.ad.modeloElegido()
 	if modelo == "" {
-		return flow.Resultado{}, errors.New("arranque: no hay modelo de Ollama disponible")
+		return flow.Resultado{}, errors.New("arranque: no hay modelo disponible")
 	}
 	agente, ok := e.agente[p.Agente]
 	if !ok {
@@ -1145,7 +1239,7 @@ func (e *ejecutorPorTurno) Ejecutar(ctx context.Context, p flow.PeticionEtapa) (
 	// el modelo para las demás (SPEC-OLLAMA-PERFIL, T-B024-14). El tiempo que se
 	// mide es el del turno entero (modelo + herramientas).
 	inicio := time.Now()
-	salida, err := e.ejecutor.Ejecutar(ctx, agente, modelo, p.Contexto, mensajesDeOllama(p.Historial), p.Imagenes, e.ad.ventana(modelo), p.SinHerramientas, sink)
+	salida, err := e.ejecutor.Ejecutar(ctx, agente, modelo, p.Contexto, mensajesDeModelo(p.Historial), p.Imagenes, e.ad.ventana(modelo), p.SinHerramientas, sink)
 	if err != nil {
 		// Una etapa de flujo conserva su semántica: un turno sin respuesta vuelve
 		// a texto vacío y el motor la reintenta como hasta ahora (si sigue muda,
@@ -1310,7 +1404,7 @@ func (r *registroPorTurno) ProcesoEtapa(ctx context.Context, nombre string, fall
 // streaming. Un fallo no detiene el flujo (el motor cae al resumen mecánico).
 type optimizadorPorTurno struct {
 	ad    *Adaptador
-	infer *ollama.ColaInferencia
+	infer *llm.ColaInferencia
 }
 
 func (o *optimizadorPorTurno) Optimizar(ctx context.Context, flujo, etapa, resultado string) (string, error) {
@@ -1371,16 +1465,16 @@ func agenteDeRespaldo(nombre string) agent.Agente {
 	}
 }
 
-// mensajesDeOllama traduce el historial neutro de `flow` al formato del cliente
-// de Ollama. Es la frontera donde la conversación deja de ser un dato de
+// mensajesDeModelo traduce el historial neutro de `flow` a los mensajes
+// neutros de `llm`. Es la frontera donde la conversación deja de ser un dato de
 // `session`/`flow` y pasa a ser lo que se le envía al modelo.
-func mensajesDeOllama(historial []flow.Mensaje) []ollama.Mensaje {
+func mensajesDeModelo(historial []flow.Mensaje) []llm.Mensaje {
 	if len(historial) == 0 {
 		return nil
 	}
-	out := make([]ollama.Mensaje, 0, len(historial))
+	out := make([]llm.Mensaje, 0, len(historial))
 	for _, m := range historial {
-		out = append(out, ollama.Mensaje{Role: m.Rol, Content: m.Texto})
+		out = append(out, llm.Mensaje{Role: m.Rol, Content: m.Texto})
 	}
 	return out
 }
@@ -1389,16 +1483,16 @@ func mensajesDeOllama(historial []flow.Mensaje) []ollama.Mensaje {
 // devuelve el texto acumulado. Pasa por la FIFO para no solaparse con un turno
 // en curso. La usan el título de sesión y el resumen de conversación, que no se
 // pintan en la TUI: solo importa el texto final.
-func generarTextoCorrido(ctx context.Context, ad *Adaptador, infer *ollama.ColaInferencia, prompt string) (string, error) {
+func generarTextoCorrido(ctx context.Context, ad *Adaptador, infer *llm.ColaInferencia, prompt string) (string, error) {
 	modelo := ad.modeloElegido()
 	if modelo == "" {
-		return "", errors.New("arranque: no hay modelo de Ollama disponible")
+		return "", errors.New("arranque: no hay modelo disponible")
 	}
 	var b strings.Builder
-	err := infer.Encolar(ctx, ollama.OpcionesEncolar{IdSesion: tools.SesionDe(ctx)}, func(c context.Context) error {
-		ch, err := ad.cliente.Chat(c, ollama.GenerarRequest{
-			Model:    modelo,
-			Messages: []ollama.Mensaje{{Role: "user", Content: prompt}},
+	err := infer.Encolar(ctx, llm.OpcionesEncolar{IdSesion: tools.SesionDe(ctx)}, func(c context.Context) error {
+		ch, err := ad.proveedor.Chat(c, llm.Peticion{
+			Modelo:   modelo,
+			Mensajes: []llm.Mensaje{{Role: "user", Content: prompt}},
 			NumCtx:   ad.ventana(modelo),
 		})
 		if err != nil {
@@ -1406,9 +1500,9 @@ func generarTextoCorrido(ctx context.Context, ad *Adaptador, infer *ollama.ColaI
 		}
 		for ev := range ch {
 			switch ev.Tipo {
-			case ollama.EventoToken:
+			case llm.EventoToken:
 				b.WriteString(ev.Texto)
-			case ollama.EventoError:
+			case llm.EventoError:
 				return ev.Error
 			}
 		}
@@ -1425,7 +1519,7 @@ func generarTextoCorrido(ctx context.Context, ad *Adaptador, infer *ollama.ColaI
 // se pinta en la TUI; el nombre final llega por el evento `titulo_sesion`.
 type tituladorPorTurno struct {
 	ad    *Adaptador
-	infer *ollama.ColaInferencia
+	infer *llm.ColaInferencia
 }
 
 func (t *tituladorPorTurno) Titulo(ctx context.Context, texto string) (string, error) {
@@ -1441,7 +1535,7 @@ func (t *tituladorPorTurno) Titulo(ctx context.Context, texto string) (string, e
 // una generación de un solo turno.
 type resumidorPorTurno struct {
 	ad    *Adaptador
-	infer *ollama.ColaInferencia
+	infer *llm.ColaInferencia
 }
 
 func (r *resumidorPorTurno) Resumir(ctx context.Context, transcripcion string) (string, error) {

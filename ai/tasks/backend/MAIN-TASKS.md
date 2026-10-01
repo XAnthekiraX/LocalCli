@@ -40,7 +40,7 @@ Fuente de verdad del progreso del backend. Derivada exclusivamente de `ai/docs/`
 | T-B033 | actualizar | un turno nunca se cierra mudo: la redacción final se reintenta una vez si vuelve a pedir herramientas y, si sigue sin texto, el turno falla con el motivo a la vista en vez de guardar `(respuesta vacía)` | T-B006, T-B031 | completada | `033-task-turno-sin-respuesta.md` |
 | T-B034 | actualizar | el agente pasa a ser una carpeta: `agent.yaml` (nombre, descripción y permisos de tres categorías `read`/`write`/`edit`, sin `skills` ni `mode`) más `prompt.md`; el `*.json` antiguo se avisa nombrándolo y los agentes base se migran | T-B006, T-B007, T-B017, T-B023, T-B030 | completada | `034-task-agentes-config-y-prompt.md` |
 | T-B035 | actualizar | la lista de pasos de la sesión tiene dos vías: `crear_todo` añade un paso al final y `actualizar_todo` sustituye la lista entera; mismo vocabulario, misma lista devuelta y sin migración | T-B002, T-B006, T-B007, T-B025 | completada | `035-task-crear-todo.md` |
-| T-B036 | actualizar | proveedor de modelo intercambiable: frontera `llm.Proveedor`, adaptador OpenAI-compatible (llama.cpp) y `LOCALCLI_PROVEEDOR` | T-B005, T-B018, T-B019, T-B022, T-B024 | pendiente | `036-task-proveedor-modelo.md` |
+| T-B036 | actualizar | proveedor de modelo intercambiable: frontera `llm.Proveedor`, adaptador OpenAI-compatible (llama.cpp) y `LOCALCLI_PROVEEDOR` | T-B005, T-B018, T-B019, T-B022, T-B024 | completada | `036-task-proveedor-modelo.md` |
 
 ## Referencias
 

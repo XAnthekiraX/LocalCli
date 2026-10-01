@@ -50,7 +50,7 @@ func TestModeloOllamaSeleccionaPorHTTP(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	m := &ModeloOllama{Cliente: ollama.NewClient(srv.URL), Modelo: "m"}
+	m := &ModeloLLM{Cliente: ollama.NewClient(srv.URL), Modelo: "m"}
 	got, err := m.Seleccionar(context.Background(), "objetivo", []string{"backend/BACKEND.md", "backend/DECISIONS.md"})
 	if err != nil {
 		t.Fatalf("Seleccionar: %v", err)

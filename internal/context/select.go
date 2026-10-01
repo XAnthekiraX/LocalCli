@@ -16,7 +16,7 @@ import (
 	"sort"
 	"strings"
 
-	"localcli/internal/ollama"
+	"localcli/internal/llm"
 )
 
 // Modelo decide qué documentos necesita el modelo para un objetivo.
@@ -24,21 +24,22 @@ type Modelo interface {
 	Seleccionar(ctx context.Context, objetivo string, candidatos []string) ([]string, error)
 }
 
-// ModeloOllama pregunta al modelo local. Solo se le pasan los nombres de los
-// candidatos y el objetivo, nunca el contenido de los documentos.
-type ModeloOllama struct {
-	Cliente *ollama.Client
+// ModeloLLM pregunta al modelo local a través de la frontera neutra. Solo se le
+// pasan los nombres de los candidatos y el objetivo, nunca el contenido de los
+// documentos. No sabe si detrás hay Ollama o llama.cpp.
+type ModeloLLM struct {
+	Cliente llm.Proveedor
 	Modelo  string
 }
 
 // Seleccionar lanza la consulta y devuelve los candidatos que el modelo nombró,
-// en el orden en que aparecieron. Un fallo de Ollama se propaga; una respuesta
-// sin candidatos reconocibles devuelve una lista vacía (sin error), para que el
-// nodo pueda aplicar su valor por defecto.
-func (m *ModeloOllama) Seleccionar(ctx context.Context, objetivo string, candidatos []string) ([]string, error) {
-	ch, err := m.Cliente.Chat(ctx, ollama.GenerarRequest{
-		Model:    m.Modelo,
-		Messages: []ollama.Mensaje{{Role: "user", Content: PromptSeleccion(objetivo, candidatos)}},
+// en el orden en que aparecieron. Un fallo del proveedor se propaga; una
+// respuesta sin candidatos reconocibles devuelve una lista vacía (sin error),
+// para que el nodo pueda aplicar su valor por defecto.
+func (m *ModeloLLM) Seleccionar(ctx context.Context, objetivo string, candidatos []string) ([]string, error) {
+	ch, err := m.Cliente.Chat(ctx, llm.Peticion{
+		Modelo:   m.Modelo,
+		Mensajes: []llm.Mensaje{{Role: "user", Content: PromptSeleccion(objetivo, candidatos)}},
 	})
 	if err != nil {
 		return nil, err
@@ -46,9 +47,9 @@ func (m *ModeloOllama) Seleccionar(ctx context.Context, objetivo string, candida
 	var b strings.Builder
 	for ev := range ch {
 		switch ev.Tipo {
-		case ollama.EventoToken:
+		case llm.EventoToken:
 			b.WriteString(ev.Texto)
-		case ollama.EventoError:
+		case llm.EventoError:
 			return nil, ev.Error
 		}
 	}

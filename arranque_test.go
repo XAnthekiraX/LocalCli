@@ -16,8 +16,10 @@ import (
 
 	"localcli/internal/agent"
 	"localcli/internal/flow"
+	"localcli/internal/llm"
 	"localcli/internal/ollama"
 	"localcli/internal/tools"
+	"localcli/internal/tui"
 )
 
 func servidorDeTags(t *testing.T, modelos ...string) *ollama.Client {
@@ -45,6 +47,50 @@ func TestElegirModeloPrefiereElUltimoUsado(t *testing.T) {
 	}
 	if got != "qwen2.5" {
 		t.Errorf("el último modelo usado prevalece si sigue instalado: %q", got)
+	}
+}
+
+// TestElModeloRecordadoSoloSeReusaConSuProveedor — T-B036-11: el mismo nombre no
+// significa lo mismo en los dos runtimes, así que el modelo guardado solo se
+// reutiliza si su proveedor coincide con el elegido.
+func TestElModeloRecordadoSoloSeReusaConSuProveedor(t *testing.T) {
+	prefs := tui.Preferencias{Modelo: "qwen3:8b", Proveedor: "ollama"}
+	if got := modeloRecordado(prefs, "ollama"); got != "qwen3:8b" {
+		t.Errorf("con su proveedor debe reutilizarse: %q", got)
+	}
+	if got := modeloRecordado(prefs, "llamacpp"); got != "" {
+		t.Errorf("con otro proveedor debe autodetectarse: %q", got)
+	}
+}
+
+// proveedorCaido es un doble de `llm.Proveedor` que no responde: reproduce un
+// runtime apagado.
+type proveedorCaido struct{}
+
+func (proveedorCaido) Nombre() string  { return "caido" }
+func (proveedorCaido) BaseURL() string { return "" }
+func (proveedorCaido) Chat(context.Context, llm.Peticion) (<-chan llm.Evento, error) {
+	return nil, errors.New("no responde")
+}
+func (proveedorCaido) ListarModelos(context.Context) ([]llm.Modelo, error) {
+	return nil, errors.New("no responde")
+}
+func (proveedorCaido) Capacidades(context.Context, string) ([]string, error) {
+	return nil, errors.New("no responde")
+}
+func (proveedorCaido) VentanaDeContexto(context.Context, string) (int, bool, error) {
+	return 0, false, errors.New("no responde")
+}
+
+// TestUnProveedorQueNoRespondeNoImpideArrancar — un proveedor apagado avisa y
+// la interfaz sigue viva: no responde, y elegirModelo devuelve error en vez de
+// tumbar el arranque.
+func TestUnProveedorQueNoRespondeNoImpideArrancar(t *testing.T) {
+	if respondeProveedor(proveedorCaido{}) {
+		t.Error("un proveedor caído no debe considerarse vivo")
+	}
+	if _, err := elegirModelo(proveedorCaido{}, ""); err == nil {
+		t.Error("sin proveedor, elegirModelo debe devolver error para que el arranque siga sin modelo")
 	}
 }
 

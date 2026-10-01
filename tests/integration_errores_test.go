@@ -20,7 +20,7 @@ import (
 	"localcli/internal/exec"
 	"localcli/internal/fileops"
 	"localcli/internal/flow"
-	"localcli/internal/ollama"
+	"localcli/internal/llm"
 	"localcli/internal/queue"
 	"localcli/internal/store"
 	"localcli/internal/tools"
@@ -53,9 +53,9 @@ func TestLosCodigosDelCatalogoSonLosDocumentados(t *testing.T) {
 		"flow.blocked":     flow.CodigoElementoBloqueado,
 		// queue
 		"queue.blocked": queue.CodigoElementoBloqueado,
-		// ollama
-		"ollama.unavailable": ollama.CodigoOllamaNoDisponible,
-		"ollama.toobig":      ollama.CodigoModeloNoCabe,
+		// proveedor de modelo (frontera llm)
+		"proveedor.unavailable": llm.CodigoProveedorNoDisponible,
+		"proveedor.toobig":      llm.CodigoModeloNoCabe,
 	}
 	documentados := map[string]bool{
 		"E_TOOL_UNKNOWN": true, "E_TOOL_NOT_ALLOWED": true, "E_BAD_ARGS": true,
@@ -67,7 +67,7 @@ func TestLosCodigosDelCatalogoSonLosDocumentados(t *testing.T) {
 		"E_NOT_A_PROJECT":  true,
 		"E_DB_UNAVAILABLE": true, "E_DB_SCHEMA_OUTDATED": true, "E_DB_CONSTRAINT": true,
 		"E_DB_FOREIGN_KEY": true, "E_DB_CONFLICT": true, "E_DB_LOCKED": true,
-		"E_OLLAMA_UNAVAILABLE": true, "E_MODEL_TOO_BIG": true, "E_NO_LANDLOCK": true,
+		"E_PROVEEDOR_NO_DISPONIBLE": true, "E_MODEL_TOO_BIG": true, "E_NO_LANDLOCK": true,
 	}
 	for qué, codigo := range catalogo {
 		if !strings.HasPrefix(codigo, "E_") {

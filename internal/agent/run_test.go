@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"localcli/internal/llm"
 	"localcli/internal/ollama"
 	"localcli/internal/tools"
 )
@@ -33,8 +34,8 @@ func TestPeticionLlevaElPromptYElCanalDeHerramientas(t *testing.T) {
 		Permissions: map[string]string{"read": "allow"},
 	})
 	a := Agente{Nombre: "lector", Prompt: "PROMPT-DEL-JSON"}
-	runner := Runner{Cliente: ollama.NewClient(srv.URL)}
-	ch, err := runner.Generar(context.Background(), a, "m", []ollama.Mensaje{{Role: "user", Content: "hola"}}, defs, 0, nil)
+	runner := Runner{Proveedor: ollama.NewClient(srv.URL)}
+	ch, err := runner.Generar(context.Background(), a, "m", []llm.Mensaje{{Role: "user", Content: "hola"}}, defs, 0, nil)
 	if err != nil {
 		t.Fatalf("Generar: %v", err)
 	}
@@ -92,7 +93,7 @@ func TestPromptNoLlevaCatalogo(t *testing.T) {
 // TestConstruirPeticionNoMutaLosMensajes — armar la petición no debe pisar el
 // slice del llamador.
 func TestConstruirPeticionNoMutaLosMensajes(t *testing.T) {
-	mensajes := []ollama.Mensaje{{Role: "user", Content: "hola"}}
+	mensajes := []llm.Mensaje{{Role: "user", Content: "hola"}}
 	_ = ConstruirPeticion(Agente{Nombre: "x", Prompt: "p"}, "m", mensajes, nil, 0, nil)
 	if len(mensajes) != 1 || mensajes[0].Content != "hola" {
 		t.Errorf("la petición mutó los mensajes de entrada: %+v", mensajes)
@@ -109,40 +110,26 @@ func TestConstruirPeticionLlevaLaVentana(t *testing.T) {
 	}
 }
 
-// Sin decisión sobre el razonamiento, el campo `think` NO se manda: Ollama
-// decide, que es lo que quiere un modelo que no razona.
+// Sin decisión sobre el razonamiento, el puntero va nil: el adaptador no manda
+// nada y el runtime decide, que es lo que quiere un modelo que no razona.
 func TestConstruirPeticionSinRazonamientoNoMandaThink(t *testing.T) {
 	req := ConstruirPeticion(Agente{Nombre: "x", Prompt: "p"}, "m", nil, nil, 0, nil)
-	bruto, err := json.Marshal(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(bruto), "think") {
-		t.Errorf("sin decisión no viaja `think`: %s", bruto)
+	if req.Pensar != nil {
+		t.Errorf("sin decisión el puntero debe quedar nil: %v", *req.Pensar)
 	}
 }
 
 // Con decisión, el valor viaja tal cual: es lo que apaga el razonamiento de un
-// modelo local, que Ollama deja encendido por defecto.
+// modelo local, que el runtime deja encendido por defecto.
 func TestConstruirPeticionMandaElRazonamientoDecidido(t *testing.T) {
 	no, si := false, true
-	casos := []struct {
-		nombre string
-		pensar *bool
-		quiere string
-	}{
-		{"apagado", &no, `"think":false`},
-		{"encendido", &si, `"think":true`},
+	req := ConstruirPeticion(Agente{Nombre: "x", Prompt: "p"}, "m", nil, nil, 0, &no)
+	if req.Pensar == nil || *req.Pensar {
+		t.Errorf("apagado: Pensar = %v", req.Pensar)
 	}
-	for _, tc := range casos {
-		req := ConstruirPeticion(Agente{Nombre: "x", Prompt: "p"}, "m", nil, nil, 0, tc.pensar)
-		bruto, err := json.Marshal(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(string(bruto), tc.quiere) {
-			t.Errorf("%s: %s debe llevar %s", tc.nombre, bruto, tc.quiere)
-		}
+	req = ConstruirPeticion(Agente{Nombre: "x", Prompt: "p"}, "m", nil, nil, 0, &si)
+	if req.Pensar == nil || !*req.Pensar {
+		t.Errorf("encendido: Pensar = %v", req.Pensar)
 	}
 }
 
@@ -166,7 +153,7 @@ func TestRegresionElTurnoMandaLaVentana(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	e := &Ejecutor{Runner: Runner{Cliente: ollama.NewClient(srv.URL)}}
+	e := &Ejecutor{Runner: Runner{Proveedor: ollama.NewClient(srv.URL)}}
 	ag := Agente{Nombre: "plan", Prompt: "p"}
 
 	// Sin ventana, el servidor simula el corte por defecto de Ollama.
