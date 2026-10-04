@@ -2,19 +2,20 @@
 title: SPEC — Agentes incluidos
 tags: [specs, requisito]
 depende_de:
-  - "[[IDEA]]"
-  - "[[specs/SPEC-TOOLS]]"
-  - "[[specs/SPEC-NODO-CONTEXTO]]"
-  - "[[specs/SPEC-ARCHIVOS]]"
-  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
-  - "[[specs/SPEC-SESIONES]]"
-  - "[[specs/SPEC-COLA-TAREAS]]"
+    - "[[IDEA]]"
+    - "[[specs/SPEC-TOOLS]]"
+    - "[[specs/SPEC-NODO-CONTEXTO]]"
+    - "[[specs/SPEC-ARCHIVOS]]"
+    - "[[specs/SPEC-MODELO-PROVEEDOR]]"
+    - "[[specs/SPEC-SESIONES]]"
+    - "[[specs/SPEC-COLA-TAREAS]]"
 relacionado:
-  - "[[backend/DECISIONS]]"
-  - "[[specs/SPEC-CICLO-TRABAJO]]"
-  - "[[specs/SPEC-RESOLVER]]"
-  - "[[specs/SPEC-SKILLS]]"
+    - "[[backend/DECISIONS]]"
+    - "[[specs/SPEC-CICLO-TRABAJO]]"
+    - "[[specs/SPEC-RESOLVER]]"
+    - "[[specs/SPEC-SKILLS]]"
 ---
+
 # SPEC — Agentes incluidos
 
 Prioridad: P0 (núcleo)
@@ -35,8 +36,8 @@ No incluye skills ni flujos.
 ## Actores
 
 - **Usuario**: elige agente, responde preguntas, aprueba propuestas.
-- **Agente `plan`**: investiga, propone y pide aprobación. No escribe.
-- **Agente `build`**: aplica lo aprobado. Es el único que escribe.
+- **Agente `plan`**: conversa, investiga, propone y pide aprobación. No escribe.
+- **Agente `build`**:conversa, aplica lo aprobado. Es el único que escribe.
 
 ## Dónde se definen
 
@@ -56,17 +57,17 @@ La separación es deliberada y las dos mitades viajan por caminos distintos: **l
 name: plan
 description: Investiga y diseña el enfoque de implementación con sus compensaciones; propone cambios concretos y nunca escribe archivos.
 permissions:
-  default: deny
-  read: allow
+    default: deny
+    read: allow
 ```
 
 Ese es el `agent.yaml` de `plan` entero. No hace falta una línea por cada denegación: lo que no se nombre queda en `deny`, y por eso la garantía de que `plan` no escribe se lee de un vistazo.
 
-| Campo | Qué es |
-|---|---|
-| `name` | Cómo se llama. Obligatorio. Es lo que la interfaz y los flujos citan. |
-| `description` | Lo que ve el usuario en la lista de agentes. |
-| `permissions` | Qué puede hacer. Su forma está en «Los permisos». |
+| Campo         | Qué es                                                                |
+| ------------- | --------------------------------------------------------------------- |
+| `name`        | Cómo se llama. Obligatorio. Es lo que la interfaz y los flujos citan. |
+| `description` | Lo que ve el usuario en la lista de agentes.                          |
+| `permissions` | Qué puede hacer. Su forma está en «Los permisos».                     |
 
 Son tres campos, y no hay un cuarto: **no existe `mode` ni `skills`**. Un `skills:` escrito por costumbre se rechaza como campo desconocido. Ver [[specs/SPEC-SKILLS]].
 
@@ -84,19 +85,19 @@ El campo `permissions` es el que sostiene la garantía. Es un **mapa de permiso 
 
 ```yaml
 permissions:
-  default: deny      # opcional; si no está, todo lo que no se nombre queda en deny
-  read: allow
-  write: allow
-  edit: allow
+    default: deny # opcional; si no está, todo lo que no se nombre queda en deny
+    read: allow
+    write: allow
+    edit: allow
 ```
 
 Solo hay **tres permisos**, y el catálogo cerrado de herramientas se **deriva** de ellos contra las quince herramientas de `tools`: no hay una segunda lista que pueda contradecirlos. La garantía vive en los datos, no en el código.
 
-| Permiso | Qué abre |
-|---|---|
-| `read` | No cambia el proyecto: mirar y buscar archivos, la terminal de consulta, internet y la lista de pasos de la sesión. |
-| `write` | Crear, sobrescribir o borrar un archivo o una carpeta. |
-| `edit` | Editar contenido existente, sin reemplazarlo entero. |
+| Permiso | Qué abre                                                                                                            |
+| ------- | ------------------------------------------------------------------------------------------------------------------- |
+| `read`  | No cambia el proyecto: mirar y buscar archivos, la terminal de consulta, internet y la lista de pasos de la sesión. |
+| `write` | Crear, sobrescribir o borrar un archivo o una carpeta.                                                              |
+| `edit`  | Editar contenido existente, sin reemplazarlo entero.                                                                |
 
 Los tres son independientes. `write: deny, edit: allow` es un agente que puede parchear archivos pero no crearlos, sobrescribirlos ni borrarlos.
 
@@ -104,9 +105,9 @@ Los tres son independientes. `write: deny, edit: allow` es un agente que puede p
 
 ```yaml
 permissions:
-  default: deny
-  read: allow
-  edit: deny        # no puede ni crear ni parchear
+    default: deny
+    read: allow
+    edit: deny # no puede ni crear ni parchear
 ```
 
 `permissions` puede omitirse entero: un agente sin permisos es un agente de solo conversación. Un permiso o un efecto que no sea del vocabulario se rechaza, no se ignora.
