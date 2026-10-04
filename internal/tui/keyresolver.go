@@ -29,7 +29,14 @@ const (
 	// ContextoInput: se está escribiendo; las letras sueltas son texto, nunca atajo.
 	ContextoInput
 	// ContextoModal: un modal abierto captura su navegación (flechas, enter, esc).
+	// Son los modales sin teclas propias: modelos y atajos.
 	ContextoModal
+	// ContextoModalSesiones y ContextoModalMotores: el modal de sesiones añade
+	// `session_delete` (`ctrl+d`) y el de motores sus tres secuencias con líder
+	// (`motor_new`, `motor_edit`, `motor_delete`); cada uno resuelve solo dentro
+	// de su modal (SPEC-KEYBINDS §Reglas de negocio).
+	ContextoModalSesiones
+	ContextoModalMotores
 	// ContextoAprobaciones: el panel de aprobaciones abierto (a/d resuelven).
 	ContextoAprobaciones
 )
@@ -56,6 +63,11 @@ const (
 	AmbitoGlobal
 	// AmbitoModal: solo con una lista abierta (navegar, cerrar).
 	AmbitoModal
+	// AmbitoModalSesiones: solo dentro del modal de sesiones (`session_delete`).
+	AmbitoModalSesiones
+	// AmbitoModalMotores: solo dentro del modal de motores (`motor_new`,
+	// `motor_edit` y `motor_delete`, con líder).
+	AmbitoModalMotores
 	// AmbitoAprobaciones: solo con el panel de aprobaciones con el foco.
 	AmbitoAprobaciones
 	// AmbitoEntrada: `enter` resuelve en todas partes porque su significado lo
@@ -68,10 +80,14 @@ const (
 // acción nueva nace en AmbitoVista, que es el contexto menos sorprendente.
 func ambitoDeAccion(a Accion) Ambito {
 	switch a {
-	case AccionSalir, AccionModalModelos, AccionSelector, AccionAyuda:
+	case AccionSalir, AccionModalModelos, AccionModalMotores, AccionSelector, AccionAyuda:
 		return AmbitoGlobal
-	case AccionCerrarSelector, AccionSubir, AccionBajar, AccionEliminarSesion:
+	case AccionCerrarSelector, AccionSubir, AccionBajar:
 		return AmbitoModal
+	case AccionEliminarSesion:
+		return AmbitoModalSesiones
+	case AccionMotorNuevo, AccionMotorEditar, AccionEliminarMotor:
+		return AmbitoModalMotores
 	case AccionAprobar, AccionDeclinar:
 		return AmbitoAprobaciones
 	case AccionEnviar:
@@ -80,12 +96,19 @@ func ambitoDeAccion(a Accion) Ambito {
 	return AmbitoVista
 }
 
+// esModalContexto dice si el contexto es el de un modal abierto, sea cual sea.
+func esModalContexto(ctx Contexto) bool {
+	return ctx == ContextoModal || ctx == ContextoModalSesiones || ctx == ContextoModalMotores
+}
+
 // resuelveConFoco dice si una acción resuelve con ese foco. Con un modal
 // abierto solo responden sus propias teclas y las globales; ninguna de la vista
 // de abajo llega (SPEC-KEYBINDS §Acción de app_exit y §Resolución por
-// contexto). El panel de aprobaciones no es un modal: sus toggles de vista
-// siguen vivos, porque el panel se abre y se cierra sin detener el trabajo
-// (SPEC-INTERFAZ-ATAJOS).
+// contexto). Un ámbito de modal concreto solo resuelve dentro de SU modal, de
+// modo que `ctrl+d` elimina sesiones en un modal y motores en el otro sin que
+// las dos acciones convivan en el mismo ámbito. El panel de aprobaciones no es
+// un modal: sus toggles de vista siguen vivos, porque el panel se abre y se
+// cierra sin detener el trabajo (SPEC-INTERFAZ-ATAJOS).
 func resuelveConFoco(amb Ambito, ctx Contexto) bool {
 	if amb == AmbitoEntrada {
 		// `enter` es la misma tecla con dos significados, y el contexto los
@@ -93,11 +116,18 @@ func resuelveConFoco(amb Ambito, ctx Contexto) bool {
 		// sitio envía la petición (INTERFACES §4, las dos filas de `Enter`).
 		return true
 	}
-	switch ctx {
-	case ContextoModal:
-		return amb == AmbitoGlobal || amb == AmbitoModal
-	case ContextoVista:
-		return amb != AmbitoModal
+	switch amb {
+	case AmbitoGlobal:
+		return true
+	case AmbitoModal:
+		return esModalContexto(ctx)
+	case AmbitoModalSesiones:
+		return ctx == ContextoModalSesiones
+	case AmbitoModalMotores:
+		return ctx == ContextoModalMotores
+	}
+	if esModalContexto(ctx) {
+		return false
 	}
 	return true
 }
@@ -162,6 +192,11 @@ type KeyResolver struct {
 	Kmap      *Keymap
 	Estado    EstadoResolver
 	Pendiente []Secuencia // candidatas que empiezan por la líder pulsada
+	// ctx guarda el contexto en el que se abrió la espera de líder: las
+	// secuencias de un ámbito concreto (por ejemplo `<leader>a`, añadir un motor
+	// dentro de su modal) solo resuelven ahí, igual que sus teclas directas
+	// (SPEC-KEYBINDS §Resolución por contexto).
+	ctx Contexto
 
 	// esperar es el temporizador de la espera de líder. Es una función para que
 	// las pruebas inyecten un reloj propio y no dependan del tiempo real
@@ -201,7 +236,7 @@ func (r *KeyResolver) Resolver(m tea.KeyMsg, ctx Contexto) (Accion, tea.Cmd) {
 		return r.combinar(nombre)
 	}
 	if nombre == r.Kmap.Lider() {
-		return r.entrarEnLider()
+		return r.entrarEnLider(ctx)
 	}
 	if ctx == ContextoInput && len([]rune(nombre)) == 1 {
 		return AccionNinguna, nil
@@ -222,10 +257,17 @@ func (r *KeyResolver) Resolver(m tea.KeyMsg, ctx Contexto) (Accion, tea.Cmd) {
 	return AccionNinguna, nil
 }
 
-// entrarEnLider guarda las secuencias candidatas y arranca el temporizador.
-func (r *KeyResolver) entrarEnLider() (Accion, tea.Cmd) {
+// entrarEnLider guarda las secuencias candidatas y arranca el temporizador. Solo
+// recoge las secuencias que resuelven en el contexto actual: así una secuencia
+// de un ámbito concreto (`<leader>a`, añadir un motor) no dispara su acción
+// desde otra vista, igual que no lo haría su tecla directa (SPEC-KEYBINDS
+// §Resolución por contexto).
+func (r *KeyResolver) entrarEnLider(ctx Contexto) (Accion, tea.Cmd) {
 	var candidatas []Secuencia
 	for _, e := range r.Kmap.Entradas() {
+		if !resuelveConFoco(ambitoDeAccion(e.Accion), ctx) {
+			continue
+		}
 		for _, sec := range e.Secuencias {
 			if sec.Paso2 != "" && sec.Paso1 == r.Kmap.Lider() {
 				candidatas = append(candidatas, sec)
@@ -233,6 +275,7 @@ func (r *KeyResolver) entrarEnLider() (Accion, tea.Cmd) {
 		}
 	}
 	r.Estado = EstadoLider
+	r.ctx = ctx
 	r.Pendiente = candidatas
 	esperar := r.esperar
 	if esperar == nil {
@@ -248,9 +291,9 @@ func (r *KeyResolver) combinar(nombre string) (Accion, tea.Cmd) {
 		r.Cancelar()
 		return AccionNinguna, nil
 	}
-	// La líder otra vez reinicia la espera desde cero.
+	// La líder otra vez reinicia la espera desde cero, en el mismo contexto.
 	if nombre == r.Kmap.Lider() {
-		return r.entrarEnLider()
+		return r.entrarEnLider(r.ctx)
 	}
 	for _, sec := range r.Pendiente {
 		if sec.Paso2 == nombre {

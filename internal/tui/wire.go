@@ -70,6 +70,12 @@ const (
 // igual que las sesiones llegan como `session.Sesion` y nada más.
 type ModeloLocal struct {
 	Nombre string
+	// Motor es el nombre visible de la INSTANCIA del motor que sirve el modelo
+	// (`Ollama local`, `llama.cpp 8080`), no el del tipo: el modal lo rotula en
+	// cada fila para que se sepa contra cuál se habla cuando dos motores ofrecen
+	// el mismo nombre de modelo (SPEC-MODELO-MOTOR). La vista solo lo pinta; no
+	// decide su valor.
+	Motor string
 	// SinHerramientas marca los modelos que Ollama no declara capaces de usar
 	// herramientas. El valor cero es «sí puede»: un fallo de detección no debe
 	// alarmar. La vista solo lo pinta y avisa; no decide nada (DOMAIN §4).
@@ -83,14 +89,58 @@ type ModeloLocal struct {
 	CapacidadesSinDato bool
 }
 
+// MotorLocal es una entrada del registro de motores tal como la ve la vista: la
+// instancia que el usuario administra. La vista no importa `llm` ni lee el
+// archivo del registro: pide la lista y devuelve la elección (DOMAIN §4).
+type MotorLocal struct {
+	ID     string
+	Nombre string
+	Tipo   string
+	URL    string
+	Activo bool
+	// Extensiones son las extensiones nativas que la instancia declara en su
+	// registro (`num_ctx`, `show`, `tags`, `props`): ausente = solo núcleo
+	// común. La vista solo las pinta y las devuelve al guardar; qué extensión
+	// puede declarar cada tipo lo decide el registro, no ella
+	// (SPEC-MODELO-MOTOR §Las extensiones nativas).
+	Extensiones []string
+	// PendienteDeReinicio marca los motores editados estando aplicados: su
+	// cambio se aplica al reiniciar. La vista solo lo pinta, no decide
+	// (DECISIONS: editar un motor aplicado no cambia hasta reiniciar).
+	PendienteDeReinicio bool
+}
+
+// Capacidad es el estado de tres valores de una capacidad del modelo
+// (INTERFACES §3.2). `desconocida` no es un «no» con otro nombre: es la
+// ausencia de dato —una extensión que el motor no declara— y la vista la pinta
+// con `?` en vez de afirmar. El valor cero es `CapacidadDesconocida`, porque
+// sin dato es lo que procede mientras nada se ha resuelto.
+type Capacidad uint8
+
+const (
+	CapacidadDesconocida Capacidad = iota
+	CapacidadSoportada
+	CapacidadNoSoportada
+)
+
+// CapacidadDe envuelve un sí/no ya decidido por el backend en su estado. No
+// resuelve nada: la duda la levanta quien conoce el motor, no la vista.
+func CapacidadDe(si bool) Capacidad {
+	if si {
+		return CapacidadSoportada
+	}
+	return CapacidadNoSoportada
+}
+
 // Capacidades es lo que la vista conoce del modelo en uso para su línea de
-// estado. Los tres campos son «sí puede»: la vista solo los pinta y avisa.
+// estado. Cada campo lleva su estado de tres valores, ya resuelto por el
+// puerto: la vista solo lo pinta y avisa.
 type Capacidades struct {
-	Herramientas bool
-	Vision       bool
+	Herramientas Capacidad
+	Vision       Capacidad
 	// Pensar dice si el modelo razona antes de responder. Solo estos modelos
 	// enseñan la chapa `pensar [x]`: a los demás no se les puede mandar `think`.
-	Pensar bool
+	Pensar Capacidad
 }
 
 // TareaPanel es un paso de la lista de la sesión tal como lo pinta el panel
@@ -134,8 +184,39 @@ type Puerto interface {
 	Git() (rama string, cambios int)
 	// CapacidadesModelo dice qué declara capaz de hacer el modelo indicado, para
 	// la línea de estado bajo el input (SPEC-OLLAMA-PERFIL). La vista no importa
-	// `ollama`: los booleanos llegan ya resueltos.
+	// `ollama`: cada capacidad llega ya resuelta en sus tres estados.
 	CapacidadesModelo(nombre string) (Capacidades, error)
+	// MotorActual devuelve el nombre visible de la INSTANCIA del motor por
+	// defecto (el de las sesiones nuevas), no el del tipo: dos motores del mismo
+	// tipo se distinguen así (SPEC-MODELO-MOTOR).
+	MotorActual() string
+	// ParMotorModelo devuelve el par motor/modelo de una sesión. Vacío en
+	// cualquiera de los dos significa «sin asignar».
+	ParMotorModelo(sesionID string) (motorID, modelo string, err error)
+	// CambiarMotor y CambiarModelo fijan el par de la sesión sin tocar su
+	// identidad ni su historial: el par es un recurso suyo, no parte de su
+	// identidad (SPEC-MODELO-MOTOR).
+	CambiarMotor(sesionID, motorID string) error
+	CambiarModelo(sesionID, modelo string) error
+	// ListarMotores devuelve el registro de motores para el modal de motores,
+	// ya traducido a `MotorLocal`. La vista nunca lee el archivo del registro.
+	ListarMotores() ([]MotorLocal, error)
+	// RegistrarMotor, EditarMotor, EliminarMotor y AlternarMotor administran el
+	// registro. La vista solo pinta la lista y devuelve la elección
+	// (SPEC-MODELO-MOTOR §Gestión de motores): desactivar/reactivar es inmediato
+	// y no borra nada. El alta y la edición llevan también las `Extensiones`
+	// declaradas, que el registro valida contra el tipo del motor.
+	RegistrarMotor(m MotorLocal) error
+	EditarMotor(m MotorLocal) error
+	EliminarMotor(id string) error
+	AlternarMotor(id string, activo bool) error
+	// ExtensionesValidas devuelve las extensiones nativas que admite un tipo
+	// del catálogo cerrado (`ollama`: `num_ctx`, `show`, `tags`; `llamacpp`:
+	// `props`). El formulario del modal valida contra esta lista en vez de
+	// llevarla copiada: qué extensión puede declarar cada tipo lo decide el
+	// registro, no la vista (SPEC-MODELO-MOTOR §El catálogo es cerrado). Un
+	// tipo desconocido no admite ninguna.
+	ExtensionesValidas(tipo string) []string
 	// AgenteRecordado devuelve el último agente con el que se trabajó, para que
 	// la vista arranque en él (SPEC-OLLAMA-PERFIL: la preferencia se recuerda).
 	// Vacío significa «sin preferencia»: la vista cae en `plan`. Lo lee el motor,
@@ -224,14 +305,39 @@ type (
 		Modelos []ModeloLocal
 		Err     error
 	}
+	// motoresMsg trae el registro de motores y las sesiones del proyecto: con
+	// las sesiones la vista sabe si alguna usa el motor resaltado y pide
+	// confirmación antes de borrarlo (SPEC-MODELO-MOTOR §Eliminar).
+	motoresMsg struct {
+		Motores  []MotorLocal
+		Sesiones []session.Sesion
+		Err      error
+	}
+	// motorSesionMsg trae el motor con el que trabaja la sesión activa, ya
+	// resuelto a su nombre visible, y si ese motor falta o está desactivado:
+	// alimenta la línea de estado bajo el input (SPEC-MODELO-MOTOR §Desactivar).
+	motorSesionMsg struct {
+		Sesion string
+		ID     string
+		Nombre string
+		Aviso  string
+	}
+	// motorAplicadoMsg llega tras aplicar un motor a la sesión y traer sus
+	// modelos: con ellos la vista decide si el modelo en uso sigue existiendo en
+	// el motor nuevo (SPEC-MODELO-MOTOR §Cambiar a mitad de conversación).
+	motorAplicadoMsg struct {
+		Sesion  string
+		MotorID string
+		Modelos []ModeloLocal
+	}
 	// capacidadesMsg trae qué declara capaz de hacer el modelo en uso, para la
-	// línea de estado bajo el input. Un fallo deja el dato como desconocido
-	// («?»): no bloquea nada.
+	// línea de estado bajo el input. Cada capacidad llega en su estado de tres
+	// valores; un fallo la deja desconocida («?») y no bloquea nada.
 	capacidadesMsg struct {
 		Nombre       string
-		Herramientas bool
-		Vision       bool
-		Pensar       bool
+		Herramientas Capacidad
+		Vision       Capacidad
+		Pensar       Capacidad
 		Err          error
 	}
 	aprobacionesMsg struct{ Items []Aprobacion }
@@ -242,9 +348,11 @@ type (
 		// que el historial (SPEC-TOOLS).
 		Tareas []TareaPanel
 		// ContextoTokens y LimiteTokens son los números del panel de contexto
-		// de la sesión cargada (SPEC-PANEL-CONTEXTO).
-		ContextoTokens int
-		LimiteTokens   int
+		// de la sesión cargada (SPEC-PANEL-CONTEXTO). LimiteDelHarness marca que
+		// el límite es el tope del harness, no la ventana del modelo.
+		ContextoTokens   int
+		LimiteTokens     int
+		LimiteDelHarness bool
 	}
 	enviadoMsg struct{ Sesion, Texto string }
 	errorMsg   struct{ err error }
@@ -461,6 +569,10 @@ func (a *App) AplicarEvento(e Evento) {
 		if n, err := enteroDe(e.Datos["limite"]); err == nil {
 			a.Panel.LimiteTokens = n
 		}
+		// El límite puede ser el tope del harness cuando el motor no declara su
+		// ventana: el evento lo dice para que el panel no lo haga pasar por la
+		// ventana del modelo (SPEC-MODELO-MOTOR §La ventana de contexto).
+		a.Panel.LimiteDelHarness = e.Datos["limite_harness"] == "true"
 	case EventoTodoActualizada:
 		// La lista de pasos es de la sesión activa: la de otra no entra al panel
 		// (el panel refleja la sesión activa, y solo esa).

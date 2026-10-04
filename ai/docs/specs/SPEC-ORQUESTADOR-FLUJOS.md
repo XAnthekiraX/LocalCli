@@ -1,5 +1,5 @@
 ---
-title: SPEC — Motor de flujos
+title: SPEC — Orquestador de flujos
 tags: [specs, requisito]
 depende_de:
     - "[[IDEA]]"
@@ -11,7 +11,7 @@ relacionado:
     - "[[specs/SPEC-FLUJO-PERSONALIZADO]]"
 ---
 
-# SPEC — Motor de flujos
+# SPEC — Orquestador de flujos
 
 Prioridad: P0 (núcleo)
 
@@ -21,13 +21,13 @@ Ejecutar trabajos de varias etapas encadenadas en las que **cada etapa responde 
 
 ## Alcance
 
-Incluye el motor de etapas, los flujos oficiales, la ventana de contexto del flujo, el encadenamiento, el control cuando una etapa falla y el registro de lo que hizo cada etapa.
-No incluye la cola que el motor ejecuta, que está en [[specs/SPEC-COLA-TAREAS]], ni que el usuario defina sus propios flujos, que está en [[specs/SPEC-FLUJO-PERSONALIZADO]].
+Incluye el orquestador de etapas, los flujos oficiales, la ventana de contexto del flujo, el encadenamiento, el control cuando una etapa falla y el registro de lo que hizo cada etapa.
+No incluye la cola que el orquestador ejecuta, que está en [[specs/SPEC-COLA-TAREAS]], ni que el usuario defina sus propios flujos, que está en [[specs/SPEC-FLUJO-PERSONALIZADO]].
 
 ## Actores
 
 - **Usuario**: lanza el flujo con su petición, decide cuando algo falla y puede parar una etapa antes de que corra.
-- **Motor**: encadena las etapas, mantiene la ventana y conserva el estado.
+- **Orquestador**: encadena las etapas, mantiene la ventana y conserva el estado.
 - **Etapa**: pide su contexto, responde su pregunta y produce una respuesta.
 - **Modelo**: decide qué documentación es relevante y produce cada respuesta.
 
@@ -41,7 +41,7 @@ La pregunta es lo que convierte una etapa en algo verificable. En lugar de «exp
 
 1. El usuario escribe el comando del flujo seguido de su petición, con sus palabras.
 2. Cada etapa pide su contexto al nodo, **excluyendo lo que las etapas anteriores ya recibieron** (§Nodo de contexto en [[specs/SPEC-NODO-CONTEXTO]]). Es lo que hace auditable qué recibió cada una: `context_audit` guarda una fila por documento y etapa.
-3. El motor corre las etapas en orden. En cada una:
+3. El orquestador corre las etapas en orden. En cada una:
    1. Si la etapa tiene `continuacion`, el flujo **se detiene y pregunta** `continuamos con la etapa <nombre>?`. El usuario contesta sí o no, y puede cambiar de modelo mientras la decisión está en pantalla: al continuar, la etapa corre con el modelo que esté elegido, y las siguientes también, porque el modelo es de la sesión y se relee en cada etapa.
    2. La etapa recibe la ventana (§Ventana de contexto del flujo) más su propio contexto.
    3. Corre con herramientas, salvo que tenga `entrega`: esa corre **sin herramientas**, porque solo redacta.
@@ -52,7 +52,7 @@ La pregunta es lo que convierte una etapa en algo verificable. En lugar de «exp
 
 ## Ventana de contexto del flujo
 
-La ventana es lo que una etapa hereda de las anteriores. No es el historial del chat: es un texto que el motor compone y que contiene dos cosas.
+La ventana es lo que una etapa hereda de las anteriores. No es el historial del chat: es un texto que el orquestador compone y que contiene dos cosas.
 
 1. **La petición original del usuario**, completa y con su comando. Va siempre, en todas las etapas: es el encargo que ninguna etapa puede perder de vista.
 2. **La pregunta y la respuesta de cada etapa anterior**, en orden. `## <nombre>` · `Pregunta: <pregunta>` · `Respuesta: <respuesta>`.
@@ -79,7 +79,7 @@ El bloque vive en `flow_context` (sesión, flujo, etapa, nombre visible, posici�
 
 ## Visibilidad de una respuesta
 
-Una respuesta de etapa tiene tres niveles, y el nivel no lo decide el motor: lo declara la etapa.
+Una respuesta de etapa tiene tres niveles, y el nivel no lo decide el orquestador: lo declara la etapa.
 
 | Nivel | Cuándo | Dónde queda | ¿Llega al modelo? | Herramientas |
 |---|---|---|---|---|
@@ -123,7 +123,7 @@ El nivel de entrega es el único que corre sin herramientas. Lo declara la etapa
 - Un flujo que se cancela no deja etapas ejecutándose.
 - Un flujo no arranca solo: lo solicita el usuario con un comando explícito (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`).
 - Una petición que no es un comando de flujo se responde en el chat, no arranca etapas.
-- El motor puede detectar trabajo ordenado y proponer un TODO, pero no lo ejecuta hasta que el usuario confirme o escriba el comando.
+- El orquestador puede detectar trabajo ordenado y proponer un TODO, pero no lo ejecuta hasta que el usuario confirme o escriba el comando.
 - Una tarea de la cola no arranca si sus dependencias no están cumplidas.
 
 ## Criterios de aceptación

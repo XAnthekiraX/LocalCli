@@ -209,6 +209,29 @@ func TestLaBienvenidaEstiloOpencodeMuestraSusBloques(t *testing.T) {
 	}
 }
 
+// Sin ningún motor activo la bienvenida no bloquea ni inventa uno: lo dice y
+// ofrece abrir el modal; el resto de la pantalla sigue viva y se puede escribir
+// (SPEC-MODELO-MOTOR §Ningún motor activo por defecto, T-F045-08).
+func TestLaBienvenidaSinMotoresOfreceAbrirElModal(t *testing.T) {
+	// Sin `motorActual`: el arranque no tiene ningún motor del que servir.
+	a := Nuevo(&puertoStub{modelo: "llama3.2"})
+	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	v := sinEstilo(a.View())
+	if !strings.Contains(v, "no hay ningún motor") {
+		t.Fatalf("la bienvenida dice que no hay motor dado de alta:\n%s", v)
+	}
+	if !strings.Contains(v, "Ctrl+X i") {
+		t.Errorf("ofrece abrir el modal de motores:\n%s", v)
+	}
+
+	// No bloquea: la entrada sigue operativa y se puede escribir.
+	escribe(t, a, "hola")
+	if a.Bienvenida.Texto != "hola" {
+		t.Errorf("la entrada sigue viva: %q", a.Bienvenida.Texto)
+	}
+}
+
 // La línea de estado de la caja refleja el agente activo al instante.
 func TestTabCambiaLaLineaDeEstadoDeLaBienvenida(t *testing.T) {
 	a := Nuevo(&puertoStub{modelo: "m"})

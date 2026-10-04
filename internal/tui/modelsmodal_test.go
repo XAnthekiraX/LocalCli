@@ -83,6 +83,25 @@ func TestElModalDeModelosEnfocaElModeloEnUso(t *testing.T) {
 	}
 }
 
+// TestElModalDeModelosRotulaMotorYModelo — T-F044-07: cada fila rotula el motor
+// que la sirve delante del nombre del modelo (`motor / modelo`), porque el mismo
+// nombre en dos motores distintos no significa lo mismo (SPEC-MODELO-MOTOR).
+func TestElModalDeModelosRotulaMotorYModelo(t *testing.T) {
+	mm := &ModelsModal{}
+	mm.AbrirModelos("")
+	mm.FijarModelos([]ModeloLocal{
+		{Nombre: "qwen3:8b", Motor: "Ollama local"},
+		{Nombre: "qwen3:8b", Motor: "llama.cpp 8080"},
+	}, nil)
+	v := sinEstilo(mm.Render(80, 24))
+	if !strings.Contains(v, "Ollama local / qwen3:8b") {
+		t.Errorf("la fila rotula el motor Ollama local:\n%s", v)
+	}
+	if !strings.Contains(v, "llama.cpp 8080 / qwen3:8b") {
+		t.Errorf("la fila rotula el motor llama.cpp 8080:\n%s", v)
+	}
+}
+
 func TestElModalMarcaLosModelosSinHerramientas(t *testing.T) {
 	mm := &ModelsModal{}
 	mm.AbrirModelos("")
@@ -96,6 +115,33 @@ func TestElModalMarcaLosModelosSinHerramientas(t *testing.T) {
 	}
 	if strings.Contains(v, "llama3.2  (sin herramientas)") {
 		t.Errorf("el que sí puede no se marca:\n%s", v)
+	}
+}
+
+// Una ficha sin dato no ofrece la capacidad y la marca con `?` en su rótulo;
+// la `no soportada` —que sí es dato— no lleva `?` (SPEC-MODELO-MOTOR
+// §Capacidades, T-F045-07).
+func TestLasCapacidadesDesconocidasNoSeOfrecen(t *testing.T) {
+	mm := &ModelsModal{}
+	mm.AbrirModelos("")
+	mm.FijarModelos([]ModeloLocal{
+		{Nombre: "sin-ficha", CapacidadesSinDato: true},
+		{Nombre: "sin-tools", SinHerramientas: true, SinVision: true},
+		{Nombre: "completo"},
+	}, nil)
+	v := sinEstilo(mm.Render(100, 30))
+	if !strings.Contains(v, "sin-ficha  [?]") {
+		t.Errorf("una ficha sin dato se marca con ?:\n%s", v)
+	}
+	// La no soportada no lleva `?`: ahí sí hay dato (lo dice con texto).
+	if strings.Contains(v, "sin-tools  [?]") {
+		t.Errorf("la capacidad no soportada no lleva ?:\n%s", v)
+	}
+	if !strings.Contains(v, "sin-tools  (sin herramientas)") {
+		t.Errorf("la no soportada se declara con texto, sin ?:\n%s", v)
+	}
+	if strings.Contains(v, "completo  [?]") {
+		t.Errorf("un modelo con ficha no lleva ?:\n%s", v)
 	}
 }
 
@@ -425,6 +471,45 @@ func TestLaEleccionDelModalPrevaleceSobreLaAutodetección(t *testing.T) {
 }
 
 // --- el modal se pinta centrado ---------------------------------------------
+
+// TestElModalSeAbreIgualContraLosDosMotores — T-F044-07: el modal rotula
+// cada fila con su motor y conserva la mecánica (↑/↓, Esc) en los dos casos.
+func TestElModalSeAbreIgualContraLosDosMotores(t *testing.T) {
+	for _, motor := range []string{"Ollama local", "llama.cpp local"} {
+		p := &puertoStub{
+			modelo: "qwen3:8b",
+			modelos: []ModeloLocal{
+				{Nombre: "llama3.2", Motor: motor},
+				{Nombre: "qwen3:8b", Motor: motor},
+			},
+		}
+		a := Nuevo(p)
+		pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+		ejecuta(t, a, abreElModalDeModelos(t, a))
+		if !a.Modelos.Abierto {
+			t.Fatalf("%s: el modal se abre", motor)
+		}
+		if v := sinEstilo(a.View()); !strings.Contains(v, motor+" / qwen3:8b") {
+			t.Errorf("%s: la fila del modal rotula el motor:\n%s", motor, v)
+		}
+		// El resaltado arranca en el modelo en uso y ↑ lo mueve.
+		if a.Modelos.ModeloElegido() != "qwen3:8b" {
+			t.Errorf("%s: el foco arranca en el modelo en uso: %q", motor, a.Modelos.ModeloElegido())
+		}
+		tecla(t, a, tea.KeyUp)
+		if a.Modelos.ModeloElegido() != "llama3.2" {
+			t.Errorf("%s: ↑ mueve el resaltado: %q", motor, a.Modelos.ModeloElegido())
+		}
+		// Esc cierra sin cambiar el modelo.
+		tecla(t, a, tea.KeyEsc)
+		if a.Modelos.Abierto {
+			t.Errorf("%s: esc cierra el modal", motor)
+		}
+		if a.Modelo != "qwen3:8b" {
+			t.Errorf("%s: esc no cambia el modelo: %q", motor, a.Modelo)
+		}
+	}
+}
 
 func TestElModalSePintaCentrado(t *testing.T) {
 	a := Nuevo(&puertoStub{modelos: modelosDePrueba(), modelo: "llama3.2"})

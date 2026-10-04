@@ -1,5 +1,5 @@
 // client.go — T-B005-01 / T-B036-04: cliente HTTP local de Ollama como
-// adaptador de `llm.Proveedor`.
+// adaptador de `llm.Motor`.
 //
 // Fuente de verdad: ai/docs/backend/04-infrastructure/INTEGRATIONS.md §Ollama.
 //   - API HTTP en local, por defecto http://localhost:11434.
@@ -8,7 +8,7 @@
 //     stream.go/reasoning.go.
 //
 // Si el contrato de streaming de Ollama cambiara, solo cambia este módulo: el
-// resto del harness habla con `llm.Proveedor`.
+// resto del harness habla con `llm.Motor`.
 package ollama
 
 import (
@@ -46,6 +46,18 @@ func NewClient(baseURL string) *Client {
 
 // Nombre es la clave del runtime para la frontera neutra.
 func (c *Client) Nombre() string { return "ollama" }
+
+// Tipo es el tipo cerrado del catálogo de motores al que pertenece este
+// adaptador (`llm.TipoOllama`). Lo usa el registro para validar y
+// construir por tipo; nunca el resto del harness.
+func (c *Client) Tipo() string { return llm.TipoOllama }
+
+// init registra este adaptador en la frontera por su tipo cerrado: `llm` es
+// el único que instancia adaptadores y lo hace por tipo, nunca el resto del
+// harness (BACKEND.md §3).
+func init() {
+	llm.RegistrarTipo(llm.TipoOllama, func(url string) llm.Motor { return NewClient(url) })
+}
 
 // BaseURL devuelve la dirección configurada (visible para tests/TUI).
 func (c *Client) BaseURL() string { return c.baseURL }
@@ -115,7 +127,7 @@ func (c *Client) Generar(ctx context.Context, req GenerarRequest) (<-chan Evento
 	return salida, nil
 }
 
-// Chat implementa `llm.Proveedor`: traduce la petición neutra y lanza
+// Chat implementa `llm.Motor`: traduce la petición neutra y lanza
 // POST /api/chat (stream:true).
 func (c *Client) Chat(ctx context.Context, req llm.Peticion) (<-chan Evento, error) {
 	cable := peticionDe(req)

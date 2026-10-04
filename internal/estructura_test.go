@@ -7,11 +7,11 @@ import (
 )
 
 // modulos son los quince módulos del motor documentados en BACKEND.md §2: los
-// trece originales más `llm` (la frontera neutra) y `openai` (el adaptador de
+// trece originales más `llm` (la frontera neutra) y `llamacpp` (el adaptador de
 // llama.cpp) que introduce T-B036.
 var modulos = []string{
 	"tui", "session", "flow", "queue", "context", "agent", "ollama",
-	"openai", "llm",
+	"llamacpp", "llm",
 	"task", "tools", "fileops", "exec", "store", "docs",
 }
 

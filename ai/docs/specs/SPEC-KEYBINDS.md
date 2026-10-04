@@ -5,6 +5,7 @@ depende_de:
   - "[[IDEA]]"
   - "[[specs/SPEC-INTERFAZ]]"
   - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+  - "[[specs/SPEC-MODELO-MOTOR]]"
 ---
 # SPEC — Keymap central, leader key y resolución de teclas
 
@@ -43,9 +44,13 @@ Cada acción tiene un identificador estable, usado como clave en la configuraci�
 |---|---|---|---|
 | `app_exit` | Salir de la aplicación | `ctrl+c` | global (siempre; también con modales abiertos) |
 | `model_picker` | Abrir el modal de modelos | `<leader>m` | global |
+| `motor_picker` | Abrir el modal de motores | `<leader>i` | global |
 | `session_picker` | Abrir el modal de sesiones del proyecto | `<leader>l` | global |
 | `session_new` | Crear una sesión nueva y dejarla activa | `<leader>n` | vista principal |
 | `session_delete` | Eliminar la sesión resaltada en el modal | `ctrl+d` | modal de sesiones |
+| `motor_new` | Añadir un motor en el modal de motores | `<leader>a` | modal de motores |
+| `motor_edit` | Editar el motor resaltado en el modal de motores | `<leader>e` | modal de motores |
+| `motor_delete` | Eliminar el motor resaltado en el modal | `<leader>d` | modal de motores |
 | `command_palette` | Abrir el modal de atajos de teclado | `ctrl+p` | global |
 | `agent_cycle` | Cambiar de agente (recorre los agentes disponibles) | `tab` | vista principal y bienvenida (nunca dentro de un modal) |
 | `panel_toggle` | Abrir o cerrar el panel de datos | `ctrl+d` | vista |
@@ -62,9 +67,9 @@ Cada acción tiene un identificador estable, usado como clave en la configuraci�
 
 `session_new` (`<leader>n`) crea una sesión nueva desde la vista principal y la deja activa; también se crea una enviando la primera petición desde la bienvenida ([[specs/SPEC-SESIONES]]). La ayuda clásica (`?`) queda sustituida por el modal de atajos (`command_palette`).
 
-`ctrl+d` pertenece a dos acciones **en ámbitos distintos**: `panel_toggle` en la vista y `session_delete` en el modal de sesiones. No se pisan porque, con un modal abierto, la vista de abajo no recibe teclas; el duplicado solo se rechaza dentro del mismo ámbito. Lo mismo vale para `up`/`down`: son `chat_scroll_up`/`chat_scroll_down` en la vista principal y `up`/`down` (navegar la lista) dentro de un modal.
+`ctrl+d` pertenece a dos acciones **en ámbitos distintos**: `panel_toggle` en la vista y `session_delete` en el modal de sesiones. No se pisan porque, con un modal abierto, la vista de abajo no recibe teclas; el duplicado solo se rechaza dentro del mismo ámbito. Lo mismo vale para `up`/`down`: son `chat_scroll_up`/`chat_scroll_down` en la vista principal y `up`/`down` (navegar la lista) dentro de un modal. Las acciones del modal de motores (`motor_new`, `motor_edit`, `motor_delete`) usan secuencias con líder (`<leader>a`, `<leader>e`, `<leader>d`) y solo resuelven dentro de él.
 
-Modal abierto ⇒ solo responden sus teclas (`up`/`down`/`confirm`/`dismiss`) más `app_exit`; el modal de sesiones añade `session_delete` (`ctrl+d`). Ninguna alcanza la vista de abajo. `tab` tampoco cicla agentes mientras hay un modal abierto.
+Modal abierto ⇒ solo responden sus teclas (`up`/`down`/`confirm`/`dismiss`) más `app_exit`; el modal de sesiones añade `session_delete` (`ctrl+d`) y el de motores `motor_delete` (`<leader>d`), `motor_new` (`<leader>a`) y `motor_edit` (`<leader>e`). Ninguna alcanza la vista de abajo. `tab` tampoco cicla agentes mientras hay un modal abierto.
 
 La lista es abierta: añadir una acción añade su ID al mapa por defecto.
 
@@ -79,7 +84,7 @@ La lista es abierta: añadir una acción añade su ID al mapa por defecto.
 
 - Por defecto `ctrl+x`.
 - Al pulsarla el resolver entra en estado `LEADER`: muestra un indicador discreto («lider ») en la barra de estado y espera la siguiente tecla.
-- En estado `LEADER`, la siguiente tecla se combina: `<leader>m` → `model_picker`, `<leader>l` → `session_picker`, `<leader>n` → `session_new`. Esas tres son todas las secuencias con líder; el resto de acciones usa atajos directos (ver tabla).
+- En estado `LEADER`, la siguiente tecla se combina: `<leader>m` → `model_picker`, `<leader>i` → `motor_picker`, `<leader>l` → `session_picker`, `<leader>n` → `session_new`, `<leader>a`/`<leader>e`/`<leader>d` → añadir/editar/eliminar un motor (dentro del modal de motores). Las secuencias de un ámbito concreto solo resuelven en él; el resto de acciones usa atajos directos (ver tabla).
 - Timeout: si no llega otra tecla en el tiempo configurado (por defecto 2000 ms), el resolver vuelve a `NORMAL` sin emitir acción. La ventana de timeout arranca al pulsar la líder.
 - Pulsar la líder otra vez mientras espera cancela la secuencia pendiente y vuelve a esperar desde cero.
 - `esc` durante la secuencia cancela la espera y vuelve a `NORMAL`.
@@ -95,8 +100,12 @@ NORMAL
 LEADER ──── esc / timeout (2000 ms) ────► NORMAL
    │
    ├── m → model_picker    (modal de modelos)
+   ├── i → motor_picker    (modal de motores)
    ├── l → session_picker  (modal de sesiones)
-   └── n → session_new     (sesión nueva)
+   ├── n → session_new     (sesión nueva)
+   ├── a → motor_new       (añadir motor, dentro del modal de motores)
+   ├── e → motor_edit      (editar motor, dentro del modal de motores)
+   └── d → motor_delete    (eliminar motor, dentro del modal de motores)
 ```
 
 No hay más estados: la complejidad vive en el mapa de bindings, no en la máquina de estados.
@@ -135,9 +144,13 @@ Vive en `~/.config/localcli/keys.json` (preferencia del usuario, fuera del proye
   "keybinds": {
     "app_exit": ["ctrl+c"],
     "model_picker": ["<leader>m"],
+    "motor_picker": ["<leader>i"],
     "session_picker": ["<leader>l"],
     "session_new": ["<leader>n"],
     "session_delete": ["ctrl+d"],
+    "motor_new": ["<leader>a"],
+    "motor_edit": ["<leader>e"],
+    "motor_delete": ["<leader>d"],
     "command_palette": ["ctrl+p"],
     "agent_cycle": ["tab"],
     "panel_toggle": ["ctrl+d"],
@@ -170,12 +183,13 @@ Vive en `~/.config/localcli/keys.json` (preferencia del usuario, fuera del proye
 
 ## Criterios de aceptación
 
-- [ ] `ctrl+x` seguido de `m` abre el modal de modelos y `ctrl+x` seguido de `l` abre el modal de sesiones; `ctrl+x` sola no abre nada.
+- [ ] `ctrl+x` seguido de `m` abre el modal de modelos, `ctrl+x` seguido de `i` el de motores y `ctrl+x` seguido de `l` el de sesiones; `ctrl+x` sola no abre nada.
 - [ ] `ctrl+p` abre el modal con la lista de atajos existentes (acción + tecla).
-- [ ] `esc` cierra cualquier modal abierto desde cualquiera de los tres, sin cambiar nada.
+- [ ] `esc` cierra cualquier modal abierto desde cualquiera de los cuatro, sin cambiar nada.
 - [ ] `tab` alterna el agente entre `plan` y `build` en bienvenida y vista principal; con un modal abierto no cicla.
 - [ ] `ctrl+x n` crea una sesión nueva en la vista principal y la deja activa.
 - [ ] `ctrl+d` con el modal de sesiones abierto elimina la sesión resaltada; si está trabajando, pide confirmación.
+- [ ] `<leader>d` con el modal de motores abierto elimina el motor resaltado; si alguna sesión lo usa, pide confirmación. `<leader>a` añade un motor y `<leader>e` edita el resaltado.
 - [ ] Pasado el timeout sin segunda tecla, el resolver vuelve a `NORMAL` y el indicador desaparece.
 - [ ] `esc` durante una secuencia líder la cancela sin emitir acción.
 - [ ] Una acción admite varios atajos y admite deshabilitarse con lista vacía.
@@ -194,8 +208,9 @@ Vive en `~/.config/localcli/keys.json` (preferencia del usuario, fuera del proye
 
 ## Dependencias funcionales
 
-- [[specs/SPEC-INTERFAZ]] — usa los modales de modelos, sesiones y atajos.
+- [[specs/SPEC-INTERFAZ]] — usa los modales de modelos, motores, sesiones y atajos.
 - [[specs/SPEC-INTERFAZ-ATAJOS]] — reglas de reasignación y panel de aprobaciones.
+- [[specs/SPEC-MODELO-MOTOR]] — qué es un motor y qué hace el modal que estos atajos abren.
 
 ## Supuestos
 

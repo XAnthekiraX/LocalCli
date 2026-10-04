@@ -13,7 +13,7 @@ relacionado:
   - "[[backend/05-quality/VALIDATION]]"
   - "[[backend/04-infrastructure/EVENTS]]"
   - "[[specs/SPEC-ARCHIVOS]]"
-  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
+  - "[[specs/SPEC-MODELO-MOTOR]]"
 ---
 # TOOLS — Catálogo de herramientas
 
@@ -339,24 +339,26 @@ Se conectan en el cableado. Si no hay ninguno, la capa universal funciona igual:
 
 ## 11. El cable: cómo llegan al modelo
 
-`tools` no habla con ningún proveedor. `agent` pide los esquemas y los pone en la petición; la capa de proveedor (`llm`) los entrega al adaptador, que los serializa en el formato de su runtime.
+`tools` no habla con ningún motor. `agent` pide los esquemas y los pone en la petición; la frontera neutra (`llm`) los entrega al núcleo común, que es quien los serializa —porque el formato es **el mismo en todos los motores**— y las extensiones nativas solo añaden lo suyo al lado.
 
 1. `agent` pide a `tools` el **esquema** de las herramientas del agente activo.
 2. `agent` construye una petición neutra (`llm.Peticion`) con esa lista en el campo de herramientas.
-3. La frontera `llm.Proveedor` la pasa al adaptador del proveedor elegido: `ollama` la serializa para `/api/chat` y `openai` para `/v1/chat/completions`.
+3. La frontera `llm.Motor` la pasa al **núcleo común** (`llm/openai`), que la serializa para `/v1/chat/completions`. Las extensiones nativas no cambian esto: pueden añadir campos propios de su runtime, nunca alterar el canal de herramientas.
 4. El modelo responde pidiendo una por su nombre con los argumentos ya formados.
-5. El adaptador entrega las peticiones acumuladas; `agent` itera y llama a `Registro.Ejecutar`.
-6. El resultado vuelve al modelo como un mensaje propio de herramienta, con el formato que su proveedor espera.
+5. El núcleo común entrega las peticiones acumuladas; `agent` itera y llama a `Registro.Ejecutar`.
+6. El resultado vuelve al modelo como un mensaje de rol `tool` con su `tool_call_id`, tal como lo espera el núcleo común.
+
+**Qué pasa si el modelo no admite herramientas.** Esa capacidad puede estar en tres estados y solo uno permite este camino: `soportada` usa el esquema estructurado; `no soportada` hace que `agent` caiga a modo conversación, sin herramientas en la petición; `desconocida` —una extensión que no informa, no una capacidad ausente— **también cae a modo conversación**, y no se finge que un canal estructurado que quizá no existe dé resultado. Ver [[specs/SPEC-MODELO-MOTOR]].
 
 El catálogo **no** viaja en el mensaje de sistema. `PromptDeSistema` se queda con el prompt del agente.
 
-El formato exacto de cada proveedor está en [[specs/SPEC-MODELO-PROVEEDOR]] y en [[backend/04-infrastructure/INTEGRATIONS]]; el de los mensajes de herramienta que no se persisten, en [[database/01-schema/ENUMS]].
+El formato exacto de cada motor está en [[specs/SPEC-MODELO-MOTOR]] y en [[backend/04-infrastructure/INTEGRATIONS]]; el de los mensajes de herramienta que no se persisten, en [[database/01-schema/ENUMS]].
 
 ## Referencias
 
 - [[specs/SPEC-TOOLS]] — la especificación funcional y los criterios de aceptación.
 - [[specs/SPEC-ARCHIVOS]] — reglas de permiso sobre archivos.
-- [[specs/SPEC-MODELO-PROVEEDOR]] — el canal de herramientas y la capacidad del modelo.
+- [[specs/SPEC-MODELO-MOTOR]] — el canal de herramientas y la capacidad del modelo.
 - [[backend/02-interfaces/INTERFACES-GENERAL]] — las superficies.
 - [[backend/02-interfaces/dto/TOOLS-DTO]] — los payloads de cada herramienta y sus esquemas.
 - [[backend/03-security/SECURITY]] — la garantía de escritura, el bloqueo de la terminal y el aislamiento de las herramientas del usuario.

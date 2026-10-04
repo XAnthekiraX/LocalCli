@@ -23,6 +23,17 @@ import (
 	"localcli/internal/tools"
 )
 
+// Motores es lo que `session` necesita saber del registro de motores: si el
+// motor de una sesión sigue registrado y activo. Lo implementa el arranque
+// sobre el registro de `llm`: `session` no importa `llm` (su frontera es este
+// contrato, igual que con `store`). Es opcional; sin él la comprobación se
+// omite.
+type Motores interface {
+	// MotorDisponible devuelve nil si el motor existe y está activo, o un
+	// error con `E_MOTOR_NO_DISPONIBLE` si se desactivó o se eliminó.
+	MotorDisponible(idMotor string) error
+}
+
 // Motor es lo que `session` necesita de `flow`: responder como chat, arrancar
 // un flujo explícito y consumir una cola. Lo implementa `flow.Motor`.
 type Motor interface {
@@ -49,6 +60,12 @@ func (g *Gestor) ArrancarFlujo(ctx context.Context, sesionID string, f flow.Fluj
 	}
 	ses, err := g.sesion(sesionID)
 	if err != nil {
+		return err
+	}
+	// Si su motor falta, la sesión no muere: avisa y espera, sin escribir nada
+	// ni arrancar nada (SPEC-SESIONES: «avisa de que su motor ya no está y
+	// espera a que el usuario elija otro»).
+	if err := g.motorDeSesion(ses); err != nil {
 		return err
 	}
 	if err := g.preparar(ses); err != nil {
@@ -93,6 +110,12 @@ func (g *Gestor) Conversar(ctx context.Context, sesionID, agente, texto string, 
 	}
 	ses, err := g.sesion(sesionID)
 	if err != nil {
+		return err
+	}
+	// Un motor desactivado o eliminado no tumba la sesión: se avisa con
+	// E_MOTOR_NO_DISPONIBLE y se espera, conservando su historial
+	// (SPEC-MODELO-MOTOR §Desactivar y §Eliminar).
+	if err := g.motorDeSesion(ses); err != nil {
 		return err
 	}
 	if err := g.preparar(ses); err != nil {
@@ -169,6 +192,27 @@ func (g *Gestor) generarTitulo(ctx context.Context, sesionID, texto string) {
 		"sesion": sesionID,
 		"nombre": titulo,
 	}})
+}
+
+// MotorDisponible comprueba si el motor de una sesión sigue disponible. Es lo
+// que consulta la vista para avisar en la línea de estado sin bloquear nada; un
+// motor sin asignar ("") se considera disponible: lo resolverá el arranque.
+func (g *Gestor) MotorDisponible(sesionID string) error {
+	ses, err := g.sesion(sesionID)
+	if err != nil {
+		return err
+	}
+	return g.motorDeSesion(ses)
+}
+
+// motorDeSesion pregunta al registro por el motor de la sesión. Sin registro
+// inyectado (o sin motor asignado todavía) no hay nada que comprobar: nunca se
+// elige motor aquí.
+func (g *Gestor) motorDeSesion(ses *Sesion) error {
+	if g.Motores == nil || ses.MotorID == "" {
+		return nil
+	}
+	return g.Motores.MotorDisponible(ses.MotorID)
 }
 
 // preparar deja la sesión lista para un turno nuevo. Una sesión terminada o en

@@ -25,11 +25,10 @@ type Preferencias struct {
 	// Agente es el último agente activo. Se guarda tal cual; la vista lo
 	// valida contra su lista de agentes disponibles al arrancar.
 	Agente string `json:"ultimo_agente,omitempty"`
-	// Proveedor es el último runtime elegido (`ollama` o `llamacpp`). El modelo
-	// recordado solo se reutiliza si su proveedor coincide con el elegido: el
-	// mismo nombre no significa lo mismo en los dos runtimes
-	// (SPEC-MODELO-PROVEEDOR).
-	Proveedor string `json:"ultimo_proveedor,omitempty"`
+	// Motor es el `id` del último motor de inferencia usado. El modelo recordado
+	// solo se reutiliza si su motor registrado coincide: el mismo nombre de
+	// modelo no significa lo mismo en runtimes distintos (SPEC-MODELO-MOTOR).
+	Motor string `json:"ultimo_motor,omitempty"`
 	// HistorialTokens es el presupuesto de tokens del historial de conversación
 	// que se le envía al modelo (SPEC-HISTORIAL-CONVERSACION). 0 = el arranque
 	// usa LOCALCLI_CONTEXT_LIMIT o su valor por defecto.

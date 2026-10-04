@@ -10,7 +10,7 @@ relacionado:
   - "[[database/02-rules/DATA_FLOW]]"
   - "[[database/DATABASE]]"
   - "[[specs/SPEC-NODO-CONTEXTO]]"
-  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
+  - "[[specs/SPEC-MODELO-MOTOR]]"
 ---
 # SEEDING — Datos iniciales
 
@@ -20,7 +20,7 @@ LocalCli **no necesita seeds**. La base de datos nace vacía y eso es correcto.
 
 La razón es que todo lo que la herramienta necesita para funcionar ya existe antes de abrir la base:
 
-- **El modelo** está en el proveedor de modelo, no en SQLite. Ver [[specs/SPEC-MODELO-PROVEEDOR]].
+- **El modelo** está en el motor de inferencia, no en SQLite. El registro de motores es un archivo global, no una tabla. Ver [[specs/SPEC-MODELO-MOTOR]].
 - **La documentación del proyecto** son archivos, no filas. Ver [[database/02-rules/DATA_FLOW]].
 - **Las tareas** son archivos, no filas.
 - **El esquema** se crea vacío, con `user_version = 1`. Ver [[database/03-operations/MIGRATIONS]].
@@ -68,5 +68,5 @@ Ese orden importa: los índices y las claves foráneas se crean con el esquema, 
 - [[database/01-schema/TABLES]] — valores por defecto de columna, que es lo único parecido a un seed.
 - [[database/DATABASE]] — por qué los archivos son la fuente de verdad y no filas.
 - [[database/03-operations/MIGRATIONS]] — el orden de arranque del esquema.
-- [[specs/SPEC-MODELO-PROVEEDOR]] — el modelo no está en la base.
+- [[specs/SPEC-MODELO-MOTOR]] — el modelo no está en la base, ni el registro de motores.
 - [[specs/SPEC-NODO-CONTEXTO]] — el contexto sale de los archivos, no de una consulta.

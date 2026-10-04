@@ -22,18 +22,16 @@ import (
 
 func TestElModalDeAtajosListaCadaAcciónConSuTecla(t *testing.T) {
 	km := &KeysModal{}
-	km.AbrirAtajos(KeymapPorDefecto().Entradas())
+	km.AbrirAtajos(KeymapPorDefecto().Entradas(), LíderPorDefecto)
 
 	v := sinEstilo(km.Render(100, 30))
 	if !strings.Contains(v, "ATAJOS") {
 		t.Fatalf("el modal lleva su cabecera:\n%s", v)
 	}
 	for _, a := range KeymapPorDefecto().Entradas() {
-		literales := []string{}
-		for _, sec := range a.Secuencias {
-			literales = append(literales, sec.Describir())
-		}
-		for _, lit := range literales {
+		// La tabla expande la líder, así que el literal que se busca es el que
+		// pinta el modal, no el que guarda el mapa (`<leader>m` → `ctrl+x m`).
+		for _, lit := range strings.Split(km.teclasDeAtajo(a), ", ") {
 			if !strings.Contains(v, lit) {
 				t.Errorf("falta el literal %q de la acción %q:\n%s", lit, a.Descripcion, v)
 			}
@@ -42,13 +40,15 @@ func TestElModalDeAtajosListaCadaAcciónConSuTecla(t *testing.T) {
 			t.Errorf("falta la acción %q:\n%s", a.Descripcion, v)
 		}
 	}
-	// Las dos secuencias con líder salen con su forma completa, no con la tecla
-	// líder expandida (SPEC-INTERFAZ §Modales: "incluidas las secuencias con
-	// líder").
-	for _, sec := range []string{"<leader>m", "<leader>l"} {
+	// Las secuencias con líder salen con la combinación real, no con el marcador
+	// `<leader>` (SPEC-INTERFAZ §Modales: la tabla lista «la tecla y su acción»).
+	for _, sec := range []string{"ctrl+x m", "ctrl+x l", "ctrl+x i"} {
 		if !strings.Contains(v, sec) {
-			t.Errorf("la tabla muestra la secuencia %q tal cual:\n%s", sec, v)
+			t.Errorf("la tabla muestra la secuencia %q expandida:\n%s", sec, v)
 		}
+	}
+	if strings.Contains(v, "<leader>") {
+		t.Errorf("la tabla no deja el marcador <leader> a la vista:\n%s", v)
 	}
 	// La acción sin tecla de fábrica se lista marcada como deshabilitada
 	// (SPEC-KEYBINDS §Binding: "Cero significa deshabilitada").

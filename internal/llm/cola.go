@@ -1,8 +1,11 @@
-// cola.go — T-B036-03: serialización de la inferencia.
+// cola.go — T-B036-03 (por motor desde T-B037-05): serialización de la
+// inferencia.
 //
-// Fuente de verdad: DECISIONS.md [24] y «El testigo FIFO se toma por petición
-// al modelo, no por ejecución completa», e INTEGRATIONS.md §Proveedores
-// (Concurrencia).
+// Fuente de verdad: DECISIONS.md («Una cola de inferencia por motor, no una
+// global» y «El testigo FIFO se toma por petición al modelo, no por ejecución
+// completa»), INTEGRATIONS.md §Concurrencia («por orden de llegada por motor,
+// con una cola propia para cada uno») y BACKEND.md §Concurrencia («Dos
+// motores distintos son dos servidores distintos y no se esperan entre sí»).
 //
 // Diseño:
 //   - Un testigo por canal de capacidad 1 = semáforo FIFO. Quien lo recibe
@@ -17,6 +20,53 @@ import (
 	"context"
 	"sync"
 )
+
+// ColasInferencia es el conjunto de colas, UNA POR MOTOR (DECISIONS: «Una cola
+// de inferencia por motor, no una global»). Dos motores son dos servidores
+// distintos: uno genera mientras el otro atiende, y las sesiones del mismo se
+// serializan por orden de llegada. El cero NO es utilizable: crear con
+// NewColasInferencia.
+type ColasInferencia struct {
+	mu    sync.Mutex
+	colas map[string]*ColaInferencia
+	onEsp func(esperando bool) // notificador agregado, compartido por todas
+}
+
+// NewColasInferencia crea el conjunto vacío, sin notificador.
+func NewColasInferencia() *ColasInferencia {
+	return &ColasInferencia{colas: map[string]*ColaInferencia{}}
+}
+
+// Para devuelve la cola del motor `id`, creándola a la primera petición. Cada
+// motor tiene la suya: las colas de dos motores distintos no se esperan entre
+// sí, y las del mismo respetan el orden de llegada.
+func (cs *ColasInferencia) Para(idMotor string) *ColaInferencia {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	c, ok := cs.colas[idMotor]
+	if !ok {
+		c = NewColaInferencia()
+		if cs.onEsp != nil {
+			c.SetNotificadorGlobal(cs.onEsp)
+		}
+		cs.colas[idMotor] = c
+	}
+	return c
+}
+
+// SetNotificadorGlobal fija el callback al que TODO cambio de espera se
+// reporta, en cualquier motor. Se aplica también a las colas creadas después:
+// la capa superior se suscribe una sola vez y no tiene que volver a llamar.
+func (cs *ColasInferencia) SetNotificadorGlobal(fn func(esperando bool)) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	cs.onEsp = fn
+	for _, c := range cs.colas {
+		c.SetNotificadorGlobal(fn)
+	}
+}
 
 // ColaInferencia serializa los accesos al modelo entre sesiones. El cero-valor
 // NO es utilizable: crear con NewColaInferencia.

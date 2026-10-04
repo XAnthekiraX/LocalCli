@@ -19,7 +19,7 @@ No hay respuestas HTTP ni códigos de estado. Los errores son valores que se pro
 ## 1. Sistema de errores
 
 - **Un error es un valor, no una excepción.** Se propaga por el canal que corresponde y cada módulo decide si lo maneja o lo sube.
-- **Un error tiene un código interno y un mensaje para la persona.** El código sirve para el motor y los tests; el mensaje se muestra en la pantalla. El mensaje dice qué pasó y, cuando aplica, qué hacer.
+- **Un error tiene un código interno y un mensaje para la persona.** El código sirve para el orquestador y los tests; el mensaje se muestra en la pantalla. El mensaje dice qué pasó y, cuando aplica, qué hacer.
 - **Los errores persistentes se registran en la base** cuando dejan rastro: una etapa fallida, un cambio rechazado, una auditoría de contexto. Ver [[database/01-schema/TABLES]].
 - **Un error no borra trabajo ya hecho.** Si una etapa falla, lo que ya quedó aplicado permanece; el flujo se detiene, no se deshace. Ver [[backend/01-domain/BUSINESS_RULES]].
 - **Un comando que falla no detiene el trabajo.** El agente ve el error y sigue. Ver [[backend/02-interfaces/TOOLS]].
@@ -30,7 +30,10 @@ Los que el usuario puede encontrarse y merece la pena distinguir:
 
 | Situación | Qué ve el usuario | Qué hace el sistema |
 |---|---|---|
-| El proveedor de modelo no está corriendo | Aviso de que no se puede generar, nombrando el proveedor y cómo levantarlo | El harness sigue vivo; la interfaz funciona |
+| El motor de inferencia no está corriendo | Aviso de que no se puede generar, nombrando el motor y cómo levantarlo | El harness sigue vivo; la interfaz funciona |
+| El motor de la sesión se desactivó o se eliminó | Aviso de que ese motor ya no está disponible, con el nombre de la sesión y el motor | La sesión sobrevive con su historial y espera; las demás sesiones no se ven afectadas |
+| El tipo de un motor en `motores.json` no es `ollama` ni `llamacpp` | Aviso nombrando la entrada y el tipo que no se reconoce | Se salta esa entrada y se cargan las demás; si no queda ninguna, se usa el `ollama` por defecto |
+| `motores.json` está mal formado | Aviso del error de lectura | Se arranca con el `ollama` por defecto en vez de caer |
 | El modelo elegido no cabe en la VRAM | Aviso de que irá a RAM, más lento | Lo carga igual, sin fallar en silencio |
 | Falta Landlock | Aviso de que la garantía de la terminal es más débil | Sigue funcionando con la garantía reducida |
 | Una etapa pide un documento que no existe | Aviso de qué falta | La etapa se detiene; no se supone nada |
@@ -48,7 +51,9 @@ Los que el usuario puede encontrarse y merece la pena distinguir:
 
 | Código | Significado |
 |---|---|
-| `E_PROVEEDOR_NO_DISPONIBLE` | El proveedor de modelo no responde |
+| `E_MOTOR_NO_DISPONIBLE` | El motor de inferencia no responde, o el motor de la sesión se desactivó o se eliminó |
+| `E_MOTOR_TIPO_DESCONOCIDO` | El `tipo` de una entrada de `motores.json` no es un tipo cerrado |
+| `E_REGISTRO_MOTORES_INVALIDO` | `motores.json` ilegible o mal formado |
 | `E_MODEL_TOO_BIG` | El modelo no cabe en la VRAM; se avisa y va a RAM |
 | `E_NO_LANDLOCK` | Landlock no disponible; la garantía es más débil |
 | `E_TOOL_UNKNOWN` | El modelo pidió una herramienta fuera del catálogo |
@@ -82,9 +87,9 @@ Los que el usuario puede encontrarse y merece la pena distinguir:
 Go no tiene excepciones, así que el "manejo" es explícito en cada punto donde puede fallar:
 
 - **Se revisa el error en la frontera de cada módulo.** Un módulo que recibe un error decide si lo maneja o lo sube. Ninguno lo ignora en silencio.
-- **Los errores de una etapa se convierten en `E_STAGE_FAILED` para el motor**, que detiene el flujo y deja que el usuario decida.
+- **Los errores de una etapa se convierten en `E_STAGE_FAILED` para el orquestador**, que detiene el flujo y deja que el usuario decida.
 - **Los errores de una herramienta se devuelven al agente**, que los ve y sigue. Un fallo de herramienta no es un fallo de etapa por sí solo.
-- **Los errores de la base se traducen antes de salir de `store`**, para que el resto del motor no sepa si fue un bloqueo, una restricción o una conexión.
+- **Los errores de la base se traducen antes de salir de `store`**, para que el resto del orquestador no sepa si fue un bloqueo, una restricción o una conexión.
 - **Un error de la base tras un cambio de archivo no se traga.** Se revisa qué se aplicó y se deja constancia; ver [[database/02-rules/DATA_FLOW]] para el detalle de la relación entre archivo y registro.
 - **Un error de Landlock al escribir por terminal es un resultado esperado, no una avería.** La terminal no puede escribir, y eso es la garantía funcionando.
 
@@ -97,7 +102,7 @@ Go no tiene excepciones, así que el "manejo" es explícito en cada punto donde 
 - **Internet:** `E_BAD_ARGS` si la consulta o la dirección no valen. Lo que vuelve es contenido sin confianza, no un error.
 - **Contexto:** `E_DOC_NOT_FOUND`, `E_CONTEXT_TOO_BIG`, `E_DOC_PARSE`.
 - **Carga de documentación:** un frontmatter roto de UN archivo es un `E_DOC_PARSE` localizado:
-  el archivo no entra al grafo, la carga continúa y el error queda reportado. Para el motor es un
+  el archivo no entra al grafo, la carga continúa y el error queda reportado. Para el orquestador es un
   `E_STAGE_FAILED` (reconocible con `errors.Is`, sin leer el mensaje), porque la etapa no puede seguir
   sin avisar; el código propio queda en el mensaje como diagnóstico. Una raíz que no es carpeta de
   documentación es `E_STAGE_FAILED` directo.
@@ -105,7 +110,7 @@ Go no tiene excepciones, así que el "manejo" es explícito en cada punto donde 
 - **Flujo:** `E_STAGE_FAILED` (una etapa falla o no responde a su pregunta tras el reintento), `E_FLOW_CANCELLED`.
 - **Sesiones:** `E_NOT_A_PROJECT` al abrir; `E_NO_RESPONSE` cuando un turno de chat no entrega texto (la sesión queda en `error` con el motivo); los demás casos son operacionales, no de arranque.
 - **Base de datos:** `E_DB_UNAVAILABLE`, `E_DB_SCHEMA_OUTDATED`, `E_DB_CONSTRAINT`, `E_DB_FOREIGN_KEY`, `E_DB_CONFLICT`, `E_DB_LOCKED`. Ninguno de ellos es `E_BAD_ARGS`: ese código es para el contrato de una herramienta, y un fallo de la base es de otra capa. Ver [[database/02-rules/DATA_FLOW]].
-- **Proveedor de modelo:** `E_PROVEEDOR_NO_DISPONIBLE`, `E_MODEL_TOO_BIG`. Ver [[backend/04-infrastructure/INTEGRATIONS]].
+- **Motor de inferencia:** `E_MOTOR_NO_DISPONIBLE`, `E_MOTOR_TIPO_DESCONOCIDO`, `E_REGISTRO_MOTORES_INVALIDO`, `E_MODEL_TOO_BIG`. Ver [[backend/04-infrastructure/INTEGRATIONS]].
 
 ## Referencias
 

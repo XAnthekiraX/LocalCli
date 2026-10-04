@@ -142,6 +142,38 @@ func TestElContextoDelPanelSonLosTokensDelChatDeLaSesion(t *testing.T) {
 	}
 }
 
+// Si el motor no declara su ventana, el límite del contexto es el tope del
+// harness y el panel lo dice: no lo hace pasar por la ventana del modelo, igual
+// que una capacidad desconocida no se hace pasar por ausente
+// (SPEC-MODELO-MOTOR §La ventana de contexto, T-F045-09).
+func TestElLimiteDelHarnessSeMarcaComoTal(t *testing.T) {
+	a := Nuevo(&puertoStub{})
+	a.Vista = VistaPrincipal
+	a.Panel.SesionID = "s1"
+	pulsa(t, a, tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// La carga del historial ya trae la marca.
+	pulsa(t, a, historialMsg{Sesion: "s1", ContextoTokens: 3210, LimiteTokens: 16384, LimiteDelHarness: true})
+	if !strings.Contains(sinEstilo(a.View()), "límite del harness") {
+		t.Fatalf("el panel marca que el límite es el del harness:\n%s", sinEstilo(a.View()))
+	}
+
+	// Con la ventana del modelo declarada, no se marca nada.
+	pulsa(t, a, historialMsg{Sesion: "s1", ContextoTokens: 3210, LimiteTokens: 8192, LimiteDelHarness: false})
+	if strings.Contains(sinEstilo(a.View()), "límite del harness") {
+		t.Errorf("con ventana del modelo no se marca el harness:\n%s", sinEstilo(a.View()))
+	}
+
+	// El cierre del turno también lo marca, por el evento.
+	pulsa(t, a, eventoMsg{Evento: Evento{
+		Nombre: EventoTokensTurno,
+		Datos:  map[string]string{"sesion": "s1", "salida": "50", "contexto": "4000", "limite": "16384", "limite_harness": "true"},
+	}})
+	if !strings.Contains(sinEstilo(a.View()), "límite del harness") {
+		t.Errorf("el cierre del turno marca el límite del harness:\n%s", sinEstilo(a.View()))
+	}
+}
+
 // --- T-F006-07: la lista de pasos del agente (SPEC-TOOLS) ---------------------
 
 func TestElPanelPintaLaListaDePasosDelAgente(t *testing.T) {

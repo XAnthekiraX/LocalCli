@@ -1,5 +1,5 @@
-// Package openai — adaptador compatible con OpenAI para `llama-server` de
-// llama.cpp, implementando la frontera `llm.Proveedor`.
+// Package llamacpp — adaptador compatible con OpenAI para `llama-server` de
+// llama.cpp, implementando la frontera `llm.Motor`.
 //
 // `llama-server` en modo router habla el protocolo OpenAI: streaming SSE por
 // `/v1/chat/completions`, lista de modelos en `/models` (con `/v1/models` de
@@ -13,4 +13,4 @@
 //
 // Fuente de verdad: ai/docs/backend/04-infrastructure/INTEGRATIONS.md §llama.cpp
 // y ai/docs/backend/BACKEND.md §3.
-package openai
+package llamacpp

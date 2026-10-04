@@ -190,18 +190,44 @@ func (mm *ModelsModal) IndiceDe(nombre string) int {
 	return 0
 }
 
-// lineaDeModelo compone la fila del modelo. Los que no declaran una capacidad
-// se marcan para que se sepa antes de elegirlos (SPEC-OLLAMA-PERFIL: el usuario
-// cambia de modelo si el suyo no sirve).
+// lineaDeModelo compone la fila del modelo rotulada `motor / modelo` —para que
+// el mismo nombre no se confunda entre motores (SPEC-MODELO-MOTOR §Modelos)—
+// más la marca de las capacidades que no declara, para saberlo antes de elegirlo
+// (SPEC-OLLAMA-PERFIL: el usuario cambia de modelo si el suyo no sirve). Una
+// ficha sin dato se marca con `?` junto al nombre; el que no puede sí lo declara
+// con texto: `?` es duda y el texto es dato (SPEC-MODELO-MOTOR §Capacidades).
 func lineaDeModelo(m ModeloLocal) string {
+	fila := m.Nombre
+	if m.Motor != "" {
+		fila = m.Motor + " / " + m.Nombre
+	}
 	marcas := ""
+	if m.CapacidadesSinDato {
+		marcas += "  [?]"
+	}
 	if m.SinHerramientas {
 		marcas += "  (sin herramientas)"
 	}
 	if m.SinVision {
 		marcas += "  (sin visión)"
 	}
-	return m.Nombre + marcas
+	return fila + marcas
+}
+
+// ModeloTrasCambiarDeMotor decide qué modelo sigue vigente al aplicar un motor
+// distinto: el mismo nombre si el motor nuevo lo declara, y vacío si no —no se
+// arrastra un nombre que el motor nuevo no tiene (SPEC-MODELO-MOTOR §Cambiar a
+// mitad de conversación)—. Es una función pura: no toca el puerto.
+func ModeloTrasCambiarDeMotor(actual string, modelos []ModeloLocal) string {
+	if actual == "" {
+		return ""
+	}
+	for _, m := range modelos {
+		if m.Nombre == actual {
+			return actual
+		}
+	}
+	return ""
 }
 
 // ModeloElegidoLocal devuelve el modelo resaltado con todos sus datos (nombre

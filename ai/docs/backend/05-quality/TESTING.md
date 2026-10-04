@@ -19,9 +19,9 @@ Qué se prueba, cómo, y qué debe sostenerse con una prueba. Ver [[PROJECT]] pa
 | Nivel | Qué cubre | Cómo |
 |---|---|---|
 | Unitario | Lógica pura: grafo de dependencias, selección de contexto, orden de la cola, comprobación de permisos, reparto de herramientas, validación de rutas | Funciones aisladas, sin base de datos ni red |
-| De integración | Conexión y streaming con el proveedor, ciclo completo de una etapa con lectura, aplicación de un cambio con su aprobación, ciclo de la cola | Un proveedor real —Ollama o `llama-server`—, base temporal, sistema de archivos temporal |
+| De integración | Conexión y streaming con el motor, ciclo completo de una etapa con lectura, aplicación de un cambio con su aprobación, ciclo de la cola | Un motor real —`ollama` o `llama-server`—, base temporal, sistema de archivos temporal |
 | De aislamiento | Un intento de escribir en el proyecto a través de la terminal, que debe fallar | Landlock real, no simulado |
-| De contexto | Que el recorte reduzca de forma medible frente a leer el proyecto entero, y que lo entregado quepa en el límite del modelo | Un proveedor real, con el modelo que elija la prueba |
+| De contexto | Que el recorte reduzca de forma medible frente a leer el proyecto entero, y que lo entregado quepa en el límite del modelo | Un motor de inferencia real, con el modelo que elija la prueba |
 
 La prueba de aislamiento es la que sostiene la garantía de Landlock. Si pasa con Landlock simulado, no prueba nada: tiene que usar el mecanismo real.
 
@@ -38,8 +38,8 @@ Cobertura esperada por módulo:
 | `tools` | Una herramienta fuera del catálogo se rechaza; una herramienta que el agente no tiene se rechaza; el enrutado va al módulo correcto |
 | `fileops` | Dentro de la carpeta se escribe con aprobación; fuera sin explicación no; borrar pide confirmación; cada cambio queda registrado con el antes y el después |
 | `exec` | La lista blanca corre sin preguntar; un comando fuera de la lista pide permiso; la salida sin fin se corta; la terminal no puede escribir en el proyecto |
-| `llm` | La frontera neutra resuelve capacidades y ventana igual contra los dos proveedores; la cola serializa por orden de llegada; el tajo de inferencia se toma por petición, no por ejecución completa |
-| `ollama`, `openai` | El streaming entrega token a token (NDJSON y SSE); el razonamiento se distingue de la respuesta; las capacidades y la ventana se leen del servidor; el perfil de hardware avisa si el modelo no cabe |
+| `llm` | La frontera neutra resuelve capacidades y ventana contra cualquier motor; un `llm.Peticion` serializada produce **la misma carga útil** contra un motor `ollama` y uno `llamacpp`; **el registro vacío no inventa motor** y el registro de ejemplo trae sus entradas inactivas; el registro carga `motores.json` con varios motores y salta los que no; la cola serializa por orden de llegada **por motor**, y dos motores distintos no se esperan; el tajo de inferencia se toma por petición, no por ejecución completa; el recorte previo a la petición **reduce los mensajes hasta que caben** y avisa si tuvo que hacerlo |
+| `openai`, `ollama`, `llamacpp` | El núcleo común entrega token a token, distingue el razonamiento de la respuesta final y el canal de herramientas, con la misma prueba para los tres; `num_ctx` solo se manda si está declarado; `show` y `tags` solo se consultan si están declarados; `props` devuelve ventana **desconocida** y no un cero cuando el router no tiene modelo; **cada extensión ausente degrada su punto y solo el suyo**; dos motores con capacidades distintas devuelven estados distintos, y `desconocida` no colapsa a `false` |
 | `store` | Las escrituras son transaccionales; el borrado de sesión deja `change_history` intacto; WAL permite leer mientras se escribe; un flujo compuesto que falla en un paso no deja escrituras a medias; las escrituras concurrentes no se pierden; `id` no admite nulo en ninguna tabla; un esquema con `user_version` correcto pero DDL viejo se rechaza |
 | `session` | El estado de una sesión cambia correctamente; una sesión en segundo plano sigue al cambiar de vista; el contenido no se filtra entre sesiones |
 | `flow` | Las etapas van en orden; una etapa que falla detiene el flujo; un flujo pausado se retoma donde estaba; cancelar no deja etapas corriendo |
@@ -47,7 +47,7 @@ Cobertura esperada por módulo:
 ## 3. Fixtures y mocks
 
 - **Base de datos:** base en memoria o archivo temporal por prueba, creada desde el esquema y destruida al terminar. Nunca se usa la base de un proyecto real. Ver [[database/03-operations/SEEDING]].
-- **Proveedor de modelo:** para las pruebas de integración, un proveedor real —Ollama o `llama-server`—. Si el test debe ser rápido, se puede sustituir `llm.Proveedor` con un doble que emita tokens fijos, pero eso no prueba el streaming de verdad.
+- **Motor de inferencia:** para las pruebas de integración, un motor real —`ollama` o `llama-server`—. Si el test debe ser rápido, se puede sustituir `llm.Motor` con un doble que emita tokens fijos, pero eso no prueba el streaming de verdad. El doble se registra en el registro igual que un motor real, así que las pruebas de sesión no necesitan una vía especial.
 - **Sistema de archivos:** un directorio temporal por prueba. El proyecto de prueba tiene su propia carpeta, y las rutas se resuelven siempre relativas a ella.
 - **Landlock:** no se simula en la prueba de aislamiento. Si el sistema no lo tiene, esa prueba se salta, pero no se da por buena.
 - **Reloj y esperas:** para la cola y los flujos pausados, el tiempo se controla o se inyecta un reloj falso, para que las pruebas no dependan de dormir.

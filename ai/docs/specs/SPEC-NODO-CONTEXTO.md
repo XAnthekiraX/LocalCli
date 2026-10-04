@@ -3,8 +3,8 @@ title: SPEC — Nodo de contexto
 tags: [specs, requisito]
 depende_de:
   - "[[IDEA]]"
-  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
-  - "[[specs/SPEC-MOTOR-FLUJOS]]"
+  - "[[specs/SPEC-MODELO-MOTOR]]"
+  - "[[specs/SPEC-ORQUESTADOR-FLUJOS]]"
   - "[[specs/SPEC-ARCHIVOS]]"
 ---
 # SPEC — Nodo de contexto
@@ -18,7 +18,7 @@ Decidir qué pequeña parte de la documentación del proyecto se le entrega al m
 ## Alcance
 
 Incluye recorrer las dependencias declaradas en la documentación, dejar que el modelo decida qué es relevante, recortar lo que sobra y registrar qué entró y qué salió.
-No incluye cómo se usa dentro de un flujo, que está en [[specs/SPEC-MOTOR-FLUJOS]].
+No incluye cómo se usa dentro de un flujo, que está en [[specs/SPEC-ORQUESTADOR-FLUJOS]].
 
 ## Actores
 
@@ -77,8 +77,8 @@ Un documento de APIs declara que usa los DTOs de respuesta. El documento de esos
 
 ## Dependencias funcionales
 
-- [[specs/SPEC-MODELO-PROVEEDOR]]
-- [[specs/SPEC-MOTOR-FLUJOS]]
+- [[specs/SPEC-MODELO-MOTOR]]
+- [[specs/SPEC-ORQUESTADOR-FLUJOS]]
 - [[specs/SPEC-ARCHIVOS]]
 
 ## Supuestos

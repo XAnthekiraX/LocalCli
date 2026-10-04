@@ -4,7 +4,7 @@
 //   - API HTTP en local, por defecto http://localhost:8080.
 //   - Sin credenciales: el `--api-key` opcional de llama-server no se usa.
 //   - Streaming SSE por /v1/chat/completions.
-package openai
+package llamacpp
 
 import (
 	"bytes"
@@ -43,6 +43,18 @@ func NewClient(baseURL string) *Client {
 
 // Nombre es la clave del runtime para la frontera neutra.
 func (c *Client) Nombre() string { return "llamacpp" }
+
+// Tipo es el tipo cerrado del catálogo de motores al que pertenece este
+// adaptador (`llm.TipoLlamaCPP`). Lo usa el registro para validar y
+// construir por tipo; nunca el resto del harness.
+func (c *Client) Tipo() string { return llm.TipoLlamaCPP }
+
+// init registra este adaptador en la frontera por su tipo cerrado: `llm` es
+// el único que instancia adaptadores y lo hace por tipo, nunca el resto del
+// harness (BACKEND.md §3).
+func init() {
+	llm.RegistrarTipo(llm.TipoLlamaCPP, func(url string) llm.Motor { return NewClient(url) })
+}
 
 // BaseURL devuelve la dirección configurada.
 func (c *Client) BaseURL() string { return c.baseURL }
@@ -159,7 +171,7 @@ func dataURI(imagen string) string {
 
 // --- transporte ------------------------------------------------------------
 
-// Chat implementa `llm.Proveedor`: POST /v1/chat/completions en streaming SSE.
+// Chat implementa `llm.Motor`: POST /v1/chat/completions en streaming SSE.
 func (c *Client) Chat(ctx context.Context, req llm.Peticion) (<-chan llm.Evento, error) {
 	resp, err := c.postJSON(ctx, "/v1/chat/completions", peticionDe(req))
 	if err != nil {
@@ -228,7 +240,7 @@ const mensajeLevantarLlamaCpp = "no se puede generar: llama.cpp no responde en l
 	"`llama-server --models-dir <carpeta>` (sin --tools, --agent ni --mcp-servers-json)"
 
 // clasificarFalloRed mapea un fallo de conexión al error tipado.
-func clasificarFalloRed(err error) (*llm.ErrorProveedor, bool) {
+func clasificarFalloRed(err error) (*llm.ErrorMotor, bool) {
 	return llm.ClasificarFalloRed(err, mensajeLevantarLlamaCpp)
 }
 

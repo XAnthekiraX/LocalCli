@@ -24,14 +24,14 @@ Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TE
 
 ## 2. Propósito de cada tabla
 
-- **`sessions`** — Una sesión de trabajo. Es la unidad de la que cuelgan la conversación, las aprobaciones y la auditoría. Su campo `status` es lo que la interfaz muestra cuando cambias de sesión.
+- **`sessions`** — Una sesión de trabajo. Es la unidad de la que cuelgan la conversación, las aprobaciones y la auditoría. Su campo `status` es lo que la interfaz muestra cuando cambias de sesión. Guarda además el par `motor_id`/`modelo` con el que trabaja: son recursos de la sesión, no parte de su identidad, así que cambiar uno no la renombra ni le toca el historial.
 - **`messages`** — Los turnos de la conversación. Guarda lo que escribió el usuario y lo que respondió el agente, más los tokens de cada turno y su duración. Un turno puede incluir llamadas a herramientas, pero **esas no se guardan en `messages`**: el detalle de la ejecución vive mientras dura el turno y se descarta; lo que queda es el mensaje final del agente y, aparte, su línea en `chat_evento`. Ver [[database/02-rules/DATA_FLOW]].
 - **`reasoning`** — El razonamiento del modelo de un mensaje concreto. Va en tabla aparte porque llega token a token mientras se genera y porque se consulta y se mide por separado del texto final. El diseño está en [[specs/SPEC-AGENTE-BASE]].
 - **`approvals`** — Lo que una sesión necesita que decidas antes de seguir. El panel de aprobaciones las lee todas, de cualquier sesión. Ver [[specs/SPEC-INTERFAZ-ATAJOS]].
 - **`context_audit`** — La traza de qué documentación recibió el modelo en cada etapa y qué se descartó, con el motivo. Es lo que hace auditable el nodo de contexto. Ver [[specs/SPEC-NODO-CONTEXTO]].
 - **`change_history`** — Cada cambio aplicado a un archivo del proyecto, con lo que había antes y lo que quedó. Nunca se borra. Ver [[database/02-rules/BUSINESS_RULES]].
 - **`todos`** — La lista de pasos de una sesión: el plan que el agente mantiene con `crear_todo` y `actualizar_todo`. Es estado de ejecución de la sesión, no un documento del proyecto: `actualizar_todo` la reescribe entera y `crear_todo` le añade un paso al final. Cae con su sesión. Ver [[specs/SPEC-TOOLS]].
-- **`flow_context`** — El bloque de contexto de un flujo con `bloque_contexto`: una aportación por etapa, ya optimizada por el modelo. Es lo que permite que la composición final arme la entrega a partir de todo el trabajo de las etapas. Es estado de ejecución de la sesión: se reemplaza en cada ejecución del flujo y cae con su sesión. Ver [[specs/SPEC-MOTOR-FLUJOS]].
+- **`flow_context`** — El bloque de contexto de un flujo con `bloque_contexto`: una aportación por etapa, ya optimizada por el modelo. Es lo que permite que la composición final arme la entrega a partir de todo el trabajo de las etapas. Es estado de ejecución de la sesión: se reemplaza en cada ejecución del flujo y cae con su sesión. Ver [[specs/SPEC-ORQUESTADOR-FLUJOS]].
 - **`chat_evento`** — Las líneas de procesamiento del chat: el sub-proceso de cada etapa de un flujo y la línea de cada herramienta. Son parte del hilo que se muestra y se recuerdan al volver a una sesión, pero **no son contexto**: al modelo solo se le entregan los turnos de `messages`. Cae en cascada con su sesión. Ver [[database/02-rules/DATA_FLOW]].
 
 ## 3. Columnas
@@ -46,8 +46,17 @@ Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TE
 | `status` | Estado de la sesión | Ver [[database/01-schema/ENUMS]] | No | `inactiva` |
 | `created_at` | Cuándo se creó | ISO 8601 UTC | No | — |
 | `updated_at` | Última actividad | ISO 8601 UTC | No | — |
+| `motor_id` | Motor de inferencia que usa la sesión | `id` de una entrada de `motores.json` | Sí | `NULL` |
+| `modelo` | Modelo que usa la sesión | Nombre tal cual lo declara el motor | Sí | `NULL` |
 
 `layer` es `NULL` para una sesión general, por ejemplo cuando solo conversas o revisas contexto sin ejecutar tareas de una capa concreta.
+
+`motor_id` y `modelo` son **el par motor/modelo de la sesión**, y son su única huella de ejecución: son lo que se lee al retomar y lo que se actualiza al cambiar de motor o de modelo. Ver [[specs/SPEC-SESIONES]] y [[specs/SPEC-MODELO-MOTOR]].
+
+Dos detalles que no son obvios:
+
+- **`motor_id` no es clave foránea.** El registro de motores es un archivo global de la máquina, no una tabla de este proyecto. Guardar el `id` sin integridad referencial es deliberado: si el motor se elimina o se desactiva, la fila sigue siendo válida y la sesión sobrevive con su historial, avisando de que necesita otro motor. Una clave foránea obligaría a decidir en la base qué hacer con la sesión, y esa decisión es de interfaz.
+- **`modelo` no se valida contra el motor.** El mismo nombre puede no existir en otro runtime. La comprobación —«¿este motor tiene este modelo?»— es del momento en que se usa, no de la escritura.
 
 ### `messages`
 
@@ -152,7 +161,7 @@ El esquema no cambia con `crear_todo`: no hay migración, ni columna nueva, ni t
 | `content` | Aportación ya optimizada | Texto libre | No | — |
 | `created_at` | Cuándo se guardó | ISO 8601 UTC | No | — |
 
-Hay una aportación por etapa y flujo dentro de la sesión: el índice único `(session_id, flow, stage)` hace que volver a ejecutar el flujo **reemplace** la fila en vez de duplicarla. El motor vacía el bloque al arrancar cada ejecución. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su bloque. Ver [[specs/SPEC-MOTOR-FLUJOS]].
+Hay una aportación por etapa y flujo dentro de la sesión: el índice único `(session_id, flow, stage)` hace que volver a ejecutar el flujo **reemplace** la fila en vez de duplicarla. El orquestador vacía el bloque al arrancar cada ejecución. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su bloque. Ver [[specs/SPEC-ORQUESTADOR-FLUJOS]].
 
 ### `chat_evento`
 

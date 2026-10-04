@@ -2,9 +2,10 @@
                                                                                                     
                   General                                                                           
                   ctrl+c           salir                                                            
-                  <leader>l        modal de sesiones                                                
+                  ctrl+x l         modal de sesiones                                                
                   ctrl+p           modal de atajos de teclado                                       
-                  <leader>m        modal de modelos                                                 
+                  ctrl+x m         modal de modelos                                                 
+                  ctrl+x i         modal de motores                                                 
                                                                                                     
                   Chat                                                                              
                   up               subir por el historial del chat                                  
@@ -14,7 +15,7 @@
                                                                                                     
                   Vista                                                                             
                   ctrl+d           abrir o cerrar el panel de datos                                 
-                  <leader>n        crear una sesión nueva                                           
+                  ctrl+x n         crear una sesión nueva                                           
                   ctrl+r           mostrar u ocultar el razonamiento                                
                   ctrl+a           abrir o cerrar el panel de aprobaciones                          
                   (deshabilitada)  pausar la cola en curso                                          
@@ -24,6 +25,9 @@
                   Modales                                                                           
                   ctrl+d           eliminar la sesión resaltada                                     
                   esc              cerrar lo abierto                                                
+                  ctrl+x a         añadir un motor                                                  
+                  ctrl+x e         editar el motor resaltado                                        
+                  ctrl+x d         eliminar el motor resaltado                                      
                   up               subir en la lista                                                
                   down             bajar en la lista                                                
                                                                                                     

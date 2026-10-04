@@ -43,3 +43,11 @@ var chatEventoSQL string
 //
 //go:embed duracionlinea.sql
 var duracionLineaSQL string
+
+// motorSQL es el DDL del par motor/modelo de la sesión (migración 006),
+// embebido igual que el esquema base para que el binario siga siendo portable.
+//
+// source: motor.sql — única copia del DDL de las dos columnas.
+//
+//go:embed motor.sql
+var motorSQL string

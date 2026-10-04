@@ -16,7 +16,7 @@
                                                                                                     
                "Escribe para iniciar la conversacion"                                               
                                                                                                     
-               [plan] • llama3.2                                                                    
+               [plan] • llama3.2 (Ollama local)                                                     
                                                                                                     
                                                                                                     
                           TAB agentes   Ctrl+P comandos   Ctrl+X M modelos                          

@@ -6,7 +6,7 @@ depende_de:
   - "[[specs/SPEC-TOOLS]]"
   - "[[specs/SPEC-NODO-CONTEXTO]]"
   - "[[specs/SPEC-ARCHIVOS]]"
-  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
+  - "[[specs/SPEC-MODELO-MOTOR]]"
   - "[[specs/SPEC-SESIONES]]"
   - "[[specs/SPEC-COLA-TAREAS]]"
 relacionado:
@@ -295,7 +295,7 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 - [[specs/SPEC-TOOLS]]
 - [[specs/SPEC-NODO-CONTEXTO]]
 - [[specs/SPEC-ARCHIVOS]]
-- [[specs/SPEC-MODELO-PROVEEDOR]]
+- [[specs/SPEC-MODELO-MOTOR]]
 - [[specs/SPEC-SESIONES]]
 - [[specs/SPEC-COLA-TAREAS]]
 

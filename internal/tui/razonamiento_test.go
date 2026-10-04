@@ -23,7 +23,7 @@ func appConRazonamiento(t *testing.T, razona bool) (*App, *puertoStub) {
 	a.Vista = VistaPrincipal
 	a.Panel.SesionID = "s1"
 	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 28})
-	pulsa(t, a, capacidadesMsg{Nombre: "qwen3:4b", Herramientas: true, Pensar: razona})
+	pulsa(t, a, capacidadesMsg{Nombre: "qwen3:4b", Herramientas: CapacidadSoportada, Pensar: CapacidadDe(razona)})
 	return a, p
 }
 
@@ -84,6 +84,40 @@ func TestElClicFueraDeLaChapaNoCambiaElRazonamiento(t *testing.T) {
 	clic(t, a, x+len("pensar [x]")+3, y)
 	if a.Pensar || p.pensarLlamadas != 0 {
 		t.Errorf("fuera de la chapa no se cambia nada: %v %d", a.Pensar, p.pensarLlamadas)
+	}
+}
+
+// El razonamiento en estado `desconocida` no ofrece el interruptor y avisa de
+// que queda desactivado porque no se pudo comprobar; es el único de los tres
+// estados desconocidos que avisa, porque le cambia el turno al usuario
+// (SPEC-MODELO-MOTOR §Capacidades, T-F045-06).
+func TestElThinkDesconocidoSeDesactivaYAvisa(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	// La preferencia está encendida, pero eso no basta: sin dato, la TUI no
+	// ofrece el `think` y avisa.
+	p := &puertoStub{modelo: "qwen3:4b", pensarRecordado: true}
+	a := Nuevo(p)
+	a.Vista = VistaPrincipal
+	a.Panel.SesionID = "s1"
+	pulsa(t, a, tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	pulsa(t, a, capacidadesMsg{Nombre: "qwen3:4b", Herramientas: CapacidadSoportada, Pensar: CapacidadDesconocida})
+	v := sinEstilo(a.View())
+	if strings.Contains(v, "pensar [") {
+		t.Errorf("sin dato no se ofrece el interruptor de razonamiento:\n%s", v)
+	}
+	if !strings.Contains(v, "razonamiento está desactivado") {
+		t.Errorf("el razonamiento desconocido avisa:\n%s", v)
+	}
+
+	// Con dato (razona): el aviso se retira y la chapa vuelve a ofrecerse.
+	pulsa(t, a, capacidadesMsg{Nombre: "qwen3:4b", Herramientas: CapacidadSoportada, Pensar: CapacidadSoportada})
+	v = sinEstilo(a.View())
+	if strings.Contains(v, "razonamiento está desactivado") {
+		t.Errorf("con dato no hay aviso:\n%s", v)
+	}
+	if !strings.Contains(v, "pensar [") {
+		t.Errorf("con dato la chapa vuelve a ofrecerse:\n%s", v)
 	}
 }
 

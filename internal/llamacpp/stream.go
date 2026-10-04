@@ -7,7 +7,7 @@
 // repartirse en varias deltas, así que hay que acumularlas por su índice»).
 //
 // El SSE se lee con `bufio` de la biblioteca estándar: sin dependencias nuevas.
-package openai
+package llamacpp
 
 import (
 	"bufio"

@@ -6,7 +6,7 @@
 // `default_generation_settings.n_ctx`»).
 //
 // Solo se hace GET: el servidor se lee, nunca se muta. No hay `POST /props`.
-package openai
+package llamacpp
 
 import (
 	"context"

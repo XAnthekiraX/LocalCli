@@ -60,6 +60,16 @@ const (
 	AccionEnviar
 	// AccionModalModelos abre el modal de modelos (model_picker, <leader>m).
 	AccionModalModelos
+	// AccionModalMotores abre el modal de motores (motor_picker, <leader>i).
+	AccionModalMotores
+	// AccionMotorNuevo / AccionMotorEditar / AccionEliminarMotor actúan sobre el
+	// modal de motores: añadir, editar el resaltado y borrarlo. Viven en el
+	// ámbito del modal y usan secuencias con líder (`<leader>a`, `<leader>e` y
+	// `<leader>d`), así que no pisan la vista de abajo ni la escritura
+	// (SPEC-KEYBINDS §Acción).
+	AccionMotorNuevo
+	AccionMotorEditar
+	AccionEliminarMotor
 	// AccionCiclarAgente alterna plan ↔ build (agent_cycle, tab): nunca dentro
 	// de un modal ni escribiendo.
 	AccionCiclarAgente
@@ -105,6 +115,10 @@ var DescripcionDeAccion = map[Accion]string{
 	AccionCerrarSelector:   "cerrar lo abierto",
 	AccionAyuda:            "modal de atajos de teclado",
 	AccionModalModelos:     "modal de modelos",
+	AccionModalMotores:     "modal de motores",
+	AccionMotorNuevo:       "añadir un motor",
+	AccionMotorEditar:      "editar el motor resaltado",
+	AccionEliminarMotor:    "eliminar el motor resaltado",
 	AccionCiclarAgente:     "cambiar de agente",
 	AccionSubir:            "subir en la lista",
 	AccionBajar:            "bajar en la lista",
@@ -168,9 +182,18 @@ func MapasPorDefecto() map[Accion][]string {
 		// abierto y no llega a la vista de abajo.
 		AccionCerrarSelector: {"esc"},
 		AccionModalModelos:   {"<leader>m"},
-		AccionCiclarAgente:   {"tab"},
-		AccionSubir:          {"up"},
-		AccionBajar:          {"down"},
+		// motor_picker usa `<leader>i` (de inferencia) y es global; añadir,
+		// editar y eliminar un motor usan también la líder (`<leader>a`,
+		// `<leader>e`, `<leader>d`), con la letra mnemotécnica detrás: al ser
+		// secuencias no chocan con ninguna letra suelta de la escritura ni con
+		// `panel_toggle`/`session_delete` (SPEC-KEYBINDS §Reglas).
+		AccionModalMotores:  {"<leader>i"},
+		AccionMotorNuevo:    {"<leader>a"},
+		AccionMotorEditar:   {"<leader>e"},
+		AccionEliminarMotor: {"<leader>d"},
+		AccionCiclarAgente:  {"tab"},
+		AccionSubir:         {"up"},
+		AccionBajar:         {"down"},
 		// El historial del chat se recorre con las flechas y el paginado. `up`
 		// y `down` no chocan con AccionSubir/AccionBajar (ámbito del modal):
 		// sin modal, la vista no las ve y el chat las usa.
@@ -208,7 +231,8 @@ func OrdenDeAcciones() []Accion {
 		AccionEliminarSesion, AccionRazonamiento,
 		AccionAprobaciones, AccionAprobar, AccionDeclinar, AccionPausar,
 		AccionCancelar, AccionCerrarSelector, AccionAyuda,
-		AccionModalModelos, AccionCiclarAgente, AccionSubir, AccionBajar,
+		AccionModalModelos, AccionModalMotores, AccionMotorNuevo, AccionMotorEditar,
+		AccionEliminarMotor, AccionCiclarAgente, AccionSubir, AccionBajar,
 		AccionChatSubir, AccionChatBajar, AccionChatPaginaArriba, AccionChatPaginaAbajo,
 	}
 }

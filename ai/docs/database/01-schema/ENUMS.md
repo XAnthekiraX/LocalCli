@@ -102,7 +102,7 @@ inactiva ──▶ trabajando ──▶ inactiva
         error
 ```
 
-- `inactiva` → `trabajando`: la sesión recibe una petición o el motor toma trabajo.
+- `inactiva` → `trabajando`: la sesión recibe una petición o el orquestador toma trabajo.
 - `trabajando` → `inactiva`: terminó la etapa y espera otra.
 - `trabajando` → `esperando_permiso`: el agente pidió una aprobación.
 - `esperando_permiso` → `trabajando`: decidiste y el flujo continúa.

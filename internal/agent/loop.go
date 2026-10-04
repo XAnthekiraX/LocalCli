@@ -67,24 +67,27 @@ type Ejecutor struct {
 	Testigo func(ctx context.Context, fn func(context.Context) error) error
 	// PuedeHerramientas informa si el modelo en uso declara la capacidad de
 	// pedir herramientas. nil —o una función que devuelve true— deja el turno
-	// como está; false degrada el agente a modo conversación.
-	PuedeHerramientas func(modelo string) bool
+	// como está; false degrada el agente a modo conversación. Recibe el
+	// contexto del turno —con su sesión— porque la ficha es del motor de esa
+	// sesión: dos motores pueden declarar cosas distintas del mismo nombre.
+	PuedeHerramientas func(ctx context.Context, modelo string) bool
 	// Pensar decide qué se le manda al modelo sobre su razonamiento: nil deja
 	// que decida Ollama (no se manda `think`) y un puntero manda ese valor. Sin
 	// esta función no se manda nada. Es una función y no un campo para que el
 	// interruptor del usuario valga en el turno siguiente, no en el que se
-	// construyó el ejecutor.
-	Pensar func(modelo string) *bool
+	// construyó el ejecutor. Recibe el contexto del turno: la ficha del modelo
+	// es la del motor de esa sesión.
+	Pensar func(ctx context.Context, modelo string) *bool
 }
 
 // pensarDelTurno resuelve, una vez por turno, qué se le manda al modelo sobre su
 // razonamiento. Sin función no se manda nada: el harness no decide por su cuenta
 // que un modelo piense.
-func (e *Ejecutor) pensarDelTurno(modelo string) *bool {
+func (e *Ejecutor) pensarDelTurno(ctx context.Context, modelo string) *bool {
 	if e.Pensar == nil {
 		return nil
 	}
-	return e.Pensar(modelo)
+	return e.Pensar(ctx, modelo)
 }
 
 // Ejecutar responde una petición: arma los mensajes con el historial de la
@@ -108,7 +111,7 @@ func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto stri
 	var herramientas []llm.Herramienta
 	if sinHerramientas {
 		// El turno no ofrece herramientas: no hay nada que degradar ni avisar.
-	} else if e.PuedeHerramientas != nil && !e.PuedeHerramientas(modelo) {
+	} else if e.PuedeHerramientas != nil && !e.PuedeHerramientas(ctx, modelo) {
 		aviso = "el modelo «" + modelo + "» no declara capacidad de herramientas; el agente va a conversar sin ellas"
 		if av, ok := sink.(Avisador); ok {
 			av.Aviso(aviso)
@@ -123,7 +126,7 @@ func (e *Ejecutor) Ejecutar(ctx context.Context, a Agente, modelo, contexto stri
 
 	// El razonamiento se decide una vez por turno: todas las pasadas llevan lo
 	// mismo, y el interruptor no cambia a mitad de una respuesta.
-	pensar := e.pensarDelTurno(modelo)
+	pensar := e.pensarDelTurno(ctx, modelo)
 
 	var tokensIn, tokensOut uint64
 	for pasada := 0; pasada < max; pasada++ {

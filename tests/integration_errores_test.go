@@ -53,9 +53,9 @@ func TestLosCodigosDelCatalogoSonLosDocumentados(t *testing.T) {
 		"flow.blocked":     flow.CodigoElementoBloqueado,
 		// queue
 		"queue.blocked": queue.CodigoElementoBloqueado,
-		// proveedor de modelo (frontera llm)
-		"proveedor.unavailable": llm.CodigoProveedorNoDisponible,
-		"proveedor.toobig":      llm.CodigoModeloNoCabe,
+		// motor de inferencia (frontera llm)
+		"motor.unavailable": llm.CodigoMotorNoDisponible,
+		"motor.toobig":      llm.CodigoModeloNoCabe,
 	}
 	documentados := map[string]bool{
 		"E_TOOL_UNKNOWN": true, "E_TOOL_NOT_ALLOWED": true, "E_BAD_ARGS": true,
@@ -67,7 +67,9 @@ func TestLosCodigosDelCatalogoSonLosDocumentados(t *testing.T) {
 		"E_NOT_A_PROJECT":  true,
 		"E_DB_UNAVAILABLE": true, "E_DB_SCHEMA_OUTDATED": true, "E_DB_CONSTRAINT": true,
 		"E_DB_FOREIGN_KEY": true, "E_DB_CONFLICT": true, "E_DB_LOCKED": true,
-		"E_PROVEEDOR_NO_DISPONIBLE": true, "E_MODEL_TOO_BIG": true, "E_NO_LANDLOCK": true,
+		"E_MOTOR_NO_DISPONIBLE": true, "E_MOTOR_TIPO_DESCONOCIDO": true,
+		"E_REGISTRO_MOTORES_INVALIDO": true,
+		"E_MODEL_TOO_BIG":             true, "E_NO_LANDLOCK": true,
 	}
 	for qué, codigo := range catalogo {
 		if !strings.HasPrefix(codigo, "E_") {

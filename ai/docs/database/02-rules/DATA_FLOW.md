@@ -132,7 +132,7 @@ El orden importa cuando una operación prepara a la siguiente:
 5. El agente vuelve a pedir al modelo con el resultado, y repite desde el 3 mientras siga pidiendo herramientas, hasta un máximo de rondas.
 6. Cuando el modelo responde en texto, se inserta el mensaje del agente y se cierra el turno.
 7. Si el cambio fue una escritura, `build` ya lo aplicó en el 4 y quedó registrado en `change_history`.
-8. El motor marca la tarea como completada en su archivo de tarea.
+8. El orquestador marca la tarea como completada en su archivo de tarea.
 9. La cola vuelve a derivarse y toma la siguiente tarea.
 
 El paso 7 nunca ocurre sin el 3 y el 4. La base no lo impide, pero la capa universal de herramientas sí: el permiso se comprueba antes de ejecutar nada. Ver [[database/02-rules/BUSINESS_RULES]] y [[backend/03-security/SECURITY]].

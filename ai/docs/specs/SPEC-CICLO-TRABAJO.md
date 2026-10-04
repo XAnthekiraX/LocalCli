@@ -3,7 +3,7 @@ title: SPEC — Ciclo de trabajo
 tags: [specs, requisito]
 depende_de:
   - "[[IDEA]]"
-  - "[[specs/SPEC-MOTOR-FLUJOS]]"
+  - "[[specs/SPEC-ORQUESTADOR-FLUJOS]]"
   - "[[specs/SPEC-COLA-TAREAS]]"
   - "[[specs/SPEC-NODO-CONTEXTO]]"
   - "[[specs/SPEC-ARCHIVOS]]"
@@ -173,7 +173,7 @@ La ejecución no se pide aquí. El elemento entra en la cola de [[specs/SPEC-COL
 
 ## Dependencias funcionales
 
-- [[specs/SPEC-MOTOR-FLUJOS]]
+- [[specs/SPEC-ORQUESTADOR-FLUJOS]]
 - [[specs/SPEC-COLA-TAREAS]]
 - [[specs/SPEC-NODO-CONTEXTO]]
 - [[specs/SPEC-ARCHIVOS]]

@@ -7,7 +7,7 @@ depende_de:
   - "[[specs/SPEC-TOOLS]]"
   - "[[specs/SPEC-NODO-CONTEXTO]]"
   - "[[specs/SPEC-ARCHIVOS]]"
-  - "[[specs/SPEC-MOTOR-FLUJOS]]"
+  - "[[specs/SPEC-ORQUESTADOR-FLUJOS]]"
   - "[[specs/SPEC-COLA-TAREAS]]"
 relacionado:
   - "[[specs/SPEC-CICLO-TRABAJO]]"
@@ -108,7 +108,7 @@ El orden no es arbitrario: el backend documenta sus endpoints contra lo que la b
 - [[specs/SPEC-TOOLS]]
 - [[specs/SPEC-NODO-CONTEXTO]]
 - [[specs/SPEC-ARCHIVOS]]
-- [[specs/SPEC-MOTOR-FLUJOS]]
+- [[specs/SPEC-ORQUESTADOR-FLUJOS]]
 - [[specs/SPEC-COLA-TAREAS]]
 
 ## Supuestos

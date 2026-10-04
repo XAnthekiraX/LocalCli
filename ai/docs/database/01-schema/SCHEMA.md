@@ -41,7 +41,7 @@ La versión del esquema no ocupa tabla: se guarda en el `PRAGMA user_version` de
 
 | Tabla | Propósito |
 |---|---|
-| `sessions` | Una sesión de trabajo: nombre, capa y estado |
+| `sessions` | Una sesión de trabajo: nombre, capa, estado y el par motor/modelo con el que trabaja |
 | `messages` | Los mensajes de la conversación, de usuario y de agente |
 | `reasoning` | El razonamiento del modelo de cada mensaje de agente, acumulado del streaming |
 | `approvals` | Las aprobaciones pendientes y resueltas de cada sesión |
@@ -67,6 +67,8 @@ Resumen estructural. Los valores permitidos, los `NULL` y los valores por defect
 | `status` | TEXT | | Ver [[database/01-schema/ENUMS]] |
 | `created_at` | TEXT | | ISO 8601 UTC |
 | `updated_at` | TEXT | | ISO 8601 UTC |
+| `motor_id` | TEXT | | `id` del motor en `motores.json`. `NULL` si no está asignado. Sin FK: el registro es un archivo global |
+| `modelo` | TEXT | | Nombre del modelo tal cual lo declara el motor. `NULL` si no está asignado |
 
 ### `messages`
 

@@ -28,6 +28,124 @@ import (
 	"localcli/internal/task"
 )
 
+// TestCambiarDeMotorNoTocaElHistorialNiElNombre — el motor y el modelo son
+// recursos de la sesión, no su identidad: cambiarlos no cambia el id, ni el
+// nombre, ni el historial (SPEC-SESIONES §Reglas y criterios de aceptación).
+func TestCambiarDeMotorNoTocaElHistorialNiElNombre(t *testing.T) {
+	g, alm := gestorDe(t, nuevoMotor(flow.EstadoTerminado))
+
+	ses, err := g.CrearConMotor("conversación viva", "", "ollama-local", "qwen3:8b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := alm.EscribirMensaje(&store.Message{SessionID: ses.ID, Role: "user", Content: "hola"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Cambiar de motor a mitad de conversación.
+	if err := g.CambiarMotor(ses.ID, "llamacpp-local"); err != nil {
+		t.Fatal(err)
+	}
+	motorID, modelo, err := g.ParMotorModelo(ses.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if motorID != "llamacpp-local" || modelo != "qwen3:8b" {
+		t.Errorf("cambiar de motor solo cambia el motor: %q / %q", motorID, modelo)
+	}
+
+	// Cambiar de modelo, sin tocar el motor.
+	if err := g.CambiarModelo(ses.ID, "qwen3"); err != nil {
+		t.Fatal(err)
+	}
+	motorID2, modelo2, err := g.ParMotorModelo(ses.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if motorID2 != "llamacpp-local" || modelo2 != "qwen3" {
+		t.Errorf("cambiar de modelo solo cambia el modelo: %q / %q", motorID2, modelo2)
+	}
+
+	// La identidad y el historial siguen intactos.
+	actual, err := g.Estado(ses.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual.ID != ses.ID || actual.Nombre != "conversación viva" {
+		t.Errorf("cambiar el par no toca la identidad: %+v", actual)
+	}
+	hist, err := g.Historial(ses.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hist) != 1 || hist[0].Content != "hola" {
+		t.Errorf("el historial no se toca al cambiar de motor: %+v", hist)
+	}
+}
+
+// TestEliminarElMotorNoEliminaLaSesion — una sesión cuyo motor se elimina (o se
+// desactiva) no muere: avisa con E_MOTOR_NO_DISPONIBLE, conserva su historial y
+// espera a que se elija otro; su fila no se invalida ni se borra
+// (SPEC-MODELO-MOTOR §Eliminar y SPEC-SESIONES §Reglas).
+func TestEliminarElMotorNoEliminaLaSesion(t *testing.T) {
+	g, alm := gestorDe(t, nuevoMotor(flow.EstadoTerminado))
+	motores := &motoresStub{disponibles: map[string]bool{"ollama-local": true}}
+	g.Motores = motores
+
+	ses, err := g.CrearConMotor("viva", "", "ollama-local", "qwen3:8b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := alm.EscribirMensaje(&store.Message{SessionID: ses.ID, Role: "user", Content: "hola"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// El motor desaparece del registro.
+	motores.disponibles["ollama-local"] = false
+
+	// Un turno no arranca: avisa con E_MOTOR_NO_DISPONIBLE.
+	err = g.Conversar(context.Background(), ses.ID, "plan", "otra pregunta", nil)
+	if err == nil || !strings.Contains(err.Error(), "E_MOTOR_NO_DISPONIBLE") {
+		t.Fatalf("quería el aviso E_MOTOR_NO_DISPONIBLE, llegó: %v", err)
+	}
+	if err := g.MotorDisponible(ses.ID); err == nil {
+		t.Error("MotorDisponible debe avisar cuando el motor falta")
+	}
+
+	// La sesión sigue existiendo, con su identidad, su historial y su par.
+	actual, err := g.Estado(ses.ID)
+	if err != nil {
+		t.Fatalf("la sesión no debe desaparecer con su motor: %v", err)
+	}
+	if actual.ID != ses.ID || actual.Nombre != "viva" {
+		t.Errorf("la fila de la sesión no se invalida: %+v", actual)
+	}
+	motorID, modelo, err := g.ParMotorModelo(ses.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if motorID != "ollama-local" || modelo != "qwen3:8b" {
+		t.Errorf("el par se conserva hasta que se elija otro: %q / %q", motorID, modelo)
+	}
+	hist, err := g.Historial(ses.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hist) != 1 || hist[0].Content != "hola" {
+		t.Errorf("el historial queda intacto y el turno rechazado no se escribe: %+v", hist)
+	}
+}
+
+// motoresStub dice qué motores siguen disponibles, con el aviso documentado.
+type motoresStub struct{ disponibles map[string]bool }
+
+func (m *motoresStub) MotorDisponible(idMotor string) error {
+	if m.disponibles[idMotor] {
+		return nil
+	}
+	return errors.New("E_MOTOR_NO_DISPONIBLE: el motor " + idMotor + " ya no está registrado")
+}
+
 // --- dobles ---------------------------------------------------------------
 
 // almacenMem es un Almacen en memoria con la misma semántica mínima que `store`.
@@ -44,17 +162,35 @@ func nuevoAlmacenMem() *almacenMem {
 }
 
 func (a *almacenMem) Crear(nombre, capa string) (*store.Session, error) {
+	return a.CrearConMotor(nombre, capa, "", "")
+}
+
+func (a *almacenMem) CrearConMotor(nombre, capa, motorID, modelo string) (*store.Session, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.siguiente++
 	s := &store.Session{
-		ID:     "s" + string(rune('0'+a.siguiente)),
-		Name:   nombre,
-		Layer:  capa,
-		Status: store.StatusInactiva,
+		ID:      "s" + string(rune('0'+a.siguiente)),
+		Name:    nombre,
+		Layer:   capa,
+		Status:  store.StatusInactiva,
+		MotorID: motorID,
+		Modelo:  modelo,
 	}
 	a.sesiones[s.ID] = s
 	return s, nil
+}
+
+func (a *almacenMem) CambiarMotorModelo(id, motorID, modelo string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	s, ok := a.sesiones[id]
+	if !ok {
+		return store.ErrNoEncontrado
+	}
+	s.MotorID = motorID
+	s.Modelo = modelo
+	return nil
 }
 
 func (a *almacenMem) Obtener(id string) (*store.Session, error) {

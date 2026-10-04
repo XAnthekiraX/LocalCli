@@ -4,7 +4,7 @@ tags: [specs, requisito]
 depende_de:
   - "[[IDEA]]"
   - "[[specs/SPEC-CICLO-TRABAJO]]"
-  - "[[specs/SPEC-MOTOR-FLUJOS]]"
+  - "[[specs/SPEC-ORQUESTADOR-FLUJOS]]"
   - "[[specs/SPEC-SESIONES]]"
   - "[[specs/SPEC-ARCHIVOS]]"
   - "[[specs/SPEC-NODO-CONTEXTO]]"
@@ -131,7 +131,7 @@ Ejemplo: un elemento "implementar API de pedidos" puede necesitar elementos de d
 ## Dependencias funcionales
 
 - [[specs/SPEC-CICLO-TRABAJO]]
-- [[specs/SPEC-MOTOR-FLUJOS]]
+- [[specs/SPEC-ORQUESTADOR-FLUJOS]]
 - [[specs/SPEC-SESIONES]]
 - [[specs/SPEC-ARCHIVOS]]
 - [[specs/SPEC-NODO-CONTEXTO]]

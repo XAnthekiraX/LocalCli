@@ -40,7 +40,7 @@ var familiasConVision = map[string]bool{
 // Capacidades consulta POST /api/show y devuelve las capacidades declaradas por
 // el modelo, normalizadas a las del harness. Las capacidades de Ollama ya se
 // llaman igual que las neutras (`tools`, `vision`, `thinking`). Un fallo de
-// conexión llega como `*llm.ErrorProveedor`. Si la ficha no trae `capabilities`
+// conexión llega como `*llm.ErrorMotor`. Si la ficha no trae `capabilities`
 // se deduce la visión de las familias; si tampoco hay familias, se devuelve
 // error: no saberlo NO es lo mismo que «no puede».
 func (c *Client) Capacidades(ctx context.Context, nombre string) ([]string, error) {

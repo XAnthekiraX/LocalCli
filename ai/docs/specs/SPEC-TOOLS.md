@@ -7,7 +7,7 @@ depende_de:
   - "[[specs/SPEC-ARCHIVOS]]"
   - "[[specs/SPEC-NODO-CONTEXTO]]"
   - "[[specs/SPEC-RESOLVER]]"
-  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
+  - "[[specs/SPEC-MODELO-MOTOR]]"
 relacionado:
   - "[[backend/DECISIONS]]"
   - "[[specs/SPEC-SKILLS]]"
@@ -23,7 +23,7 @@ Definir qué herramientas tiene el agente para trabajar, cuáles puede usar para
 ## Alcance
 
 Incluye el catálogo incluido, el reparto por agente, las reglas de la terminal y de internet, la capa universal que envuelve toda ejecución, el descubrimiento de herramientas del usuario en `.localcli/tools/` y la degradación cuando el modelo no sabe usarlas.
-No incluye las reglas de permiso sobre archivos, que están en [[specs/SPEC-ARCHIVOS]], ni la selección de contexto, que está en [[specs/SPEC-NODO-CONTEXTO]], ni la conexión con el proveedor de modelo, que está en [[specs/SPEC-MODELO-PROVEEDOR]].
+No incluye las reglas de permiso sobre archivos, que están en [[specs/SPEC-ARCHIVOS]], ni la selección de contexto, que está en [[specs/SPEC-NODO-CONTEXTO]], ni la conexión con el motor de inferencia, que está en [[specs/SPEC-MODELO-MOTOR]].
 
 ## Actores
 
@@ -198,7 +198,7 @@ Ninguna de las dos herramientas necesita preguntar por el estado actual de la li
 
 ## Cuando el modelo no sabe usar herramientas
 
-No todos los modelos que se pueden elegir en el proveedor saben pedir herramientas. La capacidad se puede preguntar antes de elegir, y hay modelos que responden que no.
+No todos los modelos que se pueden elegir en el motor de inferencia saben pedir herramientas. La capacidad se puede preguntar antes de elegir, y hay modelos que responden que no.
 
 Un modelo sin esa capacidad **no puede usar herramientas, ni las incluidas ni las del usuario**, porque no hay forma nativa de pedirlas y LocalCli no las presenta en texto para que las imite.
 
@@ -389,7 +389,7 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - [[specs/SPEC-ARCHIVOS]]
 - [[specs/SPEC-NODO-CONTEXTO]]
 - [[specs/SPEC-RESOLVER]]
-- [[specs/SPEC-MODELO-PROVEEDOR]]
+- [[specs/SPEC-MODELO-MOTOR]]
 
 ## Supuestos
 

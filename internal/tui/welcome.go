@@ -137,10 +137,18 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.Type == tea.KeyCtrlC {
 		return a, tea.Quit
 	}
+	// El formulario y la confirmación del modal de motores capturan el teclado
+	// aunque se hayan abierto desde la bienvenida.
+	if a.Motores.Abierto && a.Motores.FormAbierto() {
+		return a.teclaFormMotor(m)
+	}
+	if a.Motores.Abierto && a.Motores.ConfirmandoBorrado() {
+		return a.teclaConfirmarBorrarMotor(m)
+	}
 
 	ctx := ContextoInput
 	if a.modalAbierto() {
-		ctx = ContextoModal
+		ctx = a.contextoModal()
 	}
 	accion, cmd := a.TeclaRes.Resolver(m, ctx)
 	if accion != AccionNinguna && !accionesDeBienvenida()[accion] {
@@ -154,8 +162,41 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch accion {
 	case AccionSalir:
 		return a, tea.Quit
+	case AccionAyuda:
+		// `Ctrl+P` abre el modal de atajos también desde la bienvenida: la barra
+		// de pistas lo anuncia (`Ctrl+P comandos`) y el modal es global
+		// (SPEC-INTERFAZ §Modales y §Pantalla de bienvenida).
+		if a.AtajosModal.Abierto {
+			a.AtajosModal.Cerrar()
+			return a, nil
+		}
+		return a, a.abrirModalAtajos()
 	case AccionModalModelos:
 		return a, a.abrirModalModelos()
+	case AccionModalMotores:
+		// `Ctrl+X i` abre el modal de motores también desde la bienvenida: al
+		// elegir uno con `Enter` pasa a ser el de la sesión
+		// (SPEC-INTERFAZ §Pantalla de bienvenida).
+		if a.Motores.Abierto {
+			a.Motores.Cerrar()
+			return a, nil
+		}
+		return a, a.abrirModalMotores()
+	case AccionMotorNuevo:
+		if a.Motores.Abierto && !a.Motores.FormAbierto() {
+			a.Motores.AbrirAlta()
+		}
+		return a, nil
+	case AccionMotorEditar:
+		if a.Motores.Abierto && !a.Motores.FormAbierto() {
+			a.Motores.AbrirEdicion()
+		}
+		return a, nil
+	case AccionEliminarMotor:
+		if !a.Motores.Abierto {
+			return a, nil
+		}
+		return a, a.eliminarMotorResaltado()
 	case AccionSelector:
 		// `Ctrl+X l` abre el modal de sesiones también desde la bienvenida: al
 		// elegir una, la vista pasa a la principal con esa sesión
@@ -203,6 +244,8 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		switch {
+		case a.Motores.Abierto:
+			a.Motores.Mover(-1)
 		case a.Modelos.Abierto:
 			a.Modelos.Mover(-1)
 		case a.Sesiones.Abierto:
@@ -215,6 +258,8 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		switch {
+		case a.Motores.Abierto:
+			a.Motores.Mover(1)
 		case a.Modelos.Abierto:
 			a.Modelos.Mover(1)
 		case a.Sesiones.Abierto:
@@ -223,6 +268,10 @@ func (a *App) teclaBienvenida(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case AccionEnviar:
 		switch {
+		case a.Motores.Abierto && a.Motores.FormAbierto():
+			return a, a.guardarMotor()
+		case a.Motores.Abierto:
+			return a, a.aplicarMotor()
 		case a.Modelos.Abierto:
 			return a, a.aplicarModelo()
 		case a.Sesiones.Abierto:
@@ -364,6 +413,12 @@ func (a *App) bienvenidaTarjetas() string {
 		partes = append(partes, pal)
 	}
 	partes = append(partes, cajaEntrada, a.pistasBienvenida())
+	// Sin ningún motor dado de alta la bienvenida no bloquea ni inventa uno: lo
+	// dice y ofrece abrir el modal (SPEC-MODELO-MOTOR §Ningún motor activo por
+	// defecto). El resto de la pantalla sigue viva y se puede escribir.
+	if aviso := a.avisoSinMotor(); aviso != "" {
+		partes = append(partes, estiloAviso.Render(aviso))
+	}
 	// El aviso transitorio (p. ej. el modelo sin herramientas) se ve aquí: la
 	// bienvenida es donde primero se elige modelo.
 	if a.Aviso != "" {
@@ -407,13 +462,9 @@ func (a *App) lineasEntradaBienvenida(anchoInterno int) []string {
 }
 
 // lineaEstadoBienvenida pinta la línea de estado de la caja: el agente activo y
-// el modelo en uso («[plan] • llama3.2»).
+// el modelo rotulado con el motor que lo sirve («[plan] • qwen3:8b (llama.cpp)»).
 func (a *App) lineaEstadoBienvenida() string {
-	modelo := a.Modelo
-	if modelo == "" {
-		modelo = "—"
-	}
-	return estiloIndicador.Render("["+a.Agente+"]") + estiloBlanco.Render(" • "+modelo)
+	return estiloIndicador.Render("["+a.Agente+"]") + estiloBlanco.Render(" • "+a.rotuloModelo())
 }
 
 // pistasBienvenida compone la barra de pistas de teclado bajo la caja de
@@ -523,12 +574,29 @@ func (a *App) bienvenidaLlana() string {
 			b.WriteString(a.Bienvenida.Resaltar(l))
 		}
 	}
+	// Sin ningún motor dado de alta la bienvenida no bloquea ni inventa uno: lo
+	// dice y ofrece abrir el modal (SPEC-MODELO-MOTOR §Ningún motor activo por
+	// defecto).
+	if aviso := a.avisoSinMotor(); aviso != "" {
+		b.WriteString("\n\n" + estiloAviso.Render(aviso))
+	}
 	// El aviso transitorio (p. ej. el modelo sin herramientas) también se ve
 	// aquí: la bienvenida es donde primero se elige modelo.
 	if a.Aviso != "" {
 		b.WriteString("\n\n" + estiloAviso.Render(a.Aviso))
 	}
 	return centrar(b.String(), a.Ancho, a.Alto)
+}
+
+// avisoSinMotor es la línea de la bienvenida cuando no hay ningún motor dado de
+// alta: lo dice y ofrece el modal para añadir uno. No bloquea nada ni inventa un
+// motor: vacío cuando el arranque sí tiene uno (SPEC-MODELO-MOTOR §Ningún motor
+// activo por defecto).
+func (a *App) avisoSinMotor() string {
+	if a.MotorEtiqueta != "" {
+		return ""
+	}
+	return "no hay ningún motor dado de alta; añade uno con Ctrl+X i"
 }
 
 // lineaDeModelo pinta el modelo en uso y el recordatorio del atajo que lo
@@ -538,9 +606,5 @@ func (a *App) bienvenidaLlana() string {
 // arrancar— se muestra el hueco con el mismo recordatorio: la pantalla se
 // muestra igual y el modal es el camino para elegir uno.
 func (a *App) lineaDeModelo() string {
-	nombre := a.Modelo
-	if nombre == "" {
-		nombre = "—"
-	}
-	return estiloEtiqueta.Render("modelo: "+nombre) + "  (Ctrl+X m cambiar)"
+	return estiloEtiqueta.Render("modelo: "+a.rotuloModelo()) + "  (Ctrl+X m cambiar)"
 }

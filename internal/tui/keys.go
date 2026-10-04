@@ -117,6 +117,14 @@ func nombreDeAccion(a Accion) string {
 		return "command_palette"
 	case AccionModalModelos:
 		return "model_picker"
+	case AccionModalMotores:
+		return "motor_picker"
+	case AccionMotorNuevo:
+		return "motor_new"
+	case AccionMotorEditar:
+		return "motor_edit"
+	case AccionEliminarMotor:
+		return "motor_delete"
 	case AccionCiclarAgente:
 		return "agent_cycle"
 	case AccionSubir:
@@ -148,22 +156,28 @@ type archivoKeys struct {
 // accionesDeBienvenida son las únicas acciones que existen en la pantalla de
 // bienvenida (SPEC-INTERFAZ §Pantalla de bienvenida: aquí solo se escribe, se
 // envía con enter, se alterna el agente con Tab —el indicador se ve también
-// aquí—, se abre el modal de modelos con Ctrl+X m y se sale; los modelos se
-// eligen en el modal, no en la línea de entrada). El resto del mapa
-// —panel, aprobaciones, modal de atajos— no debe resolverse mientras esta vista está
-// activa; welcome.go filtra contra esta lista después de pasar por el resolver,
-// sin tocar el estado del líder.
+// aquí—, se abre el modal de modelos con Ctrl+X m, el de motores con Ctrl+X i,
+// el de sesiones con Ctrl+X l y el de atajos con Ctrl+P —la barra de pistas lo
+// anuncia—, y se sale; los modelos se eligen en el modal, no en la línea de
+// entrada). El resto del mapa —panel, aprobaciones— no debe resolverse mientras
+// esta vista está activa; welcome.go filtra contra esta lista después de pasar
+// por el resolver, sin tocar el estado del líder.
 func accionesDeBienvenida() map[Accion]bool {
 	return map[Accion]bool{
 		AccionSalir:          true,
 		AccionEnviar:         true,
 		AccionModalModelos:   true,
+		AccionModalMotores:   true,
+		AccionMotorNuevo:     true,
+		AccionMotorEditar:    true,
+		AccionEliminarMotor:  true,
 		AccionSelector:       true,
 		AccionEliminarSesion: true,
 		AccionCerrarSelector: true,
 		AccionSubir:          true,
 		AccionBajar:          true,
 		AccionCiclarAgente:   true,
+		AccionAyuda:          true,
 	}
 }
 

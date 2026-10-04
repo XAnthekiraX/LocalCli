@@ -58,9 +58,9 @@ Ejemplo: `24afd397 | leer ~/Imágenes/picture.jpeg (fuera) | aprobar | declinar`
 ## Reglas de negocio
 
 - Trae atajos por defecto que se pueden cambiar sin reinstalar.
-- El teclado funciona con un keymap central: una acción puede tener varios atajos, y existe una tecla líder (`Ctrl+X`, por defecto) que combina con la siguiente tecla (`Ctrl+X m` abre el modal de modelos, `Ctrl+X l` el de sesiones). Mecanismo completo en [[specs/SPEC-KEYBINDS]].
+- El teclado funciona con un keymap central: una acción puede tener varios atajos, y existe una tecla líder (`Ctrl+X`, por defecto) que combina con la siguiente tecla (`Ctrl+X m` abre el modal de modelos, `Ctrl+X i` el de motores, `Ctrl+X l` el de sesiones). Mecanismo completo en [[specs/SPEC-KEYBINDS]].
 - El historial del chat se recorre con `↑`/`↓` (línea) y `pgup`/`pgdown` (página). La misma `↑`/`↓` navega la lista cuando hay un modal abierto: son ámbitos distintos.
-- Los tres modales de la interfaz son **modelos** (`Ctrl+X m`), **sesiones** (`Ctrl+X l`) y **atajos** (`Ctrl+P`). `Esc` cierra cualquiera de ellos sin cambiar nada.
+- Los cuatro modales de la interfaz son **modelos** (`Ctrl+X m`), **motores** (`Ctrl+X i`), **sesiones** (`Ctrl+X l`) y **atajos** (`Ctrl+P`). `Esc` cierra cualquiera de ellos sin cambiar nada.
 - `Tab` alterna el agente entre `plan` y `build`; el agente activo se ve a la izquierda del input.
 - Un atajo no puede quedar asignado a dos acciones.
 - El panel muestra las aprobaciones pendientes de cualquier sesión.
@@ -73,7 +73,8 @@ Ejemplo: `24afd397 | leer ~/Imágenes/picture.jpeg (fuera) | aprobar | declinar`
 ## Criterios de aceptación
 
 - [ ] Se listan los atajos disponibles y la acción de cada uno, incluidas las secuencias con líder (el propio modal de atajos se abre con `Ctrl+P`).
-- [ ] `Ctrl+X m` abre el modal de modelos y `Ctrl+X l` el modal de sesiones desde cualquier vista; `Enter` en el modal de sesiones abre la sesión elegida.
+- [ ] `Ctrl+X m` abre el modal de modelos, `Ctrl+X i` el de motores y `Ctrl+X l` el de sesiones desde cualquier vista; `Enter` en el modal de sesiones abre la sesión elegida.
+- [ ] Con el modal de motores abierto, `Ctrl+X a` añade un motor, `Ctrl+X e` edita el resaltado y `Ctrl+X d` lo elimina, pidiendo confirmación si alguna sesión lo usa.
 - [ ] `Esc` cierra cualquier modal abierto sin cambiar nada.
 - [ ] `Tab` recorre los agentes disponibles (los base `plan` y `build` y los propios de `.localcli/agents/<carpeta>/`) y el indicador junto al input se actualiza.
 - [ ] Se puede cambiar un atajo y el cambio queda guardado.

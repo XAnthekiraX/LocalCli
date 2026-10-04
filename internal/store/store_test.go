@@ -225,10 +225,10 @@ func columnasDeIndice(t *testing.T, db *sql.DB, indice string) []string {
 func TestMigracionIdempotente(t *testing.T) {
 	proyecto := proyectoTemporal(t)
 
-	// El valor se compara contra el literal 5 que fija MIGRATIONS.md, no contra
-	// la constante de producción: si ambas suben a 6, este test debe seguir
+	// El valor se compara contra el literal 6 que fija MIGRATIONS.md, no contra
+	// la constante de producción: si ambas suben a 7, este test debe seguir
 	// avisando de que la documentación y el código han divergido.
-	const versionEsperada = 5
+	const versionEsperada = 6
 	if schemaVersion != versionEsperada {
 		t.Errorf("schemaVersion = %d, queremos %d; MIGRATIONS.md fija la versión actual. Si el cambio es real, actualiza esa nota y este literal.", schemaVersion, versionEsperada)
 	}
@@ -283,6 +283,89 @@ func proyectoTemporal(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return proyecto
+}
+
+// TestLaMigracion006DejaLasColumnasEnNULL — la 006 es aditiva: una base en
+// user_version 5 recibe `sessions.motor_id` y `sessions.modelo` al abrirse, y
+// las filas que ya existían quedan con las dos en NULL («sin asignar"), sin
+// perder nada (MIGRATIONS.md §4 y la nota del esquema actual).
+func TestLaMigracion006DejaLasColumnasEnNULL(t *testing.T) {
+	proyecto := proyectoTemporal(t)
+	dbPath, err := DBPath(proyecto)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Base de la versión anterior: se aplican 001..005 y se inserta una sesión.
+	db, err := openPath(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range migrations {
+		if m.to <= 5 {
+			if err := applyMigration(db, m); err != nil {
+				t.Fatalf("no se pudo montar la base anterior: %v", err)
+			}
+		}
+	}
+	if _, err := db.Exec(
+		`INSERT INTO sessions (id, name, layer, status, created_at, updated_at)
+		 VALUES ('vieja', 'Sesión de antes', NULL, 'inactiva', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Abrir aplica la 006 encima, sin recrear el esquema.
+	db2, err := Open(proyecto)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db2.Close()
+
+	var v int
+	if err := db2.QueryRow("PRAGMA user_version").Scan(&v); err != nil {
+		t.Fatal(err)
+	}
+	if v != 6 {
+		t.Errorf("user_version tras la 006 = %d, queremos 6", v)
+	}
+
+	var motorID, modelo sql.NullString
+	if err := db2.QueryRow(
+		`SELECT motor_id, modelo FROM sessions WHERE id = 'vieja'`).Scan(&motorID, &modelo); err != nil {
+		t.Fatal(err)
+	}
+	if motorID.Valid || modelo.Valid {
+		t.Errorf("las sesiones anteriores a la 006 quedan en NULL, no en vacío: motor_id=%+v modelo=%+v", motorID, modelo)
+	}
+
+	// Y una sesión nueva lee el par que se le fija.
+	ses, err := CrearSesionConMotor(db2, "nueva", "", "ollama-local", "qwen3:8b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	leída, err := ObtenerSesion(db2, ses.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leída.MotorID != "ollama-local" || leída.Modelo != "qwen3:8b" {
+		t.Errorf("la sesión nueva conserva su par: %+v", leída)
+	}
+	if err := CambiarMotorModelo(db2, ses.ID, "llamacpp-local", "qwen3"); err != nil {
+		t.Fatal(err)
+	}
+	cambiada, err := ObtenerSesion(db2, ses.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cambiada.MotorID != "llamacpp-local" || cambiada.Modelo != "qwen3" {
+		t.Errorf("cambiar el par lo actualiza: %+v", cambiada)
+	}
 }
 
 // verifyEsquema: una base con el DDL viejo se rechaza en vez de usarse en

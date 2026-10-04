@@ -1,5 +1,5 @@
 ---
-title: LocalCli — reglas de negocio del motor
+title: LocalCli — reglas de negocio del orquestador
 tags: [backend, reglas]
 depende_de:
   - "[[backend/01-domain/DOMAIN]]"
@@ -11,7 +11,7 @@ relacionado:
 ---
 # BUSINESS_RULES — Motor
 
-Las reglas que rigen el motor. Las que dependen de cómo se guardan los datos están en [[database/02-rules/BUSINESS_RULES]] y no se repiten aquí; estas son las del comportamiento.
+Las reglas que rigen el orquestador. Las que dependen de cómo se guardan los datos están en [[database/02-rules/BUSINESS_RULES]] y no se repiten aquí; estas son las del comportamiento.
 
 ## 1. Reglas de Negocio
 

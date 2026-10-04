@@ -1,4 +1,4 @@
-// Package ollama — adaptador de Ollama para la frontera `llm.Proveedor`.
+// Package ollama — adaptador de Ollama para la frontera `llm.Motor`.
 //
 // Implementa el contrato neutro sobre la API HTTP local de Ollama: streaming
 // NDJSON por `/api/chat`, extracción del razonamiento, canal nativo de

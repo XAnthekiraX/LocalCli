@@ -34,7 +34,7 @@ func TestPeticionLlevaElPromptYElCanalDeHerramientas(t *testing.T) {
 		Permissions: map[string]string{"read": "allow"},
 	})
 	a := Agente{Nombre: "lector", Prompt: "PROMPT-DEL-JSON"}
-	runner := Runner{Proveedor: ollama.NewClient(srv.URL)}
+	runner := Runner{Motor: ollama.NewClient(srv.URL)}
 	ch, err := runner.Generar(context.Background(), a, "m", []llm.Mensaje{{Role: "user", Content: "hola"}}, defs, 0, nil)
 	if err != nil {
 		t.Fatalf("Generar: %v", err)
@@ -153,7 +153,7 @@ func TestRegresionElTurnoMandaLaVentana(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	e := &Ejecutor{Runner: Runner{Proveedor: ollama.NewClient(srv.URL)}}
+	e := &Ejecutor{Runner: Runner{Motor: ollama.NewClient(srv.URL)}}
 	ag := Agente{Nombre: "plan", Prompt: "p"}
 
 	// Sin ventana, el servidor simula el corte por defecto de Ollama.

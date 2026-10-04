@@ -114,8 +114,13 @@ func TestElModalDeAtajosListaLosAtajosYSeCierraConEsc(t *testing.T) {
 	}
 	v := a.View()
 	for _, atajo := range a.Atajos {
-		if !strings.Contains(v, atajo.Tecla()) || !strings.Contains(v, atajo.Descripcion) {
-			t.Errorf("el modal debe listar %q con su acción: %s", atajo.Tecla(), atajo.Descripcion)
+		// La tabla expande la líder: lo que se ve es la combinación real
+		// (`ctrl+x m`), no el marcador `<leader>m`.
+		teclas := a.AtajosModal.teclasDeAtajo(atajo)
+		for _, lit := range strings.Split(teclas, ", ") {
+			if !strings.Contains(v, lit) || !strings.Contains(v, atajo.Descripcion) {
+				t.Errorf("el modal debe listar %q con su acción: %s", lit, atajo.Descripcion)
+			}
 		}
 	}
 	// Esc lo cierra y no deja rastro: no escribe en la entrada.
@@ -125,6 +130,30 @@ func TestElModalDeAtajosListaLosAtajosYSeCierraConEsc(t *testing.T) {
 	}
 	if a.Entrada.Texto() != "" {
 		t.Errorf("cerrar el modal no escribe: %q", a.Entrada.Texto())
+	}
+}
+
+// T-F014-03: el modal de atajos es global y también se abre desde la
+// bienvenida, que es donde la barra de pistas anuncia `Ctrl+P comandos`
+// (SPEC-INTERFAZ §Pantalla de bienvenida y §Modales).
+func TestElModalDeAtajosSeAbreTambienDesdeLaBienvenida(t *testing.T) {
+	p := &puertoStub{}
+	a := Nuevo(p)
+	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 100})
+	if a.Vista != VistaBienvenida {
+		t.Fatalf("arranca en la bienvenida: %v", a.Vista)
+	}
+
+	tecla(t, a, tea.KeyCtrlP)
+	if !a.AtajosModal.Abierto {
+		t.Fatal("ctrl+p abre el modal de atajos desde la bienvenida")
+	}
+	if v := sinEstilo(a.View()); !strings.Contains(v, "ATAJOS") {
+		t.Errorf("la tabla de atajos se ve en la bienvenida:\n%s", v)
+	}
+	tecla(t, a, tea.KeyEsc)
+	if a.AtajosModal.Abierto {
+		t.Error("esc cierra el modal de atajos")
 	}
 }
 
@@ -246,6 +275,58 @@ func TestRecorridoRazonamientoOcultable(t *testing.T) {
 	h.tecla("ctrl+r")
 	if strings.Contains(h.ve(), "pienso") {
 		t.Error("oculto no se pinta")
+	}
+}
+
+// T-F045-10: los tres estados de cada capacidad se pintan como corresponde
+// —`?` solo en desconocida; la marca de dato en soportada y la ausencia en no
+// soportada— y el aviso de razonamiento sale SOLO cuando no se pudo comprobar
+// (SPEC-MODELO-MOTOR §Capacidades).
+func TestLasTresCapacidadesPintanSusTresEstados(t *testing.T) {
+	p := &puertoStub{modelo: "m"}
+	a := Nuevo(p)
+	a.Vista = VistaPrincipal
+	a.Panel.SesionID = "s1"
+	pulsa(t, a, tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	casos := []struct {
+		nombre string
+		caps   capacidadesMsg
+		quiere []string
+		niega  []string
+	}{
+		{
+			"desconocida",
+			capacidadesMsg{Nombre: "m"},
+			[]string{"tool [?]", "[v?]", "razonamiento está desactivado"},
+			[]string{"pensar ["},
+		},
+		{
+			"soportada",
+			capacidadesMsg{Nombre: "m", Herramientas: CapacidadSoportada, Vision: CapacidadSoportada, Pensar: CapacidadSoportada},
+			[]string{"tool [*]", "[v]", "pensar ["},
+			[]string{"[?]", "razonamiento está desactivado"},
+		},
+		{
+			"no soportada",
+			capacidadesMsg{Nombre: "m", Herramientas: CapacidadNoSoportada, Vision: CapacidadNoSoportada, Pensar: CapacidadNoSoportada},
+			[]string{"tool [*]"},
+			[]string{"[?]", "[v]", "pensar [", "razonamiento está desactivado"},
+		},
+	}
+	for _, c := range casos {
+		pulsa(t, a, c.caps)
+		v := sinEstilo(a.View())
+		for _, q := range c.quiere {
+			if !strings.Contains(v, q) {
+				t.Errorf("%s: falta %q:\n%s", c.nombre, q, v)
+			}
+		}
+		for _, n := range c.niega {
+			if strings.Contains(v, n) {
+				t.Errorf("%s: no debería aparecer %q:\n%s", c.nombre, n, v)
+			}
+		}
 	}
 }
 

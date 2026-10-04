@@ -9,7 +9,7 @@ relacionado:
   - "[[backend/01-domain/DOMAIN]]"
   - "[[backend/05-quality/ERRORS]]"
   - "[[database/01-schema/TABLES]]"
-  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
+  - "[[specs/SPEC-MODELO-MOTOR]]"
 ---
 # TOOLS-DTO — Payloads de las herramientas
 
@@ -215,6 +215,6 @@ La salida de error del ejecutable **no** se distingue de la normal: se concatena
 - [[backend/02-interfaces/TOOLS]] — el catálogo, la capa universal y su comportamiento.
 - [[backend/05-quality/VALIDATION]] — qué campos son obligatorios y cómo se validan.
 - [[specs/SPEC-TOOLS]] — la especificación funcional y las herramientas del usuario.
-- [[specs/SPEC-MODELO-PROVEEDOR]] — el canal por el que viajan los esquemas.
+- [[specs/SPEC-MODELO-MOTOR]] — el canal por el que viajan los esquemas.
 - [[database/01-schema/TABLES]] — dónde queda lo que las herramientas de escritura registran.
 

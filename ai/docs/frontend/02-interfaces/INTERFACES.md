@@ -9,7 +9,7 @@ relacionado:
     - "[[specs/SPEC-SESIONES]]"
     - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
     - "[[specs/SPEC-TOOLS]]"
-    - "[[specs/SPEC-MODELO-PROVEEDOR]]"
+    - "[[specs/SPEC-MODELO-MOTOR]]"
     - "[[database/03-operations/QUERIES]]"
 ---
 
@@ -75,7 +75,7 @@ Una herramienta que necesita aprobación **no** muestra nada extra: la línea de
 
 ## 1.2 La línea de sub-proceso
 
-Un flujo corre sus etapas como sub-procesos: cada una trabaja sin arrastrar el contexto del chat y su resultado se encadena a la siguiente ([[specs/SPEC-MOTOR-FLUJOS]]). En el hilo, cada etapa que empieza deja una sola línea con su nombre:
+Un flujo corre sus etapas como sub-procesos: cada una trabaja sin arrastrar el contexto del chat y su resultado se encadena a la siguiente ([[specs/SPEC-ORQUESTADOR-FLUJOS]]). En el hilo, cada etapa que empieza deja una sola línea con su nombre:
 
 ```
 [Sub Proceso] Entender el problema
@@ -83,16 +83,16 @@ Un flujo corre sus etapas como sub-procesos: cada una trabaja sin arrastrar el c
 [Sub Proceso] Diagnosticar
 ```
 
-El texto de un paso intermedio **no** se pinta: el motor lo corre en silencio y solo alimenta la cadena. Lo que el usuario lee al final es la **entrega** del último paso del flujo, en un solo globo —por ejemplo, el PLAN del resolver con su salida estándar ([[specs/SPEC-RESOLVER]])—. Una etapa que pide aprobación sí muestra su salida, porque el usuario tiene que ver lo que aprueba; y una etapa que falla deja su aviso.
+El texto de un paso intermedio **no** se pinta: el orquestador lo corre en silencio y solo alimenta la cadena. Lo que el usuario lee al final es la **entrega** del último paso del flujo, en un solo globo —por ejemplo, el PLAN del resolver con su salida estándar ([[specs/SPEC-RESOLVER]])—. Una etapa que pide aprobación sí muestra su salida, porque el usuario tiene que ver lo que aprueba; y una etapa que falla deja su aviso.
 
 ## 2. Peticiones que envía
 
-Todas van a `session`, la única puerta del motor:
+Todas van a `session`, la única puerta del orquestador:
 
 | Petición                  | Cuándo                                                                                                                                                                                                                |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Enviar mensaje            | El usuario escribe y confirma, tanto en la bienvenida (primera petición) como en el chat                                                                                                                              |
-| Ejecutar comando de flujo | El usuario escribe un comando explícito (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`) y confirma, o lo elige en la paleta y pulsa `Enter`; el motor lo reconoce y arranca el flujo |
+| Ejecutar comando de flujo | El usuario escribe un comando explícito (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`) y confirma, o lo elige en la paleta y pulsa `Enter`; el orquestador lo reconoce y arranca el flujo |
 | Crear sesión              | Al enviar desde la bienvenida (o con `Ctrl+X n`): nace una sesión nueva con nombre provisional «Nueva sesión» y va el mensaje; el modelo le pondrá título con esa primera petición                                    |
 | Cambiar de sesión         | Elige en el selector momentáneo; también desde la bienvenida, donde al elegir la vista pasa a la principal con el historial de esa sesión                                                                             |
 | Aprobar / declinar        | Resuelve una línea del panel de aprobaciones                                                                                                                                                                          |
@@ -100,7 +100,7 @@ Todas van a `session`, la única puerta del motor:
 
 ## 3. Lecturas a `store`
 
-Solo lectura, con las consultas de [[database/03-operations/QUERIES]]: historial de la sesión activa, la lista de pasos de la sesión activa, aprobaciones pendientes de todas las sesiones, auditoría de una etapa y datos del panel. Nunca escribe: si algo cambia, es el motor quien lo persiste y notifica.
+Solo lectura, con las consultas de [[database/03-operations/QUERIES]]: historial de la sesión activa, la lista de pasos de la sesión activa, aprobaciones pendientes de todas las sesiones, auditoría de una etapa y datos del panel. Nunca escribe: si algo cambia, es el orquestador quien lo persiste y notifica.
 
 ### 3.1 Lecturas del arranque
 
@@ -116,17 +116,36 @@ rama y llamar a git en cada repintado costaría un proceso por frame. El precio 
 cambio hecho en la terminal con la sesión abierta no se refleja en el pie hasta la
 siguiente.
 
+### 3.2 Lecturas al motor
+
+La TUI también lee del puerto del modelo, y lo hace **al abrir o cambiar de modelo**, nunca en cada repintado: son datos que cambian con la sesión, no con el frame. La lectura trae las capacidades del modelo en su estado de tres valores:
+
+| Capacidad           | `soportada`             | `no soportada`              | `desconocida`                                   |
+| ------------------- | ----------------------- | --------------------------- | ----------------------------------------------- |
+| Herramientas        | Se ofrecen y se pintan  | No se ofrecen ni se pintan | No se ofrecen; se pintan marcadas con `?`      |
+| Visión (imágenes)   | Se puede adjuntar       | No se puede adjuntar        | No se puede adjuntar; la opción sale con `?`   |
+| Razonamiento (`think`) | Se ofrece y se aplica | Se oculta y no se aplica    | Se oculta, **se avisa** y el turno va sin `think` |
+
+El `?` es lo que evita el fallo silencioso en las dos direcciones: sin él, «no lo soporta» y «no lo sé» se pintarían igual, y el usuario no podría distinguir un límite del modelo de un dato que LocalCli no tiene. El aviso de razonamiento desconocido es el único de los tres que **sí** es ruido para el usuario, porque afecta al turno que se está haciendo; los otros dos bastan con la marca.
+
+El estado `desconocida` no es raro: aparece siempre que el motor no declara la extensión que informa de capacidades. La ventana de contexto es la misma historia —`tokens_turno` lleva el tope del harness cuando el motor no la declara, y el panel lo distingue—, así que **la TUI tiene que poder pintar «no lo sé»** en más de un sitio. Es un estado de primera clase, no un valor por defecto con otro nombre. Ver [[specs/SPEC-MODELO-MOTOR]].
+
+La TUI no calcula nada de esto: recibe el estado ya resuelto del puerto y lo pinta. Que el mismo dato llegue como `true`, `false` o `desconocida` es decisión del backend, no de la vista.
+
 ## 4. Teclado
 
-Atajos por defecto, reasignables desde la ayuda y guardados en `~/.config/localcli/keys.json`. El último modelo y el último agente usados se recuerdan en `~/.config/localcli/config.json`. El teclado pasa por un resolver central (`KeyResolver`, ver [[specs/SPEC-KEYBINDS]]): acciones con ID estable, múltiples bindings por acción, tecla líder `Ctrl+X` con timeout 2000 ms y resolución por contexto (modal → input → vista → global). Los componentes reciben acciones, nunca teclas:
+Atajos por defecto, reasignables desde la ayuda y guardados en `~/.config/localcli/keys.json`. El último motor, el último modelo y el último agente usados se recuerdan en `~/.config/localcli/config.json`. El teclado pasa por un resolver central (`KeyResolver`, ver [[specs/SPEC-KEYBINDS]]): acciones con ID estable, múltiples bindings por acción, tecla líder `Ctrl+X` con timeout 2000 ms y resolución por contexto (modal → input → vista → global). Los componentes reciben acciones, nunca teclas:
 
 | Atajo                     | Acción                                                                                                                | Contexto                                  |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
 | `Ctrl+C`                  | Salir (`app_exit`)                                                                                                    | global, también con modales abiertos      |
 | `Ctrl+X m`                | Abrir el modal de modelos (`model_picker`)                                                                            | global                                    |
+| `Ctrl+X i`                | Abrir el modal de motores (`motor_picker`); al elegir uno con `Enter` pasa a ser el de la sesión                       | global                                    |
 | `Ctrl+X l`                | Abrir el modal de sesiones; al elegir una con `Enter` se abre esa sesión (`session_picker`)                           | global                                    |
 | `Ctrl+X n`                | Crear una sesión nueva y dejarla activa (`session_new`)                                                               | vista principal                           |
 | `Ctrl+D`                  | Eliminar la sesión resaltada en el modal; si trabaja, pide confirmación (`session_delete`)                            | modal de sesiones                         |
+| `Ctrl+X d`                | Eliminar el motor resaltado; si alguna sesión lo usa, pide confirmación (`motor_delete`)                              | modal de motores                           |
+| `Ctrl+X a` / `Ctrl+X e`   | Añadir un motor o editar el resaltado (`motor_new`/`motor_edit`)                                                      | modal de motores                           |
 | `Ctrl+P`                  | Abrir el modal con la lista de atajos existentes (`command_palette`)                                                  | global                                    |
 | `Tab`                     | Cambiar de agente: recorre los disponibles (`agent_cycle`); el agente activo se pinta en el pie de la caja de entrada | vista y bienvenida (no con modal abierto) |
 | `Esc`                     | Cerrar cualquier modal (`dismiss`)                                                                                    | modal                                     |
@@ -145,7 +164,9 @@ Atajos por defecto, reasignables desde la ayuda y guardados en `~/.config/localc
 
 Las sesiones se crean con `Ctrl+X n` desde la vista principal o enviando la primera petición desde la bienvenida. No hay ayuda por `?`: el listado de atajos es el modal de `Ctrl+P`.
 
-**Paleta de comandos de flujo.** Al escribir `/` en la entrada —principal o bienvenida— se despliega encima la lista de comandos que sirve el motor (los oficiales y los propios de `.localcli/flows/*.json`). Mientras está desplegada, `↑`/`↓` la recorren, `Tab` autocompleta el comando resaltado dejando la línea lista para la petición (`/comando [petición]`) y `Enter` lo ejecuta; un espacio retira la paleta y lo escrito pasa a ser la petición. Lo que no coincide con ningún comando —aunque empiece por `/`— se responde como chat.
+**Motores.** `Ctrl+X i` abre el modal de motores: lista nombre, tipo (`ollama` o `llamacpp`) y estado, con el de la sesión activa resaltado. `Enter` lo aplica a la sesión activa y cierra; el historial, el nombre y el identificador de la sesión no cambian. `Ctrl+X a` abre el alta de un motor (nombre, tipo y URL), `Ctrl+X e` la edición del resaltado y `Ctrl+X d` el borrado, que pide confirmación si alguna sesión lo usa. Un motor desactivado se distingue de uno activo y se puede reactivar. **Editar un motor ya aplicado avisa de que el cambio se aplica al reiniciar**; añadir, desactivar, reactivar y eliminar sí surtan efecto al momento. Las reglas están en [[specs/SPEC-MODELO-MOTOR]].
+
+**Paleta de comandos de flujo.** Al escribir `/` en la entrada —principal o bienvenida— se despliega encima la lista de comandos que sirve el orquestador (los oficiales y los propios de `.localcli/flows/*.json`). Mientras está desplegada, `↑`/`↓` la recorren, `Tab` autocompleta el comando resaltado dejando la línea lista para la petición (`/comando [petición]`) y `Enter` lo ejecuta; un espacio retira la paleta y lo escrito pasa a ser la petición. Lo que no coincide con ningún comando —aunque empiece por `/`— se responde como chat.
 
 **Ratón.** La rueda desplaza el historial del chat. Arrastrar con el botón izquierdo selecciona texto, que se **resalta en video inverso** mientras se elige, y al soltar se copia al portapapeles —el realce desaparece y aparece el aviso transitorio `[Copiado]` arriba a la derecha, que se apaga solo—. Al capturar el ratón —necesario para poder copiar—, la selección nativa de la terminal queda disponible manteniendo `Shift`. La selección queda **anclada al texto**: la rueda puede usarse mientras se selecciona y no la cancela, así que en un chat largo se puede seguir eligiendo al desplazarse. Con el panel de aprobaciones visible, un clic sobre «aprobar» o «declinar» de una línea resuelve esa aprobación, sin necesidad de darle el foco con el teclado (un clic, no un arrastre: arrastrar sigue seleccionando texto).
 
@@ -163,8 +184,9 @@ Reglas, según [[specs/SPEC-INTERFAZ-ATAJOS]] y [[specs/SPEC-KEYBINDS]]:
 - Si la sesión activa está generando, la entrada sigue activa: escribir no bloquea ni cancela nada.
 - La línea de entrada envuelve en varias filas lo que no cabe en el ancho, sin recortarlo, y reajusta el reparto al redimensionar la terminal; `Enter` envía y no inserta saltos. En el chat, lo del usuario y lo del agente se pintan en globos con color propio.
 - Un pegado o arrastre se muestra como token: cada archivo `[nombre.ext]`, cada carpeta `[CARPETA N elementos]` y un texto de varias líneas `[PEGADO N líneas]` (un token por elemento si todas las líneas son rutas). Al enviar se expande al valor real: la ruta, el texto entero o, si es imagen, la imagen adjunta.
-- La caja de la entrada lleva en su pie el agente activo, el modelo en uso y sus capacidades (`sí`/`no`, o `?` mientras se desconoce), incluido el **interruptor de razonamiento** (`pensar [x]`/`pensar [ ]`): se pulsa con el ratón, llega apagado y solo se enseña si el modelo declara que razona. El conteo de tokens del turno se ve justo debajo de la caja.
-- **Si el modelo en uso no puede usar herramientas, se dice explícitamente** que el agente va a conversar sin ellas. Es una diferencia entre «todavía no lo sé» y «este modelo no puede», y confundirlas hace que el usuario espere un trabajo que no va a pasar. Ver [[specs/SPEC-MODELO-PROVEEDOR]].
+- La caja de la entrada lleva en su pie el agente activo, el modelo en uso y sus capacidades (`sí`/`no`, o `?` mientras se desconoce), incluido el **interruptor de razonamiento** (`pensar [x]`/`pensar [ ]`): se pulsa con el ratón, llega apagado y solo se enseña si el modelo declara que razona. El modelo se rotula con el motor que lo sirve. El conteo de tokens del turno se ve justo debajo de la caja.
+- Si el motor de la sesión se desactivó o se eliminó, la vista lo dice junto al modelo y no bloquea: la sesión sigue ahí con su historial y espera a que el usuario elija otro motor o lo reactive.
+- **Si el modelo en uso no puede usar herramientas, se dice explícitamente** que el agente va a conversar sin ellas. Es una diferencia entre «todavía no lo sé» y «este modelo no puede», y confundirlas hace que el usuario espere un trabajo que no va a pasar. Ver [[specs/SPEC-MODELO-MOTOR]].
 - Cada línea de herramienta dice cuánto tardó su ejecución, y esa línea se guarda con su tiempo: al recargar la sesión, el hilo conserva las duraciones además de las medidas.
 - Mientras una herramienta se ejecuta, su línea está en el chat. Si la sesión espera permiso por una herramienta, la línea de la herramienta y la de aprobación coexisten.
 - Con la sesión trabajando, el primer `esc` pide confirmación («presiona esc otra vez para cancelar razonamiento») y el segundo cancela; cualquier otra tecla la descarta.

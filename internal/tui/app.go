@@ -89,6 +89,17 @@ type App struct {
 	// que no puede usar herramientas). Se pinta al pie de la bienvenida y de la
 	// principal; se limpia al cambiar a un modelo capaz o al enviar.
 	Aviso string
+	// MotorNombre es el nombre visible de la INSTANCIA del motor de la sesión
+	// activa, y MotorAviso su aviso si ese motor falta o está desactivado. Los
+	// resuelve el puerto al cargar la sesión y alimentan la línea de estado bajo
+	// el input (SPEC-MODELO-MOTOR §Desactivar). MotorIDSesion es el `id` con el
+	// que el modal de motores marca el de la sesión. MotorEtiqueta es lo que se
+	// rotula junto al modelo en las dos líneas de estado: arranca en el motor por
+	// defecto y pasa a ser el de la sesión al cargarla.
+	MotorNombre   string
+	MotorAviso    string
+	MotorIDSesion string
+	MotorEtiqueta string
 	// ModeloHerramientas y CapHerramientasConocida dicen si el modelo en uso
 	// tiene acceso a herramientas y si eso se sabe ya. La capacidad se consulta
 	// una vez al arrancar y se refresca al elegir modelo; sin dato conocido, la
@@ -108,6 +119,11 @@ type App struct {
 	Pensar            bool
 	ModeloPensar      bool
 	CapPensarConocida bool
+	// RazonAviso es el aviso de que el razonamiento quedó desactivado porque no
+	// se pudo comprobar: es el único de los tres estados desconocidos que avisa,
+	// porque afecta al turno en curso y no basta con la marca
+	// (SPEC-MODELO-MOTOR §Capacidades). Vacío cuando hay dato.
+	RazonAviso string
 
 	// PidiendoCancelarEsc es la confirmación de doble `esc` cuando la sesión
 	// está trabajando: el primer esc pregunta, el segundo cancela.
@@ -140,6 +156,7 @@ type App struct {
 	Modelos     ModelsModal
 	Sesiones    SessionsModal
 	AtajosModal KeysModal
+	Motores     MotorsModal
 
 	// Entrada es la línea de texto de la interfaz principal (input.go, T-F004).
 	Entrada Entrada
@@ -221,11 +238,17 @@ func Nuevo(p Puerto) *App {
 		Atajos:   mapa.Entradas(),
 		Vista:    VistaBienvenida,
 		Panel:    NuevoPanel(),
-		// El modelo en uso se lee una vez del motor, que ya lo detectó al
-		// arrancar: es un dato en memoria, no una llamada a Ollama, así que la
+		// El modelo y su motor se leen una vez del motor, que ya los detectó al
+		// arrancar: son datos en memoria, no llamadas al servidor, así que la
 		// bienvenida se sigue pintando sin esperar a nada externo
 		// (SPEC-INTERFAZ §Línea de modelo, DOMAIN §3).
-		Modelo: p.ModeloActual(),
+		// `ModeloActual()` trae el modelo ROTULADO con su motor; la vista guarda
+		// el modelo solo y el rótulo aparte, porque el motor es de la sesión y
+		// cambia al cambiar de ella (SPEC-MODELO-MOTOR §Motor y modelo por
+		// sesión): así la etiqueta no queda pegada al nombre que se le manda
+		// al motor con `FijarModelo`.
+		MotorEtiqueta: p.MotorActual(),
+		Modelo:        modeloSoloDe(p.ModeloActual(), p.MotorActual()),
 		// El razonamiento se muestra por defecto (SPEC-INTERFAZ: "se puede
 		// ocultar", luego visible es el estado normal).
 		Razon:      NuevoRazonamiento(),
@@ -245,6 +268,10 @@ func Nuevo(p Puerto) *App {
 		ctx:    context.Background(),
 	}
 	a.Paleta.FijarComandos(comandos)
+	// El catálogo de extensiones de cada tipo lo decide el registro; el modal lo
+	// pide al puerto en vez de llevar una copia (SPEC-MODELO-MOTOR §El catálogo
+	// es cerrado).
+	a.Motores.CatalogoExtensiones = p.ExtensionesValidas
 	// La carpeta del proyecto y el estado de su repositorio son datos fijos del
 	// arranque —una sesión trabaja siempre en la misma rama—, así que se leen
 	// una vez aquí y se pintan en el pie del panel (SPEC-INTERFAZ §Zonas 3). La
@@ -376,17 +403,55 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// escribiendo igual (SPEC-INTERFAZ §Modal de modelos).
 		a.Modelos.FijarModelos(m.Modelos, m.Err)
 		return a, nil
+	case motoresMsg:
+		// La lista llega cuando el registro responde: rellena el modal que la
+		// pidió. Si ya no está abierto, el mensaje se ignora (llegó tarde); un
+		// fallo queda como aviso «sin motores» y nada se bloquea.
+		a.Motores.FijarMotores(m.Motores, m.Sesiones)
+		return a, nil
+	case motorSesionMsg:
+		// El motor de la sesión activa alimenta la línea de estado. El de otra
+		// sesión se descarta: la línea refleja la activa, y solo esa.
+		if m.Sesion == a.Panel.SesionID {
+			a.MotorIDSesion = m.ID
+			a.MotorNombre = m.Nombre
+			a.MotorAviso = m.Aviso
+			if m.Nombre != "" {
+				// La etiqueta que acompaña al modelo pasa a ser la de ESTA sesión:
+				// al volver a una se retoma contra el motor que tenía
+				// (SPEC-MODELO-MOTOR §Motor y modelo por sesión).
+				a.MotorEtiqueta = m.Nombre
+			}
+		}
+		return a, nil
+	case motorAplicadoMsg:
+		// Un motor distinto ya es el de la sesión: el modelo en uso se vacía si el
+		// motor nuevo no lo declara (SPEC-MODELO-MOTOR §Cambiar a mitad).
+		if m.Sesion == a.Panel.SesionID {
+			a.Modelo = ModeloTrasCambiarDeMotor(a.Modelo, m.Modelos)
+		}
+		return a, a.cmdMotorDeSesion(m.Sesion)
 	case capacidadesMsg:
 		// La respuesta llega para el modelo con el que se preguntó. Si para
 		// entonces el usuario cambió de modelo, se descarta: la línea de estado
-		// refleja el modelo en uso, no el consultado.
+		// refleja el modelo en uso, no el consultado. El estado de tres valores
+		// se recibe ya resuelto del puerto: `desconocida` deja la chapa en «?» y
+		// `no soportada` la pinta sabiendo que no puede (INTERFACES §3.2).
 		if m.Nombre == a.Modelo {
-			a.CapHerramientasConocida = m.Err == nil
-			a.ModeloHerramientas = m.Herramientas
-			a.CapVisionConocida = m.Err == nil
-			a.ModeloVision = m.Vision
-			a.CapPensarConocida = m.Err == nil
-			a.ModeloPensar = m.Pensar
+			a.CapHerramientasConocida = m.Err == nil && m.Herramientas != CapacidadDesconocida
+			a.ModeloHerramientas = m.Herramientas == CapacidadSoportada
+			a.CapVisionConocida = m.Err == nil && m.Vision != CapacidadDesconocida
+			a.ModeloVision = m.Vision == CapacidadSoportada
+			a.CapPensarConocida = m.Err == nil && m.Pensar != CapacidadDesconocida
+			a.ModeloPensar = m.Pensar == CapacidadSoportada
+			// El razonamiento desconocido no ofrece la chapa y, además, avisa: es
+			// el único de los tres que el usuario no puede deducir del `?`, porque
+			// le cambia el turno que está haciendo.
+			if m.Err == nil && m.Pensar == CapacidadDesconocida {
+				a.RazonAviso = "el razonamiento está desactivado: no se pudo comprobar si el modelo razona; el turno va sin `think`"
+			} else {
+				a.RazonAviso = ""
+			}
 		}
 		return a, nil
 	case aprobacionesMsg:
@@ -406,14 +471,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// de mostrar los de la anterior (SPEC-PANEL-CONTEXTO).
 			a.Panel.ContextoTokens = m.ContextoTokens
 			a.Panel.LimiteTokens = m.LimiteTokens
+			a.Panel.LimiteDelHarness = m.LimiteDelHarness
 			a.Panel.TokensEstimados = true
+			// El motor de la sesión recién cargada alimenta la línea de estado
+			// (SPEC-MODELO-MOTOR §Motor y modelo por sesión).
+			cmdMotor := a.cmdMotorDeSesion(m.Sesion)
 			// Cargar vacía el chat y deja `inicio` a cero: si la sesión retomada
 			// sigue trabajando, se reanuda su reloj para que el contador y el
 			// glifo no se queden mudos tras el cambio.
 			if a.Panel.Estado == session.EstadoTrabajando {
 				a.Chat.ReanudarTurno()
-				return a, a.asegurarLatido()
+				return a, tea.Batch(a.asegurarLatido(), cmdMotor)
 			}
+			return a, cmdMotor
 		}
 		return a, nil
 	case enviadoMsg:
@@ -491,6 +561,17 @@ func (a *App) tecla(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
+	// El formulario de alta/edición y la confirmación de borrado del modal de
+	// motores capturan el teclado mientras están en pantalla: sus campos reciben
+	// el texto y ninguna tecla resuelve acciones de la vista de abajo
+	// (SPEC-INTERFAZ §Modales: con un modal abierto, sus teclas son del modal).
+	if a.Motores.Abierto && a.Motores.FormAbierto() {
+		return a.teclaFormMotor(m)
+	}
+	if a.Motores.Abierto && a.Motores.ConfirmandoBorrado() {
+		return a.teclaConfirmarBorrarMotor(m)
+	}
+
 	// Doble `esc` para cancelar el trabajo en curso: el primer esc pregunta, el
 	// segundo cancela. Solo sin modal abierto (con modal, esc lo cierra) y solo
 	// si la sesión está trabajando. Cualquier otra tecla descarta la
@@ -517,7 +598,7 @@ func (a *App) tecla(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	ctx := ContextoVista
 	switch {
 	case a.modalAbierto():
-		ctx = ContextoModal
+		ctx = a.contextoModal()
 	case a.Aprobs.Enfocado:
 		ctx = ContextoAprobaciones
 	}
@@ -629,6 +710,10 @@ func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// lo resaltado en el modal y lo cierra"). Con el de atajos no hay nada
 		// que aplicar: es de solo lectura y la tecla no llega a la vista.
 		switch {
+		case a.Motores.Abierto && a.Motores.FormAbierto():
+			return a, a.guardarMotor()
+		case a.Motores.Abierto:
+			return a, a.aplicarMotor()
 		case a.Modelos.Abierto:
 			return a, a.aplicarModelo()
 		case a.Sesiones.Abierto:
@@ -639,8 +724,13 @@ func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.enviar()
 	case AccionSubir:
 		// La navegación pertenece al componente con el foco (T-F012-04). El
-		// modal de atajos no aparece: es una tabla de solo lectura.
+		// modal de atajos no aparece: es una tabla de solo lectura. Con un
+		// formulario abierto las flechas cambian de campo.
 		switch {
+		case a.Motores.Abierto && a.Motores.FormAbierto():
+			a.Motores.FormMoverCampo(-1)
+		case a.Motores.Abierto:
+			a.Motores.Mover(-1)
 		case a.Modelos.Abierto:
 			a.Modelos.Mover(-1)
 		case a.Sesiones.Abierto:
@@ -651,6 +741,10 @@ func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case AccionBajar:
 		switch {
+		case a.Motores.Abierto && a.Motores.FormAbierto():
+			a.Motores.FormMoverCampo(1)
+		case a.Motores.Abierto:
+			a.Motores.Mover(1)
 		case a.Modelos.Abierto:
 			a.Modelos.Mover(1)
 		case a.Sesiones.Abierto:
@@ -705,6 +799,34 @@ func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		return a, a.abrirModalModelos()
+	case AccionModalMotores:
+		// El modal de motores es global, como el de modelos: se abre y se cierra
+		// desde la bienvenida y desde la interfaz principal (INTERFACES §4).
+		if a.Motores.Abierto {
+			a.Motores.Cerrar()
+			return a, nil
+		}
+		return a, a.abrirModalMotores()
+	case AccionMotorNuevo:
+		// `n` solo tiene sentido con el modal de motores abierto y sin el
+		// formulario ya en pantalla (SPEC-KEYBINDS `motor_new`).
+		if a.Motores.Abierto && !a.Motores.FormAbierto() {
+			a.Motores.AbrirAlta()
+		}
+		return a, nil
+	case AccionMotorEditar:
+		// `e` edita el resaltado (SPEC-KEYBINDS `motor_edit`).
+		if a.Motores.Abierto && !a.Motores.FormAbierto() {
+			a.Motores.AbrirEdicion()
+		}
+		return a, nil
+	case AccionEliminarMotor:
+		// `Ctrl+D` elimina el resaltado; si alguna sesión lo usa, pide
+		// confirmación antes de borrarlo (SPEC-MODELO-MOTOR §Eliminar).
+		if !a.Motores.Abierto {
+			return a, nil
+		}
+		return a, a.eliminarMotorResaltado()
 	}
 
 	// Lo que no es acción se entrega al componente con el foco: con un modal
@@ -805,6 +927,7 @@ func (a *App) volverABienvenida() {
 	// Sin sesión no hay contexto que medir.
 	a.Panel.ContextoTokens = 0
 	a.Panel.LimiteTokens = 0
+	a.Panel.LimiteDelHarness = false
 	a.Panel.TokensEstimados = false
 	a.enTurno = false
 	a.PidiendoCancelarEsc = false
@@ -1042,6 +1165,7 @@ func (a *App) activar(ses *session.Sesion) {
 	// (SPEC-PANEL-CONTEXTO).
 	a.Panel.ContextoTokens = 0
 	a.Panel.LimiteTokens = 0
+	a.Panel.LimiteDelHarness = false
 	a.Panel.TokensEstimados = false
 	// El turno que se seguía era de la sesión anterior. Si la destino ya está
 	// trabajando, su turno se retoma: `enTurno` queda encendido para que su
@@ -1073,20 +1197,38 @@ func (a *App) cmdHistorial(sesionID string) tea.Cmd {
 	}
 }
 
-// modalAbierto dice si hay un modal en pantalla. Los tres comparten la misma
+// contextoModal da el contexto de resolución del modal abierto. Los cuatro
+// comparten navegación, pero el de sesiones y el de motores añaden teclas
+// propias con literal compartido (`ctrl+d`), y cada una resuelve solo dentro de
+// su modal (SPEC-KEYBINDS §Reglas de negocio).
+func (a *App) contextoModal() Contexto {
+	switch {
+	case a.Motores.Abierto:
+		return ContextoModalMotores
+	case a.Sesiones.Abierto:
+		return ContextoModalSesiones
+	}
+	return ContextoModal
+}
+
+// modalAbierto dice si hay un modal en pantalla. Los cuatro comparten la misma
 // mecánica y solo uno puede estar abierto a la vez (SPEC-INTERFAZ §Modales:
 // "uno abierto a la vez").
 func (a *App) modalAbierto() bool {
-	return a.Modelos.Abierto || a.Sesiones.Abierto || a.AtajosModal.Abierto
+	return a.Modelos.Abierto || a.Sesiones.Abierto || a.AtajosModal.Abierto || a.Motores.Abierto
 }
 
-// cerrarModales cierra los tres. Es lo que hace `dismiss` (Esc) y también lo que
-// hacen las aperturas: abrir un modal es siempre abrirlo en lugar del que
-// hubiera (SPEC-INTERFAZ §Modales).
+// cerrarModales cierra los cuatro. Es lo que hace `dismiss` (Esc) y también lo
+// que hacen las aperturas: abrir un modal es siempre abrirlo en lugar del que
+// hubiera (SPEC-INTERFAZ §Modales). Un formulario o una confirmación a medias se
+// descartan con él.
 func (a *App) cerrarModales() {
 	a.Modelos.Cerrar()
 	a.Sesiones.Cerrar()
 	a.AtajosModal.Cerrar()
+	a.Motores.CancelarFormulario()
+	a.Motores.BorrarCancelar()
+	a.Motores.Cerrar()
 }
 
 // abrirModalSesiones muestra el modal de sesiones y pide la lista al puerto en
@@ -1114,8 +1256,19 @@ func (a *App) cargarSesiones() tea.Cmd {
 // (SPEC-INTERFAZ §Modales, fila Atajos).
 func (a *App) abrirModalAtajos() tea.Cmd {
 	a.cerrarModales()
-	a.AtajosModal.AbrirAtajos(a.Atajos)
+	a.AtajosModal.AbrirAtajos(a.Atajos, a.liderVigente())
 	return nil
+}
+
+// liderVigente devuelve la tecla líder del mapa en uso, para que el modal de
+// atajos expanda `<leader>` con la combinación real (SPEC-INTERFAZ §Modales).
+// Sin mapa —o con uno incompleto— cae a la líder de fábrica: nunca se pinta un
+// literal a medias.
+func (a *App) liderVigente() string {
+	if a.Mapa != nil && strings.TrimSpace(a.Mapa.Lider()) != "" {
+		return a.Mapa.Lider()
+	}
+	return LíderPorDefecto
 }
 
 // abrirModalModelos muestra el modal y pide la lista a Ollama en el acto
@@ -1137,6 +1290,184 @@ func (a *App) cargarModelos() tea.Cmd {
 		modelos, err := a.Puerto.Modelos()
 		return modelosMsg{Modelos: modelos, Err: err}
 	}
+}
+
+// abrirModalMotores muestra el modal de motores y pide el registro y las
+// sesiones al puerto en el acto (SPEC-MODELO-MOTOR §Gestión de motores). El
+// modal aparece con «cargando…» y se rellena al llegar la respuesta: la pantalla
+// no se bloquea. El resaltado arranca en el motor de la sesión activa.
+func (a *App) abrirModalMotores() tea.Cmd {
+	a.cerrarModales()
+	a.Motores.AbrirMotores(a.MotorIDSesion)
+	return a.cargarMotores()
+}
+
+// cargarMotores pregunta al puerto el registro (y las sesiones, para saber qué
+// motor usa alguna). La respuesta llega como `motoresMsg` y la atiende el modal.
+func (a *App) cargarMotores() tea.Cmd {
+	return func() tea.Msg {
+		motores, err := a.Puerto.ListarMotores()
+		if err != nil {
+			return motoresMsg{Err: err}
+		}
+		sesiones, _ := a.Puerto.Listar()
+		return motoresMsg{Motores: motores, Sesiones: sesiones}
+	}
+}
+
+// aplicarMotor entrega al puerto el motor resaltado como motor de la sesión
+// activa y cierra. No toca la identidad ni el historial de la sesión
+// (SPEC-MODELO-MOTOR §Cambiar a mitad de conversación). Si el modal no tiene
+// lista —«sin motores»— solo se cierra.
+func (a *App) aplicarMotor() tea.Cmd {
+	m, ok := a.Motores.MotorElegido()
+	if !ok {
+		a.Motores.Cerrar()
+		return nil
+	}
+	sesion := a.Panel.SesionID
+	a.Motores.Cerrar()
+	if sesion == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		if err := a.Puerto.CambiarMotor(sesion, m.ID); err != nil {
+			return errorMsg{err: err}
+		}
+		modelos, _ := a.Puerto.Modelos()
+		return motorAplicadoMsg{Sesion: sesion, MotorID: m.ID, Modelos: modelos}
+	}
+}
+
+// guardarMotor persiste el alta o la edición del formulario. La validación la
+// hizo el modal: si el motor es nuevo se registra, y si es una edición se
+// actualiza y, solo si el estado cambió, se desactiva o reactiva al momento
+// (SPEC-MODELO-MOTOR §Editar: el cambio de configuración espera al reinicio; el
+// estado activo sí es inmediato).
+func (a *App) guardarMotor() tea.Cmd {
+	motor, ok := a.Motores.GuardarFormulario()
+	if !ok {
+		return nil
+	}
+	cambioActivo := a.Motores.ActivoCambio()
+	if motor.ID == "" {
+		if err := a.Puerto.RegistrarMotor(motor); err != nil {
+			a.Chat.AñadirSistema("no se pudo registrar el motor: " + err.Error())
+			return nil
+		}
+	} else {
+		if err := a.Puerto.EditarMotor(motor); err != nil {
+			a.Chat.AñadirSistema("no se pudo editar el motor: " + err.Error())
+			return nil
+		}
+		if cambioActivo {
+			if err := a.Puerto.AlternarMotor(motor.ID, motor.Activo); err != nil {
+				a.Chat.AñadirSistema("no se pudo cambiar el estado del motor: " + err.Error())
+				return nil
+			}
+		}
+	}
+	return a.cargarMotores()
+}
+
+// eliminarMotorResaltado pide borrar el motor resaltado. Si alguna sesión lo usa,
+// el modal muestra la confirmación y el borrado espera a la respuesta; si no,
+// se elimina al momento (SPEC-MODELO-MOTOR §Eliminar).
+func (a *App) eliminarMotorResaltado() tea.Cmd {
+	id, enUso := a.Motores.PedirBorrado()
+	if id == "" || enUso {
+		return nil
+	}
+	return a.eliminarMotor(id)
+}
+
+// eliminarMotor borra el motor y recarga la lista. No elimina ni invalida
+// ninguna sesión: las que lo usaban siguen con su historial y avisan.
+func (a *App) eliminarMotor(id string) tea.Cmd {
+	if err := a.Puerto.EliminarMotor(id); err != nil {
+		a.Chat.AñadirSistema("no se pudo eliminar el motor: " + err.Error())
+		return nil
+	}
+	a.Motores.BorrarCancelar()
+	return tea.Batch(a.cargarMotores(), a.cmdMotorDeSesion(a.Panel.SesionID))
+}
+
+// cmdMotorDeSesion resuelve el motor de la sesión activa a lo que pinta la
+// línea de estado: su nombre visible y el aviso de que falta o está desactivado,
+// sin bloquear nada (SPEC-MODELO-MOTOR §Desactivar, §Eliminar).
+func (a *App) cmdMotorDeSesion(sesionID string) tea.Cmd {
+	if sesionID == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		motorID, _, err := a.Puerto.ParMotorModelo(sesionID)
+		if err != nil || motorID == "" {
+			return motorSesionMsg{Sesion: sesionID}
+		}
+		motores, err := a.Puerto.ListarMotores()
+		if err != nil {
+			return motorSesionMsg{Sesion: sesionID, ID: motorID}
+		}
+		for _, mt := range motores {
+			if mt.ID != motorID {
+				continue
+			}
+			aviso := ""
+			if !mt.Activo {
+				aviso = "el motor «" + mt.Nombre + "» está desactivado; reactívalo con Ctrl+X i"
+			}
+			return motorSesionMsg{Sesion: sesionID, ID: motorID, Nombre: mt.Nombre, Aviso: aviso}
+		}
+		return motorSesionMsg{Sesion: sesionID, ID: motorID, Nombre: motorID,
+			Aviso: "el motor de esta sesión ya no existe; elige otro con Ctrl+X i"}
+	}
+}
+
+// teclaFormMotor entrega la pulsación al formulario de alta/edición mientras
+// está abierto: sus campos reciben el texto y el resto de teclas no resuelven
+// acciones de la app (SPEC-KEYBINDS: con un modal abierto, la vista de abajo no
+// recibe teclas).
+func (a *App) teclaFormMotor(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.Type == tea.KeyCtrlC {
+		return a, tea.Quit
+	}
+	switch m.Type {
+	case tea.KeyEsc:
+		a.Motores.CancelarFormulario()
+	case tea.KeyEnter:
+		return a.despachar(AccionEnviar, m)
+	case tea.KeyTab, tea.KeyDown:
+		a.Motores.FormMoverCampo(1)
+	case tea.KeyUp:
+		a.Motores.FormMoverCampo(-1)
+	case tea.KeyBackspace:
+		a.Motores.FormBorrar()
+	case tea.KeyRunes:
+		a.Motores.FormEscribir(string(m.Runes))
+	case tea.KeySpace:
+		a.Motores.FormEscribir(" ")
+	}
+	return a, nil
+}
+
+// teclaConfirmarBorrarMotor atiende la confirmación de borrado de un motor en
+// uso: `s` confirma, `n` y `esc` cancelan. Ninguna otra tecla pasa a la vista.
+func (a *App) teclaConfirmarBorrarMotor(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.Type == tea.KeyCtrlC {
+		return a, tea.Quit
+	}
+	switch m.Type {
+	case tea.KeyRunes:
+		switch string(m.Runes) {
+		case "s", "S":
+			return a, a.eliminarMotor(a.Motores.BorrandoID())
+		case "n", "N":
+			a.Motores.BorrarCancelar()
+		}
+	case tea.KeyEsc:
+		a.Motores.BorrarCancelar()
+	}
+	return a, nil
 }
 
 // aplicarModelo entrega al motor el modelo resaltado y lo deja como modelo en
@@ -1291,6 +1622,9 @@ func (a *App) view() string {
 	if a.AtajosModal.Abierto {
 		return a.AtajosModal.Render(a.Ancho, a.Alto)
 	}
+	if a.Motores.Abierto {
+		return a.Motores.Render(a.Ancho, a.Alto)
+	}
 	if a.Vista == VistaBienvenida {
 		return a.viewBienvenida()
 	}
@@ -1385,6 +1719,11 @@ func (a *App) bloqueInferior(anchoCol int) string {
 	if a.Aviso != "" {
 		avisos = append(avisos, estiloAviso.Render(a.Aviso))
 	}
+	// El aviso de razonamiento desconocido solo aparece en la vista principal:
+	// es un atributo del modelo en uso y afecta al turno en curso.
+	if a.RazonAviso != "" {
+		avisos = append(avisos, estiloAviso.Render(a.RazonAviso))
+	}
 	if !a.Panel.Abierto {
 		if aviso := a.Panel.AvisoAprobaciones(); aviso != "" {
 			avisos = append(avisos, aviso)
@@ -1458,19 +1797,54 @@ func (a *App) iniciarTurno() {
 }
 
 // lineaPieEntrada compone el pie de la caja de entrada: el agente activo, el
-// modelo en uso y sus capacidades. Sin modelo muestra solo el agente.
+// modelo en uso rotulado con su motor y sus capacidades. Sin modelo muestra solo
+// el agente. Si el motor de la sesión falta o está desactivado, el aviso va junto
+// al modelo sin bloquear nada (INTERFACES §5, T-F044-09).
 func (a *App) lineaPieEntrada() string {
-	partes := []string{estiloIndicador.Render("[" + a.Agente + "]")}
+	piezas := []string{estiloIndicador.Render("[" + a.Agente + "]")}
 	if a.Modelo != "" {
-		partes = append(partes, estiloBlanco.Render("* "+a.Modelo), a.capacidadesPie())
+		piezas = append(piezas, estiloBlanco.Render("* "+a.rotuloModelo()), a.capacidadesPie())
 	}
-	return strings.Join(partes, " · ")
+	if a.MotorAviso != "" {
+		piezas = append(piezas, estiloAviso.Render(a.MotorAviso))
+	}
+	return strings.Join(piezas, " · ")
+}
+
+// modeloSoloDe quita el rótulo « (motor)» que `ModeloActual()` devuelve ya
+// montado, para que la vista guarde el nombre del modelo solo y lo rotule con la
+// etiqueta vigente. Si el motor declarado no es el sufijo, se devuelve tal cual:
+// la vista no corta a ciegas.
+func modeloSoloDe(rotulado, etiqueta string) string {
+	if rotulado == "" || etiqueta == "" {
+		return rotulado
+	}
+	sufijo := " (" + etiqueta + ")"
+	if strings.HasSuffix(rotulado, sufijo) {
+		return strings.TrimSuffix(rotulado, sufijo)
+	}
+	return rotulado
+}
+
+// rotuloModelo compone lo que se pinta junto al nombre del modelo: la instancia
+// del motor que lo sirve, cuando se conoce (SPEC-INTERFAZ §Caja de entrada:
+// `[plan] • qwen3:8b (llama.cpp)`). Sin modelo no hay nada que rotular.
+func (a *App) rotuloModelo() string {
+	if a.Modelo == "" {
+		return "—"
+	}
+	if a.MotorEtiqueta == "" {
+		return a.Modelo
+	}
+	return a.Modelo + " (" + a.MotorEtiqueta + ")"
 }
 
 // capacidadesPie compone las chapas del pie: `tool [*]` en verde si usa
-// herramientas y en rojo si no (atenuada mientras no se sabe), el interruptor de
-// razonamiento si el modelo lo declara, `[v]` si acepta visión y `[T]` siempre
-// (texto).
+// herramientas y en rojo si no, `tool [?]` mientras no se sabe, el interruptor de
+// razonamiento si el modelo lo declara, `[v]` si acepta visión, `[v?]` si no se
+// sabe y `[T]` siempre (texto). El `?` va junto al nombre de la capacidad y solo
+// marca el estado `desconocida`: la `no soportada` no lleva marca, porque ahí sí
+// hay dato (SPEC-MODELO-MOTOR §Capacidades).
 func (a *App) capacidadesPie() string {
 	var herramienta string
 	switch {
@@ -1486,7 +1860,10 @@ func (a *App) capacidadesPie() string {
 		piezas = append(piezas, chapa)
 	}
 	entradas := make([]string, 0, 2)
-	if a.CapVisionConocida && a.ModeloVision {
+	switch {
+	case !a.CapVisionConocida:
+		entradas = append(entradas, estiloSutil.Render("[v?]"))
+	case a.ModeloVision:
 		entradas = append(entradas, estiloCapaz.Render("[v]"))
 	}
 	entradas = append(entradas, estiloCapaz.Render("[T]"))

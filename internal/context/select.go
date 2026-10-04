@@ -28,7 +28,7 @@ type Modelo interface {
 // pasan los nombres de los candidatos y el objetivo, nunca el contenido de los
 // documentos. No sabe si detrás hay Ollama o llama.cpp.
 type ModeloLLM struct {
-	Cliente llm.Proveedor
+	Cliente llm.Motor
 	Modelo  string
 }
 

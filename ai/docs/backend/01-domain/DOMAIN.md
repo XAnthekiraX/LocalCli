@@ -1,5 +1,5 @@
 ---
-title: LocalCli — módulos y entidades del motor
+title: LocalCli — módulos y entidades del orquestador
 tags: [backend, dominio]
 depende_de:
   - "[[backend/BACKEND]]"
@@ -14,7 +14,7 @@ relacionado:
 ---
 # DOMAIN — Módulos y entidades
 
-Los quince módulos del motor y las entidades sobre las que trabajan. Los datos no se repiten aquí: la definición de cada tabla está en [[database/01-schema/TABLES]].
+Los quince módulos del orquestador y las entidades sobre las que trabajan. Los datos no se repiten aquí: la definición de cada tabla está en [[database/01-schema/TABLES]].
 
 ## 1. Módulos
 
@@ -24,12 +24,12 @@ Cada módulo tiene una responsabilidad y un límite. Si un módulo necesita hace
 |---|---|---|
 | `tui` | La pantalla: chat, panel de datos, selector de sesiones, aprobaciones, razonamiento en vivo | No decide nada ni habla con el modelo; pinta lo que llega |
 | `session` | Ciclo de vida de las sesiones y su estado; ejecución en segundo plano | No ejecuta tareas; eso es `flow` y `queue` |
-| `flow` | Motor de etapas: encadenar, decidir si sigue, parar o esperar permiso | No sabe de herramientas ni de SQL |
+| `flow` | Orquestador de etapas: encadenar, decidir si sigue, parar o esperar permiso | No sabe de herramientas ni de SQL |
 | `queue` | Cola de la ejecución en curso: consume el TODO de la ejecución que el usuario arrancó, en orden, y marca lo bloqueado | No inventa trabajo ni arranca solo; el TODO lo propuso el flujo y el usuario lo ejecuta |
 | `context` | Grafo de frontmatter, selección de lo relevante, recorte y auditoría | No llama al modelo por su cuenta; pide la decisión y aplica |
 | `agent` | Cargar las definiciones de agente desde carpeta: `agent.yaml` y `prompt.md`. Corre el ciclo conversacional del agente. El agente base son datos en disco, no código | No ejecuta herramientas; las despacha a `tools` |
-| `llm` | Contrato neutro con el modelo: tipos (`Mensaje`, `Herramienta`, `Evento`, `Modelo`), interfaz `Proveedor`, cola de inferencia y regla de la ventana | No conoce el formato de ningún runtime; no sabe de tareas |
-| `ollama`, `openai` | Adaptadores del proveedor elegido al arrancar: streaming (NDJSON y SSE), razonamiento, canal de herramientas, capacidades y ventana | Traducen el contrato neutro; no deciden nada |
+| `llm` | Frontera neutra con el modelo: tipos (`Mensaje`, `Herramienta`, `Evento`, `Modelo`), interfaz `Motor`, capacidades de tres estados, registro de motores con sus extensiones y su persistencia global, una cola de inferencia por motor y regla de la ventana | No conoce ningún endpoint; no sabe de tareas; es el único que instancia adaptadores |
+| `openai`, `ollama`, `llamacpp` | El motor, en tres piezas: el **núcleo común** (`openai`) habla el protocolo OpenAI con todos; cada runtime aporta **solo** lo que el protocolo no cubre (`ollama`: `options.num_ctx`, `/api/show`, `/api/tags`; `llamacpp`: `/props`) | `openai` no sabe de runtimes; las extensiones no deciden ni traducen la conversación |
 | `tools` | Registro de las quince herramientas, comprobación de permiso, enrutado | No inventa herramientas ni las aplica |
 | `fileops` | Operaciones de archivo y carpeta, frontera de rutas, historial de cambios | No decide permisos; comprueba y aplica |
 | `exec` | Terminal: lista blanca y bloqueo estructural de escritura | No es una puerta trasera a los archivos del proyecto |
@@ -57,7 +57,7 @@ Dos planos. Ver [[database/02-rules/DATA_FLOW]].
 
 **El agente base existe, pero no está hardcodeado.** No está en Go: vive en archivos de texto que el usuario puede modificar, y de los que puede derivar otros agentes. La configuración y las instrucciones van separadas: del `agent.yaml` salen el nombre y las herramientas disponibles, y del `prompt.md` el mensaje de sistema. Ver [[specs/SPEC-AGENTE-BASE]].
 
-**No hay skills.** No es que no haya ninguna por defecto: es que la capacidad no existe. Un agente no declara skills y no hay motor que las lea. Ver [[specs/SPEC-SKILLS]].
+**No hay skills.** No es que no haya ninguna por defecto: es que la capacidad no existe. Un agente no declara skills y no hay orquestador que las lea. Ver [[specs/SPEC-SKILLS]].
 
 El grafo de dependencias entre documentos no se guarda: se construye en memoria al arrancar, leyendo el frontmatter. Ver [[backend/01-domain/BUSINESS_RULES]].
 
@@ -77,7 +77,7 @@ El grafo de dependencias entre documentos no se guarda: se construye en memoria 
 A nivel de negocio, la cadena de un turno es siempre la misma:
 
 ```
-tui → session → flow → context → agent → llm → ollama / openai
+tui → session → flow → context → agent → llm → ollama / llamacpp
                                     ↓
                             agent pide herramienta
                                     ↓

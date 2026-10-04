@@ -46,6 +46,10 @@ type Panel struct {
 	Tokens          int
 	TokensEstimados bool
 	LimiteTokens    int
+	// LimiteDelHarness marca que LimiteTokens es el tope del harness —el motor
+	// no declaró su ventana—, y la fila CONTEXTO lo dice en vez de hacerlo pasar
+	// por la ventana del modelo (SPEC-MODELO-MOTOR §La ventana de contexto).
+	LimiteDelHarness bool
 
 	// TODO / capa y cola
 	ElementoActual     string
@@ -116,6 +120,18 @@ func (p Panel) textoContexto() string {
 		t += " (estimado)"
 	}
 	return t
+}
+
+// textoPorcentajeContexto compone la ocupación sobre el límite. Cuando el motor
+// no declaró su ventana el límite es el tope del harness, y eso se dice: no es
+// la ventana del modelo, igual que una capacidad desconocida no se hace pasar
+// por ausente (SPEC-MODELO-MOTOR §La ventana de contexto).
+func (p Panel) textoPorcentajeContexto() string {
+	pc := fmt.Sprintf("%d%% usada", p.PorcentajeContexto())
+	if p.LimiteDelHarness {
+		pc += " · límite del harness"
+	}
+	return pc
 }
 
 // textoGit compone el estado del repositorio: la rama activa y el número de
@@ -208,7 +224,7 @@ func (p Panel) Render(ancho, alto int) string {
 		// límite.
 		estiloSeccion.Render("CONTEXTO"),
 		"  " + truncar(p.textoContexto(), ancho-2),
-		"  " + truncar(fmt.Sprintf("%d%% usada", p.PorcentajeContexto()), ancho-2),
+		"  " + truncar(p.textoPorcentajeContexto(), ancho-2),
 	}
 	if p.ContextoApretado() {
 		cabeza = append(cabeza, "  "+estiloAviso.Render("cerca del límite"))

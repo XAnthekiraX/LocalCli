@@ -157,12 +157,15 @@ func TestMigracion004Y005AditivasConservanLosDatos(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s, err := CrearSesion(db, "previa", "")
-	if err != nil {
+	// Se inserta con las columnas de la v3 (sin el par motor/modelo de la 006),
+	// como una fila anterior a las migraciones.
+	s := &Session{ID: newID(), Name: "previa", Status: StatusInactiva}
+	if _, err := db.Exec(
+		`INSERT INTO sessions (id, name, layer, status, created_at, updated_at)
+		 VALUES (?, 'previa', NULL, 'inactiva', ?, ?)`, s.ID, nowISO(), nowISO()); err != nil {
 		t.Fatal(err)
 	}
-	// Se inserta con las columnas de la v3 (sin duration_ms): es una fila
-	// anterior a la migración.
+	// El mensaje va con sus columnas de la v3 (sin duration_ms).
 	msgID := newID()
 	if _, err := db.Exec(
 		`INSERT INTO messages (id, session_id, role, content, input_tokens, output_tokens, created_at)
@@ -177,14 +180,14 @@ func TestMigracion004Y005AditivasConservanLosDatos(t *testing.T) {
 	}
 
 	if err := migrate(db); err != nil {
-		t.Fatalf("migrate v3->v5: %v", err)
+		t.Fatalf("migrate v3->v6: %v", err)
 	}
 	var v int
 	if err := db.QueryRow("PRAGMA user_version").Scan(&v); err != nil {
 		t.Fatal(err)
 	}
-	if v != 5 {
-		t.Fatalf("user_version = %d, queremos 5", v)
+	if v != 6 {
+		t.Fatalf("user_version = %d, queremos 6", v)
 	}
 
 	// La conversación y su razonamiento siguen ahí; la duración vieja es NULL (-1).

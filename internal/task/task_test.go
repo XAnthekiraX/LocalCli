@@ -70,10 +70,10 @@ func TestParseaMainTasksRealSinPerderFilas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(elems) != 37 {
-		t.Fatalf("MAIN-TASKS.md tiene 37 tareas (T-B000..T-B036), parseé %d", len(elems))
+	if len(elems) != 38 {
+		t.Fatalf("MAIN-TASKS.md tiene 38 tareas (T-B000..T-B037), parseé %d", len(elems))
 	}
-	if elems[0].ID != "T-B000" || elems[36].ID != "T-B036" {
+	if elems[0].ID != "T-B000" || elems[37].ID != "T-B037" {
 		t.Fatalf("orden de aparición roto: %s … %s", elems[0].ID, elems[36].ID)
 	}
 	// La fila T-B008 declara dos dependencias separadas por coma.
@@ -199,8 +199,8 @@ func TestCargarElementosDeTodasLasCapas(t *testing.T) {
 	raiz := raizProyecto(t)
 
 	esperado := map[Capa]int{
-		CapaBackend:  37,
-		CapaFrontend: 44,
+		CapaBackend:  38,
+		CapaFrontend: 45,
 	}
 	for capa, want := range esperado {
 		elems, err := CargarElementos(raiz, capa)

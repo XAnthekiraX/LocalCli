@@ -37,11 +37,11 @@ Los índices se crean en la definición del esquema y se gestionan con las migra
 |---|---|---|
 | `idx_messages_session_created` | Cargar el historial de una sesión en orden cronológico | La interfaz al abrir o cambiar de sesión |
 | `idx_reasoning_message` | Leer el razonamiento de un mensaje | La interfaz al reabrir una respuesta |
-| `idx_approvals_session_status` | Ver las aprobaciones de una sesión filtradas por estado | El motor al reanudar un flujo pausado |
+| `idx_approvals_session_status` | Ver las aprobaciones de una sesión filtradas por estado | El orquestador al reanudar un flujo pausado |
 | `idx_approvals_pending` | Contar y listar todas las aprobaciones pendientes de cualquier sesión | El panel de aprobaciones y el contador que se ve con el panel de datos cerrado |
 | `idx_context_audit_session_stage` | Ver qué documentación recibió una etapa concreta | El usuario al auditar una etapa |
 | `idx_context_audit_unico` | Rechazar una segunda auditoría de la misma terna (documento en la misma etapa) | La base, al escribir en `context_audit` |
-| `idx_flow_context_unico` | Rechazar dos aportaciones de la misma etapa y reemplazar la del flujo al re-ejecutarlo | El motor, al guardar el bloque y al leerlo para la composición |
+| `idx_flow_context_unico` | Rechazar dos aportaciones de la misma etapa y reemplazar la del flujo al re-ejecutarlo | El orquestador, al guardar el bloque y al leerlo para la composición |
 | `idx_chat_evento_session_created` | Cargar las líneas de procesamiento de una sesión en orden cronológico | La interfaz al abrir o cambiar de sesión, al armar el hilo |
 | `idx_change_history_file` | Ver el historial de cambios de un archivo concreto | El usuario al revertir o auditar un archivo |
 | `idx_sessions_status` | Listar las sesiones por estado, para el selector | El selector de sesiones |

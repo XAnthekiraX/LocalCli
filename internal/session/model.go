@@ -29,7 +29,7 @@ const (
 )
 
 // Sesion es la vista de una sesión que ve el resto del motor: su identidad, a
-// qué capa apunta y en qué estado está.
+// qué capa apunta, en qué estado está y su par motor/modelo.
 type Sesion struct {
 	ID          string
 	Nombre      string
@@ -37,6 +37,11 @@ type Sesion struct {
 	Estado      string
 	Creada      string
 	Actualizada string
+	// MotorID y Modelo son el par que usa la sesión: un recurso suyo, no parte
+	// de su identidad (SPEC-SESIONES: «cambiar de motor o de modelo no cambia
+	// el identificador, el nombre ni el historial»). "" = sin asignar todavía.
+	MotorID string
+	Modelo  string
 }
 
 // DeStore adapta una fila de `store` a la vista del módulo.
@@ -51,6 +56,8 @@ func DeStore(s *store.Session) *Sesion {
 		Estado:      s.Status,
 		Creada:      s.CreatedAt,
 		Actualizada: s.UpdatedAt,
+		MotorID:     s.MotorID,
+		Modelo:      s.Modelo,
 	}
 }
 

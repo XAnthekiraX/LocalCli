@@ -4,7 +4,7 @@ tags: [specs, requisito]
 depende_de:
   - "[[IDEA]]"
   - "[[specs/SPEC-INTERFAZ]]"
-  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
+  - "[[specs/SPEC-MODELO-MOTOR]]"
   - "[[specs/SPEC-NODO-CONTEXTO]]"
 relacionado:
   - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
@@ -67,7 +67,7 @@ Aquí se define **qué significan** los números y de dónde salen. **Dónde se 
 ## Dependencias funcionales
 
 - [[specs/SPEC-INTERFAZ]]
-- [[specs/SPEC-MODELO-PROVEEDOR]]
+- [[specs/SPEC-MODELO-MOTOR]]
 - [[specs/SPEC-NODO-CONTEXTO]]
 
 ## Referencias

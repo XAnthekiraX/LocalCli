@@ -27,7 +27,9 @@ relacionado:
 | `context_audit` | `id`, `session_id`, `stage`, `document`, `decision`, `created_at` |
 | `change_history` | `id`, `operation`, `file_path`, `created_at` |
 
-Las columnas que sí admiten `NULL` están justificadas en [[database/01-schema/TABLES]]: `sessions.layer` para una sesión general, `messages.input_tokens` y `output_tokens` cuando el modelo no los reporta, `reasoning` no tiene ninguno opcional, `approvals.resolved_at` mientras está pendiente, `context_audit.reason` y `tokens`, y las dos columnas de contenido de `change_history` más su `session_id`.
+Las columnas que sí admiten `NULL` están justificadas en [[database/01-schema/TABLES]]: `sessions.layer` para una sesión general, `sessions.motor_id` y `sessions.modelo` para una sesión a la que todavía no se le ha asignado motor, `messages.input_tokens` y `output_tokens` cuando el modelo no los reporta, `reasoning` no tiene ninguno opcional, `approvals.resolved_at` mientras está pendiente, `context_audit.reason` y `tokens`, y las dos columnas de contenido de `change_history` más su `session_id`.
+
+**`sessions.motor_id` no tiene clave foránea, y esa ausencia es deliberada.** El registro de motores es `~/.config/localcli/motores.json`, un archivo global de la máquina, no una tabla de este proyecto: no hay contra qué declarar integridad referencial. La consecuencia se acepta a cambio de la garantía que da —eliminar o desactivar un motor **no invalida** las sesiones que lo usaban, que sobreviven con su historial y avisan—, y esa garantía es de interfaz, no de base. La comprobación de que el motor exista y esté activo se hace al usarlo. Ver [[specs/SPEC-MODELO-MOTOR]] y [[specs/SPEC-SESIONES]].
 
 ### UNIQUE
 

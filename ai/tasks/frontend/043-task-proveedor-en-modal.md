@@ -21,12 +21,12 @@ Esto no decide el proveedor: lo elige el arranque (T-B036). La TUI solo lo muest
 
 | ID | Acción | Tarea | Estado | Archivos | Verificación |
 |----|--------|-------|--------|----------|--------------|
-| T-F043-01 | actualizar | `puerto`: `ModeloLocal` gana `Proveedor string`; `Modelos()` y `CapacidadesModelo(nombre)` conservan su forma | pendiente | `internal/tui/wire.go` | `go build ./internal/tui/` |
-| T-F043-02 | actualizar | `modelsmodal`: cada fila rotula el proveedor del modelo, además del nombre y la marca de los que no declaran herramientas | pendiente | `internal/tui/modelsmodal.go` | `TestElModalRotulaElProveedor` |
-| T-F043-03 | actualizar | `arranque`: `ModeloActual()` devuelve el modelo con su proveedor (`qwen3:8b (llama.cpp)`) para que la línea de estado lo muestre sin lógica nueva | pendiente | `arranque.go` | `TestModeloActualIncluyeElProveedor` |
-| T-F043-04 | actualizar | `input`: la línea de modelo pinta lo que devuelve el puerto, incluido el proveedor; sin cambios de disposición | pendiente | `internal/tui/input.go` | `go test ./internal/tui/ -count=1` |
-| T-F043-05 | actualizar | tests: el modal se abre igual contra los dos proveedores, rotula cada fila y no cambia el resto de la mecánica (`↑`/`↓`, `Enter`, `Esc`) | pendiente | `internal/tui/modelsmodal_test.go`, `internal/tui/tui_test.go` | `go test ./internal/tui/ -count=1` |
-| T-F043-06 | actualizar | Documentación ya actualizada por el comando `/actualizar`: verificar que la spec y la documentación de la capa siguen describiendo el modal y la línea de modelo rotulados | pendiente | `ai/docs/specs/SPEC-INTERFAZ.md`, `ai/docs/frontend/01-domain/DOMAIN.md`, `ai/docs/frontend/05-quality/TESTING.md` | `go test ./internal/docs/ -count=1` |
+| T-F043-01 | actualizar | `puerto`: `ModeloLocal` gana `Proveedor string`; `Modelos()` y `CapacidadesModelo(nombre)` conservan su forma | completada | `internal/tui/wire.go` | `go build ./internal/tui/` |
+| T-F043-02 | actualizar | `modelsmodal`: cada fila rotula el proveedor del modelo, además del nombre y la marca de los que no declaran herramientas | completada | `internal/tui/modelsmodal.go` | `TestElModalRotulaElProveedor` |
+| T-F043-03 | actualizar | `arranque`: `ModeloActual()` devuelve el modelo con su proveedor (`qwen3:8b (llama.cpp)`) para que la línea de estado lo muestre sin lógica nueva | completada | `arranque.go` | `TestModeloActualIncluyeElProveedor` |
+| T-F043-04 | actualizar | `input`: la línea de modelo pinta lo que devuelve el puerto, incluido el proveedor; sin cambios de disposición | completada | `internal/tui/input.go` | `go test ./internal/tui/ -count=1` |
+| T-F043-05 | actualizar | tests: el modal se abre igual contra los dos proveedores, rotula cada fila y no cambia el resto de la mecánica (`↑`/`↓`, `Enter`, `Esc`) | completada | `internal/tui/modelsmodal_test.go`, `internal/tui/tui_test.go` | `go test ./internal/tui/ -count=1` |
+| T-F043-06 | actualizar | Documentación ya actualizada por el comando `/actualizar`: verificar que la spec y la documentación de la capa siguen describiendo el modal y la línea de modelo rotulados | completada | `ai/docs/specs/SPEC-INTERFAZ.md`, `ai/docs/frontend/01-domain/DOMAIN.md`, `ai/docs/frontend/05-quality/TESTING.md` | `go test ./internal/docs/ -count=1` |
 
 Dependencias: T-F043-01 antes de -02 y de -04. T-F043-03 antes de -04. T-F043-05 revisa -02 y -04. T-F043-06 revisa el conjunto.
 

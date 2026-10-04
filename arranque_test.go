@@ -22,6 +22,38 @@ import (
 	"localcli/internal/tui"
 )
 
+// init registra un motor sin red para los dos tipos del catálogo: los tests del
+// arranque construyen adaptadores sin hablar con ningún servidor.
+func init() {
+	for _, tipo := range []string{llm.TipoOllama, llm.TipoLlamaCPP} {
+		llm.RegistrarTipo(tipo, func(string) llm.Motor { return motorDePrueba{} })
+	}
+}
+
+// TestMotorRecordadoInexistenteNoFallaElArranque — T-B037-11: un `ultimo_motor`
+// que ya no está registrado no deja al usuario sin motor: se autodetecta uno
+// activo.
+func TestMotorRecordadoInexistenteNoFallaElArranque(t *testing.T) {
+	motores := &llm.Registro{}
+	motores.Cargar(filepath.Join(t.TempDir(), "motores.json"))
+	id, avisos := elegirMotorDeArranque(motores, "ya-no-existe")
+	if id == "" {
+		t.Fatalf("con motores por defecto se debe resolver un motor; avisos: %v", avisos)
+	}
+	if e, ok := motores.PorID(id); !ok || !e.Activo {
+		t.Errorf("el motor resuelto debe estar registrado y activo: %q", id)
+	}
+}
+
+// TestElParRecordadoSoloSeReusaSiSuMotorEstaRegistrado — T-B037-12: el modelo
+// guardado no se reutiliza si su motor ya no es el resuelto (el par no cuadra).
+func TestElParRecordadoSoloSeReusaSiSuMotorEstaRegistrado(t *testing.T) {
+	prefs := tui.Preferencias{Modelo: "qwen3:8b", Motor: "ya-no-existe"}
+	if got := modeloRecordado(prefs, "ollama-local"); got != "" {
+		t.Errorf("un par cuyo motor no es el resuelto no se reutiliza: %q", got)
+	}
+}
+
 func servidorDeTags(t *testing.T, modelos ...string) *ollama.Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -50,20 +82,20 @@ func TestElegirModeloPrefiereElUltimoUsado(t *testing.T) {
 	}
 }
 
-// TestElModeloRecordadoSoloSeReusaConSuProveedor — T-B036-11: el mismo nombre no
-// significa lo mismo en los dos runtimes, así que el modelo guardado solo se
-// reutiliza si su proveedor coincide con el elegido.
-func TestElModeloRecordadoSoloSeReusaConSuProveedor(t *testing.T) {
-	prefs := tui.Preferencias{Modelo: "qwen3:8b", Proveedor: "ollama"}
-	if got := modeloRecordado(prefs, "ollama"); got != "qwen3:8b" {
-		t.Errorf("con su proveedor debe reutilizarse: %q", got)
+// TestElModeloRecordadoSoloSeReusaConSuMotor — T-B037-12: el mismo nombre no
+// significa lo mismo en motores distintos, así que el modelo guardado solo se
+// reutiliza si su motor registrado coincide con el elegido.
+func TestElModeloRecordadoSoloSeReusaConSuMotor(t *testing.T) {
+	prefs := tui.Preferencias{Modelo: "qwen3:8b", Motor: "ollama-local"}
+	if got := modeloRecordado(prefs, "ollama-local"); got != "qwen3:8b" {
+		t.Errorf("con su motor debe reutilizarse: %q", got)
 	}
-	if got := modeloRecordado(prefs, "llamacpp"); got != "" {
-		t.Errorf("con otro proveedor debe autodetectarse: %q", got)
+	if got := modeloRecordado(prefs, "llamacpp-local"); got != "" {
+		t.Errorf("con otro motor debe autodetectarse: %q", got)
 	}
 }
 
-// proveedorCaido es un doble de `llm.Proveedor` que no responde: reproduce un
+// proveedorCaido es un doble de `llm.Motor` que no responde: reproduce un
 // runtime apagado.
 type proveedorCaido struct{}
 
@@ -82,15 +114,32 @@ func (proveedorCaido) VentanaDeContexto(context.Context, string) (int, bool, err
 	return 0, false, errors.New("no responde")
 }
 
-// TestUnProveedorQueNoRespondeNoImpideArrancar — un proveedor apagado avisa y
-// la interfaz sigue viva: no responde, y elegirModelo devuelve error en vez de
+// motorDePrueba es un motor sin red para los tests del arranque: declara una
+// ventana de modelo fija y no habla con ningún servidor.
+type motorDePrueba struct{}
+
+func (motorDePrueba) Nombre() string  { return llm.TipoOllama }
+func (motorDePrueba) BaseURL() string { return "http://localhost:0" }
+func (motorDePrueba) Chat(context.Context, llm.Peticion) (<-chan llm.Evento, error) {
+	return nil, errors.New("no usado")
+}
+func (motorDePrueba) ListarModelos(context.Context) ([]llm.Modelo, error) {
+	return []llm.Modelo{{Nombre: "m", ContextLength: 4096}}, nil
+}
+func (motorDePrueba) Capacidades(context.Context, string) ([]string, error) { return nil, nil }
+func (motorDePrueba) VentanaDeContexto(context.Context, string) (int, bool, error) {
+	return 0, false, nil
+}
+
+// TestUnProveedorQueNoRespondeNoImpideArrancar — un motor apagado avisa y la
+// interfaz sigue viva: no responde, y elegirModelo devuelve error en vez de
 // tumbar el arranque.
 func TestUnProveedorQueNoRespondeNoImpideArrancar(t *testing.T) {
-	if respondeProveedor(proveedorCaido{}) {
-		t.Error("un proveedor caído no debe considerarse vivo")
+	if motorResponde(proveedorCaido{}) {
+		t.Error("un motor caído no debe considerarse vivo")
 	}
 	if _, err := elegirModelo(proveedorCaido{}, ""); err == nil {
-		t.Error("sin proveedor, elegirModelo debe devolver error para que el arranque siga sin modelo")
+		t.Error("sin motor, elegirModelo debe devolver error para que el arranque siga sin modelo")
 	}
 }
 
@@ -146,10 +195,13 @@ func despachadorDePrueba(t *testing.T) *agent.Despachador {
 func ejecutorDeTurnoMudo(t *testing.T) (*ejecutorPorTurno, *Adaptador, string) {
 	t.Helper()
 	ad, sesion := adaptadorConSesion(t)
-	// La ventana del modelo va cacheada: el turno no lista modelos ni necesita
-	// Ollama.
+	// Un registro con un motor de prueba: la ventana se calcula sin red.
+	motores := &llm.Registro{}
+	motores.Cargar(filepath.Join(t.TempDir(), "motores.json"))
+	ad.registro = motores
+	ad.motorDefectoID = "ollama-local"
+	ad.colas = llm.NewColasInferencia()
 	ad.modelo = "m"
-	ad.contextos = map[string]int{"m": 4096}
 	e := &ejecutorPorTurno{
 		ad: ad,
 		ejecutor: &agent.Ejecutor{
@@ -264,6 +316,24 @@ func TestAgenteBaseCargaCarpetas(t *testing.T) {
 	// oficiales sigan teniendo a quién referirse.
 	if _, ok := agentes["build"]; !ok {
 		t.Error("build debe existir aunque falte su carpeta")
+	}
+}
+
+// TestModeloActualIncluyeElProveedor — T-F043-03: la línea de modelo recibe el
+// nombre del modelo con su proveedor, para que se sepa contra qué runtime se
+// habla (SPEC-MODELO-PROVEEDOR). La vista no añade nada: pinta lo que el puerto
+// le da.
+func TestModeloActualIncluyeElProveedor(t *testing.T) {
+	motores := &llm.Registro{}
+	motores.Cargar(filepath.Join(t.TempDir(), "motores.json"))
+	conMotor := &Adaptador{registro: motores, motorDefectoID: "ollama-local", modelo: "qwen3:8b"}
+	if got := conMotor.ModeloActual(); got != "qwen3:8b (Ollama local)" {
+		t.Errorf("motor = %q, quiero qwen3:8b (Ollama local)", got)
+	}
+	// Sin modelo no hay nada que rotular.
+	sinModelo := &Adaptador{registro: motores, motorDefectoID: "ollama-local"}
+	if got := sinModelo.ModeloActual(); got != "" {
+		t.Errorf("sin modelo = %q, quiero vacío", got)
 	}
 }
 

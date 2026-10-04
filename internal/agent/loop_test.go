@@ -130,7 +130,7 @@ func TestElBucleRespondeSinHerramientasEnUnaPasada(t *testing.T) {
 func TestElTurnoMandaElRazonamientoQueLePiden(t *testing.T) {
 	si := true
 	g := &generadorGuion{pasadas: [][]llm.Evento{respuesta("ok")}}
-	e := &Ejecutor{Runner: g, Pensar: func(modelo string) *bool { return &si }}
+	e := &Ejecutor{Runner: g, Pensar: func(context.Context, string) *bool { return &si }}
 	if _, err := e.Ejecutar(context.Background(), Agente{Nombre: "chat"}, "qwen3:4b", "ctx", nil, nil, 0, false, nil); err != nil {
 		t.Fatalf("Ejecutar: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestElRazonamientoNoCambiaEntrePasadas(t *testing.T) {
 		Runner:     g,
 		Despachar:  NuevoDespachador(registroStub(nil)),
 		MaxPasadas: 2,
-		Pensar: func(string) *bool {
+		Pensar: func(context.Context, string) *bool {
 			consultas++
 			return &no
 		},
@@ -504,7 +504,7 @@ func TestSinHerramientasDegradaAConversacion(t *testing.T) {
 	e := &Ejecutor{
 		Runner:            g,
 		Despachar:         NuevoDespachador(registroStub(nil)),
-		PuedeHerramientas: func(modelo string) bool { return false },
+		PuedeHerramientas: func(context.Context, string) bool { return false },
 	}
 	ag := Agente{Nombre: "plan", Prompt: "p", Permissions: map[string]string{"read": "allow"}}
 	res, err := e.Ejecutar(context.Background(), ag, "m", "ctx", nil, nil, 0, false, sink)

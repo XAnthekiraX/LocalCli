@@ -22,7 +22,7 @@ const mensajeLevantarOllama = "no se puede generar: Ollama no responde en la dir
 
 // clasificarFalloRed mapea un fallo de conexión contra el servidor local al
 // error tipado documentado.
-func clasificarFalloRed(err error) (*llm.ErrorProveedor, bool) {
+func clasificarFalloRed(err error) (*llm.ErrorMotor, bool) {
 	return llm.ClasificarFalloRed(err, mensajeLevantarOllama)
 }
 
@@ -64,7 +64,7 @@ func cuerpoDeError(resp *http.Response) string {
 
 // nuevoModeloNoCabe construye el aviso tipado (E_MODEL_TOO_BIG) por modelo que
 // no cabe. Es un aviso: el flujo de carga continúa.
-func nuevoModeloNoCabe(modelo string, requiereMB, vramMB int64) *llm.ErrorProveedor {
+func nuevoModeloNoCabe(modelo string, requiereMB, vramMB int64) *llm.ErrorMotor {
 	return llm.NuevoModeloNoCabe(modelo, requiereMB, vramMB)
 }
 

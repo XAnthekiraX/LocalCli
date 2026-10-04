@@ -38,7 +38,7 @@ Subir una migración aplicada no es lo mismo que tener un esquema válido: `user
 - Cada migración tiene un número y un nombre corto: `001-crear-schema`, `002-agregar-indice-approvals`, y así sucesivamente.
 - El número es correlativo y de tres dígitos. El nombre describe qué hace, no dónde.
 - El orden de los números es el orden de ejecución. No se reutiliza un número ni se renumera una migración ya publicada.
-- La versión del esquema es el número de la última migración aplicada. `user_version = 5` significa que se aplicaron `001`, `002`, `003`, `004` y `005`.
+- La versión del esquema es el número de la última migración aplicada. `user_version = 6` significa que se aplicaron `001`, `002`, `003`, `004`, `005` y `006`.
 
 ## 4. Datos existentes
 
@@ -60,7 +60,7 @@ Reglas:
 
 ## Nota sobre el esquema actual
 
-La base se crea ya en su versión actual (v5): las seis tablas de [[database/01-schema/SCHEMA]] más `todos`, la lista de pasos de la sesión, `flow_context`, el bloque de contexto de un flujo, y `chat_evento`, las líneas de procesamiento del chat, además de las columnas `messages.duration_ms` y `chat_evento.duration_ms`. La creación del archivo, su esquema inicial y las migraciones `002-crear-todo`, `003-crear-flow-context`, `004-crear-chat-evento` y `005-duracion-linea-herramienta` ocurren en el mismo paso de apertura, así que `user_version` arranca en 5. Los índices de [[database/01-schema/INDEXES]] se aplican junto con la creación, no después.
+La base se crea ya en su versión actual (v6): las seis tablas de [[database/01-schema/SCHEMA]] más `todos`, la lista de pasos de la sesión, `flow_context`, el bloque de contexto de un flujo, y `chat_evento`, las líneas de procesamiento del chat, además de las columnas `messages.duration_ms`, `chat_evento.duration_ms` y el par `sessions.motor_id` / `sessions.modelo`. La creación del archivo, su esquema inicial y las migraciones `002-crear-todo`, `003-crear-flow-context`, `004-crear-chat-evento`, `005-duracion-linea-herramienta` y `006-motor-y-modelo-de-sesion` ocurren en el mismo paso de apertura, así que `user_version` arranca en 6. Los índices de [[database/01-schema/INDEXES]] se aplican junto con la creación, no después.
 
 La migración `002-crear-todo` es aditiva: añade la tabla `todos` y su clave primaria `(session_id, position)`, sin tocar ninguna fila existente. Una base en `user_version = 1` la recibe al abrirse y pasa a la 2 sin perder nada.
 
@@ -71,6 +71,10 @@ La migración `004-crear-chat-evento` también es aditiva: añade la tabla `chat
 La migración `005-duracion-linea-herramienta` es aditiva y solo añade una columna: `chat_evento.duration_ms`, nullable y sin valor por defecto. No crea tabla, no crea índice y no actualiza filas. Las líneas de herramienta ya guardadas quedan con `NULL` y se pintan sin tiempo, que es exactamente lo que significa "no se midió": no se rellena un tiempo inventado para tapar el hueco. Una base en `user_version = 4` la recibe al abrirse y pasa a la 5 sin perder nada.
 
 Añadir la columna como número y no solo dentro de `content` es deliberado: `content` ya guarda la línea compuesta, así que el tiempo se podría leer de ahí. Guardarlo también como columna es lo que permite ordenarlo o filtrar por él sin parsear texto de pantalla, que es la razón de ser de una columna y no un adorno del `content`.
+
+La migración `006-motor-y-modelo-de-sesion` es aditiva y solo añade dos columnas a `sessions`: `motor_id` y `modelo`, ambas nullable y sin valor por defecto. No crea tabla —el registro de motores es un archivo global, no una tabla—, no crea índice y no actualiza filas. Las sesiones existentes quedan con las dos en `NULL`, que significa "todavía no tiene motor asignado": al retomarlas se les aplica el motor por defecto, como se les aplicaba el autodetectado hasta ahora. Una base en `user_version = 5` la recibe al abrirse y pasa a la 6 sin perder nada. Ver [[specs/SPEC-MODELO-MOTOR]] y [[specs/SPEC-SESIONES]].
+
+Las dos columnas van nullable a propósito, y no con `""` como valor de arranque: `NULL` distingue «no asignado todavía» de «asignado a algo que resulta vacío», que es la misma distinción que se aplica a `layer` y a los tokens del modelo. Rellenarlas en la migración con el motor por defecto habría congelado la preferencia de arranque en cada fila y habría hecho imposible distinguir las sesiones que ya existían de las nuevas.
 
 ### Un `user_version` correcto no basta para saber que el esquema es el de la versión
 

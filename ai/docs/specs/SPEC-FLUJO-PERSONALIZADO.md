@@ -3,7 +3,7 @@ title: SPEC — Flujo personalizado
 tags: [specs, requisito]
 depende_de:
     - "[[IDEA]]"
-    - "[[specs/SPEC-MOTOR-FLUJOS]]"
+    - "[[specs/SPEC-ORQUESTADOR-FLUJOS]]"
     - "[[specs/SPEC-NODO-CONTEXTO]]"
 ---
 
@@ -18,7 +18,7 @@ Poder definir flujos propios con las etapas que uno necesite.
 ## Alcance
 
 Incluye definir, guardar, editar, borrar y ejecutar flujos propios.
-No incluye los flujos oficiales, que están en [[specs/SPEC-MOTOR-FLUJOS]], ni los agentes propios.
+No incluye los flujos oficiales, que están en [[specs/SPEC-ORQUESTADOR-FLUJOS]], ni los agentes propios.
 
 ## Actores
 
@@ -62,13 +62,13 @@ No incluye los flujos oficiales, que están en [[specs/SPEC-MOTOR-FLUJOS]], ni l
 
 ## Dependencias funcionales
 
-- [[specs/SPEC-MOTOR-FLUJOS]]
+- [[specs/SPEC-ORQUESTADOR-FLUJOS]]
 - [[specs/SPEC-NODO-CONTEXTO]]
 
 ## Supuestos
 
 - El formato de definición está fijado: un JSON por flujo en `.localcli/flows/`, con `comando`, `nombre`, `descripcion`, `peticion`, `pregunta`, `reglas` y `etapas`. Cada etapa lleva `id`, `nombre`, `agente` (`plan` o `build`), `instruccion` y `pregunta`, más los modificadores `continuacion`, `entrega` y `respuesta_en_chat`, y `aprobacion`.
-- `pregunta` es obligatoria en el flujo y en cada etapa —dice qué entrega el flujo y qué responde cada etapa—; un flujo declara exactamente una etapa `entrega`, y es la última ([[specs/SPEC-MOTOR-FLUJOS]]).
+- `pregunta` es obligatoria en el flujo y en cada etapa —dice qué entrega el flujo y qué responde cada etapa—; un flujo declara exactamente una etapa `entrega`, y es la última ([[specs/SPEC-ORQUESTADOR-FLUJOS]]).
 - Los flujos del proyecto son los archivos de `.localcli/flows/`: no hay flujos cableados. Un `comando` sin archivo no existe y no se lista.
 - Las `reglas` del flujo y la `instruccion` de cada etapa viajan con el contexto de la etapa: es donde se declara, por ejemplo, cómo descubrir la documentación.
 - Los flujos se cargan al arrancar. Un JSON roto no tumba el arranque: se arranca sin flujos y se avisa.

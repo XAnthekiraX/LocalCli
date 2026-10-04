@@ -51,12 +51,12 @@ type Generador interface {
 }
 
 // Runner envía la petición de un agente al modelo. Es la frontera de `agent`
-// con `llm.Proveedor`: no sabe si detrás hay Ollama o llama.cpp.
+// con `llm.Motor`: no sabe si detrás hay Ollama o llama.cpp.
 type Runner struct {
-	Proveedor llm.Proveedor
+	Motor llm.Motor
 }
 
 // Generar construye la petición del agente y la lanza en streaming.
 func (r Runner) Generar(ctx context.Context, a Agente, modelo string, mensajes []llm.Mensaje, herramientas []llm.Herramienta, numCtx int, pensar *bool) (<-chan llm.Evento, error) {
-	return r.Proveedor.Chat(ctx, ConstruirPeticion(a, modelo, mensajes, herramientas, numCtx, pensar))
+	return r.Motor.Chat(ctx, ConstruirPeticion(a, modelo, mensajes, herramientas, numCtx, pensar))
 }

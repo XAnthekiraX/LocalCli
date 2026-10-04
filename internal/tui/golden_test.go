@@ -64,7 +64,7 @@ func TestLasDoradasDeVistaSeMantienen(t *testing.T) {
 
 	// Modal de atajos con el keymap de fábrica: acción y tecla de cada una.
 	km := &KeysModal{}
-	km.AbrirAtajos(KeymapPorDefecto().Entradas())
+	km.AbrirAtajos(KeymapPorDefecto().Entradas(), LíderPorDefecto)
 	compararDorada(t, "atajos.golden", sinEstilo(km.Render(100, 30))+"\n")
 
 	// Modal de sesiones con las tres sesiones y sus estados.
@@ -124,8 +124,10 @@ func TestLasDoradasDeVistaSeMantienen(t *testing.T) {
 
 	// Bienvenida con la línea de modelo y sin lista de modelos: la selección
 	// vive en el modal, no en la pantalla (SPEC-INTERFAZ §Pantalla de
-	// bienvenida, T-F013-01).
-	b := Nuevo(&puertoStub{modelo: "llama3.2"})
+	// bienvenida, T-F013-01). El motor se declara para que la dorada represente
+	// una instalación con motor: la de la instalación sin ninguno la cubre
+	// `TestLaBienvenidaSinMotoresOfreceAbrirElModal`.
+	b := Nuevo(&puertoStub{modelo: "llama3.2", motorActual: "Ollama local"})
 	pulsa(t, b, tea.WindowSizeMsg{Width: 100, Height: 30})
 	compararDorada(t, "bienvenida.golden", sinEstilo(b.View())+"\n")
 

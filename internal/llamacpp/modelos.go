@@ -3,7 +3,7 @@
 // Fuente de verdad: INTEGRATIONS §llama.cpp («`/models` del router, con
 // `/v1/models` como alternativa»). El router en modo router sirve `/models`; si
 // no está, se prueba `/v1/models`.
-package openai
+package llamacpp
 
 import (
 	"context"
@@ -54,7 +54,7 @@ func (c *Client) ListarModelos(ctx context.Context) ([]llm.Modelo, error) {
 // esNoEncontrado informa si el error viene de un 404, para probar la ruta de
 // reserva `/v1/models`.
 func esNoEncontrado(err error) bool {
-	var e *llm.ErrorProveedor
+	var e *llm.ErrorMotor
 	if errors.As(err, &e) {
 		return strings.Contains(e.Mensaje, "(404)")
 	}

@@ -81,7 +81,7 @@ Acelera `idx_change_history_file`. Devuelve cambios de sesiones distintas, y est
 |---|---|---|
 | Leer por sesión | `messages`, `reasoning` | La TUI al abrir una sesión |
 | Contar pendientes | `approvals` | El panel y el contador, en cada redibujado |
-| Escribir estado | `sessions` | El motor de flujos, en cada transición |
+| Escribir estado | `sessions` | El orquestador de flujos, en cada transición |
 | Escribir streaming | `reasoning` | El modelo, token a token |
 | Registrar y leer auditoría | `context_audit` | El nodo de contexto y el usuario |
 | Registrar y leer historial | `change_history` | Las herramientas de archivo y el usuario |

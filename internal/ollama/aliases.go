@@ -21,7 +21,7 @@ type (
 	OpcionesEncolar = llm.OpcionesEncolar
 
 	// ErrorOllama es el nombre histórico del error tipado de la frontera.
-	ErrorOllama = llm.ErrorProveedor
+	ErrorOllama = llm.ErrorMotor
 )
 
 const (
@@ -31,14 +31,14 @@ const (
 	EventoError        = llm.EventoError
 
 	// Códigos con su nombre histórico. El valor es el neutro del harness.
-	CodigoOllamaNoDisponible = llm.CodigoProveedorNoDisponible
+	CodigoOllamaNoDisponible = llm.CodigoMotorNoDisponible
 	CodigoModeloNoCabe       = llm.CodigoModeloNoCabe
 
 	TopeVentanaPorDefecto = llm.TopeVentanaPorDefecto
 )
 
 var (
-	ErrOllamaNoDisponible = llm.ErrProveedorNoDisponible
+	ErrOllamaNoDisponible = llm.ErrMotorNoDisponible
 	ErrModeloNoCabe       = llm.ErrModeloNoCabe
 )
 

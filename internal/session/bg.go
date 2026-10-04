@@ -27,6 +27,9 @@ type Gestor struct {
 	Alcance *Alcance
 	Motor   Motor
 	Bus     *Bus
+	// Motores dice si el motor de una sesión sigue disponible. Opcional: lo
+	// inyecta el arranque sobre el registro de `llm`; sin él no se comprueba.
+	Motores Motores
 	// Titulador produce el título de una sesión a partir de su primera petición.
 	// Opcional: sin él, la sesión conserva el nombre provisional.
 	Titulador Titulador
@@ -82,16 +85,68 @@ func NuevoGestor(alcance *Alcance, motor Motor, bus *Bus) (*Gestor, error) {
 	}, nil
 }
 
-// Crear crea una sesión nueva y la devuelve inactiva.
+// Crear crea una sesión nueva y la devuelve inactiva. Nace sin par
+// motor/modelo propio: lo fija el llamante con el último usado (SPEC-SESIONES).
 func (g *Gestor) Crear(nombre, capa string) (*Sesion, error) {
+	return g.CrearConMotor(nombre, capa, "", "")
+}
+
+// CrearConMotor crea una sesión nueva con su par motor/modelo ya asignado: una
+// sesión nueva parte del último motor y modelo usados, que son una preferencia
+// global del usuario (SPEC-SESIONES §Reglas).
+func (g *Gestor) CrearConMotor(nombre, capa, motorID, modelo string) (*Sesion, error) {
 	if nombre == "" {
 		return nil, fmt.Errorf("session: la sesión necesita nombre")
 	}
-	s, err := g.Alcance.Almacen.Crear(nombre, capa)
+	s, err := g.Alcance.Almacen.CrearConMotor(nombre, capa, motorID, modelo)
 	if err != nil {
 		return nil, err
 	}
 	return DeStore(s), nil
+}
+
+// ParMotorModelo devuelve el motor y el modelo que usa la sesión. "" en
+// cualquiera de los dos significa «sin asignar»: al retomarla se le aplica el
+// motor por defecto. Es lo que lee el arranque del turno para saber contra qué
+// motor generar.
+func (g *Gestor) ParMotorModelo(sesionID string) (motorID, modelo string, err error) {
+	ses, err := g.sesion(sesionID)
+	if err != nil {
+		return "", "", err
+	}
+	return ses.MotorID, ses.Modelo, nil
+}
+
+// CambiarMotor fija el motor de la sesión. El modelo no se toca aquí: si el
+// nuevo motor no declara el modelo en curso, quien decide es la interfaz
+// (SPEC-INTERFAZ §Modales: «si el modelo en curso no existe en él, el modelo
+// queda vacío y hay que elegir otro»), que después llama a CambiarModelo.
+// Cambiar de motor no toca el historial ni el nombre: son la identidad de la
+// sesión, y el par es un recurso suyo (SPEC-MODELO-MOTOR).
+func (g *Gestor) CambiarMotor(sesionID, motorID string) error {
+	return g.cambiarPar(sesionID, &motorID, nil)
+}
+
+// CambiarModelo fija el modelo de la sesión sin tocar su motor.
+func (g *Gestor) CambiarModelo(sesionID, modelo string) error {
+	return g.cambiarPar(sesionID, nil, &modelo)
+}
+
+// cambiarPar aplica el cambio de los campos que se pasen. Nunca elige motor ni
+// modelo por su cuenta: solo guarda lo que se le dice.
+func (g *Gestor) cambiarPar(sesionID string, motorID, modelo *string) error {
+	actual, err := g.Alcance.Almacen.Obtener(sesionID)
+	if err != nil {
+		return err
+	}
+	nuevoMotor, nuevoModelo := actual.MotorID, actual.Modelo
+	if motorID != nil {
+		nuevoMotor = *motorID
+	}
+	if modelo != nil {
+		nuevoModelo = *modelo
+	}
+	return g.Alcance.Almacen.CambiarMotorModelo(sesionID, nuevoMotor, nuevoModelo)
 }
 
 // Listar lista las sesiones del proyecto. Es el listado que se ve al reabrir la

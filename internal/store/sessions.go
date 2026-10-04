@@ -29,6 +29,12 @@ type Session struct {
 	Status    string
 	CreatedAt string
 	UpdatedAt string
+	// MotorID y Modelo son el par motor/modelo que usa la sesión: un recurso
+	// suyo, no parte de su identidad (SPEC-MODELO-MOTOR §Motor y modelo por
+	// sesión). "" significa «todavía no asignado» (NULL en la base): al
+	// retomar la sesión se le aplica el motor por defecto.
+	MotorID string
+	Modelo  string
 }
 
 // ValidarTransicionSesion comprueba si pasar de `from` a `to` es una
@@ -55,19 +61,26 @@ func ValidarTransicionSesion(from, to string) bool {
 }
 
 // CrearSesion inserta una sesión nueva en estado inactiva (su valor por
-// defecto en el esquema) y devuelve la fila creada.
+// defecto en el esquema) y devuelve la fila creada. Nace sin motor asignado:
+// el par lo fija la sesión cuando elige motor y modelo.
 func CrearSesion(db *sql.DB, nombre, capa string) (*Session, error) {
+	return CrearSesionConMotor(db, nombre, capa, "", "")
+}
+
+// CrearSesionConMotor inserta una sesión nueva con su par motor/modelo ya
+// asignado. Un motor o modelo vacío queda NULL en la base («sin asignar»).
+func CrearSesionConMotor(db *sql.DB, nombre, capa, motorID, modelo string) (*Session, error) {
 	now := nowISO()
 	id := newID()
 	_, err := db.Exec(
-		`INSERT INTO sessions (id, name, layer, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		id, nombre, nullStr(capa), StatusInactiva, now, now,
+		`INSERT INTO sessions (id, name, layer, status, created_at, updated_at, motor_id, modelo)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, nombre, nullStr(capa), StatusInactiva, now, now, nullStr(motorID), nullStr(modelo),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("no se pudo crear la sesión: %w", traducirError(err))
 	}
-	return &Session{ID: id, Name: nombre, Layer: capa, Status: StatusInactiva, CreatedAt: now, UpdatedAt: now}, nil
+	return &Session{ID: id, Name: nombre, Layer: capa, Status: StatusInactiva, CreatedAt: now, UpdatedAt: now, MotorID: motorID, Modelo: modelo}, nil
 }
 
 // ObtenerSesion lee una sesión por id. Devuelve ErrNoEncontrado si no existe.
@@ -82,14 +95,15 @@ func ObtenerSesion(db *sql.DB, id string) (*Session, error) {
 // escribe el nuevo.
 func obtenerSesion(e ejecutor, id string) (*Session, error) {
 	row := e.QueryRow(
-		`SELECT id, name, COALESCE(layer, ''), status, created_at, updated_at
+		`SELECT id, name, COALESCE(layer, ''), status, created_at, updated_at,
+		        COALESCE(motor_id, ''), COALESCE(modelo, '')
 		 FROM sessions WHERE id = ?`, id)
 	return escanearSesion(row)
 }
 
 func escanearSesion(row rowScanner) (*Session, error) {
 	var s Session
-	err := row.Scan(&s.ID, &s.Name, &s.Layer, &s.Status, &s.CreatedAt, &s.UpdatedAt)
+	err := row.Scan(&s.ID, &s.Name, &s.Layer, &s.Status, &s.CreatedAt, &s.UpdatedAt, &s.MotorID, &s.Modelo)
 	if err != nil {
 		return nil, traducirError(err)
 	}
@@ -107,7 +121,8 @@ type rowScanner interface {
 // no filtra (la base es por proyecto), se ignora el concepto de carpeta: cada
 // archivo SQLite pertenece ya a una carpeta.
 func ListarSesiones(db *sql.DB, estado string) ([]Session, error) {
-	q := `SELECT id, name, COALESCE(layer, ''), status, created_at, updated_at FROM sessions`
+	q := `SELECT id, name, COALESCE(layer, ''), status, created_at, updated_at,
+	             COALESCE(motor_id, ''), COALESCE(modelo, '') FROM sessions`
 	args := []any{}
 	if estado != "" {
 		q += ` WHERE status = ?`
@@ -159,6 +174,19 @@ func actualizarEstadoSesion(e ejecutor, id, estadoNuevo string) error {
 	return filasAfectadas(res, 1, fmt.Sprintf("sesión %s", id))
 }
 
+// CambiarMotorModelo fija el par motor/modelo de la sesión y toca updated_at.
+// El motor y el modelo son recursos de la sesión, no su identidad: el `id`, el
+// `name` y el historial no cambian (SPEC-MODELO-MOTOR §Cambiar a mitad de
+// conversación). Un valor vacío deja NULL («sin asignar»).
+func CambiarMotorModelo(db *sql.DB, id, motorID, modelo string) error {
+	res, err := db.Exec(`UPDATE sessions SET motor_id = ?, modelo = ?, updated_at = ? WHERE id = ?`,
+		nullStr(motorID), nullStr(modelo), nowISO(), id)
+	if err != nil {
+		return traducirError(err)
+	}
+	return filasAfectadas(res, 1, fmt.Sprintf("sesión %s", id))
+}
+
 // RenombrarSesion cambia el nombre visible de una sesión y toca updated_at. El
 // nombre es un atributo mutable: el identificador permanente es `id`, así que
 // renombrar nunca afecta a los mensajes ni a las referencias internas de la
@@ -184,6 +212,11 @@ func (s Sesiones) Crear(nombre, capa string) (*Session, error) {
 	return CrearSesion(s.DB, nombre, capa)
 }
 
+// CrearConMotor inserta una sesión nueva con su par motor/modelo asignado.
+func (s Sesiones) CrearConMotor(nombre, capa, motorID, modelo string) (*Session, error) {
+	return CrearSesionConMotor(s.DB, nombre, capa, motorID, modelo)
+}
+
 // Obtener lee una sesión por id (ErrNoEncontrado si no existe).
 func (s Sesiones) Obtener(id string) (*Session, error) { return ObtenerSesion(s.DB, id) }
 
@@ -206,6 +239,12 @@ func (s Sesiones) Borrar(id string) error { return BorrarSesion(s.DB, id) }
 // Renombrar cambia el nombre visible de una sesión (el título). El `id` sigue
 // siendo la identidad de la sesión; esto solo toca el atributo nombre.
 func (s Sesiones) Renombrar(id, nombre string) error { return RenombrarSesion(s.DB, id, nombre) }
+
+// CambiarMotorModelo fija el par motor/modelo de la sesión sin tocar su
+// identidad ni su historial.
+func (s Sesiones) CambiarMotorModelo(id, motorID, modelo string) error {
+	return CambiarMotorModelo(s.DB, id, motorID, modelo)
+}
 
 // BorrarSesion elimina una sesión de forma definitiva. messages, reasoning
 // (vía messages), approvals y context_audit caen en cascada; change_history

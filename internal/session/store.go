@@ -18,6 +18,12 @@ import "localcli/internal/store"
 type Almacen interface {
 	// Crear inserta una sesión nueva (nace inactiva).
 	Crear(nombre, capa string) (*store.Session, error)
+	// CrearConMotor inserta una sesión nueva con su par motor/modelo asignado:
+	// una sesión nueva parte del último motor y modelo usados (SPEC-SESIONES).
+	CrearConMotor(nombre, capa, motorID, modelo string) (*store.Session, error)
+	// CambiarMotorModelo fija el par motor/modelo de la sesión sin tocar su
+	// identidad ni su historial. Un valor vacío deja NULL (sin asignar).
+	CambiarMotorModelo(id, motorID, modelo string) error
 	// Obtener lee una sesión por id.
 	Obtener(id string) (*store.Session, error)
 	// Listar lista las sesiones del proyecto, filtradas por estado si no es "".

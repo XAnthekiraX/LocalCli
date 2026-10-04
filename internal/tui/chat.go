@@ -332,6 +332,11 @@ type HistorialSesion struct {
 	Mensajes       []MensajeHistorial
 	ContextoTokens int
 	LimiteTokens   int
+	// LimiteDelHarness dice que LimiteTokens no es la ventana del modelo sino el
+	// tope del harness, porque el motor no declaró la suya. La vista lo marca en
+	// la fila CONTEXTO en vez de hacerlo pasar por la ventana del modelo
+	// (SPEC-MODELO-MOTOR §La ventana de contexto).
+	LimiteDelHarness bool
 }
 
 // Cargar reemplaza el historial mostrado por el de la sesión activa (T-F005-05).

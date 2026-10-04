@@ -1,0 +1,21 @@
+-- motor.sql — el par motor/modelo de la sesión (migración
+-- 006-motor-y-modelo-de-sesion).
+--
+-- El motor y el modelo son recursos QUE LA SESIÓN UTILIZA, no parte de su
+-- identidad: se pueden cambiar sin que cambien el identificador, el nombre ni
+-- el historial, y la conversación continúa (SPEC-MODELO-MOTOR §Motor y modelo
+-- por sesión). Por eso viven en la sesión y no en el arranque.
+--
+-- `motor_id` es el `id` de una entrada de `motores.json`, SIN clave foránea: el
+-- registro de motores es un archivo global de la máquina, no una tabla de este
+-- proyecto (CONSTRAINTS.md §sessions.motor_id). Desactivar o eliminar un motor
+-- no invalida las sesiones que lo usaban.
+--
+-- Las dos columnas van nullable y sin valor por defecto a propósito: NULL
+-- significa «todavía no tiene motor asignado», distinto de «asignado a algo
+-- vacío». Las sesiones existentes quedan en NULL y al retomarlas se les aplica
+-- el motor por defecto (MIGRATIONS.md §4 y la nota del esquema actual).
+--
+-- Es aditiva: no crea tabla, no crea índice y no toca ninguna fila.
+ALTER TABLE sessions ADD COLUMN motor_id TEXT;
+ALTER TABLE sessions ADD COLUMN modelo TEXT;

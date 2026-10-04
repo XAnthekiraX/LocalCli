@@ -9,10 +9,10 @@ import (
 // schemaVersion es la versión del esquema que conoce este binario. La base se
 // crea ya en su versión 1 con las seis tablas (MIGRATIONS.md, "Nota sobre el
 // esquema actual"), la 002 añade la lista de pasos, la 003 el bloque de
-// contexto de un flujo, la 004 las líneas de procesamiento del chat y la 005 la
-// duración de la línea de herramienta; user_version = 5 significa que las
-// cinco están aplicadas.
-const schemaVersion = 5
+// contexto de un flujo, la 004 las líneas de procesamiento del chat, la 005 la
+// duración de la línea de herramienta y la 006 el par motor/modelo de la
+// sesión; user_version = 6 significa que las seis están aplicadas.
+const schemaVersion = 6
 
 // migration es una migración numerada, en orden ascendente, cada una en su
 // propia transacción (MIGRATIONS.md §2). to es la versión resultante.
@@ -27,8 +27,9 @@ type migration struct {
 // archivo y su esquema inicial; la 002 añade la tabla `todos` (la lista de pasos
 // de la sesión); la 003 añade `flow_context` (el bloque de contexto de un flujo);
 // la 004 añade `chat_evento` (las líneas de procesamiento del chat) y la columna
-// `messages.duration_ms`, y la 005 añade `chat_evento.duration_ms` (cuánto tardó
-// la ejecución que describe la línea).
+// `messages.duration_ms`, la 005 añade `chat_evento.duration_ms` (cuánto tardó
+// la ejecución que describe la línea) y la 006 añade `sessions.motor_id` y
+// `sessions.modelo` (el par motor/modelo de la sesión).
 // Los índices se aplican junto con la creación, no después (MIGRATIONS.md, nota
 // final).
 var migrations = []migration{
@@ -37,6 +38,7 @@ var migrations = []migration{
 	{num: 3, nom: "003-crear-flow-context", to: 3, ddl: flowContextSQL},
 	{num: 4, nom: "004-crear-chat-evento", to: 4, ddl: chatEventoSQL},
 	{num: 5, nom: "005-duracion-linea-herramienta", to: 5, ddl: duracionLineaSQL},
+	{num: 6, nom: "006-motor-y-modelo-de-sesion", to: 6, ddl: motorSQL},
 }
 
 // userVersion lee PRAGMA user_version de la conexión.

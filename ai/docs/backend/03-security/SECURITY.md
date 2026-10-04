@@ -6,7 +6,7 @@ depende_de:
   - "[[specs/SPEC-ARCHIVOS]]"
   - "[[specs/SPEC-TOOLS]]"
 relacionado:
-  - "[[specs/SPEC-MODELO-PROVEEDOR]]"
+  - "[[specs/SPEC-MODELO-MOTOR]]"
   - "[[backend/01-domain/DOMAIN]]"
   - "[[backend/02-interfaces/TOOLS]]"
   - "[[backend/04-infrastructure/CONFIGURATION]]"
@@ -20,7 +20,7 @@ relacionado:
 
 No hay autenticación, y no es una omisión. El proceso se abre en tu terminal, en tu máquina, con tus permisos. No hay red, así que no hay a quién autenticarse.
 
-Lo que sí hay es **identidad de agente**: cada petición al motor viene de un agente (`plan` o `build`) y ese agente tiene un conjunto fijo de herramientas. La "autenticación" del modelo es saber qué agente es, no quién es el usuario. Ver [[backend/02-interfaces/TOOLS]].
+Lo que sí hay es **identidad de agente**: cada petición al orquestador viene de un agente (`plan` o `build`) y ese agente tiene un conjunto fijo de herramientas. La "autenticación" del modelo es saber qué agente es, no quién es el usuario. Ver [[backend/02-interfaces/TOOLS]].
 
 Con el canal nativo de herramientas hay una pieza más de identidad que antes no hacía falta: **cada llamada va firmada con el agente que la pidió**. El nombre del agente no lo elige el modelo, sino quien construye la petición; el modelo solo elige la herramienta y sus argumentos. Por eso un modelo no puede pedir en nombre de otro agente: la capa de ejecución comprueba la firma contra el agente activo y, si no coincide, la deniega. No es criptografía —`tools.Peticion.Agente` es un campo de la petición en memoria y el modelo no lo controla—, sino atribución dentro del proceso.
 
@@ -87,12 +87,13 @@ Un `.json` en `.localcli/tools/` añade una herramienta. Eso abre una superficie
 
 **El coste de aceptar esto.** El esquema que ve el modelo para una herramienta del usuario es genérico —un objeto, sin properties— porque el harness no puede saber qué argumentos espera un ejecutable que no es suyo. En la práctica eso significa que el modelo improvisa los argumentos de una herramienta del usuario, y que un error de nombre de argumento se descubre al ejecutar, no antes. Es un precio asumido a cambio de que añadir una herramienta no requiera recompilar; queda dicho aquí y en [[backend/02-interfaces/dto/TOOLS-DTO]] para que no sorprenda.
 
-## 3.2 El servidor del proveedor de modelo
+## 3.2 El servidor del motor de inferencia
 
-El harness trata al proveedor como una caja de la que solo consume inferencia; el estado del servidor —qué modelos tiene, con qué ventana— es de quien lo levanta. Eso fija dos requisitos:
+El harness trata al motor como una caja de la que solo consume inferencia; el estado del servidor —qué modelos tiene, con qué ventana— es de quien lo levanta. Eso fija dos requisitos:
 
-- **`llama-server` tiene que levantarse sin las banderas que sirven el sistema de archivos por HTTP.** Con `--tools`, `--agent` o `--mcp-servers-json` activos, el servidor expone lectura o escritura de archivos por su propia API, al margen de la frontera de rutas y de la aprobación del harness. Un servidor así **no es un proveedor admisible**: la garantía de que nada toca el proyecto sin aprobación no se sostiene. Se documenta la instrucción de levantarlo sin esas banderas. Ver [[backend/04-infrastructure/INTEGRATIONS]].
+- **`llama-server` tiene que levantarse sin las banderas que sirven el sistema de archivos por HTTP.** Con `--tools`, `--agent` o `--mcp-servers-json` activos, el servidor expone lectura o escritura de archivos por su propia API, al margen de la frontera de rutas y de la aprobación del harness. Un servidor así **no es un motor admisible**: la garantía de que nada toca el proyecto sin aprobación no se sostiene. Se documenta la instrucción de levantarlo sin esas banderas. Ver [[backend/04-infrastructure/INTEGRATIONS]].
 - **No hay descarga automática de modelos.** El harness no llama a `POST /models` (descarga), ni a `POST /models/load` (carga), ni a `POST /props` (cambiar la ventana): no pide pesos a la red ni muta el servidor. Si el modelo no está, lo dice; no lo trae.
+- **Declarar un motor no lo ejecuta.** Añadir un motor al registro es escribir su tipo, su nombre y su URL; nada se lanza ni se contacta hasta que una sesión lo usa. Una URL equivocada se manifiesta al usarlo, y el registro no la valida por adelantado.
 
 Que `llama-server` acepte `--api-key` no cambia la frontera: el servidor es de loopback y LocalCli no le pone clave, porque al que se le da una clave es al que hay que enseñarla. Ver [[backend/04-infrastructure/CONFIGURATION]].
 
@@ -112,11 +113,11 @@ Las dos herramientas de internet son las únicas que hacen salir información de
 
 ## 6. Riesgos relevantes
 
-- **Rate limiting:** no aplica. No hay red pública. Lo equivalente es el presupuesto de contexto, que recorta la entrada y evita que una respuesta o un comando desborden. Ver [[specs/SPEC-MODELO-PROVEEDOR]].
+- **Rate limiting:** no aplica. No hay red pública. Lo equivalente es el presupuesto de contexto, que recorta la entrada y evita que una respuesta o un comando desborden. Ver [[specs/SPEC-MODELO-MOTOR]].
 - **CORS:** no aplica. No hay navegador ni servidor.
-- **Secrets:** los dos proveedores de modelo corren en local, sin credenciales (el `--api-key` opcional de `llama-server` no se usa). La búsqueda por internet es la única salida y solo lleva la consulta. LocalCli no guarda ni pide claves de API. Una herramienta del usuario puede llevar sus propias credenciales en sus argumentos, que viajan al modelo y al registro de auditoría: quien declare una sabe que el argumento queda visible ahí.
+- **Secrets:** los dos motores de inferencia corren en local, sin credenciales (el `--api-key` opcional de `llama-server` no se usa). La búsqueda por internet es la única salida y solo lleva la consulta. LocalCli no guarda ni pide claves de API. Una herramienta del usuario puede llevar sus propias credenciales en sus argumentos, que viajan al modelo y al registro de auditoría: quien declare una sabe que el argumento queda visible ahí.
 - **Aislamiento en sistemas sin Landlock:** en sistemas que no son Linux, o en Linux sin Landlock, la terminal no tiene el bloqueo estructural. La garantía es más débil y queda documentada como tal; el proyecto lo asume. Ver [[backend/04-infrastructure/CONFIGURATION]]. **Las herramientas del usuario heredan esta limitación tal cual**: sin Landlock no tienen el bloqueo de escritura, y su única defensa restante es la aprobación, que es una decisión del usuario y no una garantía.
-- **El servidor del proveedor con acceso al sistema de archivos.** Un `llama-server` levantado con `--tools`, `--agent` o `--mcp-servers-json` sirve lectura o escritura de archivos por HTTP, fuera de la frontera de rutas y de la aprobación del harness; por eso no es un proveedor admisible. Ver §3.2.
+- **El servidor del motor con acceso al sistema de archivos.** Un `llama-server` levantado con `--tools`, `--agent` o `--mcp-servers-json` sirve lectura o escritura de archivos por HTTP, fuera de la frontera de rutas y de la aprobación del harness; por eso no es un motor admisible. Ver §3.2.
 - **El modelo no es de fiar para decidir permisos.** `plan` y `build` tienen herramientas fijas, y el permiso lo comprueban módulos, no el modelo. El modelo no puede concederse permisos.
 - **Confiar en el texto del comando es un error.** Cualquier intento de validar la terminal leyendo el comando es frágil por diseño; por eso el bloqueo es estructural. Y por eso las herramientas del usuario pasan una lista de argumentos en vez de una línea de texto: quitar el shell es quitar esa clase de ataque entera, no cerrar sus casos sueltos.
 - **Un error de herramienta no termina el turno.** El fallo se le devuelve al modelo para que lo corrija. Eso es intencionado, y es también un riesgo: un modelo puede insistir en una herramienta que falla. Por eso el máximo de pasadas por turno es un límite duro, no un detalle de implementación.
@@ -128,4 +129,4 @@ Las dos herramientas de internet son las únicas que hacen salir información de
 - [[backend/02-interfaces/TOOLS]] — el reparto `plan`/`build`, la capa universal y el punto de extensión.
 - [[backend/02-interfaces/dto/TOOLS-DTO]] — los esquemas derivados y el caso genérico del usuario.
 - [[backend/DECISIONS]] — por qué Landlock, por qué `plan` no escribe y por qué no hay shell en las herramientas del usuario.
-- [[backend/04-infrastructure/INTEGRATIONS]] — la integración de los proveedores de modelo e internet.
+- [[backend/04-infrastructure/INTEGRATIONS]] — la integración de los motores de inferencia e internet.

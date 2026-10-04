@@ -1,12 +1,13 @@
 package tui
 
-// Tests de T-F014-03: el enrutado de los tres modales. Son reglas del `app`, no
-// de un componente: qué acción abre cada modal, que solo puede haber uno abierto
-// y que `dismiss` (Esc) cierra cualquiera (SPEC-INTERFAZ §Modales, SPEC-KEYBINDS
-// §Acción y §Resolución por contexto, DOMAIN §1 `modals`).
+// Tests de T-F014-03, ampliados por T-F044: el enrutado de los CUATRO modales.
+// Son reglas del `app`, no de un componente: qué acción abre cada modal, que
+// solo puede haber uno abierto y que `dismiss` (Esc) cierra cualquiera
+// (SPEC-INTERFAZ §Modales, SPEC-KEYBINDS §Acción y §Resolución por contexto,
+// DOMAIN §1 `modals`).
 //
-//	T-F014-03 → abrir modelos y luego sesiones deja uno solo visible
-//	T-F014-03 → Esc desde cualquiera de los tres devuelve la vista previa
+//	T-F014-03 → abrir modelos, sesiones y motores deja uno solo visible
+//	T-F014-03 → Esc desde cualquiera de los cuatro devuelve la vista previa
 
 import (
 	"strings"
@@ -56,6 +57,19 @@ func TestSoloPuedeHaberUnModalAbierto(t *testing.T) {
 	if a.modalAbierto() != true {
 		t.Error("el modal abierto es el que se ve")
 	}
+
+	// Atajos → motores: igual, el cuarto modal comparte la mecánica (T-F044).
+	ejecuta(t, a, abreElModalDeMotores(t, a))
+	v = sinEstilo(a.View())
+	if !strings.Contains(v, "MOTORES") {
+		t.Errorf("ctrl+x i abre el modal de motores:\n%s", v)
+	}
+	if strings.Contains(v, "ATAJOS") || a.AtajosModal.Abierto {
+		t.Errorf("abrir un modal cierra el que hubiera: %+v", a.AtajosModal)
+	}
+	if !a.Motores.Abierto {
+		t.Error("el modal de motores es el que se ve")
+	}
 }
 
 func TestEscCierraCualquierModalYDevuelveLaVistaPrevia(t *testing.T) {
@@ -71,6 +85,7 @@ func TestEscCierraCualquierModalYDevuelveLaVistaPrevia(t *testing.T) {
 		{"modelos", func() tea.Cmd { return abreElModalDeModelos(t, a) }, "MODELOS"},
 		{"sesiones", func() tea.Cmd { return abreElModalDeSesiones(t, a) }, "SESIONES"},
 		{"atajos", func() tea.Cmd { return tecla(t, a, tea.KeyCtrlP) }, "ATAJOS"},
+		{"motores", func() tea.Cmd { return abreElModalDeMotores(t, a) }, "MOTORES"},
 	} {
 		ejecuta(t, a, abre.abrir())
 		if !strings.Contains(sinEstilo(a.View()), abre.esperado) {

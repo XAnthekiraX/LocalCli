@@ -17,6 +17,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"go/parser"
 	"go/token"
 	"os"
@@ -90,6 +91,26 @@ type puertoStub struct {
 	// devuelve la carga del historial (SPEC-PANEL-CONTEXTO).
 	contextoTokens int
 	limiteTokens   int
+	// limiteDelHarness dice que el límite es el tope del harness, no la ventana
+	// del modelo (SPEC-MODELO-MOTOR §La ventana de contexto).
+	limiteDelHarness bool
+	// motores es la lista del registro que devuelve ListarMotores; motorActual
+	// es el nombre visible de la instancia por defecto. pares es el par
+	// motor/modelo por sesión, y motorCambios/modeloCambios registran los
+	// cambios pedidos desde el modal.
+	motores       []MotorLocal
+	motorActual   string
+	pares         map[string][2]string
+	motorCambios  []string
+	modeloCambios []string
+	// edicionesMotor, borradosMotor y alternadosMotor registran las operaciones
+	// de gestión del registro pedidas desde el modal (SPEC-MODELO-MOTOR).
+	edicionesMotor  []string
+	borradosMotor   []string
+	alternadosMotor []string
+	// catalogoExtensiones permite a un test fijar el catálogo de extensiones por
+	// tipo que devuelve el puerto; sin él se usa el del catálogo cerrado real.
+	catalogoExtensiones map[string][]string
 }
 
 func (p *puertoStub) ResolverActiva() (*session.Sesion, error) {
@@ -164,9 +185,10 @@ func (p *puertoStub) Historial(sesionID string) (HistorialSesion, error) {
 		return HistorialSesion{}, p.err
 	}
 	return HistorialSesion{
-		Mensajes:       p.historial,
-		ContextoTokens: p.contextoTokens,
-		LimiteTokens:   p.limiteTokens,
+		Mensajes:         p.historial,
+		ContextoTokens:   p.contextoTokens,
+		LimiteTokens:     p.limiteTokens,
+		LimiteDelHarness: p.limiteDelHarness,
 	}, nil
 }
 
@@ -246,7 +268,11 @@ func (p *puertoStub) Comandos() []ComandoFlujo { return p.comandos }
 // CapacidadesModelo simula la consulta de capacidades del modelo en uso.
 func (p *puertoStub) CapacidadesModelo(nombre string) (Capacidades, error) {
 	p.capConsultas++
-	return Capacidades{Herramientas: p.capHerramientas, Vision: p.capVision, Pensar: p.capPensar}, p.capErr
+	return Capacidades{
+		Herramientas: CapacidadDe(p.capHerramientas),
+		Vision:       CapacidadDe(p.capVision),
+		Pensar:       CapacidadDe(p.capPensar),
+	}, p.capErr
 }
 
 // PensarRecordado y Pensar simulan el interruptor de razonamiento del pie.
@@ -260,6 +286,115 @@ func (p *puertoStub) Pensar(v bool) {
 func (p *puertoStub) FijarModelo(nombre string) {
 	p.fijados = append(p.fijados, nombre)
 	p.modelo = nombre
+}
+
+func (p *puertoStub) MotorActual() string { return p.motorActual }
+
+func (p *puertoStub) ParMotorModelo(sesionID string) (string, string, error) {
+	if p.pares == nil {
+		return "", "", nil
+	}
+	par := p.pares[sesionID]
+	return par[0], par[1], nil
+}
+
+func (p *puertoStub) CambiarMotor(sesionID, motorID string) error {
+	p.motorCambios = append(p.motorCambios, sesionID+"="+motorID)
+	// El par es de la sesión: cambiar el motor conserva su modelo, como hace
+	// `session.CambiarMotor` (SPEC-MODELO-MOTOR §Motor y modelo por sesión).
+	if p.pares == nil {
+		p.pares = map[string][2]string{}
+	}
+	par := p.pares[sesionID]
+	par[0] = motorID
+	p.pares[sesionID] = par
+	return nil
+}
+
+func (p *puertoStub) CambiarModelo(sesionID, modelo string) error {
+	p.modeloCambios = append(p.modeloCambios, sesionID+"="+modelo)
+	if p.pares == nil {
+		p.pares = map[string][2]string{}
+	}
+	par := p.pares[sesionID]
+	par[1] = modelo
+	p.pares[sesionID] = par
+	return nil
+}
+
+func (p *puertoStub) ListarMotores() ([]MotorLocal, error) { return p.motores, nil }
+
+// ExtensionesValidas simula el catálogo cerrado por tipo: `ollama` admite
+// `num_ctx`, `show` y `tags`; `llamacpp`, `props`. Un test puede sustituirlo
+// con `catalogoExtensiones`.
+func (p *puertoStub) ExtensionesValidas(tipo string) []string {
+	if p.catalogoExtensiones != nil {
+		return p.catalogoExtensiones[tipo]
+	}
+	switch tipo {
+	case "ollama":
+		return []string{"num_ctx", "show", "tags"}
+	case "llamacpp":
+		return []string{"props"}
+	}
+	return nil
+}
+
+func (p *puertoStub) RegistrarMotor(m MotorLocal) error {
+	if m.ID == "" {
+		// El registro real genera el id estable; el doble lo simula aquí.
+		m.ID = fmt.Sprintf("motor-%d", len(p.motores)+1)
+	}
+	p.motores = append(p.motores, m)
+	return nil
+}
+
+func (p *puertoStub) EditarMotor(m MotorLocal) error {
+	p.edicionesMotor = append(p.edicionesMotor, m.ID)
+	for i := range p.motores {
+		if p.motores[i].ID != m.ID {
+			continue
+		}
+		// El registro real deja el adaptador vivo y marca un motor editado
+		// estando aplicado como pendiente de reinicio (llm.Registro.Editar);
+		// el doble lo simula sobre los activos.
+		if p.motores[i].Activo {
+			m.PendienteDeReinicio = true
+		}
+		p.motores[i] = m
+		break
+	}
+	return nil
+}
+
+func (p *puertoStub) EliminarMotor(id string) error {
+	p.borradosMotor = append(p.borradosMotor, id)
+	p.motores = quitarMotor(p.motores, id)
+	return nil
+}
+
+// AlternarMotor simula la desactivación/reactivación inmediata del registro
+// (SPEC-MODELO-MOTOR §Desactivar, §Reactivar).
+func (p *puertoStub) AlternarMotor(id string, activo bool) error {
+	p.alternadosMotor = append(p.alternadosMotor, id)
+	for i := range p.motores {
+		if p.motores[i].ID == id {
+			p.motores[i].Activo = activo
+		}
+	}
+	return nil
+}
+
+// quitarMotor devuelve la lista sin ese motor, como hace el registro al
+// eliminarlo.
+func quitarMotor(motores []MotorLocal, id string) []MotorLocal {
+	out := make([]MotorLocal, 0, len(motores))
+	for _, m := range motores {
+		if m.ID != id {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 func (p *puertoStub) Suscribir() (<-chan Evento, func()) {
@@ -330,6 +465,14 @@ func abreElModalDeSesiones(t *testing.T, a *App) tea.Cmd {
 func abreElModalDeModelos(t *testing.T, a *App) tea.Cmd {
 	t.Helper()
 	return secuencia(t, a, tea.KeyCtrlX, "m")
+}
+
+// abreElModalDeMotores pulsa la secuencia documentada del modal de motores
+// (`<leader>i`) y entrega el registro que devuelve el puerto, como hace el
+// bucle real: el comando de la apertura produce `motoresMsg` (T-F044).
+func abreElModalDeMotores(t *testing.T, a *App) tea.Cmd {
+	t.Helper()
+	return secuencia(t, a, tea.KeyCtrlX, "i")
 }
 
 // --- T-B014-01: arranque ---------------------------------------------------
