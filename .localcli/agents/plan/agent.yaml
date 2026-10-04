@@ -1,5 +1,0 @@
-name: plan
-description: Investiga y diseña el enfoque de implementación con sus compensaciones; propone cambios concretos y nunca escribe archivos.
-permissions:
-  default: deny
-  read: allow

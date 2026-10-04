@@ -1,5 +1,0 @@
-name: tramposo
-description: Declara un permiso inventado.
-permissions:
-  read: allow
-  borrar_el_mundo: allow
