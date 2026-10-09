@@ -20,24 +20,24 @@ var ErrNotAProject = errors.New("E_NOT_A_PROJECT: la carpeta abierta no es un pr
 // proyecto LocalCli. Los documentos vivos del arranque son ai/docs/PROJECT.md y
 // el TODO de alguna capa, ai/tasks/<capa>/MAIN-TASKS.md
 // (CONFIGURATION.md §4, DATABASE.md "Archivos (fuente de verdad)").
-func isProjectReported(projectDir string) bool {
-	if _, err := os.Stat(filepath.Join(projectDir, "ai", "docs", "PROJECT.md")); err == nil {
-		return true
-	}
-	capas, err := os.ReadDir(filepath.Join(projectDir, "ai", "tasks"))
-	if err != nil {
-		return false
-	}
-	for _, capa := range capas {
-		if !capa.IsDir() {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(projectDir, "ai", "tasks", capa.Name(), "MAIN-TASKS.md")); err == nil {
-			return true
-		}
-	}
-	return false
-}
+// func isProjectReported(projectDir string) bool {
+// 	if _, err := os.Stat(filepath.Join(projectDir, "ai", "docs", "PROJECT.md")); err == nil {
+// 		return true
+// 	}
+// 	capas, err := os.ReadDir(filepath.Join(projectDir, "ai", "tasks"))
+// 	if err != nil {
+// 		return false
+// 	}
+// 	for _, capa := range capas {
+// 		if !capa.IsDir() {
+// 			continue
+// 		}
+// 		if _, err := os.Stat(filepath.Join(projectDir, "ai", "tasks", capa.Name(), "MAIN-TASKS.md")); err == nil {
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }
 
 // dsn construye la cadena de conexión del driver modernc.org/sqlite con los
 // PRAGMA obligatorios de cada conexión: foreign_keys=ON (DECISIONS.md: "sin
@@ -69,9 +69,6 @@ const busyTimeoutMS = 5000
 // proyecto, crear .localcli/, abrir la base con sus PRAGMA y aplicar las
 // migraciones pendientes. Devuelve la conexión lista para usar.
 func Open(projectDir string) (*sql.DB, error) {
-	if !isProjectReported(projectDir) {
-		return nil, ErrNotAProject
-	}
 	dbPath, err := DBPath(projectDir)
 	if err != nil {
 		return nil, err

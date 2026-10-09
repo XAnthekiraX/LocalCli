@@ -1,0 +1,5 @@
+name: chat
+description: Respuestas cortas y rapidas para el usuario
+permissions:
+    default: deny
+    read: deny
