@@ -2,7 +2,6 @@ package store
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -10,34 +9,6 @@ import (
 
 	_ "modernc.org/sqlite" // driver puro Go, sin cgo (DATABASE.md: binario portable)
 )
-
-// ErrNotAProject es el error interno equivalente a E_NOT_A_PROJECT: la carpeta
-// abierta no es un proyecto válido y no se abre una base en un sitio que no toca
-// (ERRORS.md §2 y §3).
-var ErrNotAProject = errors.New("E_NOT_A_PROJECT: la carpeta abierta no es un proyecto válido")
-
-// isProjectReported reporta si una ruta de documento hace de esta carpeta un
-// proyecto LocalCli. Los documentos vivos del arranque son ai/docs/PROJECT.md y
-// el TODO de alguna capa, ai/tasks/<capa>/MAIN-TASKS.md
-// (CONFIGURATION.md §4, DATABASE.md "Archivos (fuente de verdad)").
-// func isProjectReported(projectDir string) bool {
-// 	if _, err := os.Stat(filepath.Join(projectDir, "ai", "docs", "PROJECT.md")); err == nil {
-// 		return true
-// 	}
-// 	capas, err := os.ReadDir(filepath.Join(projectDir, "ai", "tasks"))
-// 	if err != nil {
-// 		return false
-// 	}
-// 	for _, capa := range capas {
-// 		if !capa.IsDir() {
-// 			continue
-// 		}
-// 		if _, err := os.Stat(filepath.Join(projectDir, "ai", "tasks", capa.Name(), "MAIN-TASKS.md")); err == nil {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
 
 // dsn construye la cadena de conexión del driver modernc.org/sqlite con los
 // PRAGMA obligatorios de cada conexión: foreign_keys=ON (DECISIONS.md: "sin
@@ -65,9 +36,9 @@ func dsn(dbPath string) string {
 const busyTimeoutMS = 5000
 
 // Open abre (y crea si no existe) el archivo SQLite del proyecto aplicando el
-// orden de arranque documentado (SEEDING.md §4): comprobar que la carpeta es un
-// proyecto, crear .localcli/, abrir la base con sus PRAGMA y aplicar las
-// migraciones pendientes. Devuelve la conexión lista para usar.
+// orden de arranque documentado (SEEDING.md §4): crear .localcli/, abrir la base
+// con sus PRAGMA y aplicar las migraciones pendientes. Devuelve la conexión
+// lista para usar.
 func Open(projectDir string) (*sql.DB, error) {
 	dbPath, err := DBPath(projectDir)
 	if err != nil {

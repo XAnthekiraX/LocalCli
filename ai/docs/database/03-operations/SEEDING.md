@@ -54,11 +54,10 @@ No aplican. No hay seeds, así que no hay orden entre ellos.
 
 El orden que sí existe es el de arranque, que no es de seeds sino de esquema y permisos:
 
-1. Se comprueba que la carpeta abierta es un proyecto.
-2. Se crea la base si no existe, con el esquema de [[database/01-schema/SCHEMA]] y `user_version = 1`.
-3. Se aplica `PRAGMA foreign_keys = ON` y el modo WAL.
-4. Se aplica las migraciones pendientes. Ver [[database/03-operations/MIGRATIONS]].
-5. Se reconstruyen el grafo de documentos y la cola leyendo los archivos. Ver [[database/02-rules/DATA_FLOW]].
+1. Se crea la base si no existe, con el esquema de [[database/01-schema/SCHEMA]] y `user_version = 1`.
+2. Se aplica `PRAGMA foreign_keys = ON` y el modo WAL.
+3. Se aplica las migraciones pendientes. Ver [[database/03-operations/MIGRATIONS]].
+4. Se reconstruyen el grafo de documentos y la cola leyendo los archivos. Ver [[database/02-rules/DATA_FLOW]].
 
 Ese orden importa: los índices y las claves foráneas se crean con el esquema, antes de que entre ningún dato. La base nunca se usa sin su estructura completa.
 

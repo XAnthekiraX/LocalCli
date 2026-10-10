@@ -41,10 +41,6 @@ var (
 	// ErrEstadoIlegal: una transición de estado no permitida por ENUMS.md §3.
 	// La legalidad la aplica el código, no un CHECK (CONSTRAINTS.md §2).
 	ErrEstadoIlegal = errors.New("E_STAGE_FAILED: transición de estado no permitida")
-
-	// ErrNoProyecto es el alias empaquetado de E_NOT_A_PROJECT (ERRORES.md §3),
-	// para quien trapée errores del store sin importar db.go.
-	ErrNoProyecto = ErrNotAProject
 )
 
 // traducirError mapea errores del driver modernc.org/sqlite a los códigos

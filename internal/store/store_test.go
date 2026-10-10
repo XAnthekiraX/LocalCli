@@ -49,11 +49,21 @@ func TestPragmasActivosTrasAbrir(t *testing.T) {
 	}
 }
 
-func TestOpenRechazaCarpetaQueNoEsProyecto(t *testing.T) {
-	noProyecto := t.TempDir()
-	_, err := Open(noProyecto)
-	if !errors.Is(err, ErrNotAProject) {
-		t.Fatalf("err = %v, queremos E_NOT_A_PROJECT", err)
+// Open ya no valida que la carpeta sea un proyecto: abre (y crea) su base en
+// cualquier carpeta, derivando la ruta de .localcli/state.db (SEEDING.md §4).
+func TestOpenNoValidaQueLaCarpetaSeaProyecto(t *testing.T) {
+	carpeta := t.TempDir()
+	db, err := Open(carpeta)
+	if err != nil {
+		t.Fatalf("Open en carpeta sin proyecto: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	dbPath, err := DBPath(carpeta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("se esperaba la base creada en %s: %v", dbPath, err)
 	}
 }
 

@@ -64,7 +64,6 @@ func TestLosCodigosDelCatalogoSonLosDocumentados(t *testing.T) {
 		"E_CMD_NOT_WHITELISTED": true, "E_CMD_TIMEOUT": true, "E_CMD_OUTPUT_TRUNCATED": true,
 		"E_DOC_NOT_FOUND": true, "E_DOC_PARSE": true, "E_CONTEXT_TOO_BIG": true,
 		"E_ELEMENTO_BLOQUEADO": true, "E_STAGE_FAILED": true, "E_FLOW_CANCELLED": true,
-		"E_NOT_A_PROJECT":  true,
 		"E_DB_UNAVAILABLE": true, "E_DB_SCHEMA_OUTDATED": true, "E_DB_CONSTRAINT": true,
 		"E_DB_FOREIGN_KEY": true, "E_DB_CONFLICT": true, "E_DB_LOCKED": true,
 		"E_MOTOR_NO_DISPONIBLE": true, "E_MOTOR_TIPO_DESCONOCIDO": true,
@@ -147,12 +146,11 @@ func TestLosCodigosDeBaseSonLosDocumentados(t *testing.T) {
 	documentados := map[string]bool{
 		"E_DB_UNAVAILABLE": true, "E_DB_SCHEMA_OUTDATED": true, "E_DB_CONSTRAINT": true,
 		"E_DB_FOREIGN_KEY": true, "E_DB_CONFLICT": true, "E_DB_LOCKED": true,
-		"E_NOT_A_PROJECT": true, "E_STAGE_FAILED": true,
+		"E_STAGE_FAILED": true,
 	}
 	centinelas := []error{
 		store.ErrNoDisponible, store.ErrRestriccion, store.ErrClaveForanea,
 		store.ErrConflictivo, store.ErrBloqueado, store.ErrEstadoIlegal,
-		store.ErrNotAProject,
 	}
 	for _, e := range centinelas {
 		msg := e.Error()
@@ -163,10 +161,6 @@ func TestLosCodigosDeBaseSonLosDocumentados(t *testing.T) {
 		if !documentados[codigo] {
 			t.Errorf("el centinela %q usa el código %s, que no está en ERRORS.md", msg, codigo)
 		}
-	}
-	// E_NOT_A_PROJECT es el arranque en una carpeta que no es proyecto (§5).
-	if _, err := store.Open(t.TempDir()); err == nil || !strings.Contains(err.Error(), "E_NOT_A_PROJECT") {
-		t.Errorf("abrir en una carpeta sin proyecto = %v, quiero E_NOT_A_PROJECT", err)
 	}
 }
 

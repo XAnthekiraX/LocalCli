@@ -42,7 +42,7 @@ Fuente de verdad del progreso del backend. Derivada exclusivamente de `ai/docs/`
 | T-B035 | actualizar | la lista de pasos de la sesión tiene dos vías: `crear_todo` añade un paso al final y `actualizar_todo` sustituye la lista entera; mismo vocabulario, misma lista devuelta y sin migración | T-B002, T-B006, T-B007, T-B025 | completada | `035-task-crear-todo.md` |
 | T-B036 | actualizar | proveedor de modelo intercambiable: frontera `llm.Proveedor`, adaptador OpenAI-compatible (llama.cpp) y `LOCALCLI_PROVEEDOR` | T-B005, T-B018, T-B019, T-B022, T-B024 | sustituida por T-B038 | `036-task-proveedor-modelo.md` |
 | T-B037 | actualizar | motores de inferencia administrables: registro global `motores.json`, `llm.Motor` con una cola por motor y el par motor/modelo por sesión (migración 006) | T-B036 | sustituida por T-B038 (en lo del tipo cerrado que decide el transporte, el registro sembrado y las capacidades de dos estados; el resto sigue vigente) | `037-task-motores-de-inferencia.md` |
-| T-B038 | actualizar | núcleo común OpenAI-compatible para todos los motores (`llm/openai`) con extensiones nativas opcionales, capacidades de tres estados, recorte real del harness y registro sin motor activo por defecto | T-B037 | pendiente | `038-task-nucleo-openai-y-extensiones.md` |
+| T-B039 | actualizar | store: eliminar la validación de proyecto al abrir (`isProjectReported`/`E_NOT_A_PROJECT`), limpiar el centinela muerto y alinear comentarios, seeding y tests | T-B002 | completada | `039-task-eliminar-validacion-proyecto.md` |
 
 ## Referencias
 
