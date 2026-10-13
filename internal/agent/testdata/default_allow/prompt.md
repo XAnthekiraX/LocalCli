@@ -1,1 +1,0 @@
-Eres un agente permisivo.

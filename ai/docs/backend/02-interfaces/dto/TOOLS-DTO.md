@@ -9,7 +9,7 @@ relacionado:
   - "[[backend/01-domain/DOMAIN]]"
   - "[[backend/05-quality/ERRORS]]"
   - "[[database/01-schema/TABLES]]"
-  - "[[specs/SPEC-MODELO-MOTOR]]"
+  - "[[specs/SPEC-MODELOS-LLAMACPP]]"
 ---
 # TOOLS-DTO — Payloads de las herramientas
 
@@ -25,7 +25,10 @@ Cada herramienta declara su petición como un tipo de Go, y **el JSON Schema que
 
 ```go
 type PeticionLeerArchivo struct {
-    Ruta string `json:"ruta" desc:"Ruta relativa a la carpeta del proyecto"`
+    Ruta        string `json:"ruta"                   desc:"Ruta relativa al directorio de trabajo del harness; conserva las subcarpetas (docs/specs/X.md), no la ruta absoluta completa ni ~ o $HOME"`
+    InicioLinea int    `json:"inicio_linea,omitempty" desc:"Línea inicial, contando desde 1"`
+    FinLinea    int    `json:"fin_linea,omitempty"    desc:"Línea final, inclusive"`
+    Motivo      string `json:"motivo,omitempty"       desc:"Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas"`
 }
 ```
 
@@ -37,7 +40,19 @@ derivaría en:
   "properties": {
     "ruta": {
       "type": "string",
-      "description": "Ruta relativa a la carpeta del proyecto"
+      "description": "Ruta del archivo a leer"
+    },
+    "inicio_linea": {
+      "type": "integer",
+      "description": "Línea inicial, contando desde 1"
+    },
+    "fin_linea": {
+      "type": "integer",
+      "description": "Línea final, inclusive"
+    },
+    "motivo": {
+      "type": "string",
+      "description": "Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas"
     }
   },
   "required": ["ruta"]
@@ -67,7 +82,9 @@ Todas las herramientas de archivos admiten además `motivo` (string, **opcional*
 
 | Herramienta | Campo | Tipo | Obligatorio | `desc` |
 |---|---|---|---|---|
-| `leer_archivo` | `ruta` | string | Sí | Ruta relativa a la carpeta del proyecto |
+| `leer_archivo` | `ruta` | string | Sí | Ruta del archivo; una relativa se resuelve desde el directorio de trabajo del harness. Conserva las subcarpetas (`docs/specs/X.md`), no la ruta absoluta completa; nunca empieces por `~` o `$HOME` |
+| `leer_archivo` | `inicio_linea` | integer | No | Línea inicial, contando desde 1 |
+| `leer_archivo` | `fin_linea` | integer | No | Línea final, inclusive |
 | `leer_archivo` | `motivo` | string | No | Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas |
 | `listar_carpeta` | `ruta` | string | Sí | Ruta relativa; un nivel |
 | `listar_carpeta` | `motivo` | string | No | Solo si la ruta sale de la carpeta del proyecto: explica en una línea por qué la buscas |
@@ -109,29 +126,34 @@ Todas las herramientas de archivos admiten además `motivo` (string, **opcional*
 
 | Herramienta | Campo | Tipo | Obligatorio | `desc` |
 |---|---|---|---|---|
-| `crear_todo` | `contenido` | string | Sí | Qué hay que hacer; una acción concreta |
+| `crear_todo` | `contenido` | string | † | Qué hay que hacer; una acción concreta |
 | `crear_todo` | `estado` | string | Sí | `pendiente` \| `en_progreso` \| `completada` \| `cancelada` |
 | `crear_todo` | `prioridad` | string | No | `alta` \| `media` \| `baja` (opcional; por defecto `media`) |
+| `crear_todo` | `titulo` | string | † | Título de la tarea principal |
+| `crear_todo` | `subtareas` | array de objeto | † | Subtareas de la tarea principal; un solo nivel |
+| `crear_todo` | `subtareas[].contenido` | string | Sí | Qué hay que hacer; una acción concreta |
+| `crear_todo` | `subtareas[].estado` | string | Sí | `pendiente` \| `en_progreso` \| `completada` \| `cancelada` |
+| `crear_todo` | `subtareas[].prioridad` | string | No | `alta` \| `media` \| `baja` (opcional; por defecto `media`) |
 | `actualizar_todo` | `elementos` | array de objeto | Sí | La lista completa de pasos; reemplaza la anterior |
 | `actualizar_todo` | `elementos[].contenido` | string | Sí | Qué hay que hacer; una acción concreta |
 | `actualizar_todo` | `elementos[].estado` | string | Sí | `pendiente` \| `en_progreso` \| `completada` \| `cancelada` |
 | `actualizar_todo` | `elementos[].prioridad` | string | No | `alta` \| `media` \| `baja` (opcional; por defecto `media`) |
+| `actualizar_todo` | `elementos[].subtareas` | array de objeto | No | Subtareas del elemento; un solo nivel |
 
-`crear_todo` lleva un paso, no una lista: el esquema es un objeto plano y **no tiene campo `elementos`**. Su argumento es deliberadamente más pequeño que el de `actualizar_todo`, porque no puede tocar lo que ya está: añadir y sustituir son contratos distintos, no el mismo con un atajo.
+† Excluyentes: un paso usa `contenido`; una tarea principal usa `titulo` con `subtareas`. Los dos a la vez, o ninguno, es `E_BAD_ARGS`.
 
-`elementos` es un `array` cuyo `items` expone el objeto de cada paso: el esquema anida `contenido`, `estado` y `prioridad`, no un `object` vacío. Lo que llega es la lista entera, no un delta: una lista vacía deja la lista en blanco. La capa universal comprueba que el estado y la prioridad estén en su vocabulario, en las dos herramientas, y un valor fuera vuelve al modelo como `E_BAD_ARGS` corregible. En `crear_todo` la comprobación incluye que no haya ya un paso `en_progreso` —regla que hasta ahora solo era instrucción en la descripción—: el error nombra `actualizar_todo` como la vía para cambiarlo. Ver [[specs/SPEC-TOOLS]].
+`crear_todo` lleva **un paso o una tarea principal, no una lista**: el esquema es un objeto plano y **no tiene campo `elementos`**. Un paso usa `contenido`; una tarea principal usa `titulo` con `subtareas` (los dos caminos son excluyentes y el `desc` instruye al modelo a elegir). El argumento es deliberadamente más pequeño que el de `actualizar_todo`, porque no puede tocar lo que ya está: añadir y sustituir son contratos distintos, no el mismo con un atajo.
 
-### Del usuario
+`elementos` es un `array` cuyo `items` expone el objeto de cada paso: el esquema anida `contenido`, `estado` y `prioridad`, no un `object` vacío. Cada elemento puede llevar además `subtareas` (opcional, un solo nivel): los pasos que cuelgan de otro se declaran dentro de él, no uno junto al otro. Lo que llega es la lista entera, no un delta: una lista vacía deja la lista en blanco. La capa universal comprueba que el estado y la prioridad estén en su vocabulario, en las dos herramientas —y en las subtareas—, y un valor fuera vuelve al modelo como `E_BAD_ARGS` corregible. En `crear_todo` la comprobación incluye que no haya ya un paso `en_progreso` —regla que hasta ahora solo era instrucción en la descripción—: el error nombra `actualizar_todo` como la vía para cambiarlo. Ver [[specs/SPEC-TOOLS]].
 
-El tipo de petición de una herramienta del usuario es genérico, no declarado: acepta cualquier objeto. El modelo ve `{"type": "object"}` y lo que el ejecutable entienda.
-
-Esto es una consecuencia honesta de que la herramienta sea código del usuario y no de LocalCli: **el harness no puede saber qué argumentos espera**. Los valida contra la forma de un objeto, nada más.
+### Flujos
 
 | Herramienta | Campo | Tipo | Obligatorio | `desc` |
 |---|---|---|---|---|
-| `<cualquiera>` | — | object | — | Lo que la herramienta espere; LocalCli no lo valida |
+| `ejecutar_flujo` | `flujo` | string (enum) | Sí | El comando del flujo a lanzar; el enum se arma por turno y solo lista los flujos que el permiso derivado del agente activo admite |
+| `ejecutar_flujo` | `peticion` | string | Sí | El objetivo del flujo, con tus palabras; es lo que viaja en la ventana como petición original |
 
-Es el precio de que el usuario escriba la herramienta en vez de elegirla de un catálogo. Queda dicho aquí para que nadie lo descubra en producción: el esquema no describe los argumentos de una herramienta del usuario, solo que el argumento es un objeto.
+El argumento `flujo` es un **enum en el esquema, no un nombre en el handler**: el catálogo de flujos se resuelve contra los cargados (oficiales y propios) y contra el permiso derivado de sus etapas —todas `plan` → `read`; alguna `build` → `write`/`edit`—. Fuera del enum, la llamada no se ejecuta: la herramienta no existe para ese agente. Ver [[specs/SPEC-ORQUESTADOR-FLUJOS]] §Invocación del flujo.
 
 ## 4. Response Schemas
 
@@ -147,7 +169,14 @@ El tamaño de `Salida` no viaja al modelo, pero sí a la línea del chat: cada h
 
 | Herramienta | Devuelve | Tipo |
 |---|---|---|
-| `leer_archivo` | El contenido del archivo | string |
+| `leer_archivo` | El contenido y los metadatos de la lectura | objeto: `ruta`, `contenido`, `linea_inicio`, `linea_fin`, `total_lineas`, `truncado`, `siguiente_linea` |
+
+`leer_archivo` devuelve un objeto, no un string: además del texto, el modelo necesita saber qué tramo leyó y si quedó contenido fuera. `ruta` es la ruta ya resuelta en forma canónica —relativa al directorio de trabajo si el archivo está dentro, absoluta si está fuera—; `linea_inicio` y `linea_fin` son el rango realmente devuelto, numerado desde 1; `total_lineas` va cuando puede determinarse; `truncado` es `true` si se omitió contenido; y `siguiente_linea` es la línea desde la que continuar, cuando la hay. Devolver la forma corta en cada resultado refuerza el hábito del modelo de no pegar la ruta completa.
+
+La lectura tiene dos límites **fijos en esta versión**, medidos en bytes: 64 KiB para devolver el archivo completo y 32 KiB como máximo por respuesta. Un archivo que no supera el primero se devuelve entero; uno que lo supera se devuelve como fragmento inicial, con `truncado` en `true` y `siguiente_linea` para continuar. Un rango se aplica **sobre el archivo original** —nunca sobre un fragmento ya leído— y, si no cabe en el máximo por respuesta, se devuelve hasta donde llega. Una línea individual demasiado grande se devuelve recortada y señalada.
+
+La **resolución de rutas** es la misma que para `listar_carpeta`: las relativas se resuelven desde el directorio de trabajo del harness, `..` y las absolutas son válidas, no se expande `~` ni `$HOME` (una ruta que empieza por esos prefijos se rechaza con `E_BAD_ARGS` y un recordatorio de usar la forma relativa) y no se busca en otras ubicaciones. La normalización no elude las restricciones de acceso: una ruta que resuelve fuera de la carpeta sigue exigiendo permiso y explicación (`motivo`). La `ruta` de la respuesta es canónica: relativa cuando el archivo está dentro del directorio de trabajo, absoluta cuando queda fuera.
+
 | `listar_carpeta` | Las entradas de un nivel | lista de nombres |
 | `buscar_archivos` | Las rutas que coinciden | lista de rutas |
 | `buscar_en_archivos` | Las coincidencias | lista de (archivo, línea, fragmento) |
@@ -195,26 +224,25 @@ Lo que vuelve entra al presupuesto de contexto, se recorta y se audita como cual
 | `crear_todo` | La lista de pasos resultante, como checklist de texto (`[ ]`, `[•]`, `[✓]`, `[x]`) | string |
 | `actualizar_todo` | La lista de pasos resultante, como checklist de texto (`[ ]`, `[•]`, `[✓]`, `[x]`) | string |
 
-Las dos devuelven lo mismo a propósito: la lista entera, en el mismo formato. El modelo no tiene que distinguir «esto es lo que había más lo que añadí» de «esto es la lista nueva», y una herramienta de añadir no necesita inventar un formato de respuesta propio.
+Las dos devuelven lo mismo a propósito: la lista entera, en el mismo formato. El modelo no tiene que distinguir «esto es lo que había más lo que añadí» de «esto es la lista nueva», y una herramienta de añadir no necesita inventar un formato de respuesta propio. Los pasos que cuelgan de una tarea principal se listan anidados bajo su título, con sangría, para que el modelo lea la misma jerarquía que verá el panel.
 
 El modelo ve la lista resultante en el propio resultado, así que no necesita una herramienta de lectura. La lista además se persiste por sesión y se anuncia al panel con el evento `todo_actualizada`. Ver [[backend/04-infrastructure/EVENTS]] y [[database/01-schema/TABLES]].
 
-### Del usuario
+### Flujos
 
-| Campo | Tipo | Notas |
+| Herramienta | Devuelve | Tipo |
 |---|---|---|
-| `salida` | string | Lo que el ejecutable escribió en su salida estándar |
-| `codigo` | int | Código de salida del ejecutable |
-| `truncado` | bool | Si la salida se cortó por tamaño o tiempo |
-| `termino` | bool | Si el ejecutable terminó |
+| `ejecutar_flujo` | La respuesta de la etapa `entrega` más el bloque de contexto resumido | texto |
 
-La salida de error del ejecutable **no** se distingue de la normal: se concatena a `Salida`, igual que hace la terminal. Es el mismo mecanismo, y el modelo no necesita saber de dónde vino.
+`ejecutar_flujo` devuelve **solo dos cosas**: la entrega del flujo —lo que la etapa `entrega` redactó, que es lo mismo que el chat mostraría como conversación en un flujo por comando— y una síntesis del bloque de contexto (una aportación por etapa, condensada). Es la **frontera de salida** deliberada: ni las etapas, ni las herramientas que corrieron dentro, ni la ventana del flujo llegan al agente que la invocó. El agente sabe qué flujo lanzó y qué entregó, no lo que pasó dentro. Ver [[specs/SPEC-ORQUESTADOR-FLUJOS]] §Invocación del flujo.
+
+La duración que reporta la línea de chat es la de toda la ejecución del flujo —el `duracion` de `herramienta_resultado`—, no la de un handler corto.
 
 ## Referencias
 
 - [[backend/02-interfaces/TOOLS]] — el catálogo, la capa universal y su comportamiento.
 - [[backend/05-quality/VALIDATION]] — qué campos son obligatorios y cómo se validan.
-- [[specs/SPEC-TOOLS]] — la especificación funcional y las herramientas del usuario.
-- [[specs/SPEC-MODELO-MOTOR]] — el canal por el que viajan los esquemas.
+- [[specs/SPEC-TOOLS]] — la especificación funcional del catálogo.
+- [[specs/SPEC-MODELOS-LLAMACPP]] — el canal por el que viajan los esquemas.
 - [[database/01-schema/TABLES]] — dónde queda lo que las herramientas de escritura registran.
 

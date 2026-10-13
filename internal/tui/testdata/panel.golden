@@ -1,30 +1,24 @@
   
-  api de pedidos (trabajando)
+  arreglar el login (trabajando)
   
   CONTEXTO
     1234 tokens (estimado)
     61% usada
   
   ▾ TODO
-    T-B014 · quedan 3
+    T-F009 · quedan 3
+  
+  LISTA DE TAREAS
+    [•] escribir las doradas
+    [✓] unitarias de render
+    [x] probar los modales
+    [ ] revisar el marco
   
   ESTADO
-  Capa y cola backend · 2 tareas grandes
+  Capa y cola frontend · 2 tareas grand…
   Aprobaciones 1 esperando decisión
   Agente build
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  Git master · 0
+  Git refact/logic · 2
   [/tmp/proyecto]
   LocalCli · v0.1 alpha
   

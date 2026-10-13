@@ -35,7 +35,7 @@ Sus tres pilares:
 
 4. **Varias sesiones por proyecto.** Cada carpeta abierta es un proyecto y puede tener varias sesiones. Cada sesión tiene su contexto completamente independiente: se puede dejar una sesión ejecutando el frontend en segundo plano y abrir otra para el backend. El trabajo sigue corriendo aunque no estés mirando esa sesión.
 
-Además, las tareas y la documentación se guardan en base de datos local. Los agentes, en cambio, son archivos de texto del proyecto —`.localcli/agents/<carpeta>/`, con `agent.yaml` y `prompt.md`—, porque su configuración se edita a mano y se versiona con el proyecto; lo que se guarda en la base es el estado de la sesión, no su definición.
+Además, las tareas y la documentación se guardan en base de datos local. Los agentes, en cambio, son archivos de texto —`agents/<carpeta>/`, con `agent.yaml` y `prompt.md`—, porque su configuración se edita a mano. Todo lo del harness —la base de datos, los agentes base, los flujos oficiales y las configuraciones— vive en `~/.config/localcli/`, global de la máquina y sembrado desde el propio binario; el proyecto solo aporta, si los tiene, agentes y flujos propios en `<proyecto>/.localcli/`, que se suman a los globales. Lo que se guarda en la base es el estado de la sesión, no la definición del agente.
 
 ## Público
 

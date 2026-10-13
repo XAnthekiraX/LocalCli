@@ -1,184 +1,135 @@
+// Package context decide qué parte de la documentación del proyecto se entrega a
+// una etapa: deja que el modelo elija, carga solo lo elegido, lo recorta y audita
+// qué entró y qué salió. La lectura de la documentación y su grafo vienen de fuera
+// (módulo `docs`) por una fuente inyectada.
 package context
 
-// nodo.go — T-B011: el nodo de contexto, que orquesta los pasos.
-//
-// Fuente de verdad: [[specs/SPEC-NODO-CONTEXTO]] §Flujo principal (1-7) y
-// ai/docs/backend/01-domain/BUSINESS_RULES.md §Nodo de contexto.
-//
-// Encadena: candidatos desde el grafo → selección del modelo → carga y
-// estimación → recorte al límite → auditoría → ensamblado. No llama al modelo
-// por su cuenta: se lo pide una etapa, y el nodo hace exactamente un paso de
-// selección por petición.
+import "context"
 
-import (
-	"context"
-	"fmt"
+// CodDocNotFound es el código de un documento que el modelo pidió y no existe.
+const CodDocNotFound = "E_DOC_NOT_FOUND"
 
-	"localcli/internal/docs"
-)
+// Documento es una entrada del grafo: su ruta y las dependencias que declara.
+type Documento struct {
+	Ruta         string
+	Dependencias []string
+}
 
-// EtapaChat es la etapa que usa `flow.Motor.Conversar` para el camino de chat
-// (mismo literal que flow.EtapaChat; un test de integración asegura que
-// coinciden). El chat no es una etapa de flujo: marca dónde no aplican las
-// reglas de una (p. ej. el respaldo a todo el proyecto).
-const EtapaChat = "chat"
+// Fuente entrega la documentación del proyecto. La implementación real vive en el
+// módulo de documentación; aquí solo se consume.
+type Fuente interface {
+	Documentos() []Documento
+	Leer(ruta string) (string, error)
+}
 
-// Nodo es el nodo de contexto de una sesión/etapa.
+// Modelo decide qué documentos son relevantes para un objetivo.
+type Modelo interface {
+	Elegir(ctx context.Context, objetivo string, catalogo []string) ([]string, error)
+}
+
+// Peticion pide el contexto de una etapa.
+type Peticion struct {
+	Sesion   string
+	Etapa    string
+	Objetivo string
+	// SinSemilla marca el chat sin semilla: su bloque va solo con el objetivo y
+	// no consulta al modelo.
+	SinSemilla bool
+	// YaEntregados son los documentos de etapas anteriores de la misma ejecución.
+	YaEntregados []string
+}
+
+// Bloque es el contexto armado para una etapa.
+type Bloque struct {
+	Objetivo   string
+	Documentos []DocumentoContenido
+	SinSemilla bool
+}
+
+// DocumentoContenido es un documento ya leído y recortado.
+type DocumentoContenido struct {
+	Ruta      string
+	Contenido string
+	Truncado  bool
+}
+
+// Nodo arma el contexto de una etapa.
 type Nodo struct {
-	Grafo   Grafo
-	Modelo  Modelo
-	Auditor Auditor
-	// SessionID y Etapa se usan cuando el nodo se consume como la interfaz que
-	// espera flow (`ContextoPara`); la etapa que trae la petición manda sobre
-	// la del nodo.
-	SessionID string
-	Etapa     string
-	// Semilla son las rutas de partida; vacío = todo el proyecto.
-	Semilla []string
-	// Limite en tokens; 0 = entorno o sin tope.
-	Limite int
+	Fuente      Fuente
+	Modelo      Modelo
+	Auditoria   Auditoria
+	Presupuesto int
+	Evento      func(sesion, etapa string)
+	Aviso       func(motivo string)
 }
 
-// Preparar hace el trabajo completo para una solicitud.
-func (n *Nodo) Preparar(ctx context.Context, s SolicitudContexto) (ContextoArmado, error) {
-	if n.Grafo == nil || n.Modelo == nil {
-		return ContextoArmado{}, fmt.Errorf("context: el nodo no tiene grafo y modelo conectados")
-	}
-	semilla := s.Semilla
-	if semilla == nil {
-		semilla = n.Semilla
-	}
-	candidatos, err := Candidatos(n.Grafo, semilla)
-	if err != nil {
-		return ContextoArmado{}, err
+// Preparar arma el bloque de una etapa siguiendo el flujo documentado.
+func (n *Nodo) Preparar(ctx context.Context, p Peticion) (Bloque, error) {
+	if p.SinSemilla {
+		n.registrar(p, "(objetivo)", Incluido, "chat sin semilla: solo el objetivo", 0)
+		n.emitir(p)
+		return Bloque{Objetivo: p.Objetivo, SinSemilla: true}, nil
 	}
 
-	// El chat sin semilla no consulta al modelo qué documentos quiere: su
-	// conversación es casual y su bloque va solo con el objetivo, así que la
-	// consulta solo añadía una generación entera al turno antes de la respuesta.
-	// Las etapas de un flujo nunca caen aquí: en ellas el modelo sigue decidiendo
-	// qué es relevante (SPEC-NODO-CONTEXTO §Reglas y §Flujos alternativos).
-	var seleccion []string
-	if !n.omiteSeleccionDeChat(s) {
-		seleccion, err = n.Modelo.Seleccionar(ctx, s.Objetivo, candidatos)
+	catalogo := n.Fuente.Documentos()
+	indice := indexar(catalogo)
+	bloque := Bloque{Objetivo: p.Objetivo}
+	restante := n.presupuesto()
+	yaEntregados := conjunto(p.YaEntregados)
+
+	for _, ruta := range n.elegir(ctx, p.Objetivo, nombres(catalogo)) {
+		if yaEntregados[ruta] {
+			continue
+		}
+		if _, ok := indice[ruta]; !ok {
+			return Bloque{}, errorf("%s: el modelo pidió un documento que no existe: %s", CodDocNotFound, ruta)
+		}
+		contenido, err := n.Fuente.Leer(ruta)
 		if err != nil {
-			return ContextoArmado{}, err
+			return Bloque{}, errorf("%s: no se pudo leer %s", CodDocNotFound, ruta)
 		}
-	}
-	seleccion = n.conFallback(s, seleccion, candidatos)
-
-	// Un documento pedido que no existe detiene la etapa (SPEC-NODO-CONTEXTO):
-	// no se continúa suponiendo.
-	enCandidatos := map[string]bool{}
-	for _, c := range candidatos {
-		enCandidatos[c] = true
-	}
-	cargados := make([]DocumentoSeleccionado, 0, len(seleccion))
-	for _, ruta := range seleccion {
-		if !enCandidatos[ruta] {
-			return ContextoArmado{}, errNoExiste(ruta)
+		recortado, truncado, tokens := RecortarPorSeccion(contenido, restante)
+		if tokens == 0 {
+			n.registrar(p, ruta, Descartado, "no cabe en el presupuesto de contexto", 0)
+			continue
 		}
-		contenido, cErr := n.Grafo.Contenido(ruta)
-		if cErr != nil {
-			return ContextoArmado{}, errNoExiste(ruta)
-		}
-		cargados = append(cargados, DocumentoSeleccionado{
-			Ruta:      ruta,
-			Contenido: contenido,
-			Tokens:    EstimarTokens(contenido),
-		})
+		restante -= tokens
+		bloque.Documentos = append(bloque.Documentos, DocumentoContenido{Ruta: ruta, Contenido: recortado, Truncado: truncado})
+		n.registrar(p, ruta, Incluido, "", tokens)
 	}
 
-	limite := s.Limite
-	if limite == 0 {
-		limite = n.Limite
-	}
-	if limite == 0 {
-		limite = LimiteDeEntorno()
-	}
-	incluidos, descartados, tokens := Recortar(cargados, limite)
-
-	if err := Auditar(n.Auditor, s.SessionID, s.Etapa, incluidos, descartados); err != nil {
-		return ContextoArmado{}, err
-	}
-
-	return ContextoArmado{
-		Objetivo:    s.Objetivo,
-		Etapa:       s.Etapa,
-		Documentos:  incluidos,
-		Descartados: descartados,
-		Tokens:      tokens,
-		Bloque:      Ensamblar(s.Objetivo, s.Etapa, incluidos),
-	}, nil
+	n.avisarDocumentosSinDependencias(catalogo)
+	n.emitir(p)
+	return bloque, nil
 }
 
-// omiteSeleccionDeChat dice si el nodo puede ahorrarse la consulta al modelo.
-// Es el caso del chat sin semilla: su bloque va solo con el objetivo, así que
-// preguntar al modelo no cambiaría lo que se entrega y sí costaría una
-// generación completa por turno. Fuera del chat —o con semilla— el modelo sigue
-// decidiendo qué es relevante.
-func (n *Nodo) omiteSeleccionDeChat(s SolicitudContexto) bool {
-	if s.Etapa != EtapaChat {
-		return false
+func (n *Nodo) presupuesto() int {
+	if n.Presupuesto > 0 {
+		return n.Presupuesto
 	}
-	return len(s.Semilla) == 0 && len(n.Semilla) == 0
+	return presupuestoDefecto
 }
 
-// conFallback aplica el valor por defecto cuando el modelo no decide: se usan
-// la semilla o, si no hay, los candidatos. Es el "objetivo declarado por la
-// etapa" llevado a lo que el nodo puede entregar sin inventar. La excepción es
-// el chat: sin selección y sin semilla no se vuelca el proyecto entero —el
-// modelo solo vería la estructura y respondería con un resumen—, así que su
-// bloque queda sin documentos (el modelo nunca ve el proyecto entero,
-// BUSINESS_RULES §Invariantes).
-func (n *Nodo) conFallback(s SolicitudContexto, seleccion, candidatos []string) []string {
-	if len(seleccion) > 0 {
-		return seleccion
+func indexar(documentos []Documento) map[string]Documento {
+	indice := make(map[string]Documento, len(documentos))
+	for _, d := range documentos {
+		indice[d.Ruta] = d
 	}
-	semilla := s.Semilla
-	if semilla == nil {
-		semilla = n.Semilla
-	}
-	if len(semilla) > 0 {
-		return semilla
-	}
-	if s.Etapa == EtapaChat {
-		return nil
-	}
-	return candidatos
+	return indice
 }
 
-// ContextoPara cumple la interfaz que consume flow: devuelve el bloque de
-// contexto ya ensamblado para un objetivo de la etapa indicada. Una etapa
-// vacía cae en la del nodo, por compatibilidad con quien lo monta.
-func (n *Nodo) ContextoPara(ctx context.Context, etapa, objetivo string) (string, error) {
-	if etapa == "" {
-		etapa = n.Etapa
+func nombres(documentos []Documento) []string {
+	nombres := make([]string, 0, len(documentos))
+	for _, d := range documentos {
+		nombres = append(nombres, d.Ruta)
 	}
-	armado, err := n.Preparar(ctx, SolicitudContexto{
-		Objetivo:  objetivo,
-		Etapa:     etapa,
-		SessionID: n.SessionID,
-		Limite:    n.Limite,
-	})
-	if err != nil {
-		return "", err
-	}
-	return armado.Bloque, nil
+	return nombres
 }
 
-// GrafoDeDocumentos construye el grafo real a partir de los documentos
-// cargados (atajo de composición).
-func GrafoDeDocumentos(raiz string) (Grafo, error) {
-	docsCargados, errs, err := docs.CargarDocs(raiz)
-	if err != nil {
-		return nil, err
+func conjunto(valores []string) map[string]bool {
+	c := make(map[string]bool, len(valores))
+	for _, v := range valores {
+		c[v] = true
 	}
-	if len(errs) > 0 {
-		// Un frontmatter roto es un error localizado: el resto se carga.
-		// El nodo no puede avisar de todos sin parar, así que solo se
-		// propaga el fallo global; los localizados quedan fuera del grafo.
-		_ = errs
-	}
-	return GrafoDeDocs(docs.ConstruirGrafo(docsCargados)), nil
+	return c
 }

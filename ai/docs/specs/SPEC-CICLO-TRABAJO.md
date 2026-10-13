@@ -4,12 +4,13 @@ tags: [specs, requisito]
 depende_de:
   - "[[IDEA]]"
   - "[[specs/SPEC-ORQUESTADOR-FLUJOS]]"
-  - "[[specs/SPEC-COLA-TAREAS]]"
   - "[[specs/SPEC-NODO-CONTEXTO]]"
   - "[[specs/SPEC-ARCHIVOS]]"
   - "[[specs/SPEC-AGENTE-BASE]]"
-  - "[[specs/SPEC-CICLO-PLANIFICACION]]"
+relacionado:
   - "[[specs/SPEC-RESOLVER]]"
+  - "[[specs/SPEC-COLA-TAREAS]]"
+  - "[[specs/SPEC-CICLO-PLANIFICACION]]"
 ---
 # SPEC — Ciclo de trabajo
 
@@ -135,7 +136,7 @@ La ejecución no se pide aquí. El elemento entra en la cola de [[specs/SPEC-COL
 
 ## Reglas de negocio
 
-- El flujo se arranca con un comando explícito: `/crear`, `/actualizar` o `/eliminar`. Una petición que no sea un comando de flujo se responde en el chat.
+- Un flujo se arranca con el comando explícito del usuario (`/flow:crear`, `/flow:actualizar` o `/flow:eliminar`) o con la herramienta `ejecutar_flujo`, que el agente pide cuando el trabajo lo necesita. Una petición que no llegue por ninguna de las dos entradas se responde en el chat.
 - Una tarea no se ejecuta sin su contexto adjunto.
 - El contexto de la tarea es el que entrega el flujo de optimización, no el proyecto completo.
 - La tarea declara su ubicación dentro del proyecto.
@@ -148,7 +149,7 @@ La ejecución no se pide aquí. El elemento entra en la cola de [[specs/SPEC-COL
 
 ## Criterios de aceptación
 
-- [ ] Crear, actualizar y eliminar son el mismo flujo con entradas distintas, cada una por su comando explícito.
+- [ ] Crear, actualizar y eliminar son el mismo flujo con entradas distintas: el comando del usuario o `ejecutar_flujo` desde el agente.
 - [ ] La documentación se actualiza antes que la tarea, con aprobación archivo por archivo.
 - [ ] `plan` propone cada documento y `build` lo escribe.
 - [ ] El impacto se presenta y se espera confirmación antes de tocar nada.
@@ -174,12 +175,9 @@ La ejecución no se pide aquí. El elemento entra en la cola de [[specs/SPEC-COL
 ## Dependencias funcionales
 
 - [[specs/SPEC-ORQUESTADOR-FLUJOS]]
-- [[specs/SPEC-COLA-TAREAS]]
 - [[specs/SPEC-NODO-CONTEXTO]]
 - [[specs/SPEC-ARCHIVOS]]
 - [[specs/SPEC-AGENTE-BASE]]
-- [[specs/SPEC-CICLO-PLANIFICACION]]
-- [[specs/SPEC-RESOLVER]]
 
 ## Supuestos
 

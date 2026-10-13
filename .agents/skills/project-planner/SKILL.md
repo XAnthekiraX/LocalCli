@@ -119,12 +119,14 @@ Lee el template en `templates/PROJECT-PLAN.template.md`.
 
 1. Actualiza tracking: `[*] FASE 5`.
 2. Lee la documentación aprobada de cada capa.
-3. Identifica las tareas principales de backend y frontend, ordenadas por dependencias.
-4. Genera `ai/tasks/backend/MAIN-TASKS.md` y `ai/tasks/frontend/MAIN-TASKS.md` usando `templates/ROADMAP.template.md`.
+3. Delega la planificación de tareas a los planners, uno a la vez:
+   - `backend-planner` → `ai/tasks/backend/MAIN-TASKS.md`
+   - `frontend-planner` → `ai/tasks/frontend/MAIN-TASKS.md`
+4. El planner identifica las tareas principales de su capa, ordenadas por dependencias.
 5. `MAIN-TASKS.md` contiene únicamente tareas principales. No incluyas tablas, listas ni detalles de subtareas.
-6. Cada tarea principal debe referenciar en la columna `Detalle` su archivo `NNN-task-<nombre>.md`.
-7. Crea un archivo de detalle por tarea principal en `ai/tasks/<capa>/`.
-8. Como esta fase crea el roadmap, la acción de cada tarea principal y de cada subtarea debe quedar explícita: usa `Acción: crear` o una columna `Acción` con el valor `crear`.
+6. Cada tarea principal referencia en la columna `Detalle` su archivo `NNN-task-<nombre>.md`.
+7. El planner crea un archivo de detalle por tarea principal en `ai/tasks/<capa>/`.
+8. Como esta fase crea el roadmap desde cero, la acción de cada tarea principal y de cada subtarea queda explícita con el valor `crear`.
 9. Presenta el roadmap y sus archivos de detalle al usuario para aprobación.
 10. Actualiza tracking: `[x] FASE 5`.
 
@@ -144,9 +146,10 @@ Al terminar, muestra:
 - Documentación generada.
 - Tareas principales definidas.
 - Archivos de detalle y acción de sus subtareas.
-- Comandos para ejecutar:
-  - `/ejecutar-backend`
-  - `/ejecutar-frontend`
+- Comandos para continuar:
+  - Con guía paso a paso: cambia al agente `Profesor`
+  - Delegado: `/ejecutar-backend` y `/ejecutar-frontend`
+  - Para replanificar: `/planificar-backend` y `/planificar-frontend`
 
 # Reglas
 
@@ -156,7 +159,7 @@ Al terminar, muestra:
 4. Actualiza el tracking tras cada fase.
 5. La especificación funcional siempre precede a la propuesta técnica y al diseño.
 6. La documentación de capas se genera después de aprobar la propuesta técnica y el diseño.
-7. El roadmap se genera completo en Fase 5.
+7. El roadmap se genera completo en Fase 5, delegando en `backend-planner` y `frontend-planner`.
 8. `MAIN-TASKS.md` solo contiene tareas principales y enlaces a sus archivos de detalle.
 9. La descomposición vive únicamente en `NNN-task-<nombre>.md`.
 10. El archivo de detalle incluye la columna `Acción` para distinguir el efecto de cada comando.
@@ -167,6 +170,6 @@ Al terminar, muestra:
 15. Un archivo = una responsabilidad.
 16. Escritura corta y directa, sin jerga técnica innecesaria.
 17. No escribas código.
-18. No invoques executors.
+18. No invoques executors ni al agente `Profesor`: solo delega la planificación en Fase 5.
 19. Las recomendaciones solo se aplican si el usuario las aprueba.
 20. Termina en Fase 6.

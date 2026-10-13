@@ -1,6 +1,2 @@
 ---
-title: "sin cerrar
-   sangria: rara
----
-
-# Malo
+title: sin cerrar

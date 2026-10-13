@@ -35,17 +35,17 @@ No incluye qué tarea se crea ni qué documentación se escribe, que es de [[spe
 
 Una unidad de trabajo del TODO: una fase, una tarea o un paso. Se identifica, declara sus dependencias y declara su acción.
 
-El TODO se identifica con la ejecución a la que pertenece, de modo que dos ejecuciones simultáneas no se mezclan.
+El elemento se identifica por su ID y vive en la capa de su archivo de tarea, de modo que dos capas no se mezclan.
 
-## La cola es el TODO de esta ejecución
+## La cola es la de cada capa
 
-La cola no es por capa ni es una cola global. Es la cola de la ejecución en curso, y **tiene forma de TODO**.
+La cola es **por capa**: cada capa tiene la suya y se deriva de sus archivos de tarea —el `MAIN-TASKS.md` y los `NNN-task-<nombre>.md`—, que son la fuente de verdad. No hay una cola global.
 
 ```
-petición ordenada  →  se detecta  →  se crea el TODO  →  el TODO es la cola  →  se consume en orden
+archivos de tarea  →  se derivan  →  cola de la capa  →  se consume en orden
 ```
 
-No hay una cola que esté ahí esperando. Se crea cuando tú pides algo que implica una lista ordenada de trabajo, y existe mientras dura esa ejecución.
+No hay una cola esperando en la base: se reconstruye al arrancar y cuando un archivo de tarea cambia, de modo que lo pendiente es literalmente lo que dice el archivo.
 
 Qué cuenta como petición ordenada:
 
@@ -53,14 +53,14 @@ Qué cuenta como petición ordenada:
 - "Ejecutar tarea 1, tarea 2, tarea 3".
 - "Primero esto, luego esto".
 
-Y en qué flujo se crea:
+Y en qué flujo se propone:
 
-- En el **flujo de planificar**, se crea el TODO con todas las fases de la planificación.
-- En el **flujo de ejecutar tareas**, se crea el TODO con los pasos para ejecutar cada tarea.
+- En el **flujo de planificar**, se propone el TODO con todas las fases de la planificación.
+- En el **flujo de ejecutar tareas**, se proponen los pasos para ejecutar cada tarea.
 
-Una petición sin orden ni lista no crea TODO: se responde en el chat, como cualquier otra.
+Una petición sin orden ni lista no propone nada: se responde en el chat, como cualquier otra.
 
-**Por eso no es global:** cada petición ordenada crea su propio TODO. Dos ejecuciones simultáneas pueden tener cada una el suyo, y una no ve el de la otra.
+**Por eso es por capa y no global:** dos capas avanzan en paralelo sin pisarse, y una capa que termina antes se detiene y avisa sin bloquear a la otra.
 
 ## Elementos de código y de documentación
 
@@ -88,11 +88,11 @@ Ejemplo: un elemento "implementar API de pedidos" puede necesitar elementos de d
 
 ## Reglas de negocio
 
-- La cola no es por capa ni es una cola global. Es la cola de esta ejecución.
-- La cola tiene forma de TODO, y el TODO es la cola: no hay una representación paralela.
+- La cola es por capa: cada capa tiene la suya, y ninguna es global.
+- La cola se deriva de los archivos de tarea de su capa: no hay una representación paralela que pueda quedar vieja.
 - Al detectar una petición ordenada, el sistema propone el TODO; el usuario decide si se ejecuta (confirmación o `/ejecutar`).
 - Ningún texto arranca la cola por sí solo: sin comando o confirmación, la petición se responde en el chat.
-- Cada petición ordenada crea su propio TODO. Dos ejecuciones simultáneas no se ven.
+- Dos capas tienen cada una su cola, y una no ve el estado de la otra.
 - El orden del TODO es el orden de ejecución, y se respeta.
 - Se ejecuta un elemento por iteración, nunca varios a la vez.
 - Los elementos de documentación y de código siguen las mismas reglas de permiso.
@@ -106,7 +106,7 @@ Ejemplo: un elemento "implementar API de pedidos" puede necesitar elementos de d
 
 - [ ] Una petición ordenada propone un TODO; no lo ejecuta por sí sola.
 - [ ] "Documentar capa por capa", "ejecutar tarea 1, tarea 2, tarea 3" y "primero esto, luego esto" proponen un TODO.
-- [ ] La cola solo arranca con la confirmación del usuario o el comando `/ejecutar`.
+- [ ] La cola solo arranca con la confirmación del usuario o el comando `/flow:ejecutar` —que el agente también puede lanzar con la herramienta `ejecutar_flujo`—.
 - [ ] En el flujo de planificar, el TODO contiene todas las fases de la planificación.
 - [ ] En el flujo de ejecutar tareas, el TODO contiene los pasos de cada tarea.
 - [ ] Una petición sin orden no crea TODO y se responde en el chat.
@@ -121,12 +121,12 @@ Ejemplo: un elemento "implementar API de pedidos" puede necesitar elementos de d
 - [ ] Al vaciarse la cola, se detiene y avisa.
 - [ ] El estado de la cola se ve desde cualquier sesión.
 - [ ] Retomar no repite elementos ya completados.
-- [ ] Dos ejecuciones simultáneas tienen su propio TODO y no se ven.
+- [ ] Cada capa tiene su propia cola y el estado de una no se mezcla con el de la otra.
 
 ## Requisitos no funcionales
 
 - Reanudar no duplica trabajo: los elementos completados no se vuelven a ejecutar.
-- La cola de una ejecución no bloquea a la de otra.
+- La cola de una capa no bloquea a la de otra.
 
 ## Dependencias funcionales
 

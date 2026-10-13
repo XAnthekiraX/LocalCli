@@ -1,5 +1,5 @@
 ---
-description: Resolver problemas encontrados durante el desarrollo: analiza, propone soluciones y ejecuta.
+description: "Resolver problemas encontrados durante el desarrollo: analiza, propone soluciones y ejecuta."
 ---
 
 # Comando: Resolver

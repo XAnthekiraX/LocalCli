@@ -2,202 +2,195 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 )
 
-// TestCatalogoTieneQuinceHerramientas — T-B007-01: el registro contiene
-// exactamente las quince herramientas documentadas. Una más o una menos
-// rompería la garantía: una de más que escriba sería un agujero, y una de
-// menos dejaría al agente sin poder trabajar.
-func TestCatalogoTieneQuinceHerramientas(t *testing.T) {
-	h := Herramientas()
-	if len(h) != 15 {
-		t.Fatalf("el catálogo tiene %d herramientas, quiero 15: %v", len(h), NombresCatalogo())
+func TestEsquemaDerivadoObligatoriosYOpcionales(t *testing.T) {
+	h := Herramienta{TipoPeticion: reflect.TypeOf(PeticionLeerArchivo{})}
+	e := h.Esquema()
+	if e.Tipo != "object" {
+		t.Fatalf("tipo = %q", e.Tipo)
 	}
-}
-
-// TestCatalogoNombresDocumentados — los quince nombres exactos de TOOLS.md §1.
-// El nombre es la clave con la que el modelo pide la herramienta y la que el
-// JSON del agente declara, así que un nombre distinto rompe el contrato en
-// los dos extremos.
-func TestCatalogoNombresDocumentados(t *testing.T) {
-	want := []string{
-		"leer_archivo", "listar_carpeta", "buscar_archivos", "buscar_en_archivos",
-		"crear_archivo", "escribir_archivo", "editar_archivo", "eliminar_archivo",
-		"crear_carpeta", "eliminar_carpeta",
-		"ejecutar_comando",
-		"buscar_en_internet", "abrir_pagina",
-		"crear_todo", "actualizar_todo",
+	if len(e.Requeridos) != 1 || e.Requeridos[0] != "ruta" {
+		t.Fatalf("solo `ruta` debería ser obligatorio: %v", e.Requeridos)
 	}
-	got := NombresCatalogo()
-	if len(got) != len(want) {
-		t.Fatalf("nombres=%v, quiero %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("nombre %d = %q, quiero %q", i, got[i], want[i])
+	for _, opcional := range []string{"inicio_linea", "fin_linea", "motivo"} {
+		if _, ok := e.Propiedades[opcional]; !ok {
+			t.Fatalf("`%s` debería estar en properties", opcional)
 		}
 	}
-}
-
-// TestHerramientaInventadaNoExiste — el catálogo es cerrado: una herramienta
-// que el modelo se inventa no existe.
-func TestHerramientaInventadaNoExiste(t *testing.T) {
-	if Existe("borrar_todo") {
-		t.Error("una herramienta inventada no puede estar en el catálogo")
-	}
-	if _, ok := Buscar("borrar_todo"); ok {
-		t.Error("Buscar debe fallar para una herramienta fuera del catálogo")
+	if e.Propiedades["inicio_linea"].Tipo != "integer" {
+		t.Fatalf("inicio_linea debería ser integer: %+v", e.Propiedades["inicio_linea"])
 	}
 }
 
-// TestSoloBuildCorrespondeAEscritura — el reparto por agente sale de los
-// permisos `write` y `edit`: las seis que escriben en el proyecto son "solo
-// build"; el resto —las de lectura y la lista de pasos de la sesión— son de
-// ambos (TOOLS.md §1 y §2, SPEC-TOOLS §El reparto).
-func TestSoloBuildCorrespondeAEscritura(t *testing.T) {
-	var escritura, otros int
-	for _, h := range Herramientas() {
-		if h.SoloBuild() {
-			escritura++
-			if h.Permiso != PermisoWrite && h.Permiso != PermisoEdit {
-				t.Errorf("%s: SoloBuild con permiso %s", h.Nombre, h.Permiso)
-			}
-			continue
+func TestEsquemaAnidaElTipoDelElemento(t *testing.T) {
+	h := Herramienta{TipoPeticion: reflect.TypeOf(PeticionEditarArchivo{})}
+	items := h.Esquema().Propiedades["reemplazos"].Items
+	if items == nil || items.Tipo != "object" {
+		t.Fatalf("reemplazos debería ser un arreglo de objetos: %+v", items)
+	}
+	for _, campo := range []string{"buscar", "reemplazo"} {
+		if _, ok := items.Propiedades[campo]; !ok {
+			t.Fatalf("el objeto anidado debería exponer `%s`", campo)
 		}
-		otros++
+	}
+	if len(items.Requeridos) != 2 {
+		t.Fatalf("buscar y reemplazo deberían ser obligatorios: %v", items.Requeridos)
+	}
+}
+
+func TestEsquemaGenericoParaHerramientaDelUsuario(t *testing.T) {
+	h := Herramienta{Nombre: "contar_lineas"}
+	e := h.Esquema()
+	if e.Tipo != "object" || len(e.Propiedades) != 0 {
+		t.Fatalf("el esquema del usuario es un objeto genérico: %+v", e)
+	}
+}
+
+func TestCatalogoTieneLasDieciseis(t *testing.T) {
+	catalogo := Catalogo()
+	if len(catalogo) != 16 {
+		t.Fatalf("el catálogo incluido debería tener 16 herramientas: %d", len(catalogo))
+	}
+	if !NombresIncluidos()["ejecutar_flujo"] {
+		t.Fatal("ejecutar_flujo debería estar en el catálogo")
+	}
+	if _, ok := NuevoRegistro(catalogo).Buscar("editar_archivo"); !ok {
+		t.Fatal("editar_archivo debería estar")
+	}
+}
+
+func TestRepartirDejaPlanSoloLectura(t *testing.T) {
+	catalogo := Catalogo()
+	plan := Repartir([]string{"read"}, catalogo)
+	for _, h := range plan {
 		if h.Permiso == PermisoWrite || h.Permiso == PermisoEdit {
-			t.Errorf("%s: herramienta de escritura que no es SoloBuild", h.Nombre)
+			t.Fatalf("plan no debería recibir herramientas de escritura: %+v", h)
 		}
 	}
-	if escritura != 6 {
-		t.Errorf("herramientas de escritura = %d, quiero 6 (crear, escribir, editar, eliminar archivo, crear y eliminar carpeta)", escritura)
-	}
-	if otros != 9 {
-		t.Errorf("herramientas no exclusivas de build = %d, quiero 9 (4 de archivo, 1 de terminal, 2 de internet y las dos de la lista de pasos)", otros)
+	if len(Repartir([]string{"read", "write", "edit"}, catalogo)) != len(catalogo)-1 {
+		t.Fatal("build debería recibir todo menos la de permiso derivado")
 	}
 }
 
-// TestCategoriasRepartenLasHerramientas — la categoría decide el destino del
-// enrutado (TOOLS.md §7): 10 de archivo, 1 de terminal, 2 de internet y 1 de
-// sesión.
-func TestCategoriasRepartenLasHerramientas(t *testing.T) {
-	casos := []struct {
-		cat  Categoria
-		want int
-	}{
-		{CatArchivos, 10},
-		{CatTerminal, 1},
-		{CatInternet, 2},
-		{CatTareas, 2},
+func TestElPermisoSeCompruebaAntesDeValidar(t *testing.T) {
+	r := NuevoRegistro([]Herramienta{{
+		Nombre: "crear_archivo", Permiso: PermisoWrite, TipoPeticion: reflect.TypeOf(PeticionCrearArchivo{}),
+		Ejecutar: func(context.Context, any, Contexto) (Resultado, error) { return Resultado{}, nil },
+	}})
+	// Sin permiso y con argumentos inválidos, gana la falta de permiso.
+	res := r.Ejecutar(context.Background(), Peticion{Nombre: "crear_archivo", Permisos: []string{"read"}})
+	if !strings.HasPrefix(res.Error, CodToolNotAllowed) {
+		t.Fatalf("debería denegarse por permiso antes que por validación: %q", res.Error)
 	}
-	for _, c := range casos {
-		if got := len(NombresDeCategoria(c.cat)); got != c.want {
-			t.Errorf("%s: %d herramientas, quiero %d", c.cat, got, c.want)
+}
+
+func TestUnCampoAusenteEsCorregible(t *testing.T) {
+	var ejecutado bool
+	r := NuevoRegistro([]Herramienta{{
+		Nombre: "leer_archivo", Permiso: PermisoRead, TipoPeticion: reflect.TypeOf(PeticionLeerArchivo{}),
+		Ejecutar: func(context.Context, any, Contexto) (Resultado, error) { ejecutado = true; return Resultado{}, nil },
+	}})
+	res := r.Ejecutar(context.Background(), Peticion{Nombre: "leer_archivo", Permisos: []string{"read"}, Argumentos: []byte(`{}`)})
+	if !strings.HasPrefix(res.Error, CodBadArgs) || !strings.Contains(res.Error, "ruta") {
+		t.Fatalf("debería faltar `ruta`: %q", res.Error)
+	}
+	if ejecutado {
+		t.Fatal("no debería ejecutarse el handler")
+	}
+}
+
+func TestElRecorteRespetaElDelHandler(t *testing.T) {
+	grande := strings.Repeat("x", TopeSalidaBytes+100)
+	r := NuevoRegistro([]Herramienta{{
+		Nombre: "ejecutar_comando", Permiso: PermisoRead, Unidad: UnidadLinea,
+		TipoPeticion: reflect.TypeOf(PeticionEjecutarComando{}), Verbo: "EJEC",
+		Ejecutar: func(context.Context, any, Contexto) (Resultado, error) {
+			return Resultado{Salida: grande}, nil
+		},
+	}})
+	res := r.Ejecutar(context.Background(), Peticion{Nombre: "ejecutar_comando", Permisos: []string{"read"}, Argumentos: []byte(`{"comando":"x"}`)})
+	if !res.Truncado {
+		t.Fatal("una salida enorme debería recortarse")
+	}
+
+	r2 := NuevoRegistro([]Herramienta{{
+		Nombre: "ejecutar_comando", Permiso: PermisoRead,
+		TipoPeticion: reflect.TypeOf(PeticionEjecutarComando{}),
+		Ejecutar: func(context.Context, any, Contexto) (Resultado, error) {
+			return Resultado{Salida: grande, Truncado: true}, nil
+		},
+	}})
+	res2 := r2.Ejecutar(context.Background(), Peticion{Nombre: "ejecutar_comando", Permisos: []string{"read"}, Argumentos: []byte(`{"comando":"x"}`)})
+	if len(res2.Salida) != len(grande) {
+		t.Fatal("una salida ya recortada por el handler no debería volver a cortarse")
+	}
+}
+
+func TestTemaVisibleYFinal(t *testing.T) {
+	h := Herramienta{Tema: "ruta"}
+	args := PeticionLeerArchivo{Ruta: "main.go"}
+	if tema := TemaVisible(h, args); tema != "main.go" {
+		t.Fatalf("tema = %q", tema)
+	}
+	if tema := TemaFinal(h, "main.go", map[string]any{"rango": "1-70"}); tema != "main.go:1-70" {
+		t.Fatalf("tema parcial = %q", tema)
+	}
+}
+
+func TestMedirCuentaUnidades(t *testing.T) {
+	if m := Medir(UnidadLinea, "a\nb\n\nc\n"); m != "3 líneas" {
+		t.Fatalf("medida = %q", m)
+	}
+	if m := Medir(UnidadCoincidencia, "solo"); m != "1 coincidencia" {
+		t.Fatalf("medida = %q", m)
+	}
+}
+
+func TestEventosDeHerramienta(t *testing.T) {
+	var invocada EventoInvocacion
+	var resultado EventoResultado
+	r := NuevoRegistro([]Herramienta{{
+		Nombre: "leer_archivo", Permiso: PermisoRead, Verbo: "LEER", Tema: "ruta", Unidad: UnidadLinea,
+		TipoPeticion: reflect.TypeOf(PeticionLeerArchivo{}),
+		Ejecutar: func(_ context.Context, _ any, _ Contexto) (Resultado, error) {
+			return Resultado{Salida: "hola\n"}, nil
+		},
+	}})
+	r.Eventos = Eventos{
+		Invocada:  func(e EventoInvocacion) { invocada = e },
+		Resultado: func(e EventoResultado) { resultado = e },
+	}
+	r.Ejecutar(context.Background(), Peticion{Sesion: "s1", Agente: "plan", Nombre: "leer_archivo", Permisos: []string{"read"}, Argumentos: []byte(`{"ruta":"a.go"}`)})
+	if invocada.Verbo != "LEER" || invocada.Tema != "a.go" {
+		t.Fatalf("invocación = %+v", invocada)
+	}
+	if !resultado.OK || resultado.Medida != "1 línea" {
+		t.Fatalf("resultado = %+v", resultado)
+	}
+}
+
+func TestDefinicionesEntregaElEsquema(t *testing.T) {
+	r := NuevoRegistro(Catalogo())
+	defs := r.Definiciones()
+	if len(defs) != 16 {
+		t.Fatalf("definiciones = %d", len(defs))
+	}
+	var leer Definicion
+	for _, d := range defs {
+		if d.Nombre == "leer_archivo" {
+			leer = d
 		}
 	}
-}
-
-// TestHerramientasDevuelveCopia — quien recibe el catálogo no puede alterarlo
-// y cambiar los permisos de todo el proceso.
-func TestHerramientasDevuelveCopia(t *testing.T) {
-	h := Herramientas()
-	h[0].Nombre = "inventada"
-	h[0].Modo = Escribe
-	if Existe("inventada") {
-		t.Error("el catálogo no puede alterarse desde fuera")
+	var esquema map[string]any
+	if err := json.Unmarshal(leer.Esquema, &esquema); err != nil {
+		t.Fatalf("el esquema debería ser JSON: %v", err)
 	}
-	if Existe("leer_archivo") == false {
-		t.Error("alterar la copia no puede borrar entradas reales")
-	}
-}
-
-// TestCadaHerramientaDeclaraSuPermiso — el reparto sale de un dato declarado
-// del catálogo (`Herramienta.Permiso`), no de un `switch` que lo deduzca.
-func TestCadaHerramientaDeclaraSuPermiso(t *testing.T) {
-	casos := []struct {
-		nombre  string
-		permiso Permiso
-	}{
-		{"leer_archivo", PermisoRead},
-		{"buscar_en_archivos", PermisoRead},
-		{"ejecutar_comando", PermisoRead},
-		{"buscar_en_internet", PermisoRead},
-		{"abrir_pagina", PermisoRead},
-		{"actualizar_todo", PermisoRead},
-		{"crear_archivo", PermisoWrite},
-		{"escribir_archivo", PermisoWrite},
-		{"eliminar_archivo", PermisoWrite},
-		{"crear_carpeta", PermisoWrite},
-		{"eliminar_carpeta", PermisoWrite},
-		{"editar_archivo", PermisoEdit},
-	}
-	for _, c := range casos {
-		got, ok := PermisoDe(c.nombre)
-		if !ok {
-			t.Errorf("%s no está en el catálogo", c.nombre)
-			continue
-		}
-		if got != c.permiso {
-			t.Errorf("%s: permiso = %s, quiero %s", c.nombre, got, c.permiso)
-		}
-	}
-}
-
-// TestNombresDePermisoReparteLasHerramientas — los tres permisos cubren las
-// quince herramientas sin solaparse: la partición que sostiene el catálogo
-// derivado.
-func TestNombresDePermisoReparteLasHerramientas(t *testing.T) {
-	var total int
-	for _, p := range []Permiso{PermisoRead, PermisoWrite, PermisoEdit} {
-		total += len(NombresDePermiso(p))
-	}
-	if total != len(NombresCatalogo()) {
-		t.Errorf("los permisos cubren %d herramientas, quiero %d", total, len(NombresCatalogo()))
-	}
-	if len(NombresDePermiso(PermisoWrite)) != 5 {
-		t.Errorf("`write` tiene %d herramientas, quiero 5", len(NombresDePermiso(PermisoWrite)))
-	}
-	if len(NombresDePermiso(PermisoRead)) != 9 {
-		t.Errorf("`read` tiene %d herramientas, quiero 9", len(NombresDePermiso(PermisoRead)))
-	}
-	if len(NombresDePermiso(PermisoEdit)) != 1 {
-		t.Errorf("`edit` tiene %d herramientas, quiero 1 (editar_archivo)", len(NombresDePermiso(PermisoEdit)))
-	}
-	if Permiso("inventada").Valida() {
-		t.Error("un permiso fuera de los tres no puede ser válido")
-	}
-}
-
-// TestNuevaHerramientaConectaElHandler — el registro se construye desde el
-// catálogo con su handler propio; un nombre fuera del catálogo no se conecta.
-func TestNuevaHerramientaConectaElHandler(t *testing.T) {
-	h, ok := NuevaHerramienta("leer_archivo", func(ctx context.Context, args any, c Contexto) (Resultado, error) {
-		return Resultado{Salida: "x"}, nil
-	})
-	if !ok || h.Ejecutar == nil {
-		t.Fatalf("NuevaHerramienta no conectó el handler: %+v", h)
-	}
-	if h.Categoria != CatArchivos || h.Modo != Lee {
-		t.Errorf("la entrada del catálogo se copia tal cual: %+v", h)
-	}
-	if _, ok := NuevaHerramienta("inventada", nil); ok {
-		t.Error("un nombre fuera del catálogo no se conecta")
-	}
-}
-
-// TestPermisosBase — los permisos de los agentes base salen de SPEC-TOOLS: plan
-// solo concede `read`; build concede los tres.
-func TestPermisosBase(t *testing.T) {
-	if PermisoWrite.Permitida(PermisosDePlan()) || PermisoEdit.Permitida(PermisosDePlan()) {
-		t.Error("plan no puede conceder `write` ni `edit`")
-	}
-	if !PermisoRead.Permitida(PermisosDePlan()) {
-		t.Error("plan sí concede `read`")
-	}
-	for _, p := range []Permiso{PermisoRead, PermisoWrite, PermisoEdit} {
-		if !p.Permitida(PermisosDeBuild()) {
-			t.Errorf("build debe conceder %s", p)
-		}
+	if leer.Permiso != PermisoRead {
+		t.Fatalf("permiso = %q", leer.Permiso)
 	}
 }

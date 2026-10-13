@@ -23,14 +23,24 @@ Qué se valida antes de que algo ocurra: rutas, argumentos de herramientas, peti
 
 ### Rutas (todas las herramientas de archivo)
 
-- **Relativas a la carpeta abierta.** Una ruta relativa cuelga del proyecto; una absoluta se respeta tal cual y, si no cuelga de él, cuenta como «fuera». Normalizar antes de validar evita que `../` salga de la carpeta por accidente.
+- **Resolución (compartida con `listar_carpeta`).** Una ruta relativa se resuelve desde el directorio de trabajo del harness; `..` permite subir de directorio y una ruta absoluta se usa tal cual. No se expande `~` ni `$HOME` —una ruta que empieza por ellos se rechaza con `E_BAD_ARGS` y un recordatorio de usar la forma relativa— y no se busca en otras ubicaciones si el archivo no existe.
+- **La respuesta devuelve `ruta` canónica:** relativa al directorio de trabajo si el archivo está dentro, absoluta si está fuera. El `desc` del parámetro instruye la forma corta. Así el modelo aprende a no pegar el path completo en cada resultado.
 - **Dentro de la carpeta:** accesible. Escribir sigue pidiendo aprobación.
 - **Fuera de la carpeta:** requiere permiso **y** la explicación del agente. Sin las dos, se rechaza (`E_PATH_OUTSIDE`).
 - **`crear_archivo` falla si el archivo ya existe.** No sobrescribe.
 - **`escribir_archivo` sobrescribe**, y como pisa algo, la aprobación es explícita sobre el contenido que va a quedar.
 - **Borrar** (`eliminar_archivo`, `eliminar_carpeta`) pide confirmación explícita, no solo aprobación genérica.
 - **`crear_carpeta` falla si ya existe.**
-- Se normaliza la ruta antes de validar, para que `../` o rutas equivalentes no esquiven la frontera de la carpeta. Ver [[backend/03-security/SECURITY]].
+- Se normaliza la ruta **después** de resolverla, para decidir si quedó dentro o fuera de la carpeta; la normalización no elude las restricciones de acceso. Ver [[backend/03-security/SECURITY]].
+
+### Lectura de archivo (`leer_archivo`)
+
+- `ruta` es obligatoria; `inicio_linea` y `fin_linea` son opcionales. Si se dan, son enteros ≥ 1 y `inicio_linea` no puede superar a `fin_linea`; un valor que no cumple vuelve al modelo como `E_BAD_ARGS` corregible.
+- El rango se aplica **sobre el archivo original**, nunca sobre un fragmento ya truncado.
+- Se valida que la ruta sea un archivo regular y legible como texto antes de leer.
+- **Límites fijos, en bytes:** 64 KiB para devolver el archivo completo y 32 KiB como máximo por respuesta. No son configurables en esta versión.
+- Superar el límite **no es un error**: se devuelve lo que cabe, con `truncado` y `siguiente_linea`. Una línea individual demasiado grande se devuelve recortada y señalada.
+- La respuesta indica `linea_inicio` y `linea_fin` realmente devueltas y `total_lineas` cuando puede determinarse.
 
 ### Comandos de terminal
 
@@ -49,14 +59,6 @@ Qué se valida antes de que algo ocurra: rutas, argumentos de herramientas, peti
 - El modelo pide una herramienta por su nombre, y el nombre tiene que estar en el catálogo. Una herramienta inventada se rechaza.
 - Los argumentos se validan contra el esquema de la herramienta antes de aplicarse. Una herramienta con argumentos que no encajan no se ejecuta.
 - **El orden es: permiso, y solo después validación.** Si el agente no tiene la herramienta, no tiene sentido intentar entender sus argumentos: la respuesta es que no la tiene, no qué le falta. Ver [[backend/03-security/SECURITY]].
-
-### Herramientas del usuario
-
-- Un `.json` de `.localcli/tools/` se valida al cargar: `nombre`, `descripcion` y `equipo` obligatorios; `equipo` no vacío.
-- `"modo": "escribe"` se rechaza al arrancar, con el motivo. No es un aviso: la herramienta no entra en el catálogo.
-- Un `nombre` que choca con una herramienta incluida se rechaza, con el motivo.
-- Un JSON inválido se ignora y se avisa. El arranque continúa y el resto de herramientas se carga.
-- **Los argumentos de una herramienta del usuario no se pueden validar contra un esquema propio**, porque el harness no conoce el ejecutable. Solo se comprueba que lo que llega es un objeto. Un nombre de argumento equivocado se descubre al ejecutar, no antes. Ver [[backend/02-interfaces/dto/TOOLS-DTO]].
 
 ### Contexto
 
@@ -93,7 +95,7 @@ El mensaje que vuelve al modelo tiene dos requisitos: **nombrar qué falta** y *
 
 | Entrada | Obligatorio | Opcional |
 |---|---|---|
-| Herramientas de lectura de archivo | Ruta (relativa al proyecto) | — |
+| Herramientas de lectura de archivo | Ruta | `inicio_linea` y `fin_linea` (rango), `motivo` (fuera de la carpeta) |
 | `crear_archivo` / `escribir_archivo` | Ruta y contenido | — |
 | `editar_archivo` | Ruta y el cambio a aplicar | — |
 | `eliminar_archivo` / `eliminar_carpeta` | Ruta, más confirmación explícita | — |
@@ -101,14 +103,13 @@ El mensaje que vuelve al modelo tiene dos requisitos: **nombrar qué falta** y *
 | `ejecutar_comando` | Comando | Carpeta de trabajo (por defecto, la del proyecto) |
 | `buscar_en_internet` | Consulta | — |
 | `abrir_pagina` | Dirección | — |
-| Herramienta del usuario | `nombre`, `descripcion`, `equipo` | `modo` (por defecto, `lee`); `timeout_segundos` |
 | Objetivo de una etapa | Objetivo | — |
 
 Una herramienta sin su campo obligatorio no se ejecuta; se rechaza con un error claro, que es un caso normal y no una avería. Ver [[backend/05-quality/ERRORS]].
 
 ## 4. Transformaciones
 
-- **Rutas:** se normalizan antes de validar la frontera, para que las formas equivalentes de llegar al mismo archivo se traten igual.
+- **Rutas:** se resuelven primero (las relativas desde el directorio de trabajo del harness; `..` y las absolutas se aceptan) y se normalizan después, para decidir si quedan dentro o fuera de la carpeta. La normalización no elude la frontera.
 - **Salida de herramienta:** se recorta al presupuesto de contexto, medido en tokens, y se marca que fue cortada. **Aplica a toda herramienta**, no solo a la terminal: una lectura enorme o el contenido de una página desbordan igual que un comando sin fin. Si el handler ya recortó por su cuenta, la capa universal respeta esa marca y no vuelve a recortar.
 - **Salida de comando:** tiene además su propio límite, más estricto, porque un comando es la fuente más fácil de descontrolar. Ver [[backend/DECISIONS]].
 - **Contenido de internet:** se recorta al presupuesto de contexto, igual que el resto, y se audita.
@@ -122,7 +123,6 @@ Una herramienta sin su campo obligatorio no se ejecuta; se rechaza con un error 
 - **Una herramienta de escritura la pide `build`.** Si la pide `plan`, se rechaza, y no por suerte: `plan` no la tiene. Ver [[backend/03-security/SECURITY]].
 - **El modelo no puede concederse permisos.** La validación la hacen los módulos, no el modelo.
 - **La terminal no valida el comando para decidir si es seguro.** Esa validación no existe a propósito; la seguridad la da Landlock.
-- **Las herramientas del usuario se validan al cargar, no al ejecutar.** Un JSON inválido no produce un fallo en mitad de un turno: no llega a estar en el catálogo.
 - **Una conexión de base de datos siempre tiene `foreign_keys` activado**, o el borrado en cascada no se sostiene. Ver [[backend/DECISIONS]].
 
 ## Referencias

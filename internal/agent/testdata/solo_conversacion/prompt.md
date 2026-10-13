@@ -1,1 +1,0 @@
-Conversa sin tocar nada.

@@ -36,11 +36,13 @@ No hay webhooks ni cola de mensajes externa. Los "eventos" aquí son notificacio
 | `flujo_pausado` | `flow` | El flujo espera una aprobación |
 | `flujo_reanudado` | `flow` | El flujo continúa desde donde estaba |
 | `flujo_cancelado` | `flow` | El usuario canceló el flujo |
+| `propuesta_todo` | `flow` | Una petición con lista ordenada de trabajo propone un TODO; el usuario decide si arrancarlo |
 | `cola_actualizada` | `queue` | La cola cambió: se re-derivó, una tarea empezó, terminó o se bloqueó |
 | `elemento_bloqueado` | `queue` | Un elemento del TODO no puede arrancar por falta de lo que depende |
 | `todo_actualizada` | adaptador de arranque | La lista de pasos de la sesión cambió, la haya reescrito `actualizar_todo` o la haya ampliado `crear_todo`; el panel la repinta |
 | `cambio_aplicado` | `fileops` | Un cambio se aplicó y quedó registrado en `change_history` |
 | `contexto_auditado` | `context` | Una etapa terminó de armar su contexto; se registró la auditoría |
+| `capacidades_modelo` | `session` | El motor resolvió las capacidades del modelo activo tras un cambio de modelo; la vista actualiza el chip de visión |
 
 Los estados de sesión y sus transiciones están en [[database/01-schema/ENUMS]].
 
@@ -50,7 +52,7 @@ Con el contrato en prosa, la llamada a una herramienta viajaba dentro del texto 
 
 Sin un evento, el efecto sería que mientras el agente lee un archivo o corre las pruebas la pantalla se queda quieta, y de repente aparece una respuesta como si nada. En el caso peor —una escritura esperando tu aprobación— el silencio es justo lo que más confunde.
 
-Por eso los emite `tools` y no `agent`: la capa universal ya está en ese punto para todas las herramientas, incluidas las del usuario, y es el único sitio donde se puede emitir **antes** de ejecutar y **después**, sin instrumentar quince handlers.
+Por eso los emite `tools` y no `agent`: la capa universal ya está en ese punto para todas las herramientas, y es el único sitio donde se puede emitir **antes** de ejecutar y **después**, sin instrumentar quince handlers.
 
 ## 2. Productores y consumidores
 
@@ -67,10 +69,12 @@ Por eso los emite `tools` y no `agent`: la capa universal ya está en ese punto 
 | `tokens_turno` | `tui` | Alimenta la fila de contexto del panel y la línea de tokens bajo la entrada |
 | `etapa_iniciada` / `terminada` / `fallida` | `tui` | `etapa_iniciada` pinta la línea `[Sub Proceso] <nombre>`; `queue` marca la tarea al terminar |
 | `flujo_pausado` / `reanudado` / `cancelado` | `tui` | `session` refleja el estado |
+| `propuesta_todo` | `tui` | Ofrece confirmar el TODO propuesto; el arranque de la cola es otra cosa (`/ejecutar` o la confirmación) |
 | `cola_actualizada` / `elemento_bloqueado` | `tui` | Visible desde cualquier sesión |
 | `todo_actualizada` | `tui` | Repinta la lista de pasos del panel; es de la sesión activa, la de otra no entra |
 | `cambio_aplicado` | `tui` | `store` ya lo tiene en `change_history` |
 | `contexto_auditado` | `tui` | El usuario lo consulta |
+| `capacidades_modelo` | `tui` | Actualiza el chip de visión del pie de la caja tras reiniciar el servidor con otro modelo |
 
 `tui` recibe estos eventos por el bus. No importa `tools`: la prohibición de imports entre módulos ([[backend/01-domain/DOMAIN]]) lo impide, y además no lo necesita —pinta lo que le llega.
 
@@ -88,13 +92,17 @@ Los payloads llevan lo mínimo para que el consumidor pueda pintar o decidir. No
 - **`etapa_iniciada`:** el identificador de la etapa y su **nombre visible**. La vista lo pinta como `[Sub Proceso] <nombre>`; el texto del paso no viaja —los pasos intermedios de un flujo corren en silencio—. La última etapa de un flujo con `bloque_contexto` es la composición: corre sin herramientas y su entrega es la que se muestra. Ver [[specs/SPEC-ORQUESTADOR-FLUJOS]].
 - **`etapa_terminada`:** el identificador de la etapa, su nombre y un resumen de su resultado. Lo que recibió la etapa y qué entregó está en `context_audit`.
 - **`cambio_aplicado`:** el identificador del cambio y la ruta del archivo. El antes y el después están en `change_history`.
+- **`propuesta_todo`:** el identificador de la sesión, la petición que la disparó y la lista propuesta de pasos en orden. **No es la lista de pasos de la sesión** —esa es `todo_actualizada`, y la escribe el modelo con `crear_todo`—: esto es una propuesta que no existe como lista hasta que el usuario confirma o escribe `/ejecutar`. Ver [[backend/01-domain/BUSINESS_RULES]] §Detección de trabajo ordenado.
 - **`cola_actualizada`:** la capa y un resumen de la cola (cuántas pendientes, cuál activa, cuál bloqueada). El detalle viene de los archivos de tarea.
-- **`todo_actualizada`:** el identificador de la sesión y la lista completa de pasos, cada uno con su contenido y su estado. No lleva la prioridad: el panel no la muestra. El payload es siempre la lista entera, también cuando lo que ha cambiado es un paso añadido, porque el panel no distingue y no necesita: aplica la lista que le llega. El panel solo la aplica si la sesión es la activa.
-- **`herramienta_invocada`:** el nombre de la herramienta, el agente que la pidió, su **verbo** de pantalla («LEER», «EJEC») y su **tema**: el objetivo declarado por el catálogo (la ruta, el patrón, el comando, la consulta), colapsado y recortado. El tema es lo único de los argumentos que viaja —y solo ese campo—: el resto (cuerpos de archivo, credenciales) no se expone, porque esto va a la pantalla y a la auditoría.
+- **`todo_actualizada`:** el identificador de la sesión y la lista completa de pasos, cada uno con su contenido, su estado y su `padre` (la posición de la tarea principal de la que cuelga, o `NULL` si es un paso suelto). No lleva la prioridad: el panel no la muestra. El payload es siempre la lista entera, también cuando lo que ha cambiado es un paso o una tarea añadida, porque el panel no distingue y no necesita: aplica la lista que le llega. El panel solo la aplica si la sesión es la activa.
+- **`herramienta_invocada`:** el nombre de la herramienta, el agente que la pidió, su **verbo** de pantalla («LEER», «EJEC») y su **tema**: el objetivo declarado por el catálogo (la ruta, el patrón, el comando, la consulta), colapsado y recortado. En `leer_archivo` el tema es la ruta cuando se leyó el archivo entero y `ruta:inicio-fin` cuando la lectura fue parcial; el tema usa siempre la forma canónica de la ruta (relativa si el archivo está dentro del directorio de trabajo, de modo que el path absoluto del proyecto nunca sale a pantalla). Como el rango real solo se conoce al terminar —el límite puede truncar una lectura completa—, la capa universal lo completa al llegar `herramienta_resultado` y esa es la línea que se persiste en `chat_evento`. El tema es lo único de los argumentos que viaja —y solo ese campo—: el resto (cuerpos de archivo, credenciales) no se expone, porque esto va a la pantalla y a la auditoría. En `ejecutar_flujo` el tema es `flujo · <peticion recortada>`: esa línea solo existe cuando el flujo lo lanza el agente, y es lo que distingue en el hilo una ejecución por comando —que no tiene línea de herramienta previa— de una por herramienta, sin necesidad de un evento de origen aparte.
 - **`herramienta_resultado`:** el nombre de la herramienta, si terminó bien, si hubo error, la **medida** del resultado («70 líneas», «3 coincidencias»), si la salida se recortó y la **duración** de la ejecución. **No lleva la salida.** El resultado va al modelo, no a la pantalla: en la TUI bastan el nombre, el estado, la medida y el tiempo que tardó. La duración es el dato que permite pintar cuánto tardó cada línea del hilo y conservarlo al recuperar la sesión; lo mide la capa universal, no la herramienta.
-- **`tokens_turno`:** los tokens de entrada y de salida del turno, más el total del contexto del chat (`contexto`) y su límite (`limite`). Mientras el turno corre, la TUI aproxima el consumo del turno contando los fragmentos de `token`; al llegar este evento, el valor exacto lo corrige. `contexto` es la estimación del chat que forma el contexto de la sesión (mensajes de usuario y agente; las líneas de procesamiento no cuentan) y `limite`, la ventana del modelo: juntos alimentan la fila CONTEXTO del panel. Cuando el motor no declara su ventana, `limite` lleva el tope del harness, que es lo que de verdad se respetó en el recorte, y `limite_harness` lo dice (`"true"`/`"false"`) para que el panel lo marque como tal en vez de hacerlo pasar por la ventana del modelo. Ver [[specs/SPEC-PANEL-CONTEXTO]] y [[specs/SPEC-MODELO-MOTOR]].
+- **`tokens_turno`:** los tokens de entrada y de salida del turno, más el total del contexto del chat (`contexto`) y su límite (`limite`). Mientras el turno corre, la TUI aproxima el consumo del turno contando los fragmentos de `token`; al llegar este evento, el valor exacto lo corrige. `contexto` es la estimación del chat que forma el contexto de la sesión (mensajes de usuario y agente; las líneas de procesamiento no cuentan) y `limite`, la ventana del modelo: juntos alimentan la fila CONTEXTO del panel. Cuando el motor no declara su ventana, `limite` lleva el tope del harness, que es lo que de verdad se respetó en el recorte, y `limite_harness` lo dice (`"true"`/`"false"`) para que el panel lo marque como tal en vez de hacerlo pasar por la ventana del modelo. Ver [[specs/SPEC-PANEL-CONTEXTO]] y [[specs/SPEC-MODELOS-LLAMACPP]].
+- **`capacidades_modelo`:** el estado de visión del modelo activo (`"soportada"`, `"no_soportada"` o `"desconocida"`), sin sesión: es un dato del motor, no de una conversación. Se emite una sola vez al terminar el reinicio del servidor con otro modelo. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
 
-**Los eventos no llevan capacidades del modelo, y esa ausencia es deliberada.** Las capacidades son una consulta al puerto, no un aviso: se piden cuando se necesita —al montar las herramientas de un agente, al ofrecer visión, al decidir el `think`— y llegan con su estado de tres valores. Convertirlas en evento obligaría a emitirlas y mantenerlas al día para algo que se consulta pocas veces y casi siempre dentro del mismo turno. Lo que sí viaja en evento es el trabajo ya hecho: tokens, pasos, herramientas y estados.
+**Las capacidades del modelo son una consulta al puerto, no un aviso.** Se piden cuando se necesita —al montar las herramientas de un agente, al ofrecer visión, al decidir el `think`— y llegan con su estado de tres valores; por eso no viajan como evento para mantenerlas al día, que sería emitirlas continuamente para algo que se consulta pocas veces.
+
+La única excepción es `capacidades_modelo`, con un motivo acotado: al cambiar de modelo, el harness reinicia `llama-server` en segundo plano, y hasta que ese reinicio termina no hay a quién preguntar —el servidor aún sirve el modelo anterior—. Emitir el resultado **una sola vez**, al cerrar el reinicio, evita que el chip de visión siga mostrando el dato del modelo que se dejó. No es un canal continuo de capacidades: es el cierre de una operación que el usuario pidió, y su payload es un solo estado. Lo que sí viaja en evento, además, es el trabajo ya hecho: tokens, pasos, herramientas y estados.
 
 Los dos los emite `tools` en la capa universal, y solo cuando hay un consumidor. En producción, la TUI; si no hay nadie escuchando, no se construyen los payloads. Los hooks de `tools` los aprovechan sin ser consumidores del bus.
 

@@ -1,327 +1,283 @@
 package tui
 
-// Tests de T-F008: el panel global de aprobaciones. Una prueba, una regla
-// (frontend/05-quality/TESTING.md §3). La resolución por líneas y el aviso de
-// pendientes ya tenían pruebas de T-B014; aquí van las reglas nuevas de esta
-// tarea: el panel se abre con Ctrl+A, se cierra sin parar nada, se resuelve
-// con a/d línea a línea y las obsoletas no se mandan.
-//
-//	T-F008-02 → abrir y cerrar no emite ningún control de sesión
-//	T-F008-03 → dos sesiones: dos líneas independientes
-//	T-F008-04 → formato de línea documentado, con la opción por definir
-//	T-F008-05 → a/d resuelven solo la línea seleccionada
-//	T-F008-06 → resuelta sale; sesión terminada → obsoleta, no se manda
-
 import (
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"localcli/internal/session"
+	"localcli/internal/tui/render"
 )
 
-func nuevoConPanelDeAprobaciones(t *testing.T) (*App, *puertoStub) {
-	t.Helper()
-	a := Nuevo(&puertoStub{})
-	a.Vista = VistaPrincipal
-	a.Panel.SesionID = "s1"
-	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
-	return a, a.Puerto.(*puertoStub)
-}
+// --- T-F007-01: el modelo del panel ------------------------------------------
 
-// --- T-F008-02 / T-F028-01: mostrar y enfocar no toca nada ----------------------
+// El modelo guarda cada pendiente con su sesión y su acción, y cuál está
+// resaltado: la primera línea, mientras no se mueva el resaltado.
+func TestElModeloGuardaCadaPendienteConSuSesionYAccion(t *testing.T) {
+	ap := NuevaAprobaciones()
+	ap.Anotar(Aprobacion{ID: "a1", Sesion: "s1", Accion: "crear archivo"})
+	ap.Anotar(Aprobacion{ID: "a2", Sesion: "s2", Accion: "borrar carpeta"})
 
-// Una aprobación pendiente se MUESTRA (para que la decisión se vea) pero no le
-// quita el teclado al input; el foco se pide con Ctrl+A y se suelta igual. Ni
-// mostrarlo ni enfocarlo emite ningún control de sesión.
-func TestMostrarYEnfocarElPanelDeAprobacionesNoDetieneNada(t *testing.T) {
-	a, p := nuevoConPanelDeAprobaciones(t)
-	a.Aprobs.Fijar([]Aprobacion{{ID: "a1", Sesion: "s1", Descripcion: "crear archivo"}})
-	if !a.Aprobs.Abierto {
-		t.Fatal("una aprobación pendiente debe verse")
+	if len(ap.Items) != 2 {
+		t.Fatalf("dos pendientes, dos líneas: %+v", ap.Items)
 	}
-	if a.Aprobs.Enfocado {
-		t.Fatal("una aprobación pendiente no debe enfocar el teclado")
+	if ap.Items[0].Sesion != "s1" || ap.Items[0].Accion != "crear archivo" {
+		t.Fatalf("la primera línea no guarda su sesión y su acción: %+v", ap.Items[0])
 	}
-
-	tecla(t, a, tea.KeyCtrlA)
-	if !a.Aprobs.Enfocado {
-		t.Fatal("ctrl+a enfoca el panel para decidir con a/d")
+	if !ap.Abierto {
+		t.Fatal("con pendientes el panel se muestra")
 	}
-	tecla(t, a, tea.KeyCtrlA)
-	if a.Aprobs.Enfocado {
-		t.Fatal("ctrl+a vuelve a soltar el foco")
-	}
-	if len(p.cancelado) != 0 || len(p.pausadas) != 0 || len(p.resueltas) != 0 {
-		t.Errorf("mostrar y enfocar no emite ningún control: %v, %v, %v", p.cancelado, p.pausadas, p.resueltas)
+	if ap.Indice != 0 {
+		t.Fatalf("el resaltado arranca en la primera línea: %d", ap.Indice)
 	}
 }
 
-// --- T-F008-03: líneas independientes por sesión ---------------------------------
+// --- T-F007-02: el formato de una línea --------------------------------------
 
-func TestDosSesionesEsperanComoDosLíneasIndependientes(t *testing.T) {
-	a, _ := nuevoConPanelDeAprobaciones(t)
+// anchoFolgado es un ancho de sobra: las pruebas de formato y clic comprueban el
+// texto completo, sin el ajuste a una terminal estrecha.
+const anchoFolgado = 200
 
-	pulsa(t, a, eventoMsg{Evento: Evento{
-		Nombre: EventoPeticionAprobacion,
-		Datos:  map[string]string{"aprobacion": "a1", "sesion": "s1", "descripcion": "crear archivo"},
-	}})
-	pulsa(t, a, eventoMsg{Evento: Evento{
-		Nombre: EventoPeticionAprobacion,
-		Datos:  map[string]string{"aprobacion": "a2", "sesion": "s2", "descripcion": "borrar carpeta"},
-	}})
-	if len(a.Aprobs.Items) != 2 {
-		t.Fatalf("dos sesiones, dos líneas: %+v", a.Aprobs.Items)
-	}
-	if a.Aprobs.Items[0].Sesion == a.Aprobs.Items[1].Sesion {
-		t.Error("las líneas son de sesiones distintas, independientes")
-	}
-}
+// La línea es `sesión | acción propuesta | aprobar | declinar`, sin reservar
+// hueco para la tercera opción que aún está por definir.
+func TestElFormatoDeLineaEsElDocumentado(t *testing.T) {
+	ap := Aprobaciones{Abierto: true, Items: []Aprobacion{{ID: "a1", Sesion: "api", Accion: "crear archivo"}}}
 
-// --- T-F008-04: el formato documentado -------------------------------------------
-
-func TestElFormatoDeLíneaEsElDocumentado(t *testing.T) {
-	a, _ := nuevoConPanelDeAprobaciones(t)
-	a.Aprobs.Fijar([]Aprobacion{{ID: "a1", Sesion: "api", Descripcion: "crear archivo"}})
-
-	lineas := a.Aprobs.Lineas()
+	lineas := ap.Lineas(anchoFolgado)
 	if len(lineas) != 1 {
 		t.Fatalf("una línea: %v", lineas)
 	}
-	// SPEC-INTERFAZ-ATAJOS: `sesión | acción propuesta | aprobar | declinar`.
-	// La tercera opción sigue por definir y no se reserva un hueco vacío. La
-	// seleccionada lleva además su marca de cursor.
 	quiere := "› api | crear archivo | aprobar | declinar"
 	if lineas[0] != quiere {
 		t.Errorf("línea = %q, quiero %q", lineas[0], quiere)
 	}
 }
 
-// La línea va en corto: la sesión es su identificador abreviado y la carpeta del
-// usuario se abrevia a `~`, para que quepa de un vistazo.
-func TestLaLineaDeAprobacionVaEnCorto(t *testing.T) {
+// La línea va en corto: la sesión por su identificador abreviado y la carpeta del
+// usuario abreviada a `~`, para que quepa de un vistazo.
+func TestLaLineaAbreviaLaSesionYLaCasa(t *testing.T) {
 	largo := "24afd397-ccdd-45df-a8df-90bf3ad0974a"
-	fila := FilaDe(Aprobacion{ID: "a1", Sesion: largo, Descripcion: "leer el archivo /home/x/foto.png"})
-	if strings.Contains(fila, largo) {
-		t.Errorf("el identificador de sesión va abreviado: %q", fila)
+	fila := filaAprobacion(Aprobacion{ID: "a1", Sesion: largo, Accion: "crear archivo"}, "", "", anchoFolgado)
+	if fila != "24afd397 | crear archivo | aprobar | declinar" {
+		t.Fatalf("la sesión va abreviada a ocho: %q", fila)
 	}
-	if !strings.HasPrefix(fila, "24afd397 | ") {
-		t.Errorf("la línea empieza por la sesión corta: %q", fila)
-	}
-	home := rutaDelUsuario()
-	if home != "" {
-		larga := FilaDe(Aprobacion{ID: "a1", Sesion: "s1", Descripcion: "leer el archivo " + home + "/foto.png"})
-		if !strings.Contains(larga, "~/foto.png") {
-			t.Errorf("la carpeta del usuario se abrevia a ~: %q", larga)
-		}
+
+	fila = filaAprobacion(Aprobacion{ID: "a1", Sesion: "s1", Accion: "leer /home/x/foto.png"}, "/home/x", "", anchoFolgado)
+	if !strings.Contains(fila, "leer ~/foto.png") {
+		t.Errorf("la carpeta del usuario se abrevia a ~: %q", fila)
 	}
 }
 
-// La explicación del agente (cuando la operación sale de la carpeta) se ve bajo
-// la línea, atenuada, para que la fila no se alargue.
-func TestLaExplicacionSeVeBajoLaLinea(t *testing.T) {
-	ap := Aprobaciones{}
-	ap.Fijar([]Aprobacion{{
-		ID:          "a1",
-		Sesion:      "s1",
-		Descripcion: "leer ~/foto.png (fuera)",
-		Motivo:      "la mencionó el usuario",
-	}})
-	v := sinEstilo(ap.Render())
-	if !strings.Contains(v, "por qué: la mencionó el usuario") {
-		t.Errorf("la explicación va debajo de la línea:\n%s", v)
+// --- T-F007-03: el render del panel ------------------------------------------
+
+// Con pendientes se pinta la lista; sin pendientes el panel desaparece sin dejar
+// hueco.
+func TestElPanelPintaLaListaYDesapareceSinPendientes(t *testing.T) {
+	var ap Aprobaciones
+	if v := ap.Render(anchoFolgado); v != "" {
+		t.Fatalf("sin pendientes el panel no se pinta: %q", v)
+	}
+
+	ap.Anotar(Aprobacion{ID: "a1", Sesion: "s1", Accion: "crear archivo"})
+	v := render.SinANSI(ap.Render(anchoFolgado))
+	if !strings.Contains(v, "s1 | crear archivo | aprobar | declinar") {
+		t.Fatalf("con pendientes se pinta la línea:\n%s", v)
+	}
+
+	ap.Retirar("a1")
+	if v := ap.Render(anchoFolgado); v != "" {
+		t.Fatalf("al resolverse la última, el panel desaparece: %q", v)
 	}
 }
 
-// Con una decisión esperando, el indicador lo dice: el turno no avanza hasta que
-// se resuelva, y «Pensando» haría creer que sigue trabajando.
-func TestElIndicadorDiceQueEsperaTuPermiso(t *testing.T) {
-	a := Nuevo(&puertoStub{})
-	a.Vista = VistaPrincipal
-	a.Panel.SesionID = "s1"
-	pulsa(t, a, tea.WindowSizeMsg{Width: 80, Height: 24})
-	a.Chat.AñadirUsuario("describe esto") // el turno queda vivo
-	pulsa(t, a, eventoMsg{Evento: Evento{Nombre: EventoPeticionAprobacion, Datos: map[string]string{
-		"aprobacion": "a1", "sesion": "s1", "descripcion": "leer foto.png",
-	}}})
-	if v := sinEstilo(a.View()); !strings.Contains(v, "Esperando tu permiso") {
-		t.Errorf("con una aprobación pendiente el indicador lo dice:\n%s", v)
+// --- T-F007-04: alta y baja por evento ---------------------------------------
+
+// `peticion_aprobacion` añade la línea y `aprobacion_resuelta` la retira; el
+// contador del panel de datos sigue contando las de todas las sesiones.
+func TestLaPeticionAnadeYLaResolucionRetira(t *testing.T) {
+	app := appConSesion()
+
+	app.aplicarEvento(eventoDe("s2", EventoPeticionAprobacion, map[string]string{
+		"aprobacion": "a1", "descripcion": "crear archivo",
+	}))
+	app.aplicarEvento(eventoDe("s3", EventoPeticionAprobacion, map[string]string{
+		"aprobacion": "a2", "descripcion": "borrar carpeta",
+	}))
+	if len(app.aprobaciones.Items) != 2 || app.panel.Aprobaciones != 2 {
+		t.Fatalf("dos pendientes de dos sesiones: %+v (%d)", app.aprobaciones.Items, app.panel.Aprobaciones)
+	}
+
+	app.aplicarEvento(eventoDe("s2", EventoAprobacionResuelta, map[string]string{"aprobacion": "a1"}))
+	if len(app.aprobaciones.Items) != 1 || app.aprobaciones.Items[0].ID != "a2" {
+		t.Fatalf("solo sale la línea resuelta: %+v", app.aprobaciones.Items)
+	}
+	if app.panel.Aprobaciones != 1 {
+		t.Fatalf("el contador queda en una: %d", app.panel.Aprobaciones)
 	}
 }
 
-// --- T-F008-05: a/d resuelven solo su línea ---------------------------------------
+// La sesión que termina mientras esperaba deja su línea obsoleta: se sigue
+// viendo, pero ya no cuenta como pendiente.
+func TestLaSesionTerminadaMarcaSuLineaObsoleta(t *testing.T) {
+	app := appConSesion()
 
-func TestAprobarYDeclinarResuelvenSoloLaLíneaSeleccionada(t *testing.T) {
-	a, p := nuevoConPanelDeAprobaciones(t)
-	a.Aprobs.Fijar([]Aprobacion{
-		{ID: "a1", Sesion: "s1", Descripcion: "crear archivo"},
-		{ID: "a2", Sesion: "s2", Descripcion: "borrar carpeta"},
-	})
+	app.aplicarEvento(eventoDe("s2", EventoPeticionAprobacion, map[string]string{"aprobacion": "a1"}))
+	app.aplicarEvento(eventoDe("s2", EventoEstadoSesion, map[string]string{"estado": EstadoTerminada}))
 
-	// Con el foco en el panel (Ctrl+A), a/d deciden la línea seleccionada.
-	tecla(t, a, tea.KeyCtrlA)
-	pulsa(t, a, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
-	if len(p.resueltas) != 1 || p.resueltas[0] != "a1:aprobar" {
-		t.Fatalf("a aprueba la línea seleccionada: %v", p.resueltas)
+	if len(app.aprobaciones.Items) != 1 || !app.aprobaciones.Items[0].Obsoleta {
+		t.Fatalf("la sesión terminó mientras esperaba: la línea se marca obsoleta: %+v", app.aprobaciones.Items)
 	}
-	if len(a.Aprobs.Items) != 1 || a.Aprobs.Items[0].ID != "a2" {
-		t.Fatalf("solo sale la línea resuelta: %+v", a.Aprobs.Items)
-	}
-
-	pulsa(t, a, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	if len(p.resueltas) != 2 || p.resueltas[1] != "a2:declinar" {
-		t.Fatalf("d declina la siguiente línea: %v", p.resueltas)
-	}
-	if len(a.Aprobs.Items) != 0 {
-		t.Errorf("no queda nada pendiente: %+v", a.Aprobs.Items)
+	if app.panel.Aprobaciones != 0 {
+		t.Fatalf("una obsoleta ya no espera decisión: %d", app.panel.Aprobaciones)
 	}
 }
 
-// --- T-F028-01: la aprobación no secuestra el teclado ----------------------------
+// --- T-F007-08: el clic del ratón --------------------------------------------
 
-// Una petición de aprobación muestra la decisión SIN bloquear el input: se ven
-// la línea y sus opciones, se sigue escribiendo y el teclado no decide nada.
-func TestUnaAprobaciónPendienteNoBloqueaElInput(t *testing.T) {
-	a, p := nuevoConPanelDeAprobaciones(t)
-	pulsa(t, a, eventoMsg{Evento: Evento{
-		Nombre: EventoPeticionAprobacion,
-		Datos:  map[string]string{"aprobacion": "a1", "sesion": "s1", "descripcion": "crear archivo"},
-	}})
-	if !a.Aprobs.Abierto || a.Aprobs.Enfocado {
-		t.Fatalf("la decisión se muestra sin enfocar el teclado: abierto=%v enfocado=%v",
-			a.Aprobs.Abierto, a.Aprobs.Enfocado)
-	}
-	// La decisión que faltaba: la línea con sus opciones está a la vista.
-	if v := sinEstilo(a.View()); !strings.Contains(v, "s1 | crear archivo | aprobar | declinar") {
-		t.Fatalf("la decisión debe verse con sus opciones:\n%s", v)
-	}
-	escribe(t, a, "sigo escribiendo")
-	if a.Entrada.Texto() != "sigo escribiendo" {
-		t.Errorf("el input no puede quedar bloqueado: %q", a.Entrada.Texto())
-	}
-	if len(p.resueltas) != 0 {
-		t.Errorf("escribir no resuelve ninguna aprobación: %v", p.resueltas)
-	}
-	// Con el panel de datos cerrado, el aviso de pendientes también se ve.
-	a.Panel.Abierto = false
-	if !strings.Contains(sinEstilo(a.View()), "1 aprobación esperando tu decisión") {
-		t.Errorf("debe verse el aviso de pendientes:\n%s", sinEstilo(a.View()))
-	}
-}
-
-// --- T-F028-02: el ratón decide sobre la opción pulsada --------------------------
-
-// celdaDeOpción localiza en el marco pintado la celda (columna, fila) donde
-// empieza `opcion` dentro de la fila que contiene `marca`.
-func celdaDeOpción(t *testing.T, a *App, marca, opcion string) (int, int) {
+// columnaDeOpción devuelve la columna donde empieza el botón `opcion` en la fila
+// `indice`. La opción cierra la línea, así que se busca su última aparición: la
+// acción puede contener la misma palabra y no es el botón.
+func columnaDeOpción(t *testing.T, ap *Aprobaciones, indice int, opcion string) int {
 	t.Helper()
-	lineas := strings.Split(sinEstilo(a.View()), "\n")
-	for y, l := range lineas {
-		if !strings.Contains(l, marca) {
-			continue
-		}
-		if i := strings.Index(l, opcion); i >= 0 {
-			return len([]rune(l[:i])), y
-		}
+	linea := ap.Lineas(anchoFolgado)[indice]
+	i := strings.LastIndex(linea, opcion)
+	if i < 0 {
+		t.Fatalf("no encontré %q en %q", opcion, linea)
 	}
-	t.Fatalf("no encontré %q en una fila con %q:\n%s", opcion, marca, sinEstilo(a.View()))
-	return 0, 0
+	return render.Ancho(linea[:i])
 }
 
-// clic manda la pulsación y el soltado del botón izquierdo en una celda, como
-// llega un clic real del ratón.
-func clic(t *testing.T, a *App, x, y int) {
-	t.Helper()
-	pulsa(t, a, tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	pulsa(t, a, tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease})
-}
+// El clic sobre «aprobar» o «declinar» de una línea resuelve esa aprobación, y
+// no hace falta que el panel tenga el foco.
+func TestElClicSobreLasOpcionesResuelveEsaLinea(t *testing.T) {
+	ap := Aprobaciones{Abierto: true, Items: []Aprobacion{
+		{ID: "a1", Sesion: "s1", Accion: "crear archivo"},
+		{ID: "a2", Sesion: "s2", Accion: "borrar carpeta"},
+	}}
 
-func TestClicEnAprobarResuelveLaFilaPulsada(t *testing.T) {
-	a, p := nuevoConPanelDeAprobaciones(t)
-	a.Aprobs.Fijar([]Aprobacion{
-		{ID: "a1", Sesion: "s1", Descripcion: "crear archivo"},
-		{ID: "a2", Sesion: "s2", Descripcion: "borrar carpeta"},
-	})
-	// El ratón decide sin necesidad de enfocar el panel: el input conserva el teclado.
-	if a.Aprobs.Enfocado {
-		t.Fatal("el ratón no necesita que el panel tenga el foco")
+	col := columnaDeOpción(t, &ap, 1, "aprobar")
+	it, decision, ok := ap.Clic(2, col, anchoFolgado)
+	if !ok || it.ID != "a2" || decision != DecisionAprobar {
+		t.Fatalf("el clic en «aprobar» de la segunda línea: %+v %v %v", it, decision, ok)
 	}
 
-	x, y := celdaDeOpción(t, a, "s2 | borrar carpeta", "aprobar")
-	clic(t, a, x, y)
-
-	if len(p.resueltas) != 1 || p.resueltas[0] != "a2:aprobar" {
-		t.Fatalf("el clic en «aprobar» decide esa fila: %v", p.resueltas)
-	}
-	if len(a.Aprobs.Items) != 1 || a.Aprobs.Items[0].ID != "a1" {
-		t.Fatalf("solo sale la fila pulsada: %+v", a.Aprobs.Items)
+	col = columnaDeOpción(t, &ap, 0, "declinar")
+	it, decision, ok = ap.Clic(1, col, anchoFolgado)
+	if !ok || it.ID != "a1" || decision != DecisionDeclinar {
+		t.Fatalf("el clic en «declinar» de la primera línea: %+v %v %v", it, decision, ok)
 	}
 }
 
-func TestClicEnDeclinarDeclinaLaAprobacion(t *testing.T) {
-	a, p := nuevoConPanelDeAprobaciones(t)
-	a.Aprobs.Fijar([]Aprobacion{{ID: "a1", Sesion: "s1", Descripcion: "crear archivo"}})
+// Una acción que repite la palabra de una opción —«aprobar la etapa…», como
+// titula el flujo al pausar— no desplaza la zona del clic: las opciones se
+// localizan por el sufijo que cierra la línea.
+func TestElClicNoSeConfundeConLaPalabraDeLaAccion(t *testing.T) {
+	ap := Aprobaciones{Abierto: true, Items: []Aprobacion{
+		{ID: "a1", Sesion: "s1", Accion: "aprobar la etapa resolver"},
+	}}
 
-	x, y := celdaDeOpción(t, a, "s1 | crear archivo", "declinar")
-	clic(t, a, x, y)
-
-	if len(p.resueltas) != 1 || p.resueltas[0] != "a1:declinar" {
-		t.Fatalf("el clic en «declinar» declina esa línea: %v", p.resueltas)
+	col := columnaDeOpción(t, &ap, 0, "aprobar")
+	it, decision, ok := ap.Clic(1, col, anchoFolgado)
+	if !ok || it.ID != "a1" || decision != DecisionAprobar {
+		t.Fatalf("el clic en el botón «aprobar»: %+v %v %v", it, decision, ok)
 	}
-	// Al resolver la última, el panel se cierra solo.
-	if a.Aprobs.Abierto {
-		t.Error("sin pendientes, el panel se cierra")
-	}
-}
 
-func TestClicFueraDeLasOpcionesNoResuelve(t *testing.T) {
-	a, p := nuevoConPanelDeAprobaciones(t)
-	a.Aprobs.Fijar([]Aprobacion{{ID: "a1", Sesion: "s1", Descripcion: "crear archivo"}})
-
-	// Un clic sobre la descripción (a la izquierda de las opciones) no decide.
-	x, y := celdaDeOpción(t, a, "s1 | crear archivo", "crear archivo")
-	clic(t, a, x, y)
-
-	if len(p.resueltas) != 0 {
-		t.Errorf("un clic fuera de aprobar/declinar no decide nada: %v", p.resueltas)
+	col = columnaDeOpción(t, &ap, 0, "declinar")
+	it, decision, ok = ap.Clic(1, col, anchoFolgado)
+	if !ok || it.ID != "a1" || decision != DecisionDeclinar {
+		t.Fatalf("el clic en el botón «declinar»: %+v %v %v", it, decision, ok)
 	}
 }
 
-func TestLaAprobaciónResueltaSaleDelPanel(t *testing.T) {
-	a, _ := nuevoConPanelDeAprobaciones(t)
-	a.Aprobs.Fijar([]Aprobacion{
-		{ID: "a1", Sesion: "s1", Descripcion: "crear archivo"},
-		{ID: "a2", Sesion: "s2", Descripcion: "borrar carpeta"},
-	})
-	pulsa(t, a, eventoMsg{Evento: Evento{
-		Nombre: EventoAprobacionResuelta,
-		Datos:  map[string]string{"aprobacion": "a1"},
-	}})
-	if len(a.Aprobs.Items) != 1 || a.Aprobs.Items[0].ID != "a2" {
-		t.Errorf("solo queda la línea no resuelta: %+v", a.Aprobs.Items)
+// Un clic fuera de las opciones —sobre la sesión, la acción o el título— no
+// decide nada.
+func TestElClicFueraDeLasOpcionesNoDecide(t *testing.T) {
+	ap := Aprobaciones{Abierto: true, Items: []Aprobacion{{ID: "a1", Sesion: "s1", Accion: "crear archivo"}}}
+
+	if _, _, ok := ap.Clic(0, 0, anchoFolgado); ok {
+		t.Error("el título no decide")
+	}
+	if _, _, ok := ap.Clic(1, 0, anchoFolgado); ok {
+		t.Error("la sesión y la acción no deciden")
+	}
+	if _, _, ok := ap.Clic(9, 0, anchoFolgado); ok {
+		t.Error("una fila fuera del panel no decide")
 	}
 }
 
-func TestLaSesiónTerminadaMarcaSuLíneaComoObsoleta(t *testing.T) {
-	a, p := nuevoConPanelDeAprobaciones(t)
-	a.Aprobs.Fijar([]Aprobacion{{ID: "a1", Sesion: "s1", Descripcion: "crear archivo"}})
+// Una línea obsoleta no se decide: su sesión ya no puede aplicar la propuesta.
+func TestLaLineaObsoletaNoSeDecide(t *testing.T) {
+	ap := Aprobaciones{Abierto: true, Items: []Aprobacion{
+		{ID: "a1", Sesion: "s1", Accion: "crear archivo", Obsoleta: true},
+	}}
+	if fila := filaAprobacion(ap.Items[0], "", "", anchoFolgado); !strings.HasSuffix(fila, " | obsoleta") {
+		t.Fatalf("la línea obsoleta se marca como tal: %q", fila)
+	}
+	if _, _, ok := ap.Clic(1, 0, anchoFolgado); ok {
+		t.Error("sobre una obsoleta no se manda ninguna decisión")
+	}
+}
 
-	pulsa(t, a, eventoMsg{Evento: Evento{
-		Nombre: session.EventoEstadoSesion,
-		Datos:  map[string]string{"sesion": "s1", "estado": session.EstadoTerminada},
-	}})
-	if !a.Aprobs.Items[0].Obsoleta {
-		t.Fatal("la sesión terminó mientras esperaba: la línea se marca obsoleta")
+// Con una aprobación pendiente, `a` aprueba y `d` declina la línea resaltada: la
+// decisión viaja al puerto y la línea se retira del panel.
+func TestAprobarYDeclinarDesdeElPanel(t *testing.T) {
+	p := &puertoFalso{}
+	app := appDePrueba(p)
+	app.vista = VistaPrincipal
+	app.aplicarEvento(eventoDe("s2", EventoPeticionAprobacion, map[string]string{"aprobacion": "a1", "descripcion": "crear archivo"}))
+	app.aplicarEvento(eventoDe("s1", EventoPeticionAprobacion, map[string]string{"aprobacion": "a2", "descripcion": "borrar carpeta"}))
+
+	if !app.aprobaciones.Abierto {
+		t.Fatal("con algo que decidir, el panel debería estar abierto")
 	}
-	// Abrir el panel para ver la línea marcada; sobre una obsoleta no se manda
-	// ninguna decisión.
-	tecla(t, a, tea.KeyCtrlA)
-	if !strings.Contains(sinEstilo(a.View()), "obsoleta") {
-		t.Error("la línea obsoleta sigue visible, marcada como tal")
+	if !strings.Contains(render.SinANSI(app.View()), "APROBACIONES") {
+		t.Fatal("el panel de aprobaciones debería pintarse")
 	}
-	pulsa(t, a, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
-	if len(p.resueltas) != 0 {
-		t.Errorf("lo obsoleto no se manda a la sesión: %v", p.resueltas)
+
+	// Sin foco, la caja sigue escribiendo: `a` va al texto, no al panel.
+	pulsar(app, teclaRuna("a"))
+	if len(p.respondidas) != 0 {
+		t.Fatalf("sin foco, `a` no debería decidir: %v", p.respondidas)
+	}
+	if !strings.Contains(app.entrada.Texto, "a") {
+		t.Fatalf("sin foco, la caja debería escribir: %q", app.entrada.Texto)
+	}
+
+	// `Ctrl+A` da el foco: `a` aprueba la primera línea.
+	pulsar(app, tea.KeyMsg{Type: tea.KeyCtrlA})
+	pulsar(app, teclaRuna("a"))
+	if len(p.respondidas) != 1 || p.respondidas[0] != "a1" {
+		t.Fatalf("`a` debería aprobar la primera línea: %v", p.respondidas)
+	}
+	if app.panel.Aprobaciones != 1 {
+		t.Fatalf("al aprobar una queda %d", app.panel.Aprobaciones)
+	}
+
+	pulsar(app, teclaRuna("d"))
+	if len(p.respondidas) != 2 || p.respondidas[1] != "a2" {
+		t.Fatalf("`d` debería declinar la que queda: %v", p.respondidas)
+	}
+	if app.aprobaciones.Abierto || app.focoAprobaciones {
+		t.Fatal("sin nada que decidir, el panel se cierra y pierde el foco")
+	}
+}
+
+// En una terminal estrecha la acción cede ante las opciones: la decisión nunca se
+// sale del ancho de la columna y sigue siendo pulsable.
+func TestLaLineaEstrechaConservaLasOpciones(t *testing.T) {
+	ap := Aprobaciones{Abierto: true, Items: []Aprobacion{
+		{ID: "a1", Sesion: "24afd397", Accion: "escribir internal/tui/app.go con un cambio bastante largo"},
+	}}
+	linea := ap.Lineas(40)[0]
+	if w := render.Ancho(linea); w > 40 {
+		t.Fatalf("la línea mide %d columnas: %q", w, linea)
+	}
+	if !strings.HasSuffix(linea, " | aprobar | declinar") {
+		t.Fatalf("las opciones se conservan: %q", linea)
+	}
+	col := strings.LastIndex(linea, "aprobar")
+	it, decision, ok := ap.Clic(1, render.Ancho(linea[:col]), 40)
+	if !ok || it.ID != "a1" || decision != DecisionAprobar {
+		t.Fatalf("el clic en «aprobar» a 40 columnas: %+v %v %v", it, decision, ok)
 	}
 }

@@ -3,11 +3,11 @@ title: SPEC — Operaciones de archivos
 tags: [specs, requisito]
 depende_de:
   - "[[IDEA]]"
-  - "[[specs/SPEC-AGENTE-BASE]]"
-  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
   - "[[specs/SPEC-SESIONES]]"
 relacionado:
   - "[[specs/SPEC-TOOLS]]"
+  - "[[specs/SPEC-AGENTE-BASE]]"
+  - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
 ---
 # SPEC — Operaciones de archivos
 
@@ -51,7 +51,7 @@ No incluye la forma de mostrar el panel de aprobaciones, que está en [[specs/SP
 - Fuera de la carpeta, hace falta permiso **y** la explicación del agente sobre por qué busca eso.
 - Toda escritura requiere aprobación, también dentro de la carpeta y también dentro de un flujo en curso.
 - Borrar siempre requiere confirmación explícita.
-- Toda ruta es relativa a la carpeta abierta del proyecto.
+- Una ruta relativa se resuelve desde el directorio de trabajo del harness; `..` y las rutas absolutas son válidas. No se expande `~` ni `$HOME` y no se busca en otras ubicaciones. La normalización no elude las restricciones: una ruta que resuelve fuera de la carpeta cuenta como «fuera».
 - Cada cambio aplicado queda registrado con lo que había antes y lo que quedó.
 - Nada se borra de la base de datos: el registro de cambios se conserva para poder revertir y auditar.
 - Solo `build` tiene herramientas de escritura. `plan` no puede aplicarlas ni siquiera con permiso.
@@ -77,8 +77,6 @@ No incluye la forma de mostrar el panel de aprobaciones, que está en [[specs/SP
 
 ## Dependencias funcionales
 
-- [[specs/SPEC-AGENTE-BASE]]
-- [[specs/SPEC-INTERFAZ-ATAJOS]]
 - [[specs/SPEC-SESIONES]]
 
 ## Referencias

@@ -183,7 +183,12 @@ Al terminar, informa al usuario:
 
 Acción de las subtareas nuevas o modificadas: `actualizar`.
 
-Para implementar, ejecuta:
-  - /ejecutar-backend
-  - /ejecutar-frontend
+Para implementar:
+  - Con guía paso a paso: cambia al agente Profesor
+  - Delegado: /ejecutar-backend
+  - Delegado: /ejecutar-frontend
+
+Para replanificar esa tarea:
+  - /planificar-backend
+  - /planificar-frontend
 ```

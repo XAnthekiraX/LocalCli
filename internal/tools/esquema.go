@@ -1,145 +1,106 @@
 package tools
 
-// esquema.go — T-B024-02: el JSON Schema se deriva del tipo de petición por
-// reflexión.
-//
-// Fuente de verdad: ai/docs/backend/02-interfaces/TOOLS.md §7 ("El esquema se
-// deriva, no se escribe") y ai/docs/backend/02-interfaces/dto/TOOLS-DTO.md §2
-// (reglas de derivación: nombre del tag `json`, tipo del campo, obligatorio si
-// falta `omitempty`, descripción del tag `desc`).
-//
-// No hay un esquema escrito a mano al lado de los DTO: si los dos existieran,
-// divergirían sin que nada lo notase. La descripción de cada campo se escribe
-// para el modelo —dice cuándo usar el argumento—, no para quien lee el código.
-
 import (
-	"encoding/json"
 	"reflect"
 	"strings"
 )
 
-// Propiedad es un campo del esquema. Se anida para los tipos compuestos
-// (`[]Cambio`, un objeto), de modo que un tipo anidado exponga su esquema
-// entero y no un `object` vacío.
-type Propiedad struct {
-	Type        string               `json:"type"`
-	Description string               `json:"description,omitempty"`
-	Items       *Propiedad           `json:"items,omitempty"`
-	Properties  map[string]Propiedad `json:"properties,omitempty"`
-	Required    []string             `json:"required,omitempty"`
-}
-
-// Esquema es el JSON Schema que ve el modelo para los argumentos de una
-// herramienta.
+// Esquema es el JSON Schema que ve el modelo. Se deriva por reflexión del tipo de
+// la petición: el nombre del campo es el tag `json`, la descripción el `desc`, y
+// `omitempty` marca el campo como opcional.
 type Esquema struct {
-	Type       string               `json:"type"`
-	Properties map[string]Propiedad `json:"properties,omitempty"`
-	Required   []string             `json:"required,omitempty"`
+	Tipo        string               `json:"type"`
+	Propiedades map[string]Propiedad `json:"properties,omitempty"`
+	Requeridos  []string             `json:"required,omitempty"`
 }
 
-// tipoJSON traduce un tipo de Go al nombre JSON Schema.
-func tipoJSON(t reflect.Type) (string, bool) {
-	for t.Kind() == reflect.Ptr {
+type Propiedad struct {
+	Tipo        string               `json:"type"`
+	Enum        []string             `json:"enum,omitempty"`
+	Descripcion string               `json:"description,omitempty"`
+	Items       *Propiedad           `json:"items,omitempty"`
+	Propiedades map[string]Propiedad `json:"properties,omitempty"`
+	Requeridos  []string             `json:"required,omitempty"`
+}
+
+// Derivar construye el esquema de un tipo de petición. Un tipo nulo o desconocido
+// cae en un objeto genérico.
+func Derivar(t reflect.Type) *Esquema {
+	for t != nil && t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
-	switch t.Kind() {
-	case reflect.String:
-		return "string", true
-	case reflect.Bool:
-		return "boolean", true
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Float32, reflect.Float64:
-		return "number", true
-	case reflect.Slice, reflect.Array:
-		return "array", true
-	case reflect.Map, reflect.Struct, reflect.Interface:
-		return "object", true
+	if t == nil || t.Kind() != reflect.Struct {
+		return &Esquema{Tipo: "object"}
 	}
-	return "string", false
+	propiedades, requeridos := propiedadesDe(t)
+	return &Esquema{Tipo: "object", Propiedades: propiedades, Requeridos: requeridos}
 }
 
-// propiedadDe arma la propiedad de un tipo, descendiendo en los compuestos.
-func propiedadDe(t reflect.Type) Propiedad {
-	nombre, _ := tipoJSON(t)
-	p := Propiedad{Type: nombre}
-	for t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-	switch t.Kind() {
-	case reflect.Slice, reflect.Array:
-		item := propiedadDe(t.Elem())
-		p.Items = &item
-	case reflect.Map:
-		// Un mapa es un objeto libre: sus claves no se conocen de antemano.
-	case reflect.Struct:
-		if t == reflect.TypeOf(json.RawMessage(nil)) {
-			// json.RawMessage es []byte: un objeto libre, no una cadena.
-			p.Type = "object"
-			break
-		}
-		props, req := propiedadesDe(t)
-		p.Properties = props
-		p.Required = req
-	}
-	return p
-}
-
-// propiedadesDe recorre los campos exportados de un struct y arma el mapa de
-// propiedades y la lista de obligatorios.
 func propiedadesDe(t reflect.Type) (map[string]Propiedad, []string) {
-	props := map[string]Propiedad{}
-	var req []string
+	propiedades := map[string]Propiedad{}
+	var requeridos []string
 	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		if f.PkgPath != "" { // no exportado
+		campo := t.Field(i)
+		if campo.PkgPath != "" {
 			continue
 		}
-		tag := f.Tag.Get("json")
-		if tag == "" || tag == "-" {
-			continue
-		}
-		partes := strings.Split(tag, ",")
-		nombre := partes[0]
+		nombre, opcional := nombreDeCampo(campo)
 		if nombre == "" {
 			continue
 		}
-		opcional := false
-		for _, p := range partes[1:] {
-			if p == "omitempty" {
-				opcional = true
-			}
-		}
-		prop := propiedadDe(f.Type)
-		prop.Description = f.Tag.Get("desc")
-		props[nombre] = prop
+		propiedades[nombre] = propiedadDe(campo.Type, campo.Tag.Get("desc"))
 		if !opcional {
-			req = append(req, nombre)
+			requeridos = append(requeridos, nombre)
 		}
 	}
-	return props, req
+	return propiedades, requeridos
 }
 
-// EsquemaDe deriva el JSON Schema del tipo de petición de una herramienta. Se
-// le pasa el valor que devuelve NuevaPeticion (un puntero a struct).
-func EsquemaDe(v any) *Esquema {
-	if v == nil {
-		return &Esquema{Type: "object"}
+func nombreDeCampo(campo reflect.StructField) (string, bool) {
+	etiqueta := campo.Tag.Get("json")
+	if etiqueta == "-" {
+		return "", false
 	}
-	t := reflect.TypeOf(v)
-	for t.Kind() == reflect.Ptr {
+	partes := strings.Split(etiqueta, ",")
+	nombre := partes[0]
+	if nombre == "" {
+		nombre = campo.Name
+	}
+	opcional := false
+	for _, p := range partes[1:] {
+		if p == "omitempty" {
+			opcional = true
+		}
+	}
+	return nombre, opcional
+}
+
+func propiedadDe(t reflect.Type, descripcion string) Propiedad {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
-	if t.Kind() != reflect.Struct {
-		// Una petición genérica (herramienta del usuario) acepta cualquier
-		// objeto: no hay campos que describir.
-		return &Esquema{Type: "object"}
+	propiedad := Propiedad{Descripcion: descripcion}
+	switch t.Kind() {
+	case reflect.String:
+		propiedad.Tipo = "string"
+	case reflect.Bool:
+		propiedad.Tipo = "boolean"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		propiedad.Tipo = "integer"
+	case reflect.Float32, reflect.Float64:
+		propiedad.Tipo = "number"
+	case reflect.Slice, reflect.Array:
+		propiedad.Tipo = "array"
+		elemento := propiedadDe(t.Elem(), "")
+		propiedad.Items = &elemento
+	case reflect.Struct:
+		propiedad.Tipo = "object"
+		propiedad.Propiedades, propiedad.Requeridos = propiedadesDe(t)
+	case reflect.Map, reflect.Interface:
+		propiedad.Tipo = "object"
+	default:
+		propiedad.Tipo = "object"
 	}
-	props, req := propiedadesDe(t)
-	return &Esquema{Type: "object", Properties: props, Required: req}
+	return propiedad
 }
-
-// EsquemaObjeto es el esquema de un argumento genérico: un objeto libre, sin
-// campos conocidos. Es el de una herramienta del usuario, cuyo ejecutable y
-// contrato LocalCli no conoce (TOOLS-DTO.md §3).
-func EsquemaObjeto() *Esquema { return &Esquema{Type: "object"} }

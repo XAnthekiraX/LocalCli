@@ -1,4 +1,3 @@
-// Package session — módulo session de LocalCli.
-//
-// Ciclo de vida de las sesiones: crear, cambiar, retomar y cerrar, con su estado y su ejecución en segundo plano. No ejecuta tareas; eso es flow y queue.
+// Package session gestiona las sesiones y sus turnos de conversación: es la
+// frontera que consume la TUI.
 package session

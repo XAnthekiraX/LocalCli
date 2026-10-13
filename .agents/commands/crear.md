@@ -80,6 +80,11 @@ Actualiza **solo los documentos afectados**:
   - Archivos NNN-task-*.md con acción crear
 
 Para implementar:
-  - /ejecutar-backend
-  - /ejecutar-frontend
+  - Con guía paso a paso: cambia al agente Profesor
+  - Delegado: /ejecutar-backend
+  - Delegado: /ejecutar-frontend
+
+Para replanificar esa tarea:
+  - /planificar-backend
+  - /planificar-frontend
 ```

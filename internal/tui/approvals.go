@@ -1,87 +1,144 @@
-// approvals.go — T-B014-06: el panel de aprobaciones.
-//
-// Fuente de verdad: SPEC-INTERFAZ-ATAJOS §Formato de una línea del panel
-// (`nombre de la sesión | acción propuesta | aprobar | declinar | <opción por
-// definir>`), §Flujos alternativos ("Dos sesiones esperan a la vez: aparecen
-// como dos líneas independientes", "La sesión terminó mientras esperaba: la línea
-// se marca como obsoleta") y §Reglas ("Resuelve una aprobación solo afecta a la
-// sesión de esa línea", "El panel se puede abrir y cerrar sin detener el trabajo
-// de ninguna sesión").
-//
-// Este panel no es el panel de datos (SPEC-INTERFAZ-ATAJOS: "El de datos es de
-// lectura y solo información; este son decisiones que esperan tu respuesta"). Por
-// eso vive en su propio archivo y su propio estado: compartir la disposición
-// habría mezclado lo que se lee con lo que se decide.
 package tui
 
-import "strings"
+import (
+	"os"
+	"strings"
+	"sync"
 
-// Aprobacion es una línea del panel: una decisión esperando respuesta.
+	"localcli/internal/tui/render"
+)
+
+// Aprobacion es una línea del panel de aprobaciones: una decisión que espera
+// respuesta de una sesión cualquiera. El identificador es el de la aprobación,
+// la sesión es la que la pide y la acción es lo que propone (qué archivo o qué
+// comando). Obsoleta marca una línea cuya sesión terminó mientras esperaba: se
+// sigue viendo, pero ya no se puede decidir.
 type Aprobacion struct {
-	ID          string
-	Sesion      string
-	Descripcion string
-	// Motivo es la explicación del agente para una operación que sale de la
-	// carpeta del proyecto: la spec la exige junto al permiso y se muestra bajo
-	// la línea (SPEC-ARCHIVOS §Reglas).
-	Motivo string
-	// Obsoleta marca una aprobación que ya no aplica (la sesión terminó
-	// mientras esperaba).
+	ID       string
+	Sesion   string
+	Accion   string
 	Obsoleta bool
 }
 
-// Aprobaciones es el panel de decisiones pendientes.
-//
-// `Abierto` es que se vea; `Enfocado` es que el teclado sea suyo. Son dos cosas
-// distintas a propósito: una aprobación pendiente se muestra sin más (para que
-// la decisión se vea), pero no le quita el teclado al input. El usuario decide
-// pulsando la opción con el ratón, o enfocando el panel con `Ctrl+A` para usar
-// `a`/`d`.
+// Decision es la opción con la que se resuelve una línea del panel.
+type Decision int
+
+const (
+	// DecisionAprobar aprueba la propuesta; DecisionDeclinar la rechaza.
+	DecisionAprobar Decision = iota + 1
+	DecisionDeclinar
+)
+
+// Las dos opciones cierran la línea y su texto es único para el clic. Se localizan
+// por el sufijo completo `aprobar | declinar`, no por la palabra suelta: una
+// acción puede contener la misma palabra («aprobar la etapa…») y desplazaría la
+// zona del clic.
+const (
+	opcionAprobar     = "aprobar"
+	opcionDeclinar    = "declinar"
+	separadorOpciones = " | "
+	opcionesLinea     = opcionAprobar + separadorOpciones + opcionDeclinar
+)
+
+// Aprobaciones es el panel de decisiones pendientes de todas las sesiones. No es
+// el panel de datos: aquel solo informa, este son decisiones que esperan
+// respuesta (SPEC-INTERFAZ-ATAJOS), y por eso vive en su propio estado. Se
+// muestra solo —para que la decisión se vea— y se cierra en cuanto no queda
+// ninguna línea que decidir.
 type Aprobaciones struct {
-	Abierto  bool
-	Enfocado bool
-	Items    []Aprobacion
-	Indice   int
+	// Abierto dice si el panel se pinta. Es «hay algo que decidir».
+	Abierto bool
+	// Items son las líneas, en el orden en que llegaron los eventos.
+	Items []Aprobacion
+	// Indice es la línea resaltada.
+	Indice int
+	// casa es la carpeta del usuario, que las líneas abrevian a `~`.
+	casa string
 }
 
-// Fijar reemplaza la lista, conservando la selección dentro de los límites.
-//
-// El panel se MUESTRA cuando hay algo que decidir, pero no se enfoca: el input
-// sigue escribiendo y la decisión se ve en pantalla. El foco se pide con
-// `Ctrl+A`; mientras tanto, un clic sobre la opción del ratón también decide
-// (SPEC-INTERFAZ-ATAJOS §Reglas: "El panel no se abre solo" y "un clic sobre
-// «aprobar» o «declinar» resuelve esa aprobación"). Sin nada que decidir, se
-// cierra y suelta el foco.
-func (a *Aprobaciones) Fijar(items []Aprobacion) {
-	a.Items = items
-	if a.Indice >= len(items) {
-		a.Indice = len(items) - 1
+// NuevaAprobaciones deja el panel vacío y resuelve la carpeta del usuario, que es
+// lo único que las líneas necesitan para abreviar las rutas a `~`.
+func NuevaAprobaciones() Aprobaciones {
+	return Aprobaciones{casa: casaDelUsuario()}
+}
+
+// casaDelUsuario se lee la primera vez que hace falta y ya no cambia: la carpeta
+// del usuario no se mueve mientras la sesión vive. Si el sistema no la dice, se
+// queda vacía y cada ruta se pinta tal cual.
+var casaDelUsuario = sync.OnceValue(func() string {
+	casa, err := os.UserHomeDir()
+	if err != nil {
+		return ""
 	}
-	if a.Indice < 0 {
-		a.Indice = 0
+	return casa
+})
+
+// Anotar añade una aprobación pendiente al panel (`peticion_aprobacion`). Un
+// identificador repetido actualiza la línea en vez de duplicarla; sin
+// identificador no hay nada que decidir y se descarta. Una línea nueva reabre el
+// panel: lo que espera decisión se muestra.
+func (m *Aprobaciones) Anotar(a Aprobacion) {
+	if a.ID == "" {
+		return
 	}
-	a.Abierto = len(items) > 0
-	if len(items) == 0 {
-		a.Enfocado = false
+	for i := range m.Items {
+		if m.Items[i].ID == a.ID {
+			m.Items[i] = a
+			m.Abierto = true
+			return
+		}
+	}
+	m.Items = append(m.Items, a)
+	m.Abierto = true
+}
+
+// Retirar saca la línea resuelta (`aprobacion_resuelta`). Sin nada que decidir el
+// panel se cierra solo: no queda hueco. Una resolución de una línea que ya no
+// está no hace nada.
+func (m *Aprobaciones) Retirar(id string) {
+	for i, it := range m.Items {
+		if it.ID != id {
+			continue
+		}
+		m.Items = append(m.Items[:i], m.Items[i+1:]...)
+		m.ajustar()
+		return
 	}
 }
 
-// MarcarObsoleta deja la línea visible pero sin decisión posible: la sesión
-// terminó mientras esperaba (SPEC-INTERFAZ-ATAJOS §Flujos alternativos,
-// T-F008-06). Da igual que la sesión haya terminado bien o mal: su propuesta
-// ya no puede aplicarse.
-func (a *Aprobaciones) MarcarObsoleta(sesionID string) {
-	for i := range a.Items {
-		if a.Items[i].Sesion == sesionID {
-			a.Items[i].Obsoleta = true
+// MarcarObsoleta deja las líneas de una sesión que terminó visibles pero sin
+// decisión posible: la propuesta ya no puede aplicarse (SPEC-INTERFAZ-ATAJOS
+// §Flujos alternativos).
+func (m *Aprobaciones) MarcarObsoleta(sesionID string) {
+	for i := range m.Items {
+		if m.Items[i].Sesion == sesionID {
+			m.Items[i].Obsoleta = true
 		}
 	}
 }
 
-// Pendientes cuenta las que siguen esperando decisión.
-func (a *Aprobaciones) Pendientes() int {
+// Mover desplaza el resaltado por la lista de pendientes sin salirse de ella.
+func (m *Aprobaciones) Mover(delta int) {
+	if len(m.Items) == 0 {
+		return
+	}
+	m.Indice += delta
+	m.ajustar()
+}
+
+// Seleccionada devuelve la línea resaltada, si queda alguna que decidir.
+func (m *Aprobaciones) Seleccionada() (Aprobacion, bool) {
+	if m.Indice < 0 || m.Indice >= len(m.Items) {
+		return Aprobacion{}, false
+	}
+	return m.Items[m.Indice], true
+}
+
+// Pendientes cuenta las líneas que siguen esperando decisión: una obsoleta ya no
+// espera nada, así que no cuenta.
+func (m *Aprobaciones) Pendientes() int {
 	n := 0
-	for _, it := range a.Items {
+	for _, it := range m.Items {
 		if !it.Obsoleta {
 			n++
 		}
@@ -89,51 +146,131 @@ func (a *Aprobaciones) Pendientes() int {
 	return n
 }
 
-// Mover cambia la línea seleccionada.
-func (a *Aprobaciones) Mover(delta int) {
-	if len(a.Items) == 0 {
-		return
+// Lineas devuelve cada aprobación en el formato documentado, con la seleccionada
+// marcada y ajustada al ancho disponible: la acción cede ante las opciones —una
+// decisión que no se ve no se puede tomar—. Es texto plano, sin estilo: sirve de
+// referencia al ratón.
+func (m *Aprobaciones) Lineas(ancho int) []string {
+	lineas := make([]string, 0, len(m.Items))
+	for i, it := range m.Items {
+		lineas = append(lineas, filaAprobacion(it, m.casa, marcaDe(i == m.Indice), ancho))
 	}
-	a.Indice = (a.Indice + delta + len(a.Items)) % len(a.Items)
+	return lineas
 }
 
-// Seleccionada devuelve la aprobación en el cursor.
-func (a *Aprobaciones) Seleccionada() (Aprobacion, bool) {
-	if len(a.Items) == 0 || a.Indice < 0 || a.Indice >= len(a.Items) {
-		return Aprobacion{}, false
+// Render pinta el panel: el título y una línea por aprobación, con la resaltada
+// destacada y la obsoleta atenuada, cada línea ajustada a `ancho`. Sin nada que
+// decidir devuelve vacío —el panel desaparece sin dejar hueco— y su visibilidad
+// la resuelve quien lo compone.
+func (m *Aprobaciones) Render(ancho int) string {
+	if !m.Abierto || len(m.Items) == 0 {
+		return ""
 	}
-	return a.Items[a.Indice], true
+	lineas := []string{render.RecortarColumnas(render.EstiloTitulo.Render("APROBACIONES"), ancho)}
+	plas := m.Lineas(ancho)
+	for i, it := range m.Items {
+		linea := plas[i]
+		switch {
+		case it.Obsoleta:
+			linea = render.EstiloSutil.Render(linea)
+		case i == m.Indice:
+			linea = render.EstiloUsuario.Render(linea)
+		}
+		lineas = append(lineas, linea)
+	}
+	lineas = append(lineas, render.RecortarColumnas(render.EstiloSutil.Render("(clic en aprobar/declinar)"), ancho))
+	return strings.Join(lineas, "\n")
 }
 
-// Resolver saca una línea del panel: la decisión se fue a la sesión dueña y la
-// línea ya no espera nada. Devuelve la aprobación resuelta para que quien la
-// reciba sepa a quién afecta. Si con ella se vacía el panel, el panel se cierra
-// y suelta el foco: no queda nada que decidir.
-func (a *Aprobaciones) Resolver(id string) (Aprobacion, bool) {
-	for i, it := range a.Items {
-		if it.ID != id {
-			continue
-		}
-		a.Items = append(a.Items[:i], a.Items[i+1:]...)
-		if a.Indice >= len(a.Items) && a.Indice > 0 {
-			a.Indice--
-		}
-		if len(a.Items) == 0 {
-			a.Abierto = false
-			a.Enfocado = false
-		}
-		return it, true
+// Clic resuelve qué línea y qué opción caen bajo una celda del panel, contando
+// desde su esquina superior izquierda (la fila 0 es el título) y midiendo la
+// línea como se dibujó a ese `ancho`. Devuelve ok=false si la celda no cae sobre
+// «aprobar» ni «declinar» —un clic sobre la sesión, la acción o una línea
+// obsoleta no decide nada—.
+func (m *Aprobaciones) Clic(fila, columna, ancho int) (Aprobacion, Decision, bool) {
+	indice := fila - 1
+	if indice < 0 || indice >= len(m.Items) {
+		return Aprobacion{}, 0, false
 	}
-	return Aprobacion{}, false
+	it := m.Items[indice]
+	if it.Obsoleta {
+		return Aprobacion{}, 0, false
+	}
+	linea := m.Lineas(ancho)[indice]
+	// Las opciones cierran la línea: se busca su sufijo, no la palabra suelta,
+	// para que una acción que contenga «aprobar» no desplace la zona del clic.
+	j := strings.LastIndex(linea, opcionesLinea)
+	if j < 0 {
+		return Aprobacion{}, 0, false
+	}
+	desde := render.Ancho(linea[:j])
+	if columna >= desde && columna < desde+render.Ancho(opcionAprobar) {
+		return it, DecisionAprobar, true
+	}
+	desde += render.Ancho(opcionAprobar) + render.Ancho(separadorOpciones)
+	if columna >= desde && columna < desde+render.Ancho(opcionDeclinar) {
+		return it, DecisionDeclinar, true
+	}
+	return Aprobacion{}, 0, false
 }
 
-// opcionesAprobarDeclinar son las opciones de la línea (SPEC-INTERFAZ-ATAJOS
-// §Formato de una línea del panel). La tercera opción sigue por definir; no se
-// inventa ni se reserva un hueco vacío que alargue la fila.
-const opcionesAprobarDeclinar = "aprobar | declinar"
+// ajustar deja el resaltado dentro de los límites y cierra el panel cuando ya no
+// queda ninguna línea.
+func (m *Aprobaciones) ajustar() {
+	if m.Indice >= len(m.Items) {
+		m.Indice = len(m.Items) - 1
+	}
+	if m.Indice < 0 {
+		m.Indice = 0
+	}
+	m.Abierto = len(m.Items) > 0
+}
+
+// marcaDe es el marcador de selección de una línea: el resaltado o el hueco que
+// lo sustituye.
+func marcaDe(seleccionada bool) string {
+	if seleccionada {
+		return "› "
+	}
+	return "  "
+}
+
+// filaAprobacion compone la línea de una aprobación SIN recortar la marca de
+// selección: la sesión por su identificador abreviado, la acción propuesta —con
+// la carpeta del usuario abreviada a `~`— y las dos opciones, ajustada a `ancho`.
+// Una obsoleta cambia las opciones por su marca. La tercera opción de decisiones
+// sigue por definir y no reserva hueco.
+func filaAprobacion(it Aprobacion, casa, marca string, ancho int) string {
+	opciones := opcionesLinea
+	if it.Obsoleta {
+		opciones = "obsoleta"
+	}
+	return componerFilaAprobacion(marca, idBreve(it.Sesion), abreviarCasa(it.Accion, casa), opciones, ancho)
+}
+
+// componerFilaAprobacion arma `marca id | acción | opciones` sin pasar de `ancho`.
+// Si hay que ceder, cede la acción: las opciones se conservan enteras y, si ni
+// con el prefijo más corto caben, es el prefijo el que se recorta. Así una
+// decisión nunca desaparece de una terminal estrecha. Es una función pura.
+func componerFilaAprobacion(marca, id, accion, opciones string, ancho int) string {
+	if ancho <= 0 {
+		return ""
+	}
+	prefijo := marca + id
+	sufijo := " | " + opciones
+	separador := " | "
+	disponible := ancho - render.Ancho(prefijo) - render.Ancho(sufijo)
+	if disponible < render.Ancho(separador)+1 {
+		if render.Ancho(sufijo) >= ancho {
+			return render.RecortarColumnas(sufijo, ancho)
+		}
+		return render.RecortarColumnas(prefijo, ancho-render.Ancho(sufijo)) + sufijo
+	}
+	return prefijo + separador + render.RecortarColumnas(accion, disponible-render.Ancho(separador)) + sufijo
+}
 
 // idBreve acorta el identificador de la sesión: ocho caracteres bastan para
-// distinguirla a la vista y la línea no se va de largo.
+// distinguirla a la vista y la línea no se va de largo. Es una función pura.
 func idBreve(id string) string {
 	r := []rune(id)
 	if len(r) > 8 {
@@ -142,75 +279,12 @@ func idBreve(id string) string {
 	return id
 }
 
-// descripcionBreve acorta el texto de la operación: la carpeta del usuario se
-// abrevia a `~`, como en el pie del panel.
-func descripcionBreve(d string) string {
-	if home := rutaDelUsuario(); home != "" {
-		d = strings.Replace(d, home, "~", 1)
+// abreviarCasa cambia la carpeta del usuario por `~`, como en el pie del panel:
+// la línea se lee de un vistazo. Sin carpeta conocida el texto se deja tal cual.
+// Es una función pura.
+func abreviarCasa(texto, casa string) string {
+	if casa == "" {
+		return texto
 	}
-	return d
-}
-
-// FilaDe compone la fila de una aprobación SIN el marcador de selección: sesión
-// corta, operación y opciones. La usan `Lineas` (que le añade la marca) y el
-// ratón, que localiza con ella la línea pulsada en el marco pintado
-// (selection.go).
-func FilaDe(it Aprobacion) string {
-	opciones := opcionesAprobarDeclinar
-	if it.Obsoleta {
-		opciones = "obsoleta"
-	}
-	return idBreve(it.Sesion) + " | " + descripcionBreve(it.Descripcion) + " | " + opciones
-}
-
-// Lineas devuelve cada aprobación en el formato documentado, con la seleccionada
-// marcada. Una aprobación obsoleta se marca como tal.
-func (a *Aprobaciones) Lineas() []string {
-	out := make([]string, 0, len(a.Items))
-	for i, it := range a.Items {
-		marca := "  "
-		if i == a.Indice {
-			marca = "› "
-		}
-		out = append(out, marca+FilaDe(it))
-	}
-	return out
-}
-
-// Render pinta el panel completo.
-func (a *Aprobaciones) Render() string {
-	if !a.Abierto {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString(estiloTitulo.Render("APROBACIONES") + "\n")
-	lineas := a.Lineas()
-	if len(lineas) == 0 {
-		b.WriteString(estiloSistema.Render("(nada esperando decisión)") + "\n")
-		return strings.TrimRight(b.String(), "\n")
-	}
-	for i, l := range lineas {
-		if a.Items[i].Obsoleta {
-			b.WriteString(estiloSistema.Render(l) + "\n")
-			continue
-		}
-		if i == a.Indice {
-			l = estiloUsuario.Render(l)
-		}
-		b.WriteString(l + "\n")
-		// La explicación del agente, si la trae, va debajo y atenuada: la línea
-		// queda corta y el porqué se lee sin perderse.
-		if m := a.Items[i].Motivo; strings.TrimSpace(m) != "" {
-			b.WriteString(estiloSistema.Render("  por qué: "+m) + "\n")
-		}
-	}
-	// El pie dice qué teclas valen ahora: con el foco en el panel, a/d deciden;
-	// sin foco, el teclado es del input y se decide con el ratón o pidiendo el
-	// foco con Ctrl+A.
-	pie := "(ctrl+a decide · clic en aprobar/declinar)"
-	if a.Enfocado {
-		pie = "(a aprueba · d declina · esc cierra)"
-	}
-	b.WriteString(estiloSistema.Render(pie))
-	return strings.TrimRight(b.String(), "\n")
+	return strings.Replace(texto, casa, "~", 1)
 }

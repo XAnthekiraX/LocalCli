@@ -138,7 +138,12 @@ Con la documentación actualizada, modifica `ai/tasks/backend/MAIN-TASKS.md` y/o
 ⚠️ Dependencias afectadas:
   - [lista de funcionalidades afectadas]
 
-Para implementar la eliminación, ejecuta:
-  - /ejecutar-backend
-  - /ejecutar-frontend
+Para implementar la eliminación:
+  - Con guía paso a paso: cambia al agente Profesor
+  - Delegado: /ejecutar-backend
+  - Delegado: /ejecutar-frontend
+
+Para replanificar esa tarea:
+  - /planificar-backend
+  - /planificar-frontend
 ```

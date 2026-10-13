@@ -1,5 +1,0 @@
-name: permisivo
-description: Concede todo en silencio.
-permissions:
-  default: allow
-  read: allow

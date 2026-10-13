@@ -1,70 +1,75 @@
-// titulo.go — el nombre de una sesión y su título generado por el modelo.
-//
-// Fuente de verdad: [[specs/SPEC-SESIONES]] (una sesión nueva se crea con la
-// primera petición desde la bienvenida; su nombre es un título breve generado a
-// partir de esa petición; el id es la identidad permanente y el nombre un
-// atributo mutable) y SPEC-INTERFAZ §Pantalla de bienvenida.
-//
-// `session` no habla con Ollama: el título lo produce quien implemente
-// `Titulador` (el arranque, con su cliente). Aquí viven el nombre provisional,
-// el prompt y la limpieza de la respuesta, que sí son decisiones del módulo y
-// se pueden probar sin modelo.
-
 package session
 
 import (
 	"context"
 	"strings"
+
+	"localcli/internal/llm/openai"
+	"localcli/internal/store"
+	"localcli/internal/tui"
 )
 
-// NombreProvisional es el nombre con el que nace toda sesión antes de tener su
-// primera petición. Un título generado lo sustituye; una sesión que el usuario
-// nunca usó se queda con él.
-const NombreProvisional = "Nueva sesión"
+// nombreProvisional es el nombre con el que nace una sesión.
+const nombreProvisional = "Nueva sesión"
 
-// LongitudMaximaTitulo acota el título generado para que no invada el panel ni
-// el modal con una frase entera.
-const LongitudMaximaTitulo = 60
+const promptTitulo = "Redacta un título breve, de como mucho seis palabras, que resuma " +
+	"la petición del usuario. Devuelve solo el título, sin comillas ni punto final."
 
-// Titulador produce un título breve a partir de la primera petición de una
-// sesión. Lo implementa el arranque con el modelo local; puede fallar y el
-// llamador conserva el nombre provisional (nunca bloquea el turno).
-type Titulador interface {
-	Titulo(ctx context.Context, texto string) (string, error)
+// opcionesTitulo acotan el título: corto y sin razonamiento, para que no gaste el
+// turno pensando.
+var opcionesTitulo = openai.Opciones{MaxTokens: 64, SinRazonamiento: true}
+
+// titular renombra una sesión recién creada con un título del modelo.
+func (o *Orquestador) titular(ctx context.Context, sesionID, texto string) {
+	s, err := store.ObtenerSesion(o.db, o.projectID, sesionID)
+	if err != nil || s.Name != nombreProvisional {
+		return
+	}
+	titulo, ok := o.tituloGenerado(ctx, texto)
+	if !ok {
+		return
+	}
+	if err := store.ActualizarNombreSesion(o.db, o.projectID, sesionID, titulo); err != nil {
+		return
+	}
+	o.emitir(tui.Evento{Sesion: sesionID, Tipo: tui.EventoTituloSesion, Datos: map[string]string{"titulo": titulo}})
 }
 
-// EsProvisional dice si un nombre sigue siendo el de fábrica. Es el segundo
-// guardián del título: solo se genera si la sesión todavía se llama así, de modo
-// que un nombre cambiado a mano nunca se sobrescribe.
-func EsProvisional(nombre string) bool {
-	return strings.TrimSpace(nombre) == NombreProvisional
+// tituloGenerado pide un título al modelo; false si falla o viene vacío.
+func (o *Orquestador) tituloGenerado(ctx context.Context, texto string) (string, bool) {
+	if o.llm == nil {
+		return "", false
+	}
+	mensajes := []openai.Mensaje{
+		{Rol: "system", Contenido: promptTitulo},
+		{Rol: "user", Contenido: texto},
+	}
+	var b strings.Builder
+	if _, err := o.llm.Completar(ctx, o.modeloActual(), mensajes, nil, opcionesTitulo, func(d openai.Delta) error {
+		if !d.Razonamiento {
+			b.WriteString(d.Texto)
+		}
+		return nil
+	}); err != nil {
+		return "", false
+	}
+	titulo := LimpiarTitulo(b.String())
+	if titulo == "" {
+		return "", false
+	}
+	return titulo, true
 }
 
-// PromptTitulo redacta la consulta que produce el título. Es el único texto que
-// sale hacia el modelo desde aquí: la instrucción y la primera petición.
-func PromptTitulo(texto string) string {
-	return "A partir de esta petición, escribe un título breve (de 3 a 6 palabras) que la represente. " +
-		"Responde SOLO con el título, en una línea, sin comillas, sin viñetas y sin punto final.\n\n" +
-		"Petición: " + strings.TrimSpace(texto)
-}
-
-// LimpiarTitulo normaliza la respuesta del modelo a un título usable: una sola
-// línea, sin comillas ni viñetas, con espacios colapsados y acotado. Devuelve ""
-// cuando no queda nada; el llamador lo trata como fallo y conserva el
-// provisional.
+// LimpiarTitulo deja el título en una sola línea corta y sin comillas.
 func LimpiarTitulo(s string) string {
-	linea := s
-	if i := strings.IndexAny(linea, "\r\n"); i >= 0 {
-		linea = linea[:i]
+	s = strings.TrimSpace(s)
+	if corte := strings.IndexByte(s, '\n'); corte >= 0 {
+		s = strings.TrimSpace(s[:corte])
 	}
-	linea = strings.TrimSpace(linea)
-	linea = strings.Trim(linea, "`\"'*_#>-–— \t")
-	linea = strings.Join(strings.Fields(linea), " ")
-	linea = strings.TrimRight(linea, ".。")
-	linea = strings.TrimSpace(linea)
-	r := []rune(linea)
-	if len(r) > LongitudMaximaTitulo {
-		linea = strings.TrimSpace(string(r[:LongitudMaximaTitulo]))
+	s = strings.Trim(s, "\"'“”‘’`")
+	const ancho = 60
+	if r := []rune(s); len(r) > ancho {
+		s = string(r[:ancho]) + "…"
 	}
-	return linea
+	return s
 }

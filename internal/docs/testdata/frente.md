@@ -1,11 +1,10 @@
 ---
-title: Documento con dependencias declaradas
+title: Documento con frente
+tags: [frente]
 depende_de:
-  - "[[b]]"
-  - "[[una/c|la C]]"
+  - "[[sin_front]]"
 ---
 
-# Dependencias por frontmatter
+# Frente
 
-Este cuerpo no menciona nada. Si el grafo no lee el frontmatter, este
-documento queda como una isla y las dependencias declaradas se pierden.
+Sin enlaces en el cuerpo.

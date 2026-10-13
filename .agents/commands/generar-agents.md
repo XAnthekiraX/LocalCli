@@ -128,7 +128,9 @@ Mapeo con los comandos y skills del proyecto:
 - `/crear` → SPEC → PLAN por capas → actualiza documentación → crea tareas principales y archivos de detalle con acción `crear`
 - `/actualizar` → análisis de impacto → actualiza SPEC y documentación → actualiza tareas principales y subtareas con acción `actualizar`
 - `/eliminar` → análisis de impacto → actualiza documentación → actualiza tareas principales y subtareas con acción `eliminar`
-- `/ejecutar-backend` y `/ejecutar-frontend` → implementan las tareas (skills `backend-executor` y `frontend-executor`)
+- `/planificar-backend` y `/planificar-frontend` → generan `MAIN-TASKS.md` y descomponen una tarea grande por vez en `NNN-task-<nombre>.md` (skills `backend-planner` y `frontend-planner`). No escriben código.
+- `/ejecutar-backend` y `/ejecutar-frontend` → implementan el código de las subtareas ya planificadas y aprobadas (skills `backend-executor` y `frontend-executor`). No crean ni modifican la estructura de tareas.
+- Agente `Profesor` → lee `ai/tasks/<capa>/MAIN-TASKS.md` y el `NNN-task-<nombre>.md` activo, y guía al usuario subtarea por subtarea (qué crear, qué interfaces exponer, qué funciones revisar). El usuario escribe el código.
 - Skills de documentación por capa (`frontend-documentation-architect`, `backend-documentation-architect`, `database-documentation-architect`) → generan la estructura canónica de cada capa
 - `docs-consistency-validator` → valida/normaliza la documentación contra la estructura canónica
 - `context-obtainer` → sigue las referencias de `AGENTS.md` → `FRONTEND.md`/`BACKEND.md`/`DATABASE.md` → archivos

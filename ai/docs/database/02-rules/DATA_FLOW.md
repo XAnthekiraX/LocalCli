@@ -27,6 +27,8 @@ Documentación y tareas (archivos)  ──┐
                                      │         ▼
                                      │    context_audit
                                      │
+Carpeta abierta ──▶ projects ──┐
+                               ▼
 Usuario (teclado) ──▶ TUI ──▶ Sesión ──▶ Agent ──▶ Herramientas
                                  │                         │
                                  │                         ▼
@@ -35,10 +37,12 @@ Usuario (teclado) ──▶ TUI ──▶ Sesión ──▶ Agent ──▶ Herr
                                  │                         ▼
                                  │                   change_history
                                  ▼
-                     sessions, messages, reasoning, approvals
+                     projects, sessions, messages, reasoning, approvals
 ```
 
 El contexto que consume el modelo no sale de la base: sale de los archivos del proyecto. La base guarda el rastro de qué se eligió, no el contenido. Ver [[specs/SPEC-NODO-CONTEXTO]].
+
+La carpeta desde la que se abre LocalCli se resuelve a una fila de `projects` (creándola si es la primera vez) y toda sesión cuelga de ella. La base es única y global, así que ese `project_id` es lo que separa los datos de una carpeta de los de otra. Ver [[database/01-schema/SCHEMA]].
 
 ## 2. Los dos planos y de dónde viene cada dato
 
@@ -59,6 +63,7 @@ Los dos se editan a mano y se versionan. Nada de esto se duplica en SQLite: si l
 
 | Dato | Quién lo escribe | Para qué |
 |---|---|---|
+| `projects` | El módulo de proyecto, al abrir una carpeta | Saber qué carpetas existen y separar sus sesiones por `project_id` |
 | `sessions` | El módulo de sesión | Saber qué sesiones hay y en qué estado |
 | `messages` | El agente y el usuario, al conversar | Reconstruir el historial, con los tokens y la duración de cada turno |
 | `reasoning` | El modelo, token a token | Mostrar y auditar el razonamiento |
@@ -111,6 +116,7 @@ Un turno puede necesitar varias aprobaciones, y se resuelven **una a una**: las 
 ## 5. Eliminación
 
 - **Borrar una sesión.** Es definitivo. En cascada se van `messages`, y con ellos `reasoning`, más `approvals`, `context_audit`, `todos`, `flow_context` y `chat_evento`. Las filas de `change_history` sobreviven con `session_id` en `NULL`. El detalle de las cascadas está en [[database/01-schema/RELATIONSHIPS]].
+- **Borrar un proyecto.** No es una operación habitual —una carpeta deja de usarse, no se borra—, pero existe: sus sesiones se van en cascada con todo lo que cuelga de ellas, y `change_history` sobrevive igual. Cerrar la carpeta o abrir otra no borra nada.
 - **Nunca se borra `change_history`.** No hay ninguna operación que la borre. Es lo que permite revertir y auditar.
 - **No se borran filas sueltas de `messages` ni de `reasoning`.** El historial de una sesión se conserva mientras la sesión exista; si quieres quitártelo, borras la sesión entera.
 
@@ -151,5 +157,5 @@ Los pasos 3 y 5 pueden repetirse hasta un máximo de rondas. Al agotarlo, **no s
 - [[specs/SPEC-NODO-CONTEXTO]] — de dónde sale el contexto.
 - [[specs/SPEC-COLA-TAREAS]] — de dónde sale la cola.
 - [[specs/SPEC-AGENTE-BASE]] — el ciclo de un turno y su máximo de rondas.
-- [[specs/SPEC-TOOLS]] — las herramientas del usuario y su ejecutor.
+- [[specs/SPEC-TOOLS]] — el catálogo de herramientas y su ejecución.
 - [[backend/04-infrastructure/EVENTS]] — los eventos que sí dejan rastro de cada ejecución.

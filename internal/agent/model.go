@@ -1,101 +1,119 @@
 package agent
 
-// model.go — T-B034-01 y T-B034-02: el tipo `Agente` y su contrato YAML.
-//
-// Fuente de verdad: ai/docs/specs/SPEC-AGENTE-BASE.md §Dónde se definen
-// (`agent.yaml` con `name`, `description` y `permissions`, más `prompt.md` con
-// las instrucciones) y ai/docs/backend/01-domain/BUSINESS_RULES.md §Agentes.
-//
-// El agente es una CARPETA con dos archivos que viajan por caminos distintos:
-// `agent.yaml` gobierna el harness —qué herramientas existen para este agente—
-// y `prompt.md` gobierna al modelo. El prompt NO viaja en el YAML: se lee de su
-// propio archivo.
-//
-// `permissions` es un mapa de permiso a efecto con solo tres permisos (`read`,
-// `write`, `edit`). El catálogo efectivo de herramientas NO se declara: se
-// DERIVA de los permisos contra el catálogo cerrado de `tools`. `default` solo
-// admite `deny` y, ausente, equivale a `deny`: lo que no se nombre no se
-// concede. Por eso `plan` no escribe: sus permisos no conceden `write` ni
-// `edit`, y la garantía vive en los datos, no en el código.
-//
-// La decodificación es estricta: rechaza cualquier campo que no sea `name`,
-// `description` o `permissions`, incluidos `prompt`, `herramientas`, `skills`,
-// `mode` y `hereda_de`.
-
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-// Efectos de un permiso en el `agent.yaml`.
+// Archivos de una carpeta de agente.
+const (
+	ArchivoConfig = "agent.yaml"
+	ArchivoPrompt = "prompt.md"
+)
+
+// Permisos admitidos.
+const (
+	PermisoRead  = "read"
+	PermisoWrite = "write"
+	PermisoEdit  = "edit"
+)
+
+// Efectos de un permiso.
 const (
 	EfectoAllow = "allow"
 	EfectoDeny  = "deny"
 )
 
-// ClaveDefault es la clave opcional de `permissions`. Su único valor admitido
-// es `deny`; ausente equivale a `deny`.
+// ClaveDefault solo admite `deny`.
 const ClaveDefault = "default"
 
-// CamposDelAgente son los nombres de campo admitidos en `agent.yaml`. Es la
-// lista cerrada del contrato; sirve para documentar y para los tests.
+// CamposDelAgente son los campos admitidos en `agent.yaml`.
 var CamposDelAgente = []string{"name", "description", "permissions"}
 
-// Agente es una definición cargada desde una carpeta de `.localcli/agents/`.
-// `Permissions` es su política; `Prompt` es su identidad (leída de `prompt.md`)
-// y `Herramientas` el catálogo efectivo que de ella se deriva en la carga.
+// PermisosDelAgente es el vocabulario cerrado de permisos.
+var PermisosDelAgente = []string{PermisoRead, PermisoWrite, PermisoEdit}
+
+// Agente es una definición cargada desde una carpeta de `agents/`.
 type Agente struct {
 	Nombre      string            `yaml:"name"`
 	Descripcion string            `yaml:"description"`
 	Permissions map[string]string `yaml:"permissions,omitempty"`
-	// Prompt es la identidad del agente. NO se decodifica del `agent.yaml`:
-	// lo rellena la carga leyendo `prompt.md` entero.
-	Prompt string `yaml:"-"`
-	// Herramientas es el catálogo EFECTIVO, derivado de Permissions. No viaja
-	// en el YAML: lo rellena la carga. Es la lista que `tools` comprueba y la
-	// que sostiene la garantía de que `plan` no escribe.
-	Herramientas []string `yaml:"-"`
+	Prompt      string            `yaml:"-"` // se rellena leyendo prompt.md
+	Origen      string            `yaml:"-"` // carpeta de la que se cargó
 }
 
-// SoloConversacion informa si el agente no tiene ninguna herramienta efectiva.
-// Un agente así no tiene ruta hacia `tools`: solo conversa (SPEC-AGENTE-BASE).
-func (a Agente) SoloConversacion() bool { return len(a.Herramientas) == 0 }
+// SoloConversacion indica si el agente no concede ningún permiso.
+func (a Agente) SoloConversacion() bool { return len(a.Permisos()) == 0 }
 
-// DecodificarAgente convierte el YAML de un `agent.yaml` en un Agente,
-// rechazando campos desconocidos (un `hereda_de`, un `prompt`, un
-// `herramientas:` o un `skills:` no pasan) y derivando el catálogo efectivo de
-// los permisos. NO exige `prompt.md`: eso lo hace la carga.
+// Permisos devuelve los permisos concedidos (`allow`), en orden del vocabulario.
+func (a Agente) Permisos() []string {
+	var out []string
+	for _, p := range PermisosDelAgente {
+		if strings.TrimSpace(a.Permissions[p]) == EfectoAllow {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// DecodificarAgente lee el YAML con campos estrictos y valida identidad y
+// permisos. No exige `prompt.md`.
 func DecodificarAgente(datos []byte) (Agente, error) {
 	var a Agente
 	dec := yaml.NewDecoder(bytes.NewReader(datos))
 	dec.KnownFields(true)
 	if err := dec.Decode(&a); err != nil {
-		return Agente{}, err
+		return Agente{}, errorf("no se pudo leer %s: %w", ArchivoConfig, err)
 	}
-	// Un segundo documento tampoco es un contrato válido.
 	var sobra yaml.Node
 	if err := dec.Decode(&sobra); err != io.EOF {
-		return Agente{}, errAgente("el archivo lleva contenido de más después del objeto")
+		return Agente{}, errorf("%s lleva contenido de más después del objeto", ArchivoConfig)
 	}
 	if err := a.validar(); err != nil {
 		return Agente{}, err
 	}
-	herramientas, err := HerramientasDe(a.Permissions)
-	if err != nil {
-		return Agente{}, err
-	}
-	a.Herramientas = herramientas
 	return a, nil
 }
 
-// validar comprueba lo que el YAML debe traer: `name` no puede faltar. El
-// prompt no se comprueba aquí —no está en el YAML—: lo hace la carga.
 func (a Agente) validar() error {
 	if strings.TrimSpace(a.Nombre) == "" {
-		return errAgente("falta el campo obligatorio `name`")
+		return errorf("falta el campo obligatorio `name`")
+	}
+	return validarPermisos(a.Permissions)
+}
+
+func validarPermisos(permissions map[string]string) error {
+	for clave, bruto := range permissions {
+		efecto := strings.TrimSpace(bruto)
+		if clave == ClaveDefault {
+			if efecto != EfectoDeny {
+				return errorf("`default` solo admite `deny`")
+			}
+			continue
+		}
+		if !permisoConocido(clave) {
+			return errorf("permiso desconocido: %s", clave)
+		}
+		if efecto != EfectoAllow && efecto != EfectoDeny {
+			return errorf("efecto desconocido para `%s`: %s", clave, bruto)
+		}
 	}
 	return nil
+}
+
+func permisoConocido(clave string) bool {
+	for _, p := range PermisosDelAgente {
+		if clave == p {
+			return true
+		}
+	}
+	return false
+}
+
+func errorf(format string, args ...any) error {
+	return fmt.Errorf("agente: "+format, args...)
 }

@@ -19,33 +19,37 @@ Los índices se crean en la definición del esquema y se gestionan con las migra
 
 | Índice | Tabla | Tipo |
 |---|---|---|
+| `idx_projects_path` | `projects` | Simple, `UNIQUE` |
+| `idx_sessions_project` | `sessions` | Compuesto |
+| `idx_sessions_status` | `sessions` | Compuesto |
 | `idx_messages_session_created` | `messages` | Compuesto |
 | `idx_reasoning_message` | `reasoning` | Simple |
 | `idx_approvals_session_status` | `approvals` | Compuesto |
 | `idx_approvals_pending` | `approvals` | Simple, parcial |
 | `idx_context_audit_session_stage` | `context_audit` | Compuesto |
 | `idx_context_audit_unico` | `context_audit` | Compuesto, `UNIQUE` |
+| `idx_todos_padre` | `todos` | Compuesto |
 | `idx_flow_context_unico` | `flow_context` | Compuesto, `UNIQUE` |
 | `idx_chat_evento_session_created` | `chat_evento` | Compuesto |
 | `idx_change_history_file` | `change_history` | Simple |
-| `idx_sessions_status` | `sessions` | Simple |
-| `idx_sessions_updated` | `sessions` | Simple |
 
 ## 2. Consultas que optimiza cada índice
 
 | Índice | Consulta que acelera | Quién la ejecuta |
 |---|---|---|
+| `idx_projects_path` | Reconocer una carpeta ya abierta antes de insertar un proyecto nuevo | El arranque, al resolver el `project_id` de la carpeta actual |
+| `idx_sessions_project` | Listar las sesiones de un proyecto por actividad reciente | El selector de sesiones |
+| `idx_sessions_status` | Listar las sesiones de un proyecto por estado | El selector de sesiones |
 | `idx_messages_session_created` | Cargar el historial de una sesión en orden cronológico | La interfaz al abrir o cambiar de sesión |
 | `idx_reasoning_message` | Leer el razonamiento de un mensaje | La interfaz al reabrir una respuesta |
 | `idx_approvals_session_status` | Ver las aprobaciones de una sesión filtradas por estado | El orquestador al reanudar un flujo pausado |
 | `idx_approvals_pending` | Contar y listar todas las aprobaciones pendientes de cualquier sesión | El panel de aprobaciones y el contador que se ve con el panel de datos cerrado |
 | `idx_context_audit_session_stage` | Ver qué documentación recibió una etapa concreta | El usuario al auditar una etapa |
 | `idx_context_audit_unico` | Rechazar una segunda auditoría de la misma terna (documento en la misma etapa) | La base, al escribir en `context_audit` |
+| `idx_todos_padre` | Leer el grupo de subtareas de una tarea principal y verificar que `parent_position` apunta a una fila existente de la sesión | La capa de datos, al leer la lista y al validar la jerarquía al escribir |
 | `idx_flow_context_unico` | Rechazar dos aportaciones de la misma etapa y reemplazar la del flujo al re-ejecutarlo | El orquestador, al guardar el bloque y al leerlo para la composición |
 | `idx_chat_evento_session_created` | Cargar las líneas de procesamiento de una sesión en orden cronológico | La interfaz al abrir o cambiar de sesión, al armar el hilo |
 | `idx_change_history_file` | Ver el historial de cambios de un archivo concreto | El usuario al revertir o auditar un archivo |
-| `idx_sessions_status` | Listar las sesiones por estado, para el selector | El selector de sesiones |
-| `idx_sessions_updated` | Listar las sesiones por actividad reciente | El selector, ordenado por última actividad |
 
 El más importante es `idx_approvals_pending`. La consulta que cuenta las aprobaciones pendientes se ejecuta en cada redibujado de la interfaz para mantener el contador al día, así que necesita ser rápida. Es un índice parcial, `WHERE status = 'pendiente'`, así que solo contiene las filas que importan y ocupa poco.
 
@@ -53,17 +57,21 @@ El más importante es `idx_approvals_pending`. La consulta que cuenta las aproba
 
 | Índice | Columnas | Notas |
 |---|---|---|
+| `idx_projects_path` | `path` | `UNIQUE`: una carpeta es un proyecto |
+| `idx_sessions_project` | `project_id`, `updated_at` | Lista las sesiones de un proyecto por actividad, sin `ORDER BY` extra |
+| `idx_sessions_status` | `project_id`, `status` | Filtra por estado dentro del proyecto |
 | `idx_messages_session_created` | `session_id`, `created_at` | El orden del segundo campo es lo que da el orden cronológico sin `ORDER BY` extra |
 | `idx_reasoning_message` | `message_id` | Admite el `UNIQUE` de un razonamiento por mensaje |
 | `idx_approvals_session_status` | `session_id`, `status` | Permite filtrar por ambos a la vez |
 | `idx_approvals_pending` | `created_at` | Parcial: solo filas con `status = 'pendiente'` |
 | `idx_context_audit_session_stage` | `session_id`, `stage` | Agrupa la auditoría por etapa |
 | `idx_context_audit_unico` | `session_id`, `stage`, `document` | `UNIQUE`: la terna identifica la fila, así que las tres van en el índice |
+| `idx_todos_padre` | `session_id`, `parent_position` | Lista el grupo de subtareas de una tarea principal sin barrido de la tabla |
 | `idx_flow_context_unico` | `session_id`, `flow`, `stage` | `UNIQUE`: identifica la aportación de una etapa y reemplaza al re-ejecutar |
 | `idx_chat_evento_session_created` | `session_id`, `created_at` | El orden del segundo campo da el orden del hilo sin `ORDER BY` extra |
 | `idx_change_history_file` | `file_path` | Historial de un archivo |
-| `idx_sessions_status` | `status` | Filtro por estado |
-| `idx_sessions_updated` | `updated_at` | Orden por actividad |
+| `idx_sessions_project` | `project_id`, `updated_at` | Orden por actividad dentro del proyecto |
+| `idx_sessions_status` | `project_id`, `status` | Filtro por estado dentro del proyecto |
 
 El índice parcial `idx_approvals_pending` ordena por `created_at` y no por `status`, porque el `status` ya está fijado por la propia condición del índice. Indexar la columna que el índice filtra sería redundante.
 
@@ -72,6 +80,7 @@ El índice parcial `idx_approvals_pending` ordena por `created_at` y no por `sta
 | Restricción | Índice que la sustenta |
 |---|---|
 | `id` único de cada tabla | Índice primario de la clave primaria |
+| Una carpeta es un proyecto | `idx_projects_path`, declarado `UNIQUE` |
 | Un solo razonamiento por mensaje | `idx_reasoning_message`, declarado `UNIQUE` |
 | Una sola auditoría por documento y etapa | `idx_context_audit_unico`, declarado `UNIQUE` |
 | Una sola aportación por etapa y flujo en la sesión | `idx_flow_context_unico`, declarado `UNIQUE` |

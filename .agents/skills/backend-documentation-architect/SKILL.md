@@ -81,4 +81,4 @@ cuando el usuario lo aprueba.
 
 # Final
 
-Al terminar, entrega todo a `backend-executor`.
+Al terminar, entrega todo a `backend-planner` para que genere las tareas.

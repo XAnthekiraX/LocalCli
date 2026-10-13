@@ -1,0 +1,58 @@
+{
+    "comando": "/ejecutar",
+    "nombre": "trabajo/ejecutar",
+    "descripcion": "arrancar la cola y ejecutar el siguiente elemento",
+    "peticion": "arrancar la cola y ejecutar el siguiente elemento",
+    "pregunta": "el resultado de ejecutar el siguiente elemento de la cola",
+    "reglas": [
+        "Se ejecuta un elemento del TODO por iteración, nunca varios a la vez.",
+        "Un elemento solo se marca completado cuando se terminó, con su verificación hecha.",
+        "Un elemento bloqueado se marca y se informa qué falta; si nada depende de él, la cola sigue con el siguiente.",
+        "Al vaciarse la cola, se detiene sola y avisa."
+    ],
+    "etapas": [
+        {
+            "id": "siguiente",
+            "nombre": "Tomar el siguiente elemento",
+            "agente": "plan",
+            "pregunta": "¿cuál es el siguiente elemento disponible de la cola y qué le falta?",
+            "aprobacion": false
+        },
+        {
+            "id": "contexto",
+            "nombre": "Pedir el contexto del elemento",
+            "agente": "plan",
+            "pregunta": "¿qué contexto necesita el elemento para ejecutarse?",
+            "aprobacion": false
+        },
+        {
+            "id": "propuesta",
+            "nombre": "Proponer el cambio",
+            "agente": "build",
+            "pregunta": "¿qué cambio hay que aplicar para completar el elemento?",
+            "aprobacion": true
+        },
+        {
+            "id": "aplicar",
+            "nombre": "Aplicar el cambio",
+            "agente": "build",
+            "pregunta": "¿qué se aplicó y con qué resultado?",
+            "aprobacion": true
+        },
+        {
+            "id": "verificar",
+            "nombre": "Verificar el elemento",
+            "agente": "build",
+            "pregunta": "¿se verificó el elemento y quedó completado?",
+            "aprobacion": true
+        },
+        {
+            "id": "entregar",
+            "nombre": "Entregar",
+            "agente": "plan",
+            "pregunta": "¿en qué estado quedó la cola después del elemento?",
+            "entrega": true,
+            "aprobacion": false
+        }
+    ]
+}

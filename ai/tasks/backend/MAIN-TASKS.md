@@ -1,52 +1,67 @@
-# MAIN-TASKS — Backend LocalCli
+# MAIN-TASKS.md
 
-Fuente de verdad del progreso del backend. Derivada exclusivamente de `ai/docs/` (BACKEND.md, DECISIONS.md, 01-domain, 02-interfaces, 03-security, 04-infrastructure, 05-quality, database/ y specs/).
+Descomposición de la capa backend, **en el orden de construcción acordado**. Cada bloque se apoya en el anterior: no se empieza uno sin cerrar el que tiene delante.
 
-| ID | Acción | Tarea | Dep | Estado | Detalle |
-|----|--------|-------|-----|--------|---------|
-| T-B000 | crear | Configuración del stack Go: go.mod, dependencias fijas y binario localcli | — | completada | `000-task-stack.md` |
-| T-B001 | crear | Estructura de carpetas base: los 13 módulos de internal/ con límites por paquete | T-B000 | completada | `001-task-estructura.md` |
-| T-B002 | crear | store: SQLite único acceso (esquema 6 tablas, WAL, foreign_keys, user_version, transacciones) | T-B000 | completada | `002-task-store.md` |
-| T-B003 | crear | docs: carga de documentación, frontmatter y grafo en memoria | T-B001 | completada | `003-task-docs.md` |
-| T-B004 | crear | task: lectura/escritura del TODO (MAIN-TASKS.md y NNN-task-*.md) con su frontmatter | T-B001 | completada | `004-task-task.md` |
-| T-B005 | crear | ollama: cliente HTTP streaming, razonamiento, perfil de hardware y serialización FIFO | T-B001 | completada | `005-task-ollama.md` |
-| T-B007 | crear | tools: registro de las 13 herramientas, comprobación de permiso y enrutado (+ DTOs) | T-B001 | completada | `007-task-tools.md` |
-| T-B006 | crear | agent: agentes JSON (plan/build), catálogo cerrado y despacho de herramientas a tools | T-B001, T-B007 | completada | `006-task-agent.md` |
-| T-B008 | crear | fileops: operaciones de archivo, frontera de rutas, aprobación y change_history | T-B002, T-B007 | completada | `008-task-fileops.md` |
-| T-B009 | crear | exec: terminal con lista blanca, límites (120s/10KB) y bloqueo Landlock | T-B007 | completada | `009-task-exec.md` |
-| T-B010 | crear | flow: motor de etapas, detección de trabajo ordenado y encadenamiento de ciclos | T-B003, T-B004, T-B005, T-B006 | completada | `010-task-flow.md` |
-| T-B011 | crear | context: nodo de contexto (selección por modelo, recorte y auditoría) | T-B003, T-B005 | completada | `011-task-context.md` |
-| T-B012 | crear | queue: cola derivada del TODO, orden por dependencias y elementos bloqueados | T-B004, T-B010 | completada | `012-task-queue.md` |
-| T-B013 | crear | session: ciclo de vida de sesiones, segundo plano, estados y notificaciones | T-B002, T-B010 | completada | `013-task-session.md` |
-| T-B014 | crear | tui: pantalla Bubble Tea (chat, panel, selector, aprobaciones, streaming) | T-B013 | completada | `014-task-tui.md` |
-| T-B015 | crear | Validaciones finales: suite de tests por regla/invariante y verificación integral | T-B002..T-B014 | completada | `015-task-validaciones.md` |
-| T-B016 | actualizar | chat normal por defecto y flujos solo con comando explícito; el chat usa las herramientas del agente activo | T-B006, T-B010, T-B013 | completada | `016-task-chat-y-flujos.md` |
-| T-B017 | actualizar | permisos explícitos por acción con catálogo derivado; ciclo conversacional único en `agent` y catálogo inyectado en el mensaje de sistema | T-B006, T-B007 | completada | `017-task-permisos-y-ciclo-agente.md` |
-| T-B018 | actualizar | ollama: capacidades del modelo (`/api/show`) y `SinHerramientas` en la lista del modal | T-B005 | completada | `018-task-ollama-capacidades.md` |
-| T-B019 | actualizar | preferencias de usuario: el arranque reutiliza el último modelo y expone el último agente por el puerto | T-B005 | completada | `019-task-preferencias-usuario.md` |
-| T-B020 | actualizar | sesiones sin «principal»: nombre provisional y título generado por el modelo; `ResolverActiva` solo retoma | T-B002, T-B013 | completada | `020-task-sesiones-titulos.md` |
-| T-B021 | actualizar | historial de conversación al modelo con compactación por presupuesto | T-B006, T-B010, T-B013 | completada | `021-task-historial-conversacion.md` |
-| T-B022 | actualizar | imágenes por turno de chat: `ollama.Mensaje.Images` (base64 en `/api/chat`), `PuedeVer` y el transporte efímero por `agent`/`flow`/`session` | T-B005, T-B018, T-B021 | completada | `022-task-imagenes-ollama.md` |
-| T-B023 | actualizar | agentes configurables: cargar todos los `.localcli/agents/*.json` (base + propios), orden estable de nombres y validación relajada en `flow` | T-B006, T-B010, T-B018 | completada | `023-task-agentes-configurables.md` |
-| T-B024 | actualizar | herramientas nativas y extensibles: canal `tools` de `/api/chat`, capa universal de ejecución y herramientas del usuario en `.localcli/tools/` | T-B005, T-B006, T-B007, T-B017, T-B018 | completada | `024-task-tools-nativas-y-extensibles.md` |
-| T-B025 | actualizar | TODO del agente: herramienta `actualizar_todo`, acción `tareas`, tabla `todos` (migración 002) y evento `todo_actualizada` | T-B002, T-B006, T-B007 | completada | `025-task-todo-agente.md` |
-| T-B026 | actualizar | línea de herramienta: `herramienta_invocada` lleva el verbo y el tema (el objetivo del catálogo) y `herramienta_resultado` la medida, en vez del resumen ciego de argumentos | T-B024 | completada | `026-task-linea-herramienta.md` |
-| T-B027 | actualizar | sub-procesos encadenados: cada etapa devuelve un resumen corto que se encadena, las intermedias sin aprobación corren en silencio (`[Sub Proceso] <nombre>`) y el chat muestra la entrega del último paso | T-B010, T-B013, T-B014 | completada | `027-task-resolver-subprocesos.md` |
-| T-B028 | actualizar | `/resolver` determinista: bloque de contexto optimizado por fase en `flow_context` (migración 003), composición final sin herramientas y regla de la ruta raíz de `AGENTS.md` | T-B010, T-B014, T-B027 | completada | `028-task-bloque-contexto-resolver.md` |
-| T-B029 | actualizar | hilo del chat persistente: líneas de procesamiento en `chat_evento` (migración 004) sin entrar al contexto, tokens y duración del turno en `messages`, y `contextoSesion` para el panel | T-B002, T-B010, T-B013, T-B014, T-B024, T-B027 | completada | `029-task-hilo-chat-tokens-duracion.md` |
-| T-B030 | actualizar | los agentes base se cargan de `.localcli/agents/` y la carpeta se versiona con el proyecto: `.gitignore` ignora solo el SQLite, y código, specs y tareas nombran la ruta nueva | T-B006, T-B023, T-B024 | completada | `030-task-agentes-en-localcli.md` |
-| T-B031 | actualizar | la etapa responde a su pregunta (brief + ventana con pregunta/respuesta; reintento y `E_STAGE_FAILED` si sigue muda) y los flujos son dato: fuera los flujos cableados y la cola resuelve su flujo del catálogo | T-B010, T-B012, T-B013, T-B027 | completada | `031-task-etapa-responde-y-flujos-dato.md` |
-| T-B032 | actualizar | duración de cada línea de herramienta: `chat_evento.duration_ms` (migración 005), medición en la capa universal, `herramienta_resultado.duracion` y tiempo en la línea pintada y recargada | T-B024, T-B026, T-B029 | completada | `032-task-tiempo-linea-herramienta.md` |
-| T-B033 | actualizar | un turno nunca se cierra mudo: la redacción final se reintenta una vez si vuelve a pedir herramientas y, si sigue sin texto, el turno falla con el motivo a la vista en vez de guardar `(respuesta vacía)` | T-B006, T-B031 | completada | `033-task-turno-sin-respuesta.md` |
-| T-B034 | actualizar | el agente pasa a ser una carpeta: `agent.yaml` (nombre, descripción y permisos de tres categorías `read`/`write`/`edit`, sin `skills` ni `mode`) más `prompt.md`; el `*.json` antiguo se avisa nombrándolo y los agentes base se migran | T-B006, T-B007, T-B017, T-B023, T-B030 | completada | `034-task-agentes-config-y-prompt.md` |
-| T-B035 | actualizar | la lista de pasos de la sesión tiene dos vías: `crear_todo` añade un paso al final y `actualizar_todo` sustituye la lista entera; mismo vocabulario, misma lista devuelta y sin migración | T-B002, T-B006, T-B007, T-B025 | completada | `035-task-crear-todo.md` |
-| T-B036 | actualizar | proveedor de modelo intercambiable: frontera `llm.Proveedor`, adaptador OpenAI-compatible (llama.cpp) y `LOCALCLI_PROVEEDOR` | T-B005, T-B018, T-B019, T-B022, T-B024 | sustituida por T-B038 | `036-task-proveedor-modelo.md` |
-| T-B037 | actualizar | motores de inferencia administrables: registro global `motores.json`, `llm.Motor` con una cola por motor y el par motor/modelo por sesión (migración 006) | T-B036 | sustituida por T-B038 (en lo del tipo cerrado que decide el transporte, el registro sembrado y las capacidades de dos estados; el resto sigue vigente) | `037-task-motores-de-inferencia.md` |
-| T-B039 | actualizar | store: eliminar la validación de proyecto al abrir (`isProjectReported`/`E_NOT_A_PROJECT`), limpiar el centinela muerto y alinear comentarios, seeding y tests | T-B002 | completada | `039-task-eliminar-validacion-proyecto.md` |
+1. **Arranque y archivo global** — validación y creación de la raíz `~/.config/localcli/`.
+2. **Conexión y carga de modelos desde `models/`** — descarga, catálogo, ciclo de vida de `llama-server` y cliente de inferencia.
+3. **Chat funcional** — sesión, agente, contexto y TUI.
+4. **Herramientas** — catálogo, ejecución, terminal y archivos.
+5. **Flujos** — orquestador de etapas, tareas y cola.
+6. **Resto** — documentación, grafo de frontmatter y lo que quede pendiente.
 
-## Referencias
+## Bloque 1 — Arranque y archivo global
 
-- [[backend/BACKEND]] — mapa de la capa y estructura de proyecto (sección 2).
-- [[backend/DECISIONS]] — decisiones confirmadas, no se reinventan.
-- [[database/DATABASE]] — capa de datos.
-- [[specs/SPEC-INTERFAZ]] — superficie que consume `tui`.
+| ID     | Acción     | Tarea                                                                                                       | Dep    | Estado     | Detalle                        |
+| ------ | ---------- | ----------------------------------------------------------------------------------------------------------- | ------ | ---------- | ------------------------------ |
+| T-B000 | crear      | Comandos de arranque y siembra: `localcli` / `-h` / `-v` / `init` / `create`; la raíz global la crea `init` | —      | completada | `000-task-arranque-siembra.md` |
+| T-B001 | actualizar | Store global: `projects` + `sessions.project_id` (v7/007) y consultas de aislamiento                        | T-B000 | completada | `001-task-store-global.md`     |
+| T-B002 | actualizar | Carga aditiva de agentes y flujos (globales + propios del proyecto)                                         | T-B000 | completada | `002-task-carga-aditiva.md`    |
+
+## Bloque 2 — Conexión y carga de modelos desde `models/`
+
+| ID     | Acción | Tarea                                                                                                        | Dep    | Estado     | Detalle                          |
+| ------ | ------ | ------------------------------------------------------------------------------------------------------------ | ------ | ---------- | -------------------------------- |
+| T-B003 | crear  | Descarga de modelos GGUF desde Hugging Face (repositorio + variante, sin duplicados, reanudable)             | T-B000 | completada | `003-task-descarga-modelos.md`   |
+| T-B004 | crear  | Catálogo de modelos (`models/` + `models.json`) y selección del modelo activo                                | T-B003 | completada | `004-task-catalogo-modelos.md`   |
+| T-B005 | crear  | Ciclo de vida de `llama-server`: arranque y detención con el GGUF elegido, puerto, disponibilidad y reinicio | T-B004 | completada | `005-task-llama-server.md`       |
+| T-B006 | crear  | Cliente de inferencia HTTP contra `llama-server` (núcleo OpenAI + extensión `props`, errores de conexión)    | T-B005 | completada | `006-task-cliente-inferencia.md` |
+| T-B023 | actualizar | Ventana de contexto real del modelo (GGUF) y recorte efectivo del turno por ronda                       | T-B005 | completada | `023-task-ventana-contexto-real.md` |
+
+## Bloque 3 — Chat funcional
+
+| ID     | Acción | Tarea                                                                   | Dep                    | Estado     | Detalle                             |
+| ------ | ------ | ----------------------------------------------------------------------- | ---------------------- | ---------- | ----------------------------------- |
+| T-B007 | crear  | Sesión y memoria de conversación (crear, cambiar, historial)            | T-B006                 | completada | `007-task-sesion-memoria.md`        |
+| T-B008 | crear  | Agente base y construcción de la llamada (prompt de sistema + esquemas) | T-B002, T-B013, T-B012 | completada | `008-task-agente-base.md`           |
+| T-B009 | crear  | Nodo de contexto: selección y recorte por etapa                         | T-B008                 | completada  | `009-task-nodo-contexto.md`         |
+| T-B010 | crear  | Persistencia de sesiones y mensajes (store)                             | T-B001                 | completada | `010-task-store-sesion-mensajes.md` |
+| T-B011 | crear  | TUI de chat: bienvenida, streaming en vivo y panel                      | T-B007                 | completada | `011-task-tui-chat.md`              |
+
+## Bloque 4 — Herramientas
+
+| ID     | Acción | Tarea                                                              | Dep    | Estado    | Detalle                             |
+| ------ | ------ | ------------------------------------------------------------------ | ------ | --------- | ----------------------------------- |
+| T-B013 | crear  | Canal de herramientas en `llm/openai` (tipos + tool_calls)         | T-B006 | completada | `013-task-canal-herramientas.md`    |
+| T-B012 | crear  | Catálogo de herramientas y capa universal de ejecución             | T-B013 | completada | `012-task-catalogo-herramientas.md` |
+| T-B015 | crear  | Terminal (`exec`): lista blanca y bloqueo estructural con Landlock | T-B012 | completada | `015-task-terminal.md`              |
+| T-B014 | crear  | Acceso a archivos (`fileops`) y aprobaciones                       | T-B012 | completada | `014-task-fileops.md`               |
+| T-B016 | crear  | Lista de pasos de la sesión (`crear_todo` / `actualizar_todo`)     | T-B012 | completada | `016-task-lista-pasos.md`           |
+| T-B022 | actualizar | Jerarquía de un nivel en la lista de pasos: tarea principal con subtareas (`titulo`/`subtareas`, `todos.parent_position`) | T-B016 | pendiente | `022-task-todo-subtareas.md` |
+
+## Bloque 5 — Flujos
+
+| ID     | Acción | Tarea                                                                                                                                                                     | Dep            | Estado    | Detalle         |
+| ------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | --------- | --------------- |
+| T-B017 | crear  | Orquestador de etapas y flujos oficiales; entrada por comando y por la herramienta `ejecutar_flujo` (permiso derivado, sub-proceso, frontera de salida y profundidad uno) | T-B009, T-B012 | completada | `017-task-orquestador-flujos.md` |
+| T-B018 | crear  | Tareas (`NNN-task-<nombre>.md`) y cola por capa                                                                                                                           | T-B017         | completada | `018-task-tareas-cola.md` |
+| T-B019 | crear  | Ciclos: planificación, trabajo y resolver                                                                                                                                 | T-B018         | completada | `019-task-ciclos.md` |
+
+## Bloque 6 — Resto
+
+| ID      | Acción     | Tarea                                                              | Dep    | Estado    | Detalle                      |
+| ------- | ---------- | ------------------------------------------------------------------ | ------ | --------- | ---------------------------- |
+| T-B019b | actualizar | Eliminar columna vestigial `sessions.motor_id` (migración + store) | T-B006 | pendiente | `999-task-quitar-motorid.md` |
+| T-B020  | crear      | Documentación (`docs`) y grafo de frontmatter                      | T-B009 | completada | `020-task-docs-grafo.md`     |
+| T-B021  | crear      | Lo que quede pendiente (panel de contexto, atajos, skills)         | T-B020 | pendiente | por descomponer              |
+
+> Los detalles de los bloques 3–6 se descomponen **uno a uno** cuando toque, con aprobación; los bloques 1–2 ya están descompuestos.

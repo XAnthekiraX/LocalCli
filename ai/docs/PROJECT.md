@@ -3,6 +3,7 @@ title: LocalCli
 tags: [proyecto, indice]
 depende_de:
   - "[[IDEA]]"
+relacionado:
   - "[[backend/DECISIONS]]"
 ---
 
@@ -14,7 +15,7 @@ LocalCli
 
 ## Descripción
 
-Harness de terminal en Go que planifica y ejecuta desarrollo de software con un modelo local (Ollama o llama.cpp, o cualquier otro runtime que hable el protocolo OpenAI), entregando a cada etapa solo el contexto que necesita y pidiendo tu aprobación antes de aplicar cualquier cambio.
+Harness de terminal en Go que planifica y ejecuta desarrollo de software con un modelo local gestionado por el propio harness: descarga los modelos GGUF desde Hugging Face, los almacena y cataloga, y los sirve mediante `llama-server` (llama.cpp), entregando a cada etapa solo el contexto que necesita y pidiendo tu aprobación antes de aplicar cualquier cambio.
 
 ## Alcance funcional aprobado
 
@@ -23,9 +24,9 @@ Definido en 19 especificaciones funcionales bajo `ai/docs/specs/`.
 ### Núcleo (P0)
 
 - [[specs/SPEC-AGENTE-BASE]] — los dos agentes incluidos y el relevo entre ellos.
-- [[specs/SPEC-TOOLS]] — catálogo de herramientas, reparto por agente y herramientas del usuario.
+- [[specs/SPEC-TOOLS]] — catálogo de herramientas y reparto por agente.
 - [[specs/SPEC-ARCHIVOS]] — reglas de acceso y permiso sobre archivos y carpetas.
-- [[specs/SPEC-MODELO-MOTOR]] — motores de inferencia, perfil de hardware, capacidad de herramientas y concurrencia.
+- [[specs/SPEC-MODELOS-LLAMACPP]] — gestión y ejecución de modelos con llama.cpp, descarga, catálogo y selección.
 - [[specs/SPEC-NODO-CONTEXTO]] — selección y recorte del contexto por etapa.
 - [[specs/SPEC-SESIONES]] — varias sesiones con contexto independiente.
 - [[specs/SPEC-HISTORIAL-CONVERSACION]] — memoria del chat y compactación del historial.
@@ -58,10 +59,10 @@ Definido en 19 especificaciones funcionales bajo `ai/docs/specs/`.
 | Interfaz de terminal | Bubble Tea + Lip Gloss (charmbracelet) |
 | Aislamiento de terminal | Landlock (mecanismo del kernel en Linux, sin privilegios) |
 | Persistencia | SQLite con driver puro Go (`modernc.org/sqlite`), sin cgo |
-| Modelo | Motores de inferencia locales por API HTTP sobre el protocolo OpenAI (`ollama` o `llamacpp`, con extensiones nativas declaradas por motor, y declarables varios); el motor y el modelo los elige el usuario, por sesión, y ninguno viene activo por defecto |
+| Modelo | Un solo proveedor, llama.cpp: LocalCli descarga los modelos GGUF desde Hugging Face, los almacena en `~/.config/localcli/models/`, los registra en su catálogo (`models.json`) y arranca `llama-server` con el elegido; la comunicación es HTTP sobre el protocolo OpenAI (`/v1`). La configuración global (`localcli.json`) guarda solo `proveedor` y la dirección base de la API |
 | Distribución | Un único binario, sin runtime externo |
 
-No hay Node, ni Python, ni gestor de procesos. La herramienta arranca sin terminal multiplexer, sin dependencias de sistema y sin ningún runtime de inferencia instalado: el binario es autosuficiente y los motores los activa el usuario.
+No hay Node, ni Python, ni gestor de procesos. La herramienta arranca sin terminal multiplexer, sin dependencias de sistema y sin modelos descargados: el binario es autosuficiente y descarga y gestiona los modelos él mismo.
 
 ## Arquitectura general
 
@@ -72,16 +73,17 @@ cmd/localcli/      punto de entrada
 internal/
   tui/             chat, panel de datos, selector de sesiones, aprobaciones
   session/         creación, cambio, memoria de conversación y ejecución en segundo plano de sesiones
-  agent/           carga de agentes (.localcli/agents/<carpeta>/: agent.yaml con nombre y permisos, prompt.md con las instrucciones)
-  llm/             frontera neutra del modelo: tipos, interfaz Motor, capacidades de tres estados, registro de motores, cola por motor y regla de la ventana
-  llm/openai/      núcleo común de todos los motores: transporte HTTP y SSE contra /v1/chat/completions y /v1/models
-  llm/ollama/      extensión nativa de ollama: options.num_ctx en la petición, /api/show y /api/tags
-  llm/llamacpp/    extensión nativa de llamacpp (llama-server): /props
+  agent/           carga de agentes (los base sembrados en ~/.config/localcli/agents/ y los propios del proyecto en <proyecto>/.localcli/agents/; cada uno, una carpeta con agent.yaml y prompt.md)
+  llm/             frontera del modelo: tipos, interfaz de motor, capacidades de tres estados y regla de la ventana
+  llm/openai/      núcleo común: transporte HTTP y SSE contra /v1/chat/completions
+  llm/llamacpp/    extensión nativa de llama-server: /props
+  models/          gestión de modelos: descarga desde Hugging Face, catálogo (models.json), subdirectorios en models/ y selección
+  llama/           ciclo de vida de llama-server: arranque y detención con el GGUF elegido, puerto y chequeo de disponibilidad
   context/         grafo de frontmatter, selección, recorte y auditoría
   flow/            orquestador de etapas y encadenamiento
   queue/           cola por capa y orden por dependencias
   task/            archivos de tarea
-  tools/           catálogo, capa universal de ejecución y herramientas del usuario
+  tools/           catálogo y capa universal de ejecución
   fileops/         validación de rutas, acceso a archivos e historial de cambios
   exec/            terminal: lista blanca y bloqueo estructural de escritura
   store/           persistencia SQLite
@@ -91,10 +93,10 @@ internal/
 ### Recorrido de una petición
 
 1. `tui` recibe lo que escribes y lo envía a la sesión activa.
-2. `session` responde la petición como chat; solo arranca un flujo cuando la línea es un comando explícito (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`).
+2. `session` responde la petición como chat; arranca un flujo cuando la línea es un comando explícito (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`), o cuando el agente lo pide con la herramienta `ejecutar_flujo`.
 3. `context` arma el contexto de la etapa: lee el grafo de dependencias, filtra, deja que el modelo elija y recorta hasta el límite.
 4. `agent` construye la llamada con el prompt de `plan` o de `build` y los esquemas de las herramientas de ese agente, sin escribir el catálogo en el prompt.
-5. La frontera de motor (`llm`) recorta el turno para que quepa y lo envía por el núcleo común (`llm/openai`), que habla el protocolo OpenAI con todos los motores; los puntos que ese núcleo no cubre salen por las extensiones nativas declaradas (`num_ctx`, `show`, `tags` en `ollama`; `props` en `llamacpp`). Devuelve el token a token, junto con las peticiones de herramienta que el modelo formule.
+5. La frontera de motor (`llm`) recorta el turno para que quepa y lo envía por el núcleo común (`llm/openai`), que habla el protocolo OpenAI con `llama-server`; los puntos que ese núcleo no cubre salen por la extensión nativa (`props` de llama.cpp). Devuelve el token a token, junto con las peticiones de herramienta que el modelo formule.
 6. `tui` muestra el razonamiento en vivo y después la respuesta.
 7. Si el agente pide una herramienta, `tools` comprueba el permiso, valida los argumentos, ejecuta el handler, recorta la salida y emite el evento. Cada petición del modelo puede ir en una vuelta del bucle; hay un máximo de rondas.
 8. El resultado de la etapa pasa a `flow`, que decide si sigue, si se detiene o si espera tu aprobación.
@@ -126,15 +128,16 @@ Hay dos planos, y la separación es deliberada.
 
 La cola se deriva de los archivos de tarea y se reconstruye al arrancar en memoria; no hay tabla de cola en SQLite. Si los dos divergen, manda el archivo.
 
-**Preferencias del usuario: fuera del proyecto.** El mapa de teclas y las preferencias —último motor, último modelo y último agente usados— viven en `~/.config/localcli/` (`keys.json` y `config.json`). Son globales del usuario, no del proyecto: no se versionan con el contenido ni se guardan en SQLite. Ver [[backend/04-infrastructure/CONFIGURATION]] y [[frontend/FRONTEND]].
+**Configuración del harness: fuera del proyecto.** La carpeta `~/.config/localcli/` es la raíz de la máquina y concentra todo lo que no pertenece al proyecto: el mapa de teclas (`keys.json`), las preferencias (`config.json`), la configuración del proveedor (`localcli.json`), el catálogo de modelos (`models.json`), los modelos GGUF (`models/`), la base de datos (`state.db`), los agentes base (`agents/`) y los flujos oficiales (`flows/`). Son globales del usuario, no del proyecto: no se versionan con el contenido del proyecto. Los agentes base y los flujos oficiales se embeben en el binario y se siembran en esa carpeta al ejecutar `localcli init`, sin sobrescribir lo que ya haya. El proyecto solo puede **añadir** agentes y flujos propios en `<proyecto>/.localcli/`, que se cargan de forma aditiva junto a los globales. Ver [[backend/04-infrastructure/CONFIGURATION]] y [[frontend/FRONTEND]].
 
-**Registro de motores: archivo global, no tabla.** Los motores declarados viven en `~/.config/localcli/motores.json`, no en SQLite. Son una característica de la máquina —qué runtimes hay y dónde—, no del proyecto: guardarlos en la base ataría la configuración de la máquina a un repositorio y obligaría a migrar para cualquier cambio de lista. **Si el archivo está ausente, el registro queda vacío y así se queda: LocalCli se instala en máquinas sin runtimes y eso es un estado válido**, no un error que haya que tapar con un motor inventado. LocalCli entrega el archivo escrito con las dos entradas de referencia ya configuradas y `activo: false`. Lo único que va a la base es el par motor/modelo de cada sesión, en `sessions.motor_id` y `sessions.modelo`, que es del proyecto porque es su estado de ejecución. Ver [[backend/DECISIONS]].
+**Catálogo de modelos: archivo global, no tabla.** Los modelos descargados viven en `~/.config/localcli/models/` (un GGUF original por modelo, dentro de su subdirectorio) y se registran en `~/.config/localcli/models.json`, no en SQLite. Son una característica de la máquina —qué modelos hay y dónde—, no del proyecto: guardarlos en la base ataría los archivos de la máquina a un repositorio. **El catálogo nace vacío y así se queda hasta que el usuario descarga un modelo: LocalCli se instala en una máquina sin modelos y eso es un estado válido**, no un error que haya que tapar con un modelo inventado. `localcli.json` no contiene el modelo ni los modelos descargados. Lo único que va a la base es el modelo de cada sesión, en `sessions.modelo`. Ver [[specs/SPEC-MODELOS-LLAMACPP]] y [[backend/DECISIONS]].
+
+**Base de datos: un solo archivo global dentro de `~/.config/localcli/`.** No hay un archivo por proyecto. La base guarda las sesiones de todas las carpetas y cada una se ata a su proyecto por `sessions.project_id` (la ruta de la carpeta abierta): el aislamiento deja de ser físico y pasa a ser una consulta por proyecto. Ver [[database/DATABASE]] y [[database/01-schema/SCHEMA]].
 
 ## Integraciones
 
-- **Motores de inferencia.** Runtimes locales por API HTTP que hablen el protocolo OpenAI. `ollama` y `llamacpp` (`llama-server`) son los dos con extensiones nativas declaradas, y se pueden declarar varios motores. Peticiones en streaming para poder mostrar el razonamiento mientras llega. **Ninguno viene activo**: se da de alta o se activa en el modal de motores.
+- **Inferencia (llama.cpp).** Un solo proveedor. LocalCli descarga modelos GGUF desde Hugging Face, los guarda en `~/.config/localcli/models/`, los registra en su catálogo y arranca `llama-server` con el modelo elegido, hablándole por HTTP bajo el protocolo OpenAI. Peticiones en streaming para poder mostrar el razonamiento mientras llega. No se usa Ollama ni se mantienen almacenes duplicados.
 - **Búsqueda en internet.** Es la única integración que hace salir información de la máquina, y solo sale la consulta. El contenido que vuelve entra al mismo presupuesto de contexto que el resto y queda registrado.
-- **Herramientas del usuario.** El usuario declara herramientas en `.localcli/tools/*.json` y se ejecutan como subproceso con la lista blanca y el aislamiento de la terminal. Siempre piden permiso y solo pueden leer. Ver [[backend/02-interfaces/TOOLS]].
 
 ## Seguridad
 
@@ -150,12 +153,11 @@ La cola se deriva de los archivos de tarea y se reconstruye al arrancar en memor
 - **De integración.** Conexión y streaming con el motor, ciclo completo de una etapa con las herramientas de lectura, aplicación de un cambio con su aprobación, ciclo de cola, turno con varias herramientas encadenadas.
 - **Del aislamiento.** Un caso que intente escribir en el proyecto a través de la terminal y debe fallar. Es la prueba que sostiene la garantía de Landlock.
 - **De contexto.** Que el recorte reduzca de forma medible frente a leer el proyecto completo, y que lo entregado quepa en el límite del modelo.
-- **De herramientas del usuario.** Que un `.json` mal formado se salte sin romper el arranque, que toda ejecución pida permiso y que la salida se recorte antes de volver al modelo.
 
 ## Despliegue
 
 - Compilación cruzada a un binario único con `go build`.
-- Requisitos en la máquina: **ningún runtime de inferencia es requisito para instalar**. LocalCli arranca sin motores dados de alta; lo propio es abrir el modal de motores y activar el que haya instalado (`ollama` o `llama-server`). Landlock disponible si se quiere el aislamiento fuerte (Linux 5.13 o superior).
+- Requisitos en la máquina: **ningún modelo es requisito para instalar**. LocalCli arranca sin modelos en el catálogo; los descarga el propio harness desde Hugging Face y los sirve con `llama-server`. Hace falta el binario de `llama.cpp` disponible en el sistema y Landlock disponible si se quiere el aislamiento fuerte (Linux 5.13 o superior).
 - Sin servicios adicionales, sin migraciones que aplicar a mano, sin configuración obligatoria.
 
 ## Decisiones técnicas
@@ -168,11 +170,12 @@ La cola se deriva de los archivos de tarea y se reconstruye al arrancar en memor
 | SQLite con driver puro Go | Un archivo, sin servidor, y el binario sigue siendo portable porque no usa cgo | Postgres, innecesario para uso personal; un driver con cgo, que ataría la compilación a un toolchain de C |
 | Archivos como fuente de verdad | La documentación se edita a mano, se versiona y se lee sin la herramienta | Guardarlo todo en SQLite, que haría la documentación inaccesible fuera del harness |
 | El modelo lo elige el usuario | Es su máquina y su tradeoff entre calidad y velocidad | Fijar un modelo por defecto, que asumiría en su nombre qué Prioriza |
+| Un solo proveedor: llama.cpp, gestionado por el harness | LocalCli controla de principio a fin la descarga, el almacenamiento y la ejecución del modelo, que se carga desde su GGUF original sin copias derivadas | Un registro multi-motor con Ollama, que reintroduce su almacén duplicado y una generalidad sin uso; hardcodear el modelo, que impide gestionarlo por catálogo |
 
 ## Límites conocidos
 
-- **Las sesiones que comparten motor comparten modelo.** Un motor con 4 GB de VRAM solo tiene un modelo cargado. Varias sesiones pueden estar activas a la vez, pero las que usan el mismo motor serializan sus respuestas: mientras una genera, la otra espera. Dos motores distintos son dos servidores distintos y no se esperan entre sí. Es una consecuencia del hardware, no un defecto del diseño.
-- **Editar un motor ya aplicado exige reiniciar.** Añadir, desactivar, reactivar y eliminar se aplican al momento; corregir la URL de un motor que ya está en uso, no. El adaptador vive en memoria mientras corre el harness. Ver [[backend/DECISIONS]].
+- **Las sesiones comparten servidor y, con él, el modelo.** Hay un solo `llama-server`, así que varias sesiones pueden estar abiertas a la vez, pero mientras una genera las demás esperan. Cambiar de modelo reinicia el servidor y desaloja el modelo anterior. Es una consecuencia del hardware, no un defecto del diseño.
+- **Cambiar de modelo reinicia el servidor.** El harness arranca `llama-server` con el GGUF elegido y lo detiene; para pasar a otro modelo hay que reiniciarlo, y ese proceso lo gestiona LocalCli. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
 - **El aislamiento fuerte es de Linux.** Landlock solo existe ahí. En otros sistemas la terminal tiene una garantía más débil y la documentación lo dice.
 - **Un 7B no cabe en 4 GB de VRAM.** Si eliges uno, el harness avisa y no lo carga en silencio; irá a RAM, que es más lento y aprieta los 16 GB.
 - **La inferencia no se puede paralelizar** entre sesiones, por lo mismo.
@@ -230,7 +233,7 @@ Las decisiones de backend están centralizadas en [[backend/DECISIONS]]. Las glo
 
 - Formato definitivo del archivo de tarea (`NNN-task-<nombre>.md`) y su bloque de contexto.
 - Comandos concretos de la lista blanca de la terminal, con su límite de tiempo y de salida.
-- Modelo y parámetros de inferencia por defecto para el perfil recomendado.
+- Parámetros de arranque de `llama-server` por defecto para el perfil recomendado.
 
 ## Referencias
 

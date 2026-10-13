@@ -8,9 +8,9 @@ import (
 
 const raizDocs = "../../ai/docs"
 
-// carga la documentación real del proyecto. Los tests de este archivo vigilan
-// el estado de ai/docs/, no una copia: si un documento nuevo nace sin
-// frontmatter, este test falla.
+// cargarReal carga la documentación real del proyecto. Los tests de este
+// archivo vigilan el estado de ai/docs/, no una copia: si un documento nuevo
+// nace sin frontmatter, este test falla.
 func cargarReal(t *testing.T) (map[string]*Doc, *Grafo) {
 	t.Helper()
 	docs, errs, err := CargarDocs(raizDocs)
@@ -67,8 +67,8 @@ func TestNingunaDependenciaDeclaradaEstaRota(t *testing.T) {
 func TestDependenciasFuertesNoFormanCiclos(t *testing.T) {
 	docs, g := cargarReal(t)
 
-	// El valor de una clave ausente en un map[string]int es 0, asi que los
-	// estados empiezan en 1: con iota, un nodo no visitado pareceria en curso.
+	// El valor de una clave ausente en un map[string]int es 0, así que los
+	// estados empiezan en 1: con iota, un nodo no visitado parecería en curso.
 	const (
 		enPila = iota + 1
 		hecho
@@ -86,10 +86,11 @@ func TestDependenciasFuertesNoFormanCiclos(t *testing.T) {
 		}
 		estado[ruta] = enPila
 		for _, v := range g.VecinosDeclarados(ruta) {
-			if _, ok := docs[v]; !ok {
+			res, ok := ResolverEnlace(docs, v)
+			if !ok {
 				continue
 			}
-			if visitar(v, append(pila, ruta)) {
+			if visitar(res, append(pila, ruta)) {
 				return true
 			}
 		}
@@ -113,9 +114,6 @@ func TestDependenciasFuertesNoFormanCiclos(t *testing.T) {
 func TestElCierreDeDependenciasNoArrastraElProyecto(t *testing.T) {
 	docs, g := cargarReal(t)
 
-	// Se compara contra el mismo grafo tomando todas las menciones del cuerpo
-	// como dependencia, que es lo que ocurriria si `depende_de` no separara
-	// "hay que leer esto" de "esto se menciona aqui".
 	cierre := func(vecinos func(string) []string) map[string]int {
 		out := map[string]int{}
 		for _, ruta := range Rutas(docs) {
@@ -127,13 +125,15 @@ func TestElCierreDeDependenciasNoArrastraElProyecto(t *testing.T) {
 				}
 				vistos[x] = true
 				for _, v := range vecinos(x) {
-					if _, ok := docs[v]; ok {
-						cerrar(v)
+					if res, ok := ResolverEnlace(docs, v); ok {
+						cerrar(res)
 					}
 				}
 			}
 			for _, v := range vecinos(ruta) {
-				cerrar(v)
+				if res, ok := ResolverEnlace(docs, v); ok {
+					cerrar(res)
+				}
 			}
 			out[ruta] = len(vistos) - 1
 		}
@@ -160,25 +160,29 @@ func TestElCierreDeDependenciasNoArrastraElProyecto(t *testing.T) {
 	t.Logf("peor cierre con depende_de: %d documentos (desde %s)", peorDecl, desde)
 	t.Logf("peor cierre si el cuerpo contara: %d documentos", peorMenc)
 
-	// El peor caso real es de 8 documentos (SPEC-CICLO-TRABAJO) y contando
-	// solo el cuerpo llegaria a 20. El limite deja margen para que una
-	// dependencia legitima no rompa el test, y sigue muy por debajo de lo que
-	// daria el cuerpo entero, que es el fallo que hay que cazar.
-	const maximoRazonable = 12
+	// El peor cierre real medido es 19 documentos
+	// (frontend/02-interfaces/INTERFACES, que suma los de frontend/FRONTEND,
+	// backend/04-infrastructure/EVENTS y specs/SPEC-INTERFAZ, los tres
+	// navegación legítima de sus capas), frente a los 51 que daría el cuerpo.
+	// El límite deja margen por encima de lo medido. Antes era 12 porque el
+	// test resolvía mal los enlaces —buscaba el destino sin ".md" en un mapa
+	// con claves ".md"— y no seguía ninguna arista: medía el abanico directo
+	// (8 documentos), no el cierre. Lo que se sigue exigiendo es lo que
+	// distingue `depende_de` de una mención: ser mucho más estrecho que el
+	// cuerpo, y por eso se mantiene la comparación de abajo.
+	const maximoRazonable = 25
 	if peorDecl > maximoRazonable {
-		t.Errorf("el documento %s arrastra %d documentos en depende_de; el limite es %d",
+		t.Errorf("el documento %s arrastra %d documentos en depende_de; el límite es %d",
 			desde, peorDecl, maximoRazonable)
 	}
-	// Si la distincion no hace nada, ambas cifras coinciden y el test pasa por
-	// el motivo equivocado.
 	if peorDecl >= peorMenc {
-		t.Errorf("depende_de (%d) no es mas estrecho que el cuerpo (%d): la distincion no esta haciendo nada",
+		t.Errorf("depende_de (%d) no es más estrecho que el cuerpo (%d): la distinción no está haciendo nada",
 			peorDecl, peorMenc)
 	}
 }
 
-// enlacesDeSeccion devuelve los [[destino]] que aparecen bajo el titulo dado,
-// hasta el siguiente titulo del mismo o superio nivel.
+// enlacesDeSeccion devuelve los [[destino]] que aparecen bajo el título dado,
+// hasta el siguiente título del mismo o superior nivel.
 func enlacesDeSeccion(body, titulo string) []string {
 	var (
 		dentro bool
@@ -193,8 +197,6 @@ func enlacesDeSeccion(body, titulo string) []string {
 			continue
 		}
 		if strings.HasPrefix(linea, "#") {
-			// Solo cierra la seccion un titulo del mismo nivel o superior;
-			// uno de menor nivel es un subapartado y se sigue leyendo.
 			if len(linea)-len(strings.TrimLeft(linea, "#")) <= nivel {
 				dentro = false
 			}
@@ -205,11 +207,10 @@ func enlacesDeSeccion(body, titulo string) []string {
 	return out
 }
 
-// Las specs traen una seccion "## Dependencias funcionales" que declara, en el
-// propio cuerpo, de que dependen. Es la fuente autoritativa: si el frontmatter
+// Las specs traen una sección "## Dependencias funcionales" que declara, en el
+// propio cuerpo, de qué dependen. Es la fuente autoritativa: si el frontmatter
 // pone esas dependencias en `relacionado`, el grafo afirma que la spec no
-// necesita lo que ella misma dice necesitar, y el fallo es invisible porque
-// los dos lados son enlaces validos.
+// necesita lo que ella misma dice necesitar.
 func TestElFrontmatterCoincideConLasDependenciasFuncionales(t *testing.T) {
 	docs, _ := cargarReal(t)
 
@@ -239,7 +240,7 @@ func TestElFrontmatterCoincideConLasDependenciasFuncionales(t *testing.T) {
 			}
 			if !declaradas[v] {
 				t.Errorf("%s: el cuerpo declara %q como dependencia funcional, "+
-					"pero no esta en `depende_de`", ruta, v)
+					"pero no está en `depende_de`", ruta, v)
 			}
 		}
 	}

@@ -3,11 +3,11 @@ title: SPEC — Panel de contexto y tokens
 tags: [specs, requisito]
 depende_de:
   - "[[IDEA]]"
-  - "[[specs/SPEC-INTERFAZ]]"
-  - "[[specs/SPEC-MODELO-MOTOR]]"
+  - "[[specs/SPEC-MODELOS-LLAMACPP]]"
   - "[[specs/SPEC-NODO-CONTEXTO]]"
 relacionado:
   - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+  - "[[specs/SPEC-INTERFAZ]]"
 ---
 # SPEC — Panel de contexto y tokens
 
@@ -66,8 +66,7 @@ Aquí se define **qué significan** los números y de dónde salen. **Dónde se 
 
 ## Dependencias funcionales
 
-- [[specs/SPEC-INTERFAZ]]
-- [[specs/SPEC-MODELO-MOTOR]]
+- [[specs/SPEC-MODELOS-LLAMACPP]]
 - [[specs/SPEC-NODO-CONTEXTO]]
 
 ## Referencias

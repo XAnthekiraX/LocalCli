@@ -1,3 +1,4 @@
+                                                                                                    
                                                ATAJOS                                               
                                                                                                     
                   General                                                                           
@@ -5,7 +6,7 @@
                   ctrl+x l         modal de sesiones                                                
                   ctrl+p           modal de atajos de teclado                                       
                   ctrl+x m         modal de modelos                                                 
-                  ctrl+x i         modal de motores                                                 
+                  ctrl+x d         descargar un modelo desde una URL                                
                                                                                                     
                   Chat                                                                              
                   up               subir por el historial del chat                                  
@@ -18,18 +19,15 @@
                   ctrl+x n         crear una sesión nueva                                           
                   ctrl+r           mostrar u ocultar el razonamiento                                
                   ctrl+a           abrir o cerrar el panel de aprobaciones                          
-                  (deshabilitada)  pausar la cola en curso                                          
-                  ctrl+f           cancelar el trabajo en curso (pide confirmación)                 
+                  esc, ctrl+f      cancelar el trabajo en curso (pide confirmación)                 
                   tab              cambiar de agente                                                
                                                                                                     
                   Modales                                                                           
                   ctrl+d           eliminar la sesión resaltada                                     
                   esc              cerrar lo abierto                                                
-                  ctrl+x a         añadir un motor                                                  
-                  ctrl+x e         editar el motor resaltado                                        
-                  ctrl+x d         eliminar el motor resaltado                                      
                   up               subir en la lista                                                
                   down             bajar en la lista                                                
+                  enter            aplicar lo resaltado                                             
                                                                                                     
                   Aprobaciones                                                                      
                   a                aprobar la propuesta seleccionada                                
@@ -38,3 +36,5 @@
                   Entrada                                                                           
                   enter            enviar la petición                                               
                                     (solo lectura · esc cerrar)                                     
+                                                                                                    
+                                                                                                    

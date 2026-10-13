@@ -20,16 +20,16 @@ La versión del esquema se guarda en el `PRAGMA user_version` de SQLite, un ente
 
 La razón de no usar una tabla propia es que este proyecto no necesita el historial de qué migraciones se aplicaron: solo necesita saber en qué versión está el esquema y poder pasar al siguiente. `user_version` cubre exactamente eso sin añadir una tabla de control de migraciones al esquema.
 
-Las migraciones se ejecutan automáticamente al abrir un proyecto, antes de usar la base. El usuario no ejecuta migraciones a mano.
+Las migraciones se ejecutan automáticamente al arrancar, antes de usar la base. El usuario no ejecuta migraciones a mano.
 
-Subir una migración aplicada no es lo mismo que tener un esquema válido: `user_version` registra qué se aplicó, no qué hay en las tablas. Por eso, además de aplicar lo que falte, al abrir un proyecto se verifica el esquema real contra la versión actual, y si no cuadra la apertura falla en lugar de declarar un esquema que no es. Ver
+Subir una migración aplicada no es lo mismo que tener un esquema válido: `user_version` registra qué se aplicó, no qué hay en las tablas. Por eso, además de aplicar lo que falte, al abrir la base se verifica el esquema real contra la versión actual, y si no cuadra la apertura falla en lugar de declarar un esquema que no es. Ver
 [[database/03-operations/MIGRATIONS#4-datos-existentes]] y la nota sobre el esquema actual, más abajo.
 
 ## 2. Modificación del esquema
 
 - El esquema se define una vez, en la creación de la base. Si el archivo no existe, se crea con la versión actual.
 - Cada cambio del esquema es una migración numerada, en orden ascendente.
-- Al abrir un proyecto, la herramienta lee `user_version`, compara con la versión que espera y aplica todas las migraciones que falten, una a una y cada una en su propia transacción.
+- Al arrancar, la herramienta lee `user_version`, compara con la versión que espera y aplica todas las migraciones que falten, una a una y cada una en su propia transacción.
 - Si una migración falla, se detiene ahí. Las anteriores que sí se aplicaron quedan; la que falló se revierte sola porque va en su propia transacción. Se avisa al usuario con el número de la migración que falló.
 - Las migraciones se ejecutan una vez. `user_version` se incrementa a la versión destino tras cada una.
 
@@ -38,7 +38,7 @@ Subir una migración aplicada no es lo mismo que tener un esquema válido: `user
 - Cada migración tiene un número y un nombre corto: `001-crear-schema`, `002-agregar-indice-approvals`, y así sucesivamente.
 - El número es correlativo y de tres dígitos. El nombre describe qué hace, no dónde.
 - El orden de los números es el orden de ejecución. No se reutiliza un número ni se renumera una migración ya publicada.
-- La versión del esquema es el número de la última migración aplicada. `user_version = 6` significa que se aplicaron `001`, `002`, `003`, `004`, `005` y `006`.
+- La versión del esquema es el número de la última migración aplicada. `user_version = 7` significa que se aplicaron `001`, `002`, `003`, `004`, `005`, `006` y `007`.
 
 ## 4. Datos existentes
 
@@ -56,11 +56,11 @@ Reglas:
 - **Ninguna migración borra masivamente filas de `sessions`, `messages` o `reasoning`** para simplificar el esquema. Si una columna sobra, se deja o se ignora; no se tira lo que hay.
 - **Una migración que destruya datos la escribe una persona, no el agente durante una fase de trabajo.** `build` no crea ni aplica migraciones destructivas por su cuenta. Es una operación que requiere una decisión explícita del usuario, porque afecta al historial.
 - **Una migración destructiva se anuncia antes de aplicarse.** El usuario sabe qué se va a perder y lo aprueba, con la misma mecánica de aprobación que el resto de escrituras. Ver [[specs/SPEC-ARCHIVOS]].
-- **Antes de una migración destructiva se recomienda una copia del archivo SQLite.** Es un archivo, se copia entero. La base es de un proyecto, no de un servidor, así que la copia es trivial.
+- **Antes de una migración destructiva se recomienda una copia del archivo SQLite.** Es un archivo, se copia entero. La base es local (un único archivo en `~/.config/localcli/`), no de un servidor, así que la copia es trivial. Como el archivo es único y guarda todos los proyectos, la copia protege de golpe el estado de todas las carpetas.
 
 ## Nota sobre el esquema actual
 
-La base se crea ya en su versión actual (v6): las seis tablas de [[database/01-schema/SCHEMA]] más `todos`, la lista de pasos de la sesión, `flow_context`, el bloque de contexto de un flujo, y `chat_evento`, las líneas de procesamiento del chat, además de las columnas `messages.duration_ms`, `chat_evento.duration_ms` y el par `sessions.motor_id` / `sessions.modelo`. La creación del archivo, su esquema inicial y las migraciones `002-crear-todo`, `003-crear-flow-context`, `004-crear-chat-evento`, `005-duracion-linea-herramienta` y `006-motor-y-modelo-de-sesion` ocurren en el mismo paso de apertura, así que `user_version` arranca en 6. Los índices de [[database/01-schema/INDEXES]] se aplican junto con la creación, no después.
+La base se crea ya en su versión actual (v8): la tabla `projects`, las seis tablas de [[database/01-schema/SCHEMA]] más `todos`, la lista de pasos de la sesión, `flow_context`, el bloque de contexto de un flujo, y `chat_evento`, las líneas de procesamiento del chat, además de las columnas `sessions.project_id`, `messages.duration_ms`, `chat_evento.duration_ms` y el par `sessions.motor_id` / `sessions.modelo`. La creación del archivo, su esquema inicial y las migraciones `002-crear-todo`, `003-crear-flow-context`, `004-crear-chat-evento`, `005-duracion-linea-herramienta`, `006-motor-y-modelo-de-sesion`, `007-crear-proyectos` y `008-todo-jerarquia` ocurren en el mismo paso de apertura, así que `user_version` arranca en 8. Los índices de [[database/01-schema/INDEXES]] se aplican junto con la creación, no después.
 
 La migración `002-crear-todo` es aditiva: añade la tabla `todos` y su clave primaria `(session_id, position)`, sin tocar ninguna fila existente. Una base en `user_version = 1` la recibe al abrirse y pasa a la 2 sin perder nada.
 
@@ -72,9 +72,13 @@ La migración `005-duracion-linea-herramienta` es aditiva y solo añade una colu
 
 Añadir la columna como número y no solo dentro de `content` es deliberado: `content` ya guarda la línea compuesta, así que el tiempo se podría leer de ahí. Guardarlo también como columna es lo que permite ordenarlo o filtrar por él sin parsear texto de pantalla, que es la razón de ser de una columna y no un adorno del `content`.
 
-La migración `006-motor-y-modelo-de-sesion` es aditiva y solo añade dos columnas a `sessions`: `motor_id` y `modelo`, ambas nullable y sin valor por defecto. No crea tabla —el registro de motores es un archivo global, no una tabla—, no crea índice y no actualiza filas. Las sesiones existentes quedan con las dos en `NULL`, que significa "todavía no tiene motor asignado": al retomarlas se les aplica el motor por defecto, como se les aplicaba el autodetectado hasta ahora. Una base en `user_version = 5` la recibe al abrirse y pasa a la 6 sin perder nada. Ver [[specs/SPEC-MODELO-MOTOR]] y [[specs/SPEC-SESIONES]].
+La migración `006-motor-y-modelo-de-sesion` es aditiva y solo añade dos columnas a `sessions`: `motor_id` y `modelo`, ambas nullable y sin valor por defecto. No crea tabla —el registro de motores es un archivo global, no una tabla—, no crea índice y no actualiza filas. Las sesiones existentes quedan con las dos en `NULL`, que significa "todavía no tiene motor asignado": al retomarlas se les aplica el motor por defecto, como se les aplicaba el autodetectado hasta ahora. Una base en `user_version = 5` la recibe al abrirse y pasa a la 6 sin perder nada. Ver [[specs/SPEC-MODELOS-LLAMACPP]] y [[specs/SPEC-SESIONES]].
 
 Las dos columnas van nullable a propósito, y no con `""` como valor de arranque: `NULL` distingue «no asignado todavía» de «asignado a algo que resulta vacío», que es la misma distinción que se aplica a `layer` y a los tokens del modelo. Rellenarlas en la migración con el motor por defecto habría congelado la preferencia de arranque en cada fila y habría hecho imposible distinguir las sesiones que ya existían de las nuevas.
+
+La migración `007-crear-proyectos` es la que convierte la base en única y global. Crea la tabla `projects` (`id`, `path` único, `created_at`, `updated_at`) y añade `sessions.project_id`. Con la base nueva ya en v7, el arranque la crea con ambas cosas y la migración solo tendría efecto sobre una base v6: en ese caso habría que crear una fila de proyecto por cada carpeta cuyas sesiones se importaran. **No hay importación automática de las bases antiguas de `<proyecto>/.localcli/state.db`**: eran estado local por carpeta y se abandonan; la global nace vacía y se puebla al usar. Ver [[database/01-schema/SCHEMA]] y [[database/03-operations/SEEDING]].
+
+La migración `008-todo-jerarquia` es aditiva: añade la columna `todos.parent_position` (nullable, sin valor por defecto) y el índice `idx_todos_padre` `(session_id, parent_position)`. No crea tabla ni actualiza filas: las existentes quedan con `NULL`, que es «paso raíz», así que una base v7 se lee como una lista plana sin ningún cambio de comportamiento. Guarda la jerarquía de un nivel —una tarea principal agrupa sus subtareas— que las herramientas de la sesión escriben y que valida la capa de datos, porque SQLite no permite añadir por `ALTER TABLE` una clave foránea autorreferencial compuesta ni un `CHECK` que mire otras filas. Ver [[specs/SPEC-TOOLS]], [[database/01-schema/TABLES]] §`todos` y [[database/01-schema/INDEXES]].
 
 ### Un `user_version` correcto no basta para saber que el esquema es el de la versión
 
@@ -91,15 +95,15 @@ Subir el `user_version` no arregla eso: declararía un esquema que no es el que
 tiene el archivo, y la próxima apertura volvería a mirar el `user_version` y a
 creérselo. Es peor que no detectar nada.
 
-Por eso, además de la versión, al abrir un proyecto se **verifica el esquema
+Por eso, además de la versión, al abrir la base se **verifica el esquema
 real**: se comprueba que estén las tablas esperadas, que su `id` sea `NOT NULL` y
-que existan la tabla `todos` y el índice único de auditoría. Si algo no cuadra,
+que existan la tabla `projects`, la tabla `todos` y el índice único de auditoría. Si algo no cuadra,
 la apertura falla con `E_DB_SCHEMA_OUTDATED` diciendo qué archivo borrar. No se
 corrige solo y no se borra solo: el archivo es del usuario, y la política de no
 tocar datos es de [[database/DATABASE]].
 
 La corrección del DDL de la v1 no se aplica como migración; el camino previsto es
-borrar `.localcli/state.db` y dejar que se vuelva a crear. La base es caché y
+borrar `~/.config/localcli/state.db` y dejar que se vuelva a crear. La base es caché y
 traza local: el contenido que no se puede recuperar de ella está en git. Si
 alguna vez esto ya no fuera cierto, la corrección pasaría a ser una migración con
 su transformación de datos, y esta verificación seguiría siendo necesaria para

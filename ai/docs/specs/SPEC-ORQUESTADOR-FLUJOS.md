@@ -6,9 +6,10 @@ depende_de:
     - "[[specs/SPEC-NODO-CONTEXTO]]"
     - "[[specs/SPEC-SESIONES]]"
     - "[[specs/SPEC-AGENTE-BASE]]"
-    - "[[specs/SPEC-COLA-TAREAS]]"
 relacionado:
     - "[[specs/SPEC-FLUJO-PERSONALIZADO]]"
+    - "[[specs/SPEC-COLA-TAREAS]]"
+    - "[[specs/SPEC-TOOLS]]"
 ---
 
 # SPEC — Orquestador de flujos
@@ -37,9 +38,28 @@ Un flujo declara **qué entrega** (`pregunta` del flujo) y **qué responde cada 
 
 La pregunta es lo que convierte una etapa en algo verificable. En lugar de «explora el proyecto», la etapa responde «¿qué archivos tiene el proyecto?». La diferencia se ve en la etapa siguiente: recibe la **respuesta** a esa pregunta, no el volcado de una exploración.
 
+## Invocación del flujo
+
+Un flujo tiene **dos entradas**, y las dos corren las mismas etapas, en el mismo orden, con el mismo bloque, las mismas pausas y la misma frontera de salida:
+
+1. **El comando del usuario** (`/flow:planificar`, `/flow:crear`, `/flow:actualizar`, `/flow:eliminar`, `/flow:resolver`, `/flow:ejecutar`), seguido de su petición. El prefijo `flow:` es el que marca que un texto arranca un flujo: el `/comando` crudo queda para los comandos de la interfaz.
+2. **La herramienta `ejecutar_flujo`**, que el agente pide por el mismo canal nativo que cualquier otra herramienta cuando decide que el trabajo pide etapas encadenadas. Es una **sola herramienta genérica** —`flujo` elige el comando y `peticion` es el objetivo—, no una herramienta por flujo. El catálogo de flujos viaja en el **esquema** de la herramienta, que se arma por turno con el agente activo.
+
+### Qué puede lanzar cada agente
+
+El flujo corre con los agentes que declaran sus etapas, no con el agente que lo invoca. Pero para **poder lanzarlo**, el agente que invoca necesita el permiso **derivado del flujo**: si todas las etapas corren con `plan`, el flujo es de lectura y lo lanza cualquier agente con `read`; si alguna etapa corre con `build` —es decir, escribe—, el flujo exige `write`/`edit` y `plan` no lo puede lanzar. Así la regla «`plan` mira, `build` escribe» se mantiene aunque el flujo lo dispare el agente y no el usuario. El esquema solo lista los flujos que el agente activo puede lanzar.
+
+### Frontera de salida
+
+Lo que vuelve a la sesión que invocó el flujo es **la respuesta de la etapa `entrega`** más el **bloque de contexto resumido** —una aportación por etapa, condensada—. Nada más cruza: ni las etapas, ni las herramientas que corrieron dentro, ni la ventana del flujo. La sesión principal sabe qué flujo lanzó y qué entregó, no lo que pasó dentro.
+
+### Profundidad
+
+Un flujo **no invoca flujos**: `ejecutar_flujo` no está disponible dentro de una etapa de flujo. La profundidad es uno, la misma regla que impide que una herramienta llame a otra herramienta.
+
 ## Flujo principal — flujo con objetivo
 
-1. El usuario escribe el comando del flujo seguido de su petición, con sus palabras.
+1. El flujo arranca por una de sus dos entradas: el usuario escribe el comando con su petición, con sus palabras, o el agente pide `ejecutar_flujo` con el flujo elegido y la petición.
 2. Cada etapa pide su contexto al nodo, **excluyendo lo que las etapas anteriores ya recibieron** (§Nodo de contexto en [[specs/SPEC-NODO-CONTEXTO]]). Es lo que hace auditable qué recibió cada una: `context_audit` guarda una fila por documento y etapa.
 3. El orquestador corre las etapas en orden. En cada una:
    1. Si la etapa tiene `continuacion`, el flujo **se detiene y pregunta** `continuamos con la etapa <nombre>?`. El usuario contesta sí o no, y puede cambiar de modelo mientras la decisión está en pantalla: al continuar, la etapa corre con el modelo que esté elegido, y las siguientes también, porque el modelo es de la sesión y se relee en cada etapa.
@@ -54,7 +74,7 @@ La pregunta es lo que convierte una etapa en algo verificable. En lugar de «exp
 
 La ventana es lo que una etapa hereda de las anteriores. No es el historial del chat: es un texto que el orquestador compone y que contiene dos cosas.
 
-1. **La petición original del usuario**, completa y con su comando. Va siempre, en todas las etapas: es el encargo que ninguna etapa puede perder de vista.
+1. **La petición original**, completa y con su comando. Cuando el flujo lo arranca el usuario, es su invocación (`/flow:<nombre>` con sus palabras); cuando lo arranca el agente, es la `peticion` que trajo `ejecutar_flujo`. Va siempre, en todas las etapas: es el encargo que ninguna etapa puede perder de vista.
 2. **La pregunta y la respuesta de cada etapa anterior**, en orden. `## <nombre>` · `Pregunta: <pregunta>` · `Respuesta: <respuesta>`.
 
 La ventana viaja porque el objetivo es que **ninguna etapa repita lo que otra ya resolvió**. Una etapa que ya sabe qué archivos tiene el proyecto no vuelve a listarlos: busca entre lo que ya tiene en la ventana.
@@ -109,7 +129,7 @@ El nivel de entrega es el único que corre sin herramientas. Lo declara la etapa
 - El modelo es el de la sesión, y se relee en cada etapa. Un flujo no declara modelo: quien lo elige es el usuario, también a mitad de un flujo.
 - Un documento se entrega **una sola vez** por ejecución: las etapas siguientes ya no lo ven, porque la respuesta de quien lo recibió lo resume.
 - Cada etapa corre sin el historial del chat y recibe de las anteriores la ventana, no su salida entera.
-- La ventana lleva siempre la petición original del usuario, completa.
+- La ventana lleva siempre la petición original —la del usuario con su comando, o la que trae `ejecutar_flujo`—, completa.
 - La ventana tiene tope, se recalcula por etapa con el modelo que la corre y, al exceder, se caen sus entradas más antiguas avisando de cuáles.
 - Una etapa `entrega` corre sin herramientas. Las demás, con las del agente que declara.
 - Una etapa con `respuesta_en_chat` se ve en la pantalla y se guarda, y su texto nunca entra al contexto del modelo.
@@ -119,17 +139,25 @@ El nivel de entrega es el único que corre sin herramientas. Lo declara la etapa
 - Si una etapa falla, el flujo se detiene. El usuario elige reintentar, saltar esa etapa o cancelar.
 - Un flujo pausado por un permiso se retoma desde la misma etapa, sin repetir lo ya hecho, leyendo el bloque.
 - Todo lo que hace cada etapa queda registrado: qué recibió, qué hizo y qué produjo.
-- Los flujos del proyecto son los archivos de `.localcli/flows/*.json` y se cargan al arrancar: un `comando` sin archivo no existe y no se lista, y un archivo con un `comando` nuevo añade ese comando ([[specs/SPEC-FLUJO-PERSONALIZADO]]).
+- Los flujos se cargan al arrancar de `~/.config/localcli/flows/*.json` (los oficiales, sembrados desde el binario) y de `<proyecto>/.localcli/flows/*.json` (los propios del proyecto, aditivos): un `comando` sin archivo no existe y no se lista, y un archivo con un `comando` nuevo añade ese comando ([[specs/SPEC-FLUJO-PERSONALIZADO]]).
 - Un flujo que se cancela no deja etapas ejecutándose.
-- Un flujo no arranca solo: lo solicita el usuario con un comando explícito (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`).
-- Una petición que no es un comando de flujo se responde en el chat, no arranca etapas.
+- Un flujo arranca por dos entradas: el comando explícito del usuario (`/flow:planificar`, `/flow:crear`, `/flow:actualizar`, `/flow:eliminar`, `/flow:resolver` o `/flow:ejecutar`), o la herramienta `ejecutar_flujo` que el agente pide cuando decide que el trabajo lo necesita.
+- Una petición que no es un flujo (`/flow:…`) y que el agente no resuelve con `ejecutar_flujo` se responde en el chat, no arranca etapas.
+- El agente solo lanza los flujos que admite su permiso derivado: con `read`, los flujos cuyas etapas corren todas con `plan`; un flujo con alguna etapa `build` exige `write`/`edit`. `plan` no lanza un flujo que escribe.
+- `ejecutar_flujo` no está disponible dentro de una etapa de flujo: un flujo nunca invoca a otro.
+- Lo que un flujo devuelve a quien lo invocó es la respuesta de su etapa `entrega` más el bloque de contexto resumido; el interior del flujo no cruza.
 - El orquestador puede detectar trabajo ordenado y proponer un TODO, pero no lo ejecuta hasta que el usuario confirme o escriba el comando.
 - Una tarea de la cola no arranca si sus dependencias no están cumplidas.
 
 ## Criterios de aceptación
 
 - [ ] Lanzar un flujo oficial ejecuta sus etapas en orden.
-- [ ] Un flujo solo arranca con el comando explícito del usuario.
+- [ ] Un flujo arranca con `/flow:<comando>` —el comando crudo no arranca flujos— o con la herramienta `ejecutar_flujo` del agente.
+- [ ] `ejecutar_flujo` es una sola herramienta: el esquema se arma por turno y solo lista los flujos que el agente activo puede lanzar.
+- [ ] `plan` no puede lanzar un flujo con alguna etapa `build`; `build` sí, con `write`/`edit`.
+- [ ] Lo que vuelve al agente que invocó el flujo es la entrega más el bloque resumido, y nada del interior.
+- [ ] `ejecutar_flujo` no está disponible dentro de una etapa: un flujo no invoca a otro.
+- [ ] Un flujo lanzado por el agente conserva sus pausas de `continuacion` y `aprobacion`.
 - [ ] La cola avanza cuando el usuario escribe `/ejecutar`.
 - [ ] Una petición sin comando se responde en el chat y no arranca etapas.
 - [ ] Una tarea con dependencias sin cumplir no arranca.
@@ -166,7 +194,6 @@ El nivel de entrega es el único que corre sin herramientas. Lo declara la etapa
 - [[specs/SPEC-NODO-CONTEXTO]]
 - [[specs/SPEC-SESIONES]]
 - [[specs/SPEC-AGENTE-BASE]]
-- [[specs/SPEC-COLA-TAREAS]]
 
 ## Referencias
 

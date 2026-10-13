@@ -43,18 +43,20 @@ No incluye los flujos oficiales, que están en [[specs/SPEC-ORQUESTADOR-FLUJOS]]
 
 - Un flujo propio no puede saltarse el nodo de contexto ni las reglas de permiso.
 - Las etapas de un flujo propio reciben contexto igual que las de un flujo oficial.
+- Un flujo propio se lanza por `/flow:<comando>` de usuario o por la herramienta `ejecutar_flujo`, igual que uno oficial; su permiso derivado se calcula igual, sobre los `agente` de sus etapas.
 - Un flujo con un bucle se detiene y avisa; no se repite.
-- Los flujos propios solo se ven dentro de su proyecto.
+- Los flujos propios solo se ven dentro de su proyecto, también en el esquema de `ejecutar_flujo`.
 - Un flujo propio se detiene y pregunta ante un fallo, igual que uno oficial.
 
 ## Criterios de aceptación
 
 - [ ] Se puede crear un flujo con varias etapas en orden.
-- [ ] Se puede lanzar un flujo propio con un objetivo.
+- [ ] Se puede lanzar un flujo propio con un objetivo, por `/flow:<comando>` o por `ejecutar_flujo`.
 - [ ] Las etapas de un flujo propio reciben contexto mediante el nodo de contexto.
 - [ ] Un flujo propio pide aprobación igual que uno oficial.
 - [ ] Se puede editar y borrar un flujo propio.
 - [ ] Un flujo con un bucle se detiene y avisa.
+- [ ] Un flujo propio aparece en el esquema de `ejecutar_flujo` solo en su proyecto, y el agente lo ve solo si su permiso derivado lo admite.
 
 ## Requisitos no funcionales
 
@@ -67,9 +69,9 @@ No incluye los flujos oficiales, que están en [[specs/SPEC-ORQUESTADOR-FLUJOS]]
 
 ## Supuestos
 
-- El formato de definición está fijado: un JSON por flujo en `.localcli/flows/`, con `comando`, `nombre`, `descripcion`, `peticion`, `pregunta`, `reglas` y `etapas`. Cada etapa lleva `id`, `nombre`, `agente` (`plan` o `build`), `instruccion` y `pregunta`, más los modificadores `continuacion`, `entrega` y `respuesta_en_chat`, y `aprobacion`.
+- El formato de definición está fijado: un JSON por flujo en `~/.config/localcli/flows/` los oficiales y en `<proyecto>/.localcli/flows/` los propios, con `comando`, `nombre`, `descripcion`, `peticion`, `pregunta`, `reglas` y `etapas`. Cada etapa lleva `id`, `nombre`, `agente` (`plan` o `build`), `instruccion` y `pregunta`, más los modificadores `continuacion`, `entrega` y `respuesta_en_chat`, y `aprobacion`.
 - `pregunta` es obligatoria en el flujo y en cada etapa —dice qué entrega el flujo y qué responde cada etapa—; un flujo declara exactamente una etapa `entrega`, y es la última ([[specs/SPEC-ORQUESTADOR-FLUJOS]]).
-- Los flujos del proyecto son los archivos de `.localcli/flows/`: no hay flujos cableados. Un `comando` sin archivo no existe y no se lista.
+- Los flujos son los archivos JSON de esos dos directorios: no hay flujos cableados. Los oficiales vienen sembrados en `~/.config/localcli/flows/`; un proyecto solo añade (`<proyecto>/.localcli/flows/`) y no sobrescribe un oficial con el mismo `comando`. Un `comando` sin archivo no existe y no se lista.
 - Las `reglas` del flujo y la `instruccion` de cada etapa viajan con el contexto de la etapa: es donde se declara, por ejemplo, cómo descubrir la documentación.
 - Los flujos se cargan al arrancar. Un JSON roto no tumba el arranque: se arranca sin flujos y se avisa.
 

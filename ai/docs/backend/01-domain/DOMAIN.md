@@ -24,13 +24,13 @@ Cada módulo tiene una responsabilidad y un límite. Si un módulo necesita hace
 |---|---|---|
 | `tui` | La pantalla: chat, panel de datos, selector de sesiones, aprobaciones, razonamiento en vivo | No decide nada ni habla con el modelo; pinta lo que llega |
 | `session` | Ciclo de vida de las sesiones y su estado; ejecución en segundo plano | No ejecuta tareas; eso es `flow` y `queue` |
-| `flow` | Orquestador de etapas: encadenar, decidir si sigue, parar o esperar permiso | No sabe de herramientas ni de SQL |
+| `flow` | Orquestador de etapas: encadenar, decidir si sigue, parar o esperar permiso; lanzar el flujo pedido por comando del usuario o por la herramienta `ejecutar_flujo` | No sabe de herramientas ni de SQL; `ejecutar_flujo` vive en el catálogo de `tools` y su handler se le inyecta a `flow` |
 | `queue` | Cola de la ejecución en curso: consume el TODO de la ejecución que el usuario arrancó, en orden, y marca lo bloqueado | No inventa trabajo ni arranca solo; el TODO lo propuso el flujo y el usuario lo ejecuta |
 | `context` | Grafo de frontmatter, selección de lo relevante, recorte y auditoría | No llama al modelo por su cuenta; pide la decisión y aplica |
 | `agent` | Cargar las definiciones de agente desde carpeta: `agent.yaml` y `prompt.md`. Corre el ciclo conversacional del agente. El agente base son datos en disco, no código | No ejecuta herramientas; las despacha a `tools` |
-| `llm` | Frontera neutra con el modelo: tipos (`Mensaje`, `Herramienta`, `Evento`, `Modelo`), interfaz `Motor`, capacidades de tres estados, registro de motores con sus extensiones y su persistencia global, una cola de inferencia por motor y regla de la ventana | No conoce ningún endpoint; no sabe de tareas; es el único que instancia adaptadores |
-| `openai`, `ollama`, `llamacpp` | El motor, en tres piezas: el **núcleo común** (`openai`) habla el protocolo OpenAI con todos; cada runtime aporta **solo** lo que el protocolo no cubre (`ollama`: `options.num_ctx`, `/api/show`, `/api/tags`; `llamacpp`: `/props`) | `openai` no sabe de runtimes; las extensiones no deciden ni traducen la conversación |
-| `tools` | Registro de las quince herramientas, comprobación de permiso, enrutado | No inventa herramientas ni las aplica |
+| `llm` | Frontera neutra con el modelo: tipos (`Mensaje`, `Herramienta`, `Evento`, `Modelo`), capacidades de tres estados, una cola de inferencia única y regla de la ventana | No conoce ningún endpoint; no sabe de tareas; no instancia adaptadores: el motor es único (llama.cpp) |
+| `openai`, `llamacpp` | El motor, en dos piezas: el **núcleo común** (`openai`) habla el protocolo OpenAI con `llama-server`; la extensión (`llamacpp`) aporta **solo** lo que el protocolo no cubre (`/props`) | `openai` no sabe de runtimes; la extensión no decide ni traduce la conversación |
+| `tools` | Registro de las dieciséis herramientas, comprobación de permiso, validación, recorte, medición y eventos; envolver toda ejecución | No inventa herramientas ni las aplica |
 | `fileops` | Operaciones de archivo y carpeta, frontera de rutas, historial de cambios | No decide permisos; comprueba y aplica |
 | `exec` | Terminal: lista blanca y bloqueo estructural de escritura | No es una puerta trasera a los archivos del proyecto |
 | `store` | Único acceso a SQLite: esquema, WAL, transacciones | No decide nada de negocio |
@@ -51,11 +51,12 @@ Dos planos. Ver [[database/02-rules/DATA_FLOW]].
 |---|---|---|
 | Documento del proyecto | `ai/docs/**/*.md` | Frontmatter con `depende_de` (lo que hay que leer) y `relacionado` (lo que toca). Convención en [[PROJECT]] |
 | TODO de la ejecución | `ai/tasks/**/MAIN-TASKS.md` | Elementos en orden: fases, tareas o pasos. Es la cola |
-| Agente base y derivados | `.localcli/agents/<carpeta>/` | `agent.yaml` con `name`, `description` y `permissions`, más `prompt.md` |
+| Agente base | `~/.config/localcli/agents/<carpeta>/` | `agent.yaml` con `name`, `description` y `permissions`, más `prompt.md`. Sembrado desde el binario |
+| Agentes y flujos propios | `<proyecto>/.localcli/agents/` y `<proyecto>/.localcli/flows/` | Misma forma; se cargan de forma aditiva y no sobrescriben los oficiales |
 
 **El TODO no viene dado: se propone.** Cuando una petición tuya implica una lista ordenada de trabajo, el sistema la detecta y **propone** el TODO; no lo ejecuta hasta que tú lo confirmas o escribes `/ejecutar`. Por eso la cola no es global: cada petición ordenada tiene el suyo. Ver [[backend/01-domain/BUSINESS_RULES]].
 
-**El agente base existe, pero no está hardcodeado.** No está en Go: vive en archivos de texto que el usuario puede modificar, y de los que puede derivar otros agentes. La configuración y las instrucciones van separadas: del `agent.yaml` salen el nombre y las herramientas disponibles, y del `prompt.md` el mensaje de sistema. Ver [[specs/SPEC-AGENTE-BASE]].
+**El agente base existe, pero no está hardcodeado.** No está en Go: se siembra desde el binario en `~/.config/localcli/agents/` y vive en archivos de texto que el usuario puede modificar, y de los que puede derivar otros agentes (en su carpeta de configuración o en `<proyecto>/.localcli/agents/`). La configuración y las instrucciones van separadas: del `agent.yaml` salen el nombre y las herramientas disponibles, y del `prompt.md` el mensaje de sistema. Ver [[specs/SPEC-AGENTE-BASE]].
 
 **No hay skills.** No es que no haya ninguna por defecto: es que la capacidad no existe. Un agente no declara skills y no hay orquestador que las lea. Ver [[specs/SPEC-SKILLS]].
 
@@ -65,7 +66,8 @@ El grafo de dependencias entre documentos no se guarda: se construye en memoria 
 
 | Entidad | Para qué | Definición completa |
 |---|---|---|
-| `sessions` | La unidad de trabajo; lleva nombre, capa y estado | [[database/01-schema/TABLES]] |
+| `projects` | La carpeta abierta; es la raíz de las sesiones de ese directorio | [[database/01-schema/TABLES]] |
+| `sessions` | La unidad de trabajo; lleva nombre, proyecto, capa y estado | [[database/01-schema/TABLES]] |
 | `messages` | Turnos de conversación, con los tokens que consumieron | [[database/01-schema/TABLES]] |
 | `reasoning` | Razonamiento del modelo, ligado a su mensaje | [[database/01-schema/TABLES]] |
 | `approvals` | Lo que espera tu decisión | [[database/01-schema/TABLES]] |
@@ -77,14 +79,18 @@ El grafo de dependencias entre documentos no se guarda: se construye en memoria 
 A nivel de negocio, la cadena de un turno es siempre la misma:
 
 ```
-tui → session → flow → context → agent → llm → ollama / llamacpp
+tui → session → flow → context → agent → llm → openai / llamacpp
                                     ↓
                             agent pide herramienta
                                     ↓
                         tools → fileops / exec
+                                ↓
+                  tools → flow (ejecutar_flujo)
                                     ↓
-                          fileops → store (change_history)
+                        fileops → store (change_history)
 ```
+
+- **`ejecutar_flujo` es una herramienta de `tools` cuyo handler se inyecta a `flow`.** Una tool más para el modelo y para la capa universal (permiso, validación, recorte, eventos), pero su ejecución invoca al orquestador: corre las etapas como sub-proceso y devuelve la entrega más el bloque resumido. Por eso `plan` puede lanzar flujos que no escriben y no tener jamás un flujo que escriba a la vista: el permiso se deriva del flujo en el catálogo, antes de llegar a `flow`.
 
 - **`session` contiene `messages`, `messages` puede tener `reasoning`.** El razonamiento pertenece a un mensaje de agente, y como máximo hay uno. Ver [[database/01-schema/RELATIONSHIPS]].
 - **`session` contiene `approvals`.** Una sesión esperando permiso tiene al menos una aprobación pendiente, y esa fila es la que se ve en el panel.

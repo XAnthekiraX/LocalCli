@@ -22,6 +22,7 @@ Las reglas que rigen el orquestador. Las que dependen de cómo se guardan los da
 - Una sesión en segundo plano sigue trabajando aunque el usuario cambie de sesión o salga de la vista.
 - Cambiar de sesión no detiene nada.
 - Cada sesión expone siempre su estado: inactiva, trabajando, esperando permiso, terminada o con error. Los estados y sus transiciones están en [[database/01-schema/ENUMS]].
+- Detener un turno de chat no borra lo que el modelo ya entregó: lo parcial se guarda como su respuesta, con el tiempo que duró, para que al retomar la sesión el hilo lo siga mostrando.
 
 ### Notificaciones
 
@@ -35,7 +36,10 @@ Las reglas que rigen el orquestador. Las que dependen de cómo se guardan los da
 
 ### Motor de etapas
 
-- Un flujo no arranca solo: lo solicita el usuario con un comando explícito (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`). Una petición que no sea comando se responde en el chat.
+- Un flujo arranca por dos entradas: el comando explícito del usuario (`/flow:<comando>`, p. ej. `/flow:planificar` —el `/comando` crudo no arranca flujos—), o la herramienta `ejecutar_flujo`, que el agente pide cuando decide que el trabajo lo necesita. Una petición que no sea un flujo y que el agente no resuelva con `ejecutar_flujo` se responde en el chat.
+- Para lanzar un flujo, el agente necesita el permiso **derivado de sus etapas**: todas `plan` → `read`; alguna `build` → `write`/`edit`. `plan` no puede lanzar un flujo que escribe.
+- Un flujo no invoca a otro: `ejecutar_flujo` no está en el catálogo dentro de una etapa de flujo (profundidad uno).
+- Lo que `ejecutar_flujo` devuelve al agente que lo invocó es la entrega más el bloque resumido; el interior del flujo no cruza.
 - Las etapas se ejecutan en orden y cada una arranca cuando la anterior terminó.
 - Cada etapa recibe solo el contexto que necesita, no todo lo que produjo la anterior.
 - Si una etapa falla, el flujo se detiene y el usuario elige reintentar, saltar esa etapa o cancelar.
@@ -48,7 +52,10 @@ Las reglas que rigen el orquestador. Las que dependen de cómo se guardan los da
 ### Detección de trabajo ordenado
 
 - Una petición tuya que implique una lista ordenada de trabajo **propone un TODO**. El sistema lo detecta, pero no lo ejecuta sin tu confirmación o el comando `/ejecutar`.
-- "Documentar capa por capa", "ejecutar tarea 1, tarea 2, tarea 3", "primero esto, luego esto" son todas peticiones que crean un TODO.
+- "Documentar capa por capa", "ejecutar tarea 1, tarea 2, tarea 3", "primero esto, luego esto" son todas peticiones que proponen un TODO.
+- **Cómo se detecta.** El detector reconoce una enumeración explícita en la petición: una lista en líneas propias (numerada o con viñetas) de dos elementos o más, una secuencia con conectores ("primero … luego …", "después …"), u ordinales de trabajo repetidos ("tarea 1, tarea 2, tarea 3"). También reconoce "capa por capa", que propone un paso por capa del proyecto. No interpreta: si no hay enumeración, no propone nada.
+- **La detección propone, no arranca.** La propuesta viaja como el evento `propuesta_todo` ([[backend/04-infrastructure/EVENTS]]) con los pasos en orden; no se crea ninguna lista de pasos ni se toca la cola. El TODO no existe hasta que confirmas la propuesta o escribes `/ejecutar`.
+- La propuesta es de la sesión que la pidió: se anuncia en ella y no en las demás.
 - Quien detecta es `flow`, no `queue`. `queue` consume lo que hay.
 - El TODO se crea en el flujo que corresponde:
   - En el **flujo de planificar**, se crea el TODO con todas las fases de la planificación.
@@ -58,20 +65,20 @@ Las reglas que rigen el orquestador. Las que dependen de cómo se guardan los da
 
 ### Cola
 
-- La cola no es por capa ni es una cola global. Es la cola de **esta** ejecución, y por eso no es global: cada petición ordenada crea su propio TODO, y ese TODO es su cola.
-- La cola tiene forma de TODO. Contiene las fases, tareas o pasos que van a seguir, todo en orden.
-- El TODO es la cola. No hay una representación paralela: lo pendiente es literalmente lo que está en el TODO.
-- Dos ejecuciones simultáneas pueden tener cada una su TODO, y una no ve el de la otra.
-- El orden del TODO es el orden de ejecución, y se respeta.
-- Se ejecuta un elemento del TODO por iteración, nunca varios a la vez.
+- La cola es **por capa**: cada capa tiene la suya, y se deriva de sus archivos de tarea (el `MAIN-TASKS.md` y los `NNN-task-<nombre>.md`), que son la fuente de verdad. No hay una cola global.
+- La cola no se almacena: es una proyección de los archivos. Se re-deriva al arrancar y cuando un archivo cambia, así que lo pendiente es literalmente lo que dice el archivo.
+- Dos capas pueden avanzar a la vez, cada una con su cola, y ninguna ve el estado de la otra.
+- El orden lo dan las dependencias declaradas en las tareas, con el prefijo `NNN` como desempate.
+- Se ejecuta un elemento de la cola por iteración, nunca varios a la vez.
 - Un elemento de documentación y uno de código se tratan igual: mismo criterio, mismos permisos, misma verificación.
-- Un elemento solo se marca completado cuando se terminó, con su verificación hecha.
-- Un elemento bloqueado se marca y se informa qué falta; si nada depende de él, la cola sigue con el siguiente.
+- Un elemento solo se marca completado cuando se terminó, con su verificación hecha, y el marcado se escribe en la celda Estado de su archivo de tarea.
+- Un elemento bloqueado se marca y se informa qué falta; como el bloqueo no detiene la cola, el siguiente elegible sigue.
 - Un elemento nuevo hace que la cola se re-derive y entre en su posición.
+- Una capa que termina antes que la otra se detiene y avisa; ninguna bloquea a la otra.
 - El estado de la cola es visible desde cualquier sesión.
-- La cola solo avanza cuando el usuario la arranca con `/ejecutar` o confirma la propuesta del TODO.
+- La cola solo avanza cuando el usuario la arranca con `/ejecutar` o confirma la propuesta.
 - Al vaciarse, la cola se detiene sola y avisa.
-- La cola refleja siempre el estado real del TODO. Como se deriva de él, si el TODO cambia, la vista cambia; no hay una segunda verdad que reconciliar.
+- La cola refleja siempre el estado real de los archivos. Como se deriva de ellos, si una tarea cambia, la vista cambia; no hay una segunda verdad que reconciliar.
 
 ### Nodo de contexto
 
@@ -104,7 +111,9 @@ Las reglas que rigen el orquestador. Las que dependen de cómo se guardan los da
 - Un permiso o un efecto fuera de vocabulario se rechaza, no se ignora.
 - Sin `permissions`, el agente es de solo conversación.
 - Un agente sin `write` ni `edit` no puede escribir en el proyecto, aunque se le pida. Es lo que hace que la garantía se sostenga en datos y no en una promesa del código.
-- **`crear_todo` añade un paso al final y no toca los que ya había; `actualizar_todo` reemplaza la lista entera.** Las dos devuelven la lista resultante.
+- **`crear_todo` añade al final y no toca los que ya había; `actualizar_todo` reemplaza la lista entera.** Las dos devuelven la lista resultante.
+- **`crear_todo` añade un paso suelto (`contenido`) o una tarea principal con sus subtareas (`titulo` + `subtareas`), como un solo grupo atómico.** Los dos caminos son excluyentes: los dos a la vez, o ninguno, es `E_BAD_ARGS`.
+- **La jerarquía de la lista es de un nivel.** Un paso cuelga de una tarea principal de la misma sesión por la posición de su padre; la validez de la referencia solo se impone al escribir, porque SQLite no puede declararla como clave foránea añadida por `ALTER TABLE`. Los pasos sin padre son raíz, y ningún elemento anida más de un nivel.
 - **No hay skills.** No es que no haya ninguna por defecto: la capacidad no está implementada y ningún sitio las declara. Ver [[specs/SPEC-SKILLS]].
 - En el chat, cada agente responde con las herramientas derivadas de sus permisos; el chat no añade ni quita herramientas.
 

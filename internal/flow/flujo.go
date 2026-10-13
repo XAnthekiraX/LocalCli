@@ -1,28 +1,14 @@
 package flow
 
-// flujo.go — cargar la definición de un flujo desde un JSON.
-//
-// Fuente de verdad: [[specs/SPEC-FLUJO-PERSONALIZADO]] (definir flujos propios
-// con nombre, etapas y orden) y [[specs/SPEC-MOTOR-FLUJOS]]. Los flujos del
-// proyecto son los que declara `.localcli/flows/*.json`; los constructores de
-// este paquete quedan como valor por defecto interno, no como catálogo.
-//
-// La definición es DATO: aquí solo se lee y se valida. El contrato es cerrado
-// (json.Decoder con DisallowUnknownFields): un campo de más no se carga, para
-// que un formato viejo no se interprete a medias.
-
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 )
 
-// definicionFlujo es el contrato JSON de un flujo.
+// definicionFlujo es el contrato JSON de un flujo, tal cual llega del archivo.
 type definicionFlujo struct {
 	Comando     string            `json:"comando"`
 	Nombre      string            `json:"nombre"`
@@ -46,30 +32,47 @@ type definicionEtapa struct {
 	Aprobacion      bool   `json:"aprobacion"`
 }
 
-// CamposDelFlujo y CamposDeLaEtapa son los nombres de campo admitidos. Son la
-// lista cerrada del contrato; sirven para documentar y para los tests.
+// CamposDelFlujo y CamposDeLaEtapa son los campos admitidos en el JSON.
 var (
 	CamposDelFlujo  = []string{"comando", "nombre", "descripcion", "peticion", "pregunta", "reglas", "etapas"}
 	CamposDeLaEtapa = []string{"id", "nombre", "agente", "pregunta", "instruccion", "continuacion", "entrega", "respuesta_en_chat", "aprobacion"}
 )
 
-// errFlujo construye un error localizado de carga de flujo. No usa un código
-// `E_`: ERRORS.md no define uno para un JSON de flujo inválido, y fingir un
-// código ajeno sería peor que un mensaje claro.
-func errFlujo(msg string) error { return fmt.Errorf("flujo: %s", msg) }
+// Etapa es un paso del flujo.
+type Etapa struct {
+	ID              string
+	Nombre          string
+	Agente          string // agente que la corre (`plan` o `build`)
+	Pregunta        string // lo que la etapa responde; obligatoria
+	Instruccion     string // se une a las Reglas y viaja con el contexto de la etapa
+	Continuacion    bool   // detiene el flujo ANTES de correr la etapa
+	Aprobacion      bool   // detiene el flujo DESPUÉS de correr la etapa
+	Entrega         bool   // etapa de cierre; exactamente una, y la última
+	RespuestaEnChat bool   // pinta la respuesta sin meterla al contexto
+}
 
-// DecodificarFlujo convierte el JSON de un flujo en un Flujo, rechazando
-// campos desconocidos y comprobando los obligatorios y la secuencia.
+// Flujo es una secuencia ordenada de etapas con nombre.
+type Flujo struct {
+	Nombre      string
+	Comando     string // comando que lo arranca, p. ej. "/resolver"
+	Descripcion string
+	Peticion    string // objetivo por defecto cuando el comando va sin texto
+	Pregunta    string // qué entrega el flujo; obligatoria
+	Reglas      []string
+	Etapas      []Etapa
+	Origen      string // ruta del archivo; lo fija la carga
+}
+
+// DecodificarFlujo lee el JSON con campos estrictos y valida el flujo.
 func DecodificarFlujo(datos []byte) (Flujo, error) {
 	var d definicionFlujo
 	dec := json.NewDecoder(bytes.NewReader(datos))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&d); err != nil {
-		return Flujo{}, err
+		return Flujo{}, errorf("%w", err)
 	}
-	// Datos sobrantes tras el objeto también son un archivo mal formado.
 	if err := dec.Decode(&struct{}{}); err != io.EOF {
-		return Flujo{}, errFlujo("el archivo lleva contenido de más después del objeto")
+		return Flujo{}, errorf("el archivo lleva contenido de más después del objeto")
 	}
 
 	f := Flujo{
@@ -94,20 +97,55 @@ func DecodificarFlujo(datos []byte) (Flujo, error) {
 			RespuestaEnChat: e.RespuestaEnChat,
 		})
 	}
-	if f.Comando == "" {
-		return Flujo{}, errFlujo("falta el campo obligatorio `comando`")
-	}
-	if f.Nombre == "" {
-		return Flujo{}, errFlujo("falta el campo obligatorio `nombre`")
-	}
 	if err := f.Validar(); err != nil {
 		return Flujo{}, err
 	}
 	return f, nil
 }
 
-// limpiarLista recorta cada elemento y descarta los vacíos; devuelve nil para
-// una lista sin contenido, para que el JSON y el round-trip no diverjan.
+// Validar comprueba que el flujo es encadenable: comando con `/`, nombre,
+// `pregunta`, al menos una etapa y una sola `entrega`, que es la última.
+func (f Flujo) Validar() error {
+	if f.Comando == "" {
+		return errorf("falta el campo obligatorio `comando`")
+	}
+	if !strings.HasPrefix(f.Comando, "/") {
+		return errorf("el comando del flujo %s no empieza por / (%q)", f.Nombre, f.Comando)
+	}
+	if f.Nombre == "" {
+		return errorf("falta el campo obligatorio `nombre`")
+	}
+	if strings.TrimSpace(f.Pregunta) == "" {
+		return errorf("el flujo %s no declara `pregunta` (qué entrega)", f.Nombre)
+	}
+	if len(f.Etapas) == 0 {
+		return errorf("el flujo %s no tiene etapas", f.Nombre)
+	}
+	entregas := 0
+	for i, e := range f.Etapas {
+		if e.ID == "" {
+			return errorf("la etapa %d del flujo %s no tiene id", i, f.Nombre)
+		}
+		if e.Agente == "" {
+			return errorf("la etapa %s no declara agente", e.ID)
+		}
+		if e.Pregunta == "" {
+			return errorf("la etapa %s del flujo %s no declara `pregunta`", e.ID, f.Nombre)
+		}
+		if e.Entrega {
+			entregas++
+		}
+	}
+	if entregas != 1 {
+		return errorf("el flujo %s declara %d etapas `entrega`, quiero exactamente una", f.Nombre, entregas)
+	}
+	if !f.Etapas[len(f.Etapas)-1].Entrega {
+		return errorf("en el flujo %s la etapa `entrega` debe ser la última", f.Nombre)
+	}
+	return nil
+}
+
+// limpiarLista recorta cada elemento y descarta los vacíos.
 func limpiarLista(xs []string) []string {
 	var out []string
 	for _, x := range xs {
@@ -118,39 +156,6 @@ func limpiarLista(xs []string) []string {
 	return out
 }
 
-// CargarFlujosCarpeta lee los `*.json` de un directorio, en orden alfabético.
-// Una carpeta inexistente no es un error (un proyecto puede no tener flujos
-// propios). Un archivo roto detiene la carga: no se arranca con un catálogo de
-// flujos a medias sin avisar (misma regla que agent.CargarCarpeta).
-func CargarFlujosCarpeta(dir string) ([]Flujo, error) {
-	entradas, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, errFlujo("no se pudo leer la carpeta de flujos " + dir + ": " + err.Error())
-	}
-	nombres := make([]string, 0, len(entradas))
-	for _, e := range entradas {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
-			continue
-		}
-		nombres = append(nombres, e.Name())
-	}
-	sort.Strings(nombres)
-
-	flujos := make([]Flujo, 0, len(nombres))
-	for _, nombre := range nombres {
-		ruta := filepath.Join(dir, nombre)
-		datos, err := os.ReadFile(ruta)
-		if err != nil {
-			return nil, errFlujo("no se pudo leer " + ruta + ": " + err.Error())
-		}
-		f, err := DecodificarFlujo(datos)
-		if err != nil {
-			return nil, errFlujo(ruta + ": " + err.Error())
-		}
-		flujos = append(flujos, f)
-	}
-	return flujos, nil
+func errorf(format string, args ...any) error {
+	return fmt.Errorf("flujo: "+format, args...)
 }

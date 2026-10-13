@@ -26,7 +26,7 @@ No incluye un editor de agentes dentro de la herramienta, que no existe: definir
 
 ## Flujo principal
 
-1. El usuario crea una carpeta en `.localcli/agents/` con dos archivos: `agent.yaml` —nombre, descripción y permisos— y `prompt.md` —las instrucciones—.
+1. El usuario crea una carpeta en `<proyecto>/.localcli/agents/` con dos archivos: `agent.yaml` —nombre, descripción y permisos— y `prompt.md` —las instrucciones—.
 2. El sistema lo carga al arrancar y lo añade a los agentes disponibles.
 3. El usuario elige qué agente usa una sesión, con `Tab`.
 4. A partir de ese momento, ese agente responde en esa sesión.
@@ -73,7 +73,7 @@ No incluye un editor de agentes dentro de la herramienta, que no existe: definir
 
 ## Supuestos
 
-- El formato y la ubicación ya no están abiertos: una carpeta en `.localcli/agents/` con `agent.yaml` y `prompt.md`. Ver [[specs/SPEC-AGENTE-BASE]] §Dónde se definen.
+- El formato y la ubicación ya no están abiertos: una carpeta en `<proyecto>/.localcli/agents/` con `agent.yaml` y `prompt.md`, aditiva sobre los base de `~/.config/localcli/agents/`. Ver [[specs/SPEC-AGENTE-BASE]] §Dónde se definen.
 - Lo que queda abierto es si la herramienta tendrá alguna vez un editor de agentes. Hoy no lo tiene, y esta spec no lo pide: no es necesario para usar un agente propio.
 - Un agente propio no declara `skills`: la capacidad no existe. Ver [[specs/SPEC-SKILLS]].
 

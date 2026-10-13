@@ -6,14 +6,14 @@ depende_de:
   - "[[specs/SPEC-TOOLS]]"
   - "[[specs/SPEC-NODO-CONTEXTO]]"
   - "[[specs/SPEC-ARCHIVOS]]"
-  - "[[specs/SPEC-MODELO-MOTOR]]"
+  - "[[specs/SPEC-MODELOS-LLAMACPP]]"
   - "[[specs/SPEC-SESIONES]]"
-  - "[[specs/SPEC-COLA-TAREAS]]"
 relacionado:
   - "[[backend/DECISIONS]]"
   - "[[specs/SPEC-CICLO-TRABAJO]]"
   - "[[specs/SPEC-RESOLVER]]"
   - "[[specs/SPEC-SKILLS]]"
+  - "[[specs/SPEC-COLA-TAREAS]]"
 ---
 # SPEC — Agentes incluidos
 
@@ -23,13 +23,13 @@ Prioridad: P0 (núcleo)
 
 Los dos agentes incluidos, con permisos distintos: uno que solo mira y propone, otro que escribe.
 
-**Vienen incluidos, pero no están hardcodeados.** Los dos se definen en archivos de texto con estructura fija, en `.localcli/agents/`. El usuario puede modificarlos o derivar otros agentes de ellos sin tocar el código.
+**Vienen incluidos, pero no están hardcodeados.** Los dos se definen en archivos de texto con estructura fija: se siembran desde el binario en `~/.config/localcli/agents/` al ejecutar `localcli init`, y el usuario puede modificarlos o derivar otros agentes de ellos sin tocar el código.
 
 **No hay skills.** Un agente no declara skills: esa capacidad no está implementada. Ver [[specs/SPEC-SKILLS]].
 
 ## Alcance
 
-Incluye `plan` y `build`: qué hace cada uno, a qué herramientas tiene acceso y cómo se pasa de uno a otro. Incluye además cargar agentes propios: cualquier carpeta de `.localcli/agents/` con un `agent.yaml` y un `prompt.md` válidos se añade a los disponibles y `Tab` recorre todos.
+Incluye `plan` y `build`: qué hace cada uno, a qué herramientas tiene acceso y cómo se pasa de uno a otro. Incluye además cargar agentes propios: cualquier carpeta de `<proyecto>/.localcli/agents/` con un `agent.yaml` y un `prompt.md` válidos se añade a los disponibles y `Tab` recorre todos.
 No incluye skills ni flujos.
 
 ## Actores
@@ -40,10 +40,15 @@ No incluye skills ni flujos.
 
 ## Dónde se definen
 
+Hay dos directorios `agents/` y ambos usan la misma forma:
+
+- **`~/.config/localcli/agents/`** — los agentes **base** (`plan`, `build`, `chat`): se siembran desde el binario al ejecutar `localcli init` y no se sobrescriben.
+- **`<proyecto>/.localcli/agents/`** — los agentes **propios** del proyecto: aditivos, nunca sustituyen un `name` que ya exista en los base.
+
 Cada agente es una **carpeta** con dos archivos: la configuración y las instrucciones van separadas.
 
 ```
-.localcli/agents/plan/
+.localcli/agents/plan/     (o ~/.config/localcli/agents/plan/)
 ├── agent.yaml    ← identidad, permisos
 └── prompt.md     ← instrucciones, solo para el modelo
 ```
@@ -72,7 +77,7 @@ Son tres campos, y no hay un cuarto: **no existe `mode` ni `skills`**. Un `skill
 
 **El nombre de la carpeta no decide nada**, manda `name`: una carpeta `investigador/` con `name: research` da un agente llamado `research`. Todos los campos desconocidos se rechazan, y con ellos un `herramientas:` o un `prompt:` escrito por costumbre: el prompt va en `prompt.md` y las herramientas se derivan de los permisos.
 
-**Cada carpeta de `.localcli/agents/` se carga**, no solo `plan` y `build`: dejar un `agents/<carpeta>/` con los dos archivos válidos basta para tener un agente nuevo disponible —sin tocar el código—: aparece en la lista por la que cicla `Tab` y puede referenciarse desde una etapa de un flujo propio. `plan` y `build` siempre están disponibles aunque falten o no carguen (quedan con un prompt de respaldo), porque los flujos oficiales los referencian. Una carpeta inválida se ignora sin impedir el arranque, y **un `*.json` suelto en `.localcli/agents/` se avisa nombrándolo**: es el formato antiguo y hay que convertirlo.
+**Cada carpeta de los dos directorios `agents/` se carga**, no solo `plan` y `build`: dejar un `<proyecto>/.localcli/agents/<carpeta>/` con los dos archivos válidos basta para tener un agente nuevo disponible —sin tocar el código—: aparece en la lista por la que cicla `Tab` y puede referenciarse desde una etapa de un flujo propio. La disponibilidad de los agentes base es la de cualquier dato: vienen sembrados en `~/.config/localcli/agents/` desde el binario, y si faltan o no cargan no aparecen —no hay agentes de respaldo dentro del código—, igual que no aparece un flujo sin archivo. Un agente propio cuyo `name` coincide con uno base se avisa y se conserva el base. Una carpeta inválida se ignora sin impedir el arranque, y **un `*.json` suelto en un directorio `agents/` se avisa nombrándolo**: es el formato antiguo y hay que convertirlo.
 
 ### `prompt.md` — las instrucciones
 
@@ -90,7 +95,7 @@ permissions:
   edit: allow
 ```
 
-Solo hay **tres permisos**, y el catálogo cerrado de herramientas se **deriva** de ellos contra las quince herramientas de `tools`: no hay una segunda lista que pueda contradecirlos. La garantía vive en los datos, no en el código.
+Solo hay **tres permisos**, y el catálogo cerrado de herramientas se **deriva** de ellos contra las dieciséis herramientas de `tools`: no hay una segunda lista que pueda contradecirlos. La garantía vive en los datos, no en el código.
 
 | Permiso | Qué abre |
 |---|---|
@@ -135,7 +140,11 @@ Una redacción no es un cierre, y puede fallar de dos maneras. Si el modelo vuel
 
 **Un fallo no termina el turno.** Si una herramienta falla por un motivo que el modelo puede corregir —le faltan argumentos, la ruta no existe— ve el motivo y puede reintentarlo en la misma ronda. Si el fallo no es suyo —se le ha denegado el permiso, el sistema no responde— se lo dice y sigue con otra cosa.
 
+**El turno no se rinde a la primera.** Si el modelo intenta cerrar con texto *justo después* de que sus herramientas fallaron, el harness lo empuja a continuar en vez de aceptar la rendición: en lugar de dar el turno por terminado, inyecta un mensaje de sistema e insiste en una ronda más, corregir los argumentos o probar otra herramienta. Los empujones se escalan y se acotan (por defecto **tres** por turno): los dos primeros piden corregir; el último reintroduce la petición original del usuario con sus rutas tal cual, para que el modelo reencuentre el camino. Un acierto de una herramienta limpia el fallo pendiente, y agotado el tope se acepta la respuesta del modelo como hoy. Así un modelo que falla un intento no se queda en el primer tropiezo.
+
 Las herramientas se ejecutan **una detrás de otra**, en el orden pedido. No en paralelo: el orden importa y las aprobaciones tienen que llegar al usuario en orden.
+
+**Una herramienta puede no cerrar en la pasada en que se pide.** `ejecutar_flujo` lanza un flujo y el turno **espera** mientras corre sus etapas, conservando sus pausas de `continuacion` y `aprobacion`: el modelo que la pidió ve el resultado cuando la etapa `entrega` termina. Para el agente activo es una herramienta más; lo único distinto es que su ejecución es larga e interactiva. Ver [[specs/SPEC-TOOLS]] §Los flujos como herramienta.
 
 ## Un agente sin herramientas
 
@@ -163,12 +172,12 @@ Su trabajo termina en una propuesta aprobada.
 Tiene **el catálogo completo**. Es el único que crea, modifica y borra.
 
 - Aplica exactamente lo que `plan` propuso y tú aprobaste.
-- Dentro de un flujo arrancado con comando, toma el siguiente elemento del TODO.
+- Dentro de un flujo, toma el siguiente elemento del TODO.
 - Trata **un elemento del TODO por iteración**, sin importar si es de código o de documentación.
 - La documentación es su única fuente de verdad.
 - Si falta información, marca la tarea como bloqueada y dice exactamente qué falta. No rellena huecos inventando.
 - Verifica el resultado antes de dar la tarea por terminada.
-- Al terminar la tarea, toma la siguiente de la cola, siempre dentro del flujo que arrancó el usuario.
+- Al terminar la tarea, toma la siguiente de la cola, siempre dentro del flujo.
 
 ## El relevo
 
@@ -222,8 +231,11 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 - `build` no inventa endpoints, entidades, reglas de negocio ni relaciones.
 - Un intercambio de chat empieza con el contexto de esa sesión, no con el de otra.
 - Fuera de un flujo, ambos agentes atienden el chat con el catálogo derivado de sus permisos: `plan` lee y propone, `build` escribe con aprobación.
-- `plan` propone y `build` aplica dentro de un flujo; un flujo solo existe cuando el usuario lo arranca con un comando explícito.
-- Los agentes se cargan de las carpetas de `.localcli/agents/`: `plan` y `build` siempre están disponibles y cualquier agente propio válido se añade a los disponibles. Una carpeta inválida se ignora sin impedir el arranque, y un `*.json` del formato antiguo se avisa nombrándolo.
+- `plan` propone y `build` aplica dentro de un flujo; un flujo arranca por el comando del usuario o por la herramienta `ejecutar_flujo` del agente.
+- Ambos agentes lanzan los flujos que admite su permiso derivado: `plan` solo los que no escriben (todas sus etapas corren con `plan`), `build` también los que escriben. El esquema de la herramienta se arma por turno con esa vista.
+- `ejecutar_flujo` no está disponible dentro de una etapa de flujo: un agente que está corriendo una etapa no puede invocar otro flujo.
+- `ejecutar_flujo` devuelve la entrega más el bloque resumido; el interior del flujo no llega al agente que lo invocó.
+- Los agentes base se cargan de `~/.config/localcli/agents/` (sembrados desde el binario) y los propios de `<proyecto>/.localcli/agents/` (aditivos): si un agente no está en archivos, no aparece. Una carpeta inválida se ignora sin impedir el arranque, y un `*.json` del formato antiguo se avisa nombrándolo.
 - Un agente es una carpeta con dos archivos: `agent.yaml` con la configuración y `prompt.md` con las instrucciones. Los dos son obligatorios.
 - El nombre del agente lo decide el campo `name`, no el nombre de la carpeta.
 - Un campo desconocido en `agent.yaml` se rechaza, incluidos `prompt`, `herramientas` y `skills`.
@@ -241,6 +253,9 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 - Las herramientas de un turno se ejecutan en el orden pedido, nunca en paralelo.
 - Un fallo corregible —argumentos que no cuadran, una ruta que no existe— vuelve al modelo como resultado y el turno puede continuar corrigiendo.
 - Un fallo no corregible se informa al modelo y no detiene el trabajo.
+- Si el modelo intenta cerrar el turno con texto tras una ronda de herramientas que fallaron, el turno se empuja a continuar con un tope: hasta tres empujones por turno, y el último reintroduce la petición original del usuario con sus rutas.
+- Un acierto de herramienta limpia el fallo pendiente: con el agente avanzando, no se le insiste en cerrar de otra forma.
+- Los empujones de continuación no aplican en modo conversación.
 - Si el modelo en uso no puede usar herramientas, el agente responde en modo conversación y la interfaz lo avisa.
 - Un turno que agota las rondas pide una redacción sin herramientas antes de cerrarse, y solo entonces.
 - Si esa redacción vuelve a pedir herramientas, se reintenta una sola vez con una instrucción explícita.
@@ -259,13 +274,13 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 - [ ] Si le falta información del contexto, la pide en vez de inventarla.
 - [ ] `build` marca la tarea como bloqueada y dice qué falta cuando no puede continuar.
 - [ ] `build` verifica el resultado antes de cerrar la tarea.
-- [ ] Dentro de un flujo arrancado por comando, `build` toma la siguiente tarea de la cola.
-- [ ] Dejar una carpeta `.localcli/agents/<carpeta>/` con `agent.yaml` y `prompt.md` válidos añade un agente disponible sin tocar el código.
+- [ ] Dentro de un flujo arrancado por comando o por `ejecutar_flujo`, `build` toma la siguiente tarea de la cola.
+- [ ] Dejar una carpeta `<proyecto>/.localcli/agents/<carpeta>/` con `agent.yaml` y `prompt.md` válidos añade un agente disponible sin tocar el código.
 - [ ] `Tab` recorre todos los agentes disponibles, no solo `plan` y `build`.
 - [ ] Una carpeta de agente inválida se ignora y el arranque sigue.
 - [ ] Un `agent.yaml` con un campo desconocido se rechaza nombrando el campo.
 - [ ] Un `agent.yaml` con `skills`, `herramientas` o `prompt` se rechaza.
-- [ ] Un `*.json` suelto en `.localcli/agents/` produce un aviso que nombra el archivo y dice cuál es el formato nuevo.
+- [ ] Un `*.json` suelto en un directorio `agents/` produce un aviso que nombra el archivo y dice cuál es el formato nuevo.
 - [ ] El nombre de la carpeta no decide el nombre del agente: manda `name`.
 - [ ] Una carpeta sin `prompt.md`, o con `prompt.md` vacío, no carga.
 - [ ] `prompt.md` se entrega entero al modelo y el nodo de contexto no lo recorta.
@@ -280,8 +295,16 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 - [ ] Un turno que gastó sus rondas en herramientas cierra con una redacción de su resultado, no con el preámbulo de su última petición de herramienta.
 - [ ] Si el modelo sigue pidiendo herramientas al redactar, se reintenta una vez y, si tampoco responde, el turno falla con un aviso visible en vez de guardar una respuesta vacía.
 - [ ] Un fallo de argumentos vuelve al modelo y puede corregirlo sin perder el turno.
+- [ ] Un turno que termina con un fallo corregible sin resolver no se cierra a la primera: se empuja a continuar hasta el tope de empujones.
+- [ ] El último empujón de continuación reintroduce la petición original del usuario con sus rutas tal cual.
+- [ ] Un acierto de herramienta tras el fallo detiene los empujones y el turno continúa normal.
+- [ ] Agotado el tope de empujones, el turno acepta la respuesta del modelo.
 - [ ] Las herramientas de un turno se ejecutan en el orden en que las pidió el modelo.
 - [ ] Un modelo sin capacidad de herramientas hace que el agente responda en modo conversación, y la interfaz lo avisa.
+- [ ] Un agente con `read` puede lanzar los flujos cuyas etapas corren todas con `plan`, y `build` también los que escriben.
+- [ ] El turno espera mientras `ejecutar_flujo` corre, y las pausas de `continuacion` y `aprobacion` se conservan.
+- [ ] El agente que invocó `ejecutar_flujo` recibe solo la entrega y el bloque resumido, no las etapas ni las herramientas internas.
+- [ ] Dentro de una etapa de flujo, `ejecutar_flujo` no está en el catálogo.
 
 ## Requisitos no funcionales
 
@@ -295,9 +318,8 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 - [[specs/SPEC-TOOLS]]
 - [[specs/SPEC-NODO-CONTEXTO]]
 - [[specs/SPEC-ARCHIVOS]]
-- [[specs/SPEC-MODELO-MOTOR]]
+- [[specs/SPEC-MODELOS-LLAMACPP]]
 - [[specs/SPEC-SESIONES]]
-- [[specs/SPEC-COLA-TAREAS]]
 
 ## Supuestos
 

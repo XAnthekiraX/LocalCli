@@ -1,10 +1,12 @@
 ---
 title: Documento B
-etiquetas:
+tags:
   - beta
   - comun
+relacionado:
+  - "[[a]]"
 ---
 
 # B
 
-Sin enlaces válidos, pero con uno roto: [[fantasma]].
+Enlace roto a [[fantasma]].

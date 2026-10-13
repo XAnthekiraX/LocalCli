@@ -1,100 +1,99 @@
 package store
 
-// todos.go — la lista de pasos de la sesión (migración 002-crear-todo).
-//
-// Fuente de verdad: TABLES.md §7 (la tabla `todos`) y SPEC-TOOLS (la lista de
-// pasos del agente). Es estado de ejecución de la sesión, no un documento del
-// proyecto: se reescribe entera en cada `actualizar_todo` y cae en cascada con
-// su sesión.
-//
-// El orden es la `position`, que es el índice del elemento en la lista que manda
-// el modelo; no hay identificadores de fila que puedan quedar obsoletos.
+import (
+	"database/sql"
+	"fmt"
+	"time"
+)
 
-import "database/sql"
-
-// Todo es un paso de la lista de la sesión. El estado y la prioridad viajan ya
-// validados por la capa universal (`tools`); la base los vuelve a comprobar con
-// sus CHECK.
+// Todo es un paso de la lista de la sesión.
 type Todo struct {
+	Posicion  int
 	Contenido string
 	Estado    string
-	Prioridad string // "" se guarda como "media"
+	Prioridad string
 }
 
-// prioridadPorDefecto es la prioridad de un paso que no la declara.
-const prioridadPorDefecto = "media"
+// ListarTodos devuelve la lista de pasos de una sesión del proyecto, en orden.
+func ListarTodos(db *sql.DB, projectID, sessionID string) ([]Todo, error) {
+	if err := sesionEnProyecto(db, projectID, sessionID); err != nil {
+		return nil, err
+	}
+	return leerTodos(db, sessionID)
+}
 
-// LeerTodos devuelve la lista de pasos de una sesión, en el orden guardado.
-func LeerTodos(db *sql.DB, sessionID string) ([]Todo, error) {
-	rows, err := db.Query(
-		`SELECT content, status, priority FROM todos WHERE session_id = ? ORDER BY position`,
-		sessionID)
+// CrearTodo añade un paso al final de la lista, sin tocar los que ya había, y
+// devuelve la lista resultante.
+func CrearTodo(db *sql.DB, projectID, sessionID, contenido, estado, prioridad string) ([]Todo, error) {
+	if err := sesionEnProyecto(db, projectID, sessionID); err != nil {
+		return nil, err
+	}
+
+	var posicion int
+	if err := db.QueryRow("SELECT COUNT(*) FROM todos WHERE session_id = ?", sessionID).Scan(&posicion); err != nil {
+		return nil, fmt.Errorf("store: no se pudo contar los pasos: %w", err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := db.Exec(
+		`INSERT INTO todos (session_id, position, content, status, priority, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		sessionID, posicion, contenido, estado, prioridad, now, now,
+	); err != nil {
+		return nil, fmt.Errorf("store: no se pudo añadir el paso: %w", err)
+	}
+	return leerTodos(db, sessionID)
+}
+
+// ReemplazarTodos sustituye la lista entera de la sesión por la dada, en un solo
+// paso atómico: o queda la nueva entera, o queda la anterior.
+func ReemplazarTodos(db *sql.DB, projectID, sessionID string, elementos []Todo) ([]Todo, error) {
+	if err := sesionEnProyecto(db, projectID, sessionID); err != nil {
+		return nil, err
+	}
+
+	tx, err := db.Begin()
 	if err != nil {
-		return nil, traducirError(err)
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("DELETE FROM todos WHERE session_id = ?", sessionID); err != nil {
+		return nil, fmt.Errorf("store: no se pudo vaciar la lista: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	for i, t := range elementos {
+		if _, err := tx.Exec(
+			`INSERT INTO todos (session_id, position, content, status, priority, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			sessionID, i, t.Contenido, t.Estado, t.Prioridad, now, now,
+		); err != nil {
+			return nil, fmt.Errorf("store: no se pudo escribir la lista: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return leerTodos(db, sessionID)
+}
+
+func leerTodos(db *sql.DB, sessionID string) ([]Todo, error) {
+	rows, err := db.Query(
+		"SELECT position, content, status, priority FROM todos WHERE session_id = ? ORDER BY position",
+		sessionID,
+	)
+	if err != nil {
+		return nil, err
 	}
 	defer rows.Close()
-	var out []Todo
+
+	var lista []Todo
 	for rows.Next() {
 		var t Todo
-		if err := rows.Scan(&t.Contenido, &t.Estado, &t.Prioridad); err != nil {
-			return nil, traducirError(err)
+		if err := rows.Scan(&t.Posicion, &t.Contenido, &t.Estado, &t.Prioridad); err != nil {
+			return nil, err
 		}
-		out = append(out, t)
+		lista = append(lista, t)
 	}
-	return out, traducirError(rows.Err())
-}
-
-// ReemplazarTodos sustituye la lista entera de una sesión: borra lo que hubiera
-// e inserta la lista nueva numerada en el mismo paso atómico. Es lo que hace
-// idempotente a `actualizar_todo`: no hay deltas ni estados a medias.
-func ReemplazarTodos(db *sql.DB, sessionID string, items []Todo) error {
-	return EjecutarTX(db, func(tx *sql.Tx) error {
-		return reemplazarTodos(tx, sessionID, items)
-	})
-}
-
-// AgregarTodo inserta UNA fila al final de la lista de una sesión: la posición
-// es el número de pasos actuales, así que no renumera nada ni toca los que ya
-// había. Es la semántica de `crear_todo`, distinta de ReemplazarTodos, que
-// sustituye la lista entera.
-func AgregarTodo(db *sql.DB, sessionID string, it Todo) error {
-	return EjecutarTX(db, func(tx *sql.Tx) error {
-		var n int
-		if err := tx.QueryRow(`SELECT COUNT(*) FROM todos WHERE session_id = ?`, sessionID).Scan(&n); err != nil {
-			return traducirError(err)
-		}
-		prioridad := it.Prioridad
-		if prioridad == "" {
-			prioridad = prioridadPorDefecto
-		}
-		now := nowISO()
-		_, err := tx.Exec(
-			`INSERT INTO todos (session_id, position, content, status, priority, created_at, updated_at)
- VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			sessionID, n, it.Contenido, it.Estado, prioridad, now, now)
-		return traducirError(err)
-	})
-}
-
-// reemplazarTodos es la versión que acepta un ejecutor, para poder correr dentro
-// de la transacción que abre ReemplazarTodos.
-func reemplazarTodos(e ejecutor, sessionID string, items []Todo) error {
-	if _, err := e.Exec(`DELETE FROM todos WHERE session_id = ?`, sessionID); err != nil {
-		return traducirError(err)
-	}
-	now := nowISO()
-	for i, it := range items {
-		prioridad := it.Prioridad
-		if prioridad == "" {
-			prioridad = prioridadPorDefecto
-		}
-		if _, err := e.Exec(
-			`INSERT INTO todos (session_id, position, content, status, priority, created_at, updated_at)
- VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			sessionID, i, it.Contenido, it.Estado, prioridad, now, now,
-		); err != nil {
-			return traducirError(err)
-		}
-	}
-	return nil
+	return lista, rows.Err()
 }

@@ -1,388 +1,294 @@
 package tui
 
-// Tests de la selección con el ratón y su copia (selection.go) y del scroll con
-// la rueda.
-
 import (
-	"fmt"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"localcli/internal/tui/components/chat"
+	"localcli/internal/tui/render"
 )
 
-func TestTextoSeleccionadoExtraeElRangoSinCódigos(t *testing.T) {
-	// Los códigos de color no cuentan como columnas.
-	vista := "\x1b[31mhola\x1b[0m mundo\nsegunda línea"
-	if got := textoSeleccionado(vista, posicion{X: 0, Y: 0}, posicion{X: 5, Y: 0}); got != "hola" {
-		t.Errorf("selección de una línea: %q", got)
-	}
-	// Varias líneas y extremos en cualquier orden (se ordenan solos).
-	got := textoSeleccionado(vista, posicion{X: 3, Y: 1}, posicion{X: 0, Y: 0})
-	if got != "hola mundo\nseg" {
-		t.Errorf("selección multilínea con extremos invertidos: %q", got)
-	}
-	// Un clic sin arrastrar no copia nada.
-	if got := textoSeleccionado(vista, posicion{X: 2, Y: 0}, posicion{X: 2, Y: 0}); got != "" {
-		t.Errorf("un clic sin arrastre no selecciona: %q", got)
-	}
-	// Un marco vacío no revienta.
-	if got := textoSeleccionado("", posicion{X: 0, Y: 0}, posicion{X: 1, Y: 1}); got != "" {
-		t.Errorf("vista vacía: %q", got)
-	}
+// arrastrar pulsa y mueve el ratón con el botón izquierdo; soltar queda aparte.
+func arrastrar(app *App, desde, hasta punto) {
+	app.raton(tea.MouseMsg{X: desde.Columna, Y: desde.Fila, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	app.raton(tea.MouseMsg{X: hasta.Columna, Y: hasta.Fila, Action: tea.MouseActionMotion})
 }
 
-func TestElArrastreDelRatónCopiaLaSelección(t *testing.T) {
-	var copiado []string
-	original := copiarFunc
-	copiarFunc = func(s string) { copiado = append(copiado, s) }
-	defer func() { copiarFunc = original }()
-
-	a := Nuevo(&puertoStub{})
-	a.Vista = VistaPrincipal
-	a.Panel.SesionID = "s1"
-	pulsa(t, a, tea.WindowSizeMsg{Width: 60, Height: 12})
-	a.ultimaVista = "hola mundo\nsegunda línea"
-
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 0, Y: 0})
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion, X: 5, Y: 0})
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease, X: 5, Y: 0})
-	if len(copiado) != 1 || copiado[0] != "hola" {
-		t.Fatalf("al soltar se copia el texto seleccionado: %v", copiado)
-	}
-	if a.ratonSelec {
-		t.Error("al soltar termina la selección")
-	}
-
-	// Un clic sin arrastrar no copia.
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 2, Y: 0})
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease, X: 2, Y: 0})
-	if len(copiado) != 1 {
-		t.Error("un clic sin arrastre no copia")
-	}
-}
-
-func TestLaRuedaDesplazaElHistorial(t *testing.T) {
-	a := Nuevo(&puertoStub{})
-	a.Vista = VistaPrincipal
-	a.Panel.SesionID = "s1"
-	pulsa(t, a, tea.WindowSizeMsg{Width: 60, Height: 12})
-	for i := 1; i <= 40; i++ {
-		a.Chat.AñadirSistema(fmt.Sprintf("mensaje %d", i))
-	}
-	_ = a.View()
-	if a.Chat.OcultasAbajo() != 0 {
-		t.Fatalf("al pie no queda nada abajo, quedan %d", a.Chat.OcultasAbajo())
-	}
-
-	// La rueda hacia arriba sube por el historial.
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
-	_ = a.View()
-	if a.Chat.OcultasAbajo() == 0 {
-		t.Error("la rueda hacia arriba sube por el historial")
-	}
-
-	// La rueda hacia abajo vuelve al final.
-	for i := 0; i < 40; i++ {
-		pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
-	}
-	if a.Chat.OcultasAbajo() != 0 || !strings.Contains(sinEstilo(a.View()), "mensaje 40") {
-		t.Error("la rueda hacia abajo vuelve al final")
-	}
-}
-
-// filaDe localiza en el marco la primera fila que contiene `texto` y devuelve su
-// índice (base 0) y la columna visible donde empieza el texto.
-func filaDe(t *testing.T, vista, texto string) (y, x int) {
-	t.Helper()
-	for i, l := range strings.Split(sinEstilo(vista), "\n") {
-		if j := strings.Index(l, texto); j >= 0 {
-			return i, len([]rune(l[:j]))
+// ejecutar corre un comando como lo haría el bucle: un lote ejecuta sus comandos.
+func ejecutar(cmd tea.Cmd) {
+	if batch, ok := cmd().(tea.BatchMsg); ok {
+		for _, sub := range batch {
+			sub()
 		}
 	}
-	t.Fatalf("no encontré %q en el marco:\n%s", texto, sinEstilo(vista))
-	return 0, 0
 }
 
-func TestElResaltadoEnvuelveSoloLaSelección(t *testing.T) {
-	// Sin códigos: se envuelve exactamente el tramo y el texto visible no cambia.
-	got := resaltarSeleccion("hola mundo", posicion{X: 0, Y: 0}, posicion{X: 4, Y: 0})
-	if !strings.Contains(got, seleccionOn+"hola"+seleccionOff) {
-		t.Errorf("el tramo seleccionado va en video inverso: %q", got)
-	}
-	if sinANSI(got) != "hola mundo" {
-		t.Errorf("el realce no altera el texto visible: %q", sinANSI(got))
-	}
-	// Con códigos de color dentro del tramo: se conservan y el inverso se
-	// reafirma tras el reset intermedio para no apagarse.
-	conColor := "\x1b[31mhola\x1b[0m mundo"
-	got = resaltarSeleccion(conColor, posicion{X: 0, Y: 0}, posicion{X: 4, Y: 0})
-	if sinANSI(got) != "hola mundo" || !strings.Contains(got, "\x1b[7mhola") {
-		t.Errorf("con color, el tramo sigue en inverso sin cambiar el texto: %q", got)
-	}
-	// Un clic sin arrastre (una sola celda) no resalta nada.
-	if got := resaltarSeleccion("hola", posicion{X: 2, Y: 0}, posicion{X: 2, Y: 0}); got != "hola" {
-		t.Errorf("un clic sin arrastre no resalta: %q", got)
-	}
-	// Un marco vacío no revienta.
-	if got := resaltarSeleccion("", posicion{X: 0, Y: 0}, posicion{X: 1, Y: 1}); got != "" {
-		t.Errorf("vista vacía: %q", got)
-	}
-}
+// La caja de entrada de la bienvenida expone su rectángulo en cada repintado.
+func TestLaCajaDeEntradaExponeSusLimites(t *testing.T) {
+	app := Nueva(nil)
+	app.ancho, app.alto = 100, 40
+	app.marco()
 
-func TestElArrastrePintaLaSelección(t *testing.T) {
-	a := Nuevo(&puertoStub{})
-	a.Vista = VistaPrincipal
-	a.Panel.SesionID = "s1"
-	pulsa(t, a, tea.WindowSizeMsg{Width: 60, Height: 16})
-	a.Chat.AñadirUsuario("hola mundo")
-	y, x := filaDe(t, a.View(), "hola mundo")
-
-	// Un clic sin arrastrar (pulsar y soltar en la misma celda) no pinta nada.
-	// Se busca el tramo concreto: el cursor del input también usa video inverso,
-	// así que no basta con que aparezca el código de encendido.
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: x, Y: y})
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease, X: x, Y: y})
-	if strings.Contains(a.View(), seleccionOn+"hola") {
-		t.Error("un clic sin arrastre no resalta")
+	limites := app.zonaEntrada
+	if limites.Alto <= 0 || limites.Ancho <= 0 {
+		t.Fatalf("la caja no expuso sus límites: %+v", limites)
+	}
+	if limites.Fila <= 6 {
+		t.Fatalf("la caja debería quedar bajo el logotipo: fila %d", limites.Fila)
+	}
+	if limites.Columna+limites.Ancho > app.ancho || limites.Fila+limites.Alto > app.alto {
+		t.Fatalf("la caja se sale del marco: %+v", limites)
 	}
 
-	// Arrastrar sí: el tramo se ve en video inverso, sin alterar el texto.
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: x, Y: y})
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion, X: x + 4, Y: y})
-	pintado := a.View()
-	if !strings.Contains(pintado, seleccionOn+"hola"+seleccionOff) {
-		t.Errorf("la selección debe pintarse resaltada:\n%q", pintado)
+	// El rectángulo coincide con la caja pintada: el placeholder queda dentro, con
+	// su celda de aire a la izquierda, y las pistas y la versión quedan fuera.
+	lineas := strings.Split(render.SinANSI(app.marco()), "\n")
+	filaTexto := -1
+	for i, linea := range lineas {
+		if strings.Contains(linea, "Escribe para iniciar la conversacion") {
+			filaTexto = i
+		}
 	}
-	if sinEstilo(pintado) != sinEstilo(a.ultimaVista) {
-		t.Error("resaltar no puede alterar el texto de la pantalla")
+	if len(lineas) != app.alto {
+		t.Fatalf("el marco tiene %d filas, quiero %d", len(lineas), app.alto)
+	}
+	if filaTexto != limites.Fila+1 {
+		t.Fatalf("la línea de entrada está en la fila %d, el rectángulo empieza en %d: %+v", filaTexto, limites.Fila, limites)
+	}
+	if columna := strings.Index(lineas[filaTexto], "Escribe"); columna != limites.Columna+2 {
+		t.Fatalf("la caja arranca en %d, su texto en %d, quiero %d", limites.Columna, columna, limites.Columna+2)
+	}
+	for _, ajeno := range []string{"TAB agentes", render.Version} {
+		for fila := limites.Fila; fila < limites.Fila+limites.Alto; fila++ {
+			if strings.Contains(lineas[fila], ajeno) {
+				t.Fatalf("%q quedó dentro del rectángulo de la caja", ajeno)
+			}
+		}
 	}
 }
 
-func TestLaRuedaNoCancelaLaSelecciónEnCurso(t *testing.T) {
-	var copiado []string
+// Un arrastre que empieza en la caja de entrada no sale de ella.
+func TestArrastreEnLaCajaNoAlcanzaElLogotipo(t *testing.T) {
+	app := Nueva(nil)
+	app.ancho, app.alto = 100, 40
+	app.marco()
+
+	zona := app.zonaEntrada
+	// Tira desde dentro de la caja hasta la esquina del logotipo.
+	arrastrar(app, punto{Fila: zona.Fila + 1, Columna: zona.Columna + 2}, punto{Fila: 0, Columna: 0})
+
+	tramos := app.sel.resolver(app.lineasMarco())
+	if len(tramos) == 0 {
+		t.Fatal("la selección quedó vacía")
+	}
+	for _, tr := range tramos {
+		if tr.Fila < zona.Fila || tr.Fila >= zona.Fila+zona.Alto {
+			t.Fatalf("el realce salió de la caja por filas: %+v", tr)
+		}
+		if tr.Desde < zona.Columna || tr.Hasta > zona.Columna+zona.Ancho {
+			t.Fatalf("el realce salió de la caja por columnas: %+v", tr)
+		}
+	}
+
+	texto := app.sel.texto()
+	if texto == "" {
+		t.Fatal("no se eligió nada dentro de la caja")
+	}
+	for _, ajeno := range []string{"█", "TAB agentes", render.Version} {
+		if strings.Contains(texto, ajeno) {
+			t.Fatalf("la selección alcanzó %q: %q", ajeno, texto)
+		}
+	}
+}
+
+// Un repintado no cancela ni mueve el realce: sigue sobre el mismo texto.
+func TestRepintadoNoMueveElRealceAnclado(t *testing.T) {
+	antes := []string{
+		"    alfa",
+		"    hola mundo elegido",
+		"    omega",
+	}
+	var s seleccion
+	s.iniciar(punto{Fila: 1, Columna: 4}, antes, rect{}, false)
+	s.extender(punto{Fila: 1, Columna: 13}, antes)
+
+	if texto := s.texto(); texto != "hola mundo" {
+		t.Fatalf("texto anclado = %q, quiero %q", texto, "hola mundo")
+	}
+
+	// El repintado mete una línea arriba: el texto elegido baja a la fila 2.
+	despues := []string{
+		"    linea nueva",
+		"    alfa",
+		"    hola mundo elegido",
+		"    omega",
+	}
+	tramos := s.resolver(despues)
+	if len(tramos) != 1 {
+		t.Fatalf("tramos del realce = %d, quiero 1", len(tramos))
+	}
+	if tramos[0] != (tramo{Fila: 2, Desde: 4, Hasta: 14}) {
+		t.Fatalf("el realce no siguió al texto elegido: %+v", tramos[0])
+	}
+}
+
+// appEnPrincipal deja la vista principal con el sidebar abierto y algo de
+// historial en el chat: es donde viven las zonas del chat y del sidebar.
+func appEnPrincipal(ancho, alto int) *App {
+	app := Nueva(nil)
+	app.vista = VistaPrincipal
+	app.ancho, app.alto = ancho, alto
+	app.chat.AñadirUsuario("hola")
+	app.chat.Fragmento("respuesta del agente")
+	app.chat.CerrarTurno()
+	app.marco()
+	return app
+}
+
+// appConHiloLargo deja la vista principal con un historial que desborda la ventana.
+func appConHiloLargo(ancho, alto int) *App {
+	app := Nueva(nil)
+	app.vista = VistaPrincipal
+	app.ancho, app.alto = ancho, alto
+	app.chat.AñadirUsuario("pregunta inicial")
+	for i := 0; i < 60; i++ {
+		app.chat.AñadirSegmento(chat.Segmento{Hablante: chat.Agente, Texto: "linea de relleno"})
+	}
+	app.marco()
+	return app
+}
+
+// Un arrastre del chat contra el borde superior desplaza el historial y la
+// selección abarca líneas que estaban fuera del viewport; al soltar se copia el
+// tramo completo y vuelve el seguimiento.
+func TestElArrastreEnElChatSeProlongaFueraDelViewport(t *testing.T) {
+	app := appConHiloLargo(100, 16)
+	if app.zonaChat.Alto < 4 {
+		t.Fatalf("el chat es demasiado bajo para la prueba: %+v", app.zonaChat)
+	}
+
+	visibleArriba, ok := app.chat.ContenidoBajoVentana(1)
+	if !ok {
+		t.Fatal("el chat no expuso contenido")
+	}
+
+	app.raton(tea.MouseMsg{X: 2, Y: app.zonaChat.Alto - 2, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	for i := 0; i < 5; i++ {
+		app.raton(tea.MouseMsg{X: 2, Y: 0, Action: tea.MouseActionMotion})
+	}
+
+	if app.sel.lineaFin >= visibleArriba {
+		t.Fatalf("la selección no rebasó el viewport: fin %d, arriba visible %d", app.sel.lineaFin, visibleArriba)
+	}
+
 	original := copiarFunc
-	copiarFunc = func(s string) { copiado = append(copiado, s) }
 	defer func() { copiarFunc = original }()
+	var copiado string
+	copiarFunc = func(texto string) { copiado = texto }
 
-	a := Nuevo(&puertoStub{})
-	a.Vista = VistaPrincipal
-	a.Panel.SesionID = "s1"
-	pulsa(t, a, tea.WindowSizeMsg{Width: 60, Height: 20})
-	for i := 1; i <= 40; i++ {
-		a.Chat.AñadirSistema(fmt.Sprintf("mensaje %d", i))
+	_, cmd := app.raton(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft})
+	ejecutar(cmd)
+	if copiado == "" {
+		t.Fatal("no se copió el tramo")
 	}
-	y, x := filaDe(t, a.View(), "mensaje")
-
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: x, Y: y})
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion, X: x + 5, Y: y})
-	iniAntes := a.ratonIni
-
-	// La rueda desplaza el historial sin cortar el arrastre: la selección sigue
-	// viva y su ancla se reancla al texto que tenía debajo.
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
-	if !a.ratonSelec {
-		t.Fatal("la rueda no puede cancelar la selección en curso")
-	}
-	if a.ratonIni == iniAntes {
-		t.Errorf("el ancla debe reanclarse al texto al desplazar: %v", a.ratonIni)
-	}
-	_ = a.View()
-
-	// Y al soltar sigue copiando lo seleccionado.
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease, X: x + 5, Y: y})
-	if len(copiado) != 1 || strings.TrimSpace(copiado[0]) == "" {
-		t.Fatalf("soltar tras el scroll copia la selección: %v", copiado)
+	if app.sel.arrastrando {
+		t.Fatal("el arrastre no terminó al soltar")
 	}
 }
 
-// columnaPrincipal recorta una fila del marco a la columna principal: con el
-// sidebar abierto la fila es una sola cadena y trae también su texto a la
-// derecha del divisor, que cambia de una fila a otra. El ancla del chat se
-// compara solo con el chat.
-func columnaPrincipal(a *App, linea string) string {
-	r := []rune(linea)
-	if n := a.anchoColumna(); len(r) > n {
-		r = r[:n]
+// Un arrastre que empieza en el chat no alcanza el sidebar: el realce se queda en
+// la columna del chat y no cruza la banda de separación.
+func TestArrastreDelChatNoCruzaAlSidebar(t *testing.T) {
+	app := appEnPrincipal(100, 24)
+	anchoChat := app.anchoColumna()
+	if app.zonaChat.Alto <= 0 {
+		t.Fatalf("el chat no expuso su zona: %+v", app.zonaChat)
 	}
-	return strings.TrimRight(string(r), " ")
-}
-
-func TestLaSelecciónSeAnclaAlScroll(t *testing.T) {
-	a := Nuevo(&puertoStub{})
-	a.Vista = VistaPrincipal
-	a.Panel.SesionID = "s1"
-	pulsa(t, a, tea.WindowSizeMsg{Width: 60, Height: 30})
-	for i := 1; i <= 30; i++ {
-		a.Chat.AñadirSistema(fmt.Sprintf("mensaje %02d", i))
+	if app.zonaPanel.Alto <= 0 {
+		t.Fatalf("el sidebar no expuso su zona: %+v", app.zonaPanel)
 	}
-	_ = a.View()
-	// A media historia: queda contenido por encima y por debajo para poder
-	// desplazar sin topar con los extremos.
-	a.Chat.Subir(1000)
-	a.Chat.Bajar(20)
-	_ = a.View()
 
-	y, _ := filaDe(t, a.View(), "mensaje")
-	lineas := strings.Split(sinANSI(a.ultimaVista), "\n")
-	ancla := columnaPrincipal(a, lineas[y])
+	// Tira desde el chat hasta la última columna del sidebar.
+	arrastrar(app, punto{Fila: 1, Columna: 2}, punto{Fila: 1, Columna: app.ancho - 1})
 
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 0, Y: y})
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion, X: 0, Y: y + 1})
-
-	// La rueda arriba mueve el contenido hacia abajo; el ancla debe seguir sobre
-	// la MISMA línea (anclada al texto, no a la pantalla), no desaparecer.
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
-	if !a.ratonSelec {
-		t.Fatal("la rueda no cancela la selección")
+	tramos := app.tramosSeleccion()
+	if len(tramos) == 0 {
+		t.Fatal("el arrastre del chat no resaltó nada")
 	}
-	despues := strings.Split(sinANSI(a.View()), "\n")
-	if a.ratonIni.Y < 0 || a.ratonIni.Y >= len(despues) || columnaPrincipal(a, despues[a.ratonIni.Y]) != ancla {
-		t.Fatalf("el ancla debe seguir en la misma línea tras el scroll:\nantes: %q (fila %d)\nahora: fila %d",
-			ancla, y, a.ratonIni.Y)
+	tope := false
+	for _, tr := range tramos {
+		if tr.Desde < 0 || tr.Hasta > anchoChat {
+			t.Fatalf("el realce salió del chat hacia el sidebar: %+v (el chat tiene %d columnas)", tr, anchoChat)
+		}
+		tope = tope || tr.Hasta == anchoChat
+	}
+	if !tope {
+		t.Fatalf("el realce no llegó al borde del chat, que es donde debe cortarse: %+v", tramos)
+	}
+	if texto := app.sel.textoContenido(app.chat.LineasContenido()); strings.Contains(texto, "CONTEXTO") {
+		t.Fatalf("la selección del chat alcanzó el sidebar: %q", texto)
 	}
 }
 
-func TestLaSelecciónDesapareceAlSoltar(t *testing.T) {
-	var copiado []string
+// Y al revés: un arrastre que empieza en el sidebar no cruza al chat.
+func TestArrastreDelSidebarNoCruzaAlChat(t *testing.T) {
+	app := appEnPrincipal(100, 24)
+	panel := app.zonaPanel
+	if panel.Alto <= 0 {
+		t.Fatalf("el sidebar no expuso su zona: %+v", panel)
+	}
+
+	// Tira desde el sidebar hasta la primera columna del chat.
+	arrastrar(app, punto{Fila: 1, Columna: panel.Columna + 3}, punto{Fila: 1, Columna: 0})
+
+	tramos := app.sel.resolver(app.lineasMarco())
+	if len(tramos) == 0 {
+		t.Fatal("el arrastre del sidebar no resaltó nada")
+	}
+	tope := false
+	for _, tr := range tramos {
+		if tr.Desde < panel.Columna || tr.Hasta > panel.Columna+panel.Ancho {
+			t.Fatalf("el realce salió del sidebar hacia el chat: %+v (el sidebar es %+v)", tr, panel)
+		}
+		tope = tope || tr.Desde == panel.Columna
+	}
+	if !tope {
+		t.Fatalf("el realce no llegó al borde del sidebar, que es donde debe cortarse: %+v", tramos)
+	}
+}
+
+// Al soltar, se copia el texto anclado y el realce se apaga.
+func TestSoltarCopiaElTextoElegido(t *testing.T) {
+	app := Nueva(nil)
+	app.ancho, app.alto = 100, 40
+	app.marco()
+
+	zona := app.zonaEntrada
+	arrastrar(app, punto{Fila: zona.Fila + 1, Columna: zona.Columna + 2}, punto{Fila: zona.Fila + 1, Columna: zona.Columna + 6})
+
+	if pintado := app.conSeleccion(app.marco()); !strings.Contains(pintado, "\x1b[7m") {
+		t.Fatal("el arrastre no resaltó nada")
+	}
+
 	original := copiarFunc
-	copiarFunc = func(s string) { copiado = append(copiado, s) }
 	defer func() { copiarFunc = original }()
+	var copiado string
+	copiarFunc = func(texto string) { copiado = texto }
 
-	a := Nuevo(&puertoStub{})
-	a.Vista = VistaPrincipal
-	a.Panel.SesionID = "s1"
-	pulsa(t, a, tea.WindowSizeMsg{Width: 60, Height: 16})
-	a.Chat.AñadirUsuario("hola mundo")
-	y, x := filaDe(t, a.View(), "hola mundo")
-
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: x, Y: y})
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion, X: x + 4, Y: y})
-	if !strings.Contains(a.View(), seleccionOn+"hola") {
-		t.Fatal("durante el arrastre la selección se ve resaltada")
-	}
-
-	// Al soltar: se copia y el realce desaparece (la selección ya no vive). No se
-	// ejecuta el temporizador del aviso: se comprueba aparte.
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease, X: x + 4, Y: y})
-	if len(copiado) != 1 || copiado[0] != "hola" {
-		t.Fatalf("al soltar se copia lo seleccionado: %v", copiado)
-	}
-	if a.ratonIni != (posicion{}) || a.ratonFin != (posicion{}) {
-		t.Errorf("al soltar la selección se descarta: %v, %v", a.ratonIni, a.ratonFin)
-	}
-	if strings.Contains(a.View(), seleccionOn+"hola") {
-		t.Error("al soltar el realce desaparece")
-	}
-}
-
-func TestElAvisoDeCopiadoSeVeArribaALaDerechaYSeApagaSolo(t *testing.T) {
-	original := copiarFunc
-	copiarFunc = func(string) {}
-	defer func() { copiarFunc = original }()
-
-	a := Nuevo(&puertoStub{})
-	a.Vista = VistaPrincipal
-	a.Panel.SesionID = "s1"
-	pulsa(t, a, tea.WindowSizeMsg{Width: 60, Height: 16})
-	a.Chat.AñadirUsuario("hola mundo")
-	y, x := filaDe(t, a.View(), "hola mundo")
-
-	// Antes de copiar no hay aviso.
-	if strings.Contains(sinEstilo(a.View()), "[Copiado]") {
-		t.Fatal("sin copiar no debe verse el aviso")
-	}
-
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: x, Y: y})
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion, X: x + 4, Y: y})
-	cmd := pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease, X: x + 4, Y: y})
+	_, cmd := app.raton(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft})
 	if cmd == nil {
-		t.Fatal("copiar debe programar el apagado del aviso")
+		t.Fatal("soltar no copió nada")
 	}
-
-	lineas := strings.Split(sinEstilo(a.View()), "\n")
-	// Va en la primera línea (arriba) y pegado al borde derecho.
-	if !strings.HasSuffix(lineas[0], "[Copiado]") {
-		t.Fatalf("el aviso va arriba a la derecha:\n%s", lineas[0])
+	ejecutar(cmd)
+	if copiado == "" {
+		t.Fatal("el portapapeles se quedó vacío")
 	}
-	if ancho := len([]rune(lineas[0])); ancho != 60 {
-		t.Errorf("el aviso queda pegado al borde derecho (ancho %d, quiero 60)", ancho)
+	if app.sel.arrastrando {
+		t.Fatal("el realce no se apagó al soltar")
 	}
-
-	// Vencido su tiempo, se apaga solo.
-	pulsa(t, a, copiadoExpiradoMsg{gen: a.copiadoGen})
-	if a.copiado || strings.Contains(sinEstilo(a.View()), "[Copiado]") {
-		t.Error("el aviso debe apagarse al vencer su tiempo")
-	}
-	// Un temporizador viejo no apaga el aviso de una copia nueva.
-	a.copiado = true
-	a.copiadoGen++
-	pulsa(t, a, copiadoExpiradoMsg{gen: a.copiadoGen - 1})
-	if !a.copiado {
-		t.Error("un temporizador de una copia anterior no debe apagar el aviso vigente")
-	}
-}
-
-// La selección no sale de su zona: un arrastre que empieza en el chat y termina
-// en el sidebar copia solo el chat (y al revés), porque cada columna es su
-// propio componente.
-func TestLaSeleccionNoMezclaChatYSidebar(t *testing.T) {
-	var copiado []string
-	original := copiarFunc
-	copiarFunc = func(s string) { copiado = append(copiado, s) }
-	defer func() { copiarFunc = original }()
-
-	a := Nuevo(&puertoStub{modelo: "llama3.2"})
-	a.Vista = VistaPrincipal
-	a.Panel = NuevoPanel()
-	a.Panel.Abierto = true
-	a.Panel.SesionID = "s1"
-	a.Panel.Sesion = "sesion-de-prueba"
-	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 20})
-	a.Chat.AñadirUsuario("hola chat")
-
-	// Empieza en el chat y el puntero termina dentro del sidebar.
-	y, x := filaDe(t, a.View(), "hola chat")
-	xs := a.anchoColumna() + 20
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: x, Y: y})
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion, X: xs, Y: y})
-	pulsa(t, a, tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease, X: xs, Y: y})
-
-	if len(copiado) != 1 {
-		t.Fatalf("al soltar se copia la selección: %v", copiado)
-	}
-	if !strings.Contains(copiado[0], "hola chat") {
-		t.Errorf("la selección copia el chat: %q", copiado[0])
-	}
-	if strings.Contains(copiado[0], "sesion") {
-		t.Errorf("la selección del chat no debe llevarse el sidebar: %q", copiado[0])
-	}
-}
-
-// Recorte a la zona de origen: el ancla manda y el otro extremo se pega al borde
-// de su columna.
-func TestLaSeleccionSeLimitaASuZona(t *testing.T) {
-	a := Nuevo(&puertoStub{})
-	a.Vista = VistaPrincipal
-	a.Panel = NuevoPanel()
-	a.Panel.Abierto = true
-	pulsa(t, a, tea.WindowSizeMsg{Width: 100, Height: 20})
-	col := a.anchoColumna()
-
-	// Ancla en el chat, puntero en el sidebar: se recorta al chat.
-	ini, fin := a.limitarSeleccion(posicion{X: 3, Y: 1}, posicion{X: col + 20, Y: 1})
-	if ini.X != 3 || fin.X != col-1 {
-		t.Errorf("la selección del chat se queda en el chat: %+v %+v", ini, fin)
-	}
-	// Ancla en el sidebar, puntero en el chat: se recorta al sidebar.
-	ini, fin = a.limitarSeleccion(posicion{X: col + 5, Y: 1}, posicion{X: 0, Y: 1})
-	if ini.X != col+5 || fin.X != col+2 {
-		t.Errorf("la selección del sidebar se queda en el sidebar: %+v %+v", ini, fin)
-	}
-	// Con el panel cerrado no hay dos zonas que separar.
-	a.Panel.Abierto = false
-	ini, fin = a.limitarSeleccion(posicion{X: 3, Y: 1}, posicion{X: 90, Y: 1})
-	if ini.X != 3 || fin.X != 90 {
-		t.Errorf("sin panel no se recorta: %+v %+v", ini, fin)
+	if pintado := app.conSeleccion(app.marco()); strings.Contains(pintado, "\x1b[7m") {
+		t.Fatal("el realce sigue pintado tras soltar")
 	}
 }

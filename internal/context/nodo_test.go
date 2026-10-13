@@ -2,231 +2,122 @@ package context
 
 import (
 	"context"
-	"errors"
-	"sort"
 	"strings"
 	"testing"
-
-	"localcli/internal/store"
 )
 
-// --- stubs -----------------------------------------------------------------
-
-type grafoStub struct {
+type fuenteFake struct {
+	docs      []Documento
 	contenido map[string]string
-	deps      map[string][]string
 }
 
-func (g grafoStub) Rutas() []string {
-	out := make([]string, 0, len(g.contenido))
-	for r := range g.contenido {
-		out = append(out, r)
-	}
-	sort.Strings(out)
-	return out
+func (f *fuenteFake) Documentos() []Documento { return f.docs }
+func (f *fuenteFake) Leer(ruta string) (string, error) {
+	return f.contenido[ruta], nil
 }
 
-func (g grafoStub) Contenido(ruta string) (string, error) {
-	c, ok := g.contenido[ruta]
-	if !ok {
-		return "", errors.New("E_DOC_NOT_FOUND: " + ruta)
-	}
-	return c, nil
+type modeloFake struct {
+	elegidos []string
 }
 
-func (g grafoStub) Cierre(ruta string) ([]string, error) {
-	if _, ok := g.contenido[ruta]; !ok {
-		return nil, errors.New("E_DOC_NOT_FOUND: " + ruta)
-	}
-	return g.deps[ruta], nil
+func (m *modeloFake) Elegir(context.Context, string, []string) ([]string, error) {
+	return m.elegidos, nil
 }
 
-type auditorStub struct{ filas []store.ContextAudit }
+type auditoriaFake struct {
+	filas []string
+}
 
-func (a *auditorStub) Registrar(x *store.ContextAudit) error {
-	a.filas = append(a.filas, *x)
+func (a *auditoriaFake) Registrar(sesion, etapa, documento string, d Decision, motivo string, tokens int) error {
+	a.filas = append(a.filas, etapa+":"+documento+":"+string(d))
 	return nil
 }
 
-// --- tests -----------------------------------------------------------------
-
-// TestCandidatosSigueDependencias — los candidatos son la semilla y el cierre
-// de sus dependencias declaradas.
-func TestCandidatosSigueDependencias(t *testing.T) {
-	g := grafoStub{
-		contenido: map[string]string{"a.md": "a", "b.md": "b", "c.md": "c"},
-		deps:      map[string][]string{"a.md": {"b.md", "c.md"}},
+func nuevaNodo(elegidos []string, contenido map[string]string) (*Nodo, *auditoriaFake) {
+	aud := &auditoriaFake{}
+	nodo := &Nodo{
+		Fuente: &fuenteFake{
+			docs: []Documento{
+				{Ruta: "api.md", Dependencias: []string{"dto.md"}},
+				{Ruta: "dto.md", Dependencias: []string{"entity.md"}},
+				{Ruta: "entity.md"},
+			},
+			contenido: contenido,
+		},
+		Modelo:      &modeloFake{elegidos: elegidos},
+		Auditoria:   aud,
+		Presupuesto: 1000,
 	}
-	got, err := Candidatos(g, []string{"a.md"})
+	return nodo, aud
+}
+
+func TestCargaSoloLoElegidoYAudita(t *testing.T) {
+	nodo, aud := nuevaNodo([]string{"api.md", "dto.md"}, map[string]string{
+		"api.md": "# API\ncontenido de la api",
+		"dto.md": "# DTO\ncontenido del dto",
+	})
+	bloque, err := nodo.Preparar(context.Background(), Peticion{Etapa: "plan", Objetivo: "implementar la api"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	quiero := []string{"a.md", "b.md", "c.md"}
-	if strings.Join(got, ",") != strings.Join(quiero, ",") {
-		t.Fatalf("candidatos = %v, quiero %v", got, quiero)
+	if len(bloque.Documentos) != 2 {
+		t.Fatalf("debería traer solo lo elegido: %+v", bloque.Documentos)
+	}
+	if len(aud.filas) != 2 {
+		t.Fatalf("debería auditar cada documento: %v", aud.filas)
 	}
 }
 
-// TestPrepararRegistraIncluidos — lo seleccionado entra al bloque y queda
-// auditado.
-func TestPrepararRegistraIncluidos(t *testing.T) {
-	g := grafoStub{contenido: map[string]string{"a.md": "## A\n\ntexto"}}
-	aud := &auditorStub{}
-	n := &Nodo{
-		Grafo:   g,
-		Modelo:  &modeloStub{devuelve: []string{"a.md"}},
-		Auditor: aud,
-		Limite:  1000,
+func TestDocumentoInexistenteDetieneLaEtapa(t *testing.T) {
+	nodo, _ := nuevaNodo([]string{"api.md", "fantasma.md"}, map[string]string{"api.md": "# API"})
+	_, err := nodo.Preparar(context.Background(), Peticion{Etapa: "plan", Objetivo: "x"})
+	if err == nil || !strings.Contains(err.Error(), CodDocNotFound) {
+		t.Fatalf("un documento pedido que no existe detiene la etapa: %v", err)
 	}
-	armado, err := n.Preparar(context.Background(), SolicitudContexto{
-		Objetivo: "objetivo", Etapa: "etapa-1", SessionID: "s1",
-	})
+}
+
+func TestChatSinSemillaNoConsultaAlModelo(t *testing.T) {
+	nodo, aud := nuevaNodo([]string{"api.md"}, map[string]string{"api.md": "# API"})
+	bloque, err := nodo.Preparar(context.Background(), Peticion{SinSemilla: true, Objetivo: "hola"})
 	if err != nil {
-		t.Fatalf("Preparar: %v", err)
+		t.Fatal(err)
 	}
-	if len(armado.Documentos) != 1 || !strings.Contains(armado.Bloque, "## A") {
-		t.Fatalf("bloque inesperado: %q", armado.Bloque)
+	if !bloque.SinSemilla || len(bloque.Documentos) != 0 {
+		t.Fatalf("sin semilla el bloque va solo con el objetivo: %+v", bloque)
 	}
-	if len(aud.filas) != 1 || aud.filas[0].Decision != store.AuditIncluido || aud.filas[0].Stage != "etapa-1" {
-		t.Fatalf("auditoría inesperada: %+v", aud.filas)
-	}
-}
-
-// TestPrepararDocumentoInexistenteDetiene — si el modelo pide algo que no
-// existe, la etapa se detiene.
-func TestPrepararDocumentoInexistenteDetiene(t *testing.T) {
-	g := grafoStub{contenido: map[string]string{"a.md": "a"}}
-	n := &Nodo{Grafo: g, Modelo: &modeloStub{devuelve: []string{"no-existe.md"}}}
-	_, err := n.Preparar(context.Background(), SolicitudContexto{Objetivo: "x", Etapa: "e"})
-	if err == nil || !strings.Contains(err.Error(), "E_DOC_NOT_FOUND") {
-		t.Fatalf("err = %v, quiero E_DOC_NOT_FOUND", err)
+	if len(aud.filas) != 1 {
+		t.Fatalf("debería auditar el bloque sin semilla: %v", aud.filas)
 	}
 }
 
-// TestPrepararRecortaYAuditaDescartes — al recortar, lo que sale queda
-// registrado con motivo.
-func TestPrepararRecortaYAuditaDescartes(t *testing.T) {
-	contenidoA := strings.Repeat("## A\n\ntexto\n", 10)
-	contenidoB := strings.Repeat("## B\n\ntexto\n", 10)
-	g := grafoStub{contenido: map[string]string{"a.md": contenidoA, "b.md": contenidoB}}
-	aud := &auditorStub{}
-	// El límite es justo el tamaño del primer documento: entra entero y el
-	// segundo ya no tiene cupo, así que queda descartado con su motivo.
-	limite := EstimarTokens(contenidoA)
-	n := &Nodo{Grafo: g, Modelo: &modeloStub{devuelve: []string{"a.md", "b.md"}}, Auditor: aud, Limite: limite}
-	armado, err := n.Preparar(context.Background(), SolicitudContexto{Objetivo: "x", Etapa: "e", SessionID: "s"})
+func TestExcluyeLoYaEntregado(t *testing.T) {
+	nodo, _ := nuevaNodo([]string{"api.md", "dto.md"}, map[string]string{"api.md": "# API", "dto.md": "# DTO"})
+	bloque, err := nodo.Preparar(context.Background(), Peticion{Objetivo: "x", YaEntregados: []string{"api.md"}})
 	if err != nil {
-		t.Fatalf("Preparar: %v", err)
+		t.Fatal(err)
 	}
-	if armado.Tokens > limite {
-		t.Fatalf("tokens = %d, quiero <= %d", armado.Tokens, limite)
-	}
-	var descartado bool
-	for _, f := range aud.filas {
-		if f.Decision == store.AuditDescartado && f.Reason == "" {
-			t.Error("un descarte debe llevar motivo")
-		}
-		if f.Decision == store.AuditDescartado {
-			descartado = true
+	for _, d := range bloque.Documentos {
+		if d.Ruta == "api.md" {
+			t.Fatal("un documento ya entregado no debería repetirse")
 		}
 	}
-	if !descartado {
-		t.Fatalf("esperaba al menos un descarte auditado: %+v", aud.filas)
-	}
 }
 
-// TestPrepararFallbackSinModelo — si el modelo no decide, se usa la semilla.
-func TestPrepararFallbackSinModelo(t *testing.T) {
-	g := grafoStub{contenido: map[string]string{"a.md": "a", "b.md": "b"}}
-	n := &Nodo{Grafo: g, Modelo: &modeloStub{devuelve: nil}, Limite: 1000}
-	armado, err := n.Preparar(context.Background(), SolicitudContexto{
-		Objetivo: "x", Etapa: "e", Semilla: []string{"a.md"},
-	})
-	if err != nil {
-		t.Fatalf("Preparar: %v", err)
+func TestRecortaPorSeccionContraElPresupuesto(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < 50; i++ {
+		b.WriteString("# Sección ")
+		b.WriteString(strings.Repeat("x", 200))
+		b.WriteString("\n")
 	}
-	if len(armado.Documentos) != 1 || armado.Documentos[0].Ruta != "a.md" {
-		t.Fatalf("documentos = %+v, quiero solo la semilla", armado.Documentos)
+	recortado, truncado, tokens := RecortarPorSeccion(b.String(), 60)
+	if !truncado {
+		t.Fatal("un documento que desborda debería recortarse")
 	}
-}
-
-// TestContextoParaDevuelveBloque — la interfaz que consume flow devuelve el
-// bloque ensamblado.
-func TestContextoParaDevuelveBloque(t *testing.T) {
-	g := grafoStub{contenido: map[string]string{"a.md": "## A\n\ntexto"}}
-	n := &Nodo{Grafo: g, Modelo: &modeloStub{devuelve: []string{"a.md"}}, Limite: 1000, Etapa: "e"}
-	bloque, err := n.ContextoPara(context.Background(), "e", "objetivo")
-	if err != nil {
-		t.Fatalf("ContextoPara: %v", err)
+	if tokens > 60 {
+		t.Fatalf("no debería pasarse del presupuesto: %d", tokens)
 	}
-	if !strings.Contains(bloque, "objetivo") || !strings.Contains(bloque, "## A") {
-		t.Fatalf("bloque = %q", bloque)
-	}
-}
-
-// TestElChatNoVuelcaElProyecto — sin selección y sin semilla, el bloque del
-// chat queda sin documentos: el modelo no puede responder resumiendo una
-// estructura que no recibió (el modelo nunca ve el proyecto entero).
-func TestElChatNoVuelcaElProyecto(t *testing.T) {
-	g := grafoStub{contenido: map[string]string{
-		"AGENTS.md": "# agents", "PROJECT.md": "# proyecto",
-	}}
-	n := &Nodo{Grafo: g, Modelo: &modeloStub{devuelve: nil}, Limite: 1000}
-	bloque, err := n.ContextoPara(context.Background(), EtapaChat, "hola")
-	if err != nil {
-		t.Fatalf("ContextoPara: %v", err)
-	}
-	if strings.Contains(bloque, "# agents") || strings.Contains(bloque, "# proyecto") {
-		t.Fatalf("el chat no debe recibir el proyecto entero: %q", bloque)
-	}
-	if !strings.Contains(bloque, "hola") {
-		t.Fatalf("el bloque sin documentos aún lleva el objetivo: %q", bloque)
-	}
-}
-
-// TestElChatSinSemillaNoConsultaAlModelo — el chat sin semilla no pregunta al
-// modelo qué documentos quiere: su bloque va solo con el objetivo, así que la
-// consulta no cambiaría lo entregado y costaría una generación entera por turno.
-func TestElChatSinSemillaNoConsultaAlModelo(t *testing.T) {
-	g := grafoStub{contenido: map[string]string{"a.md": "## A\n\ntexto"}}
-	m := &modeloStub{devuelve: []string{"a.md"}}
-	n := &Nodo{Grafo: g, Modelo: m, Limite: 1000}
-	bloque, err := n.ContextoPara(context.Background(), EtapaChat, "hola")
-	if err != nil {
-		t.Fatalf("ContextoPara: %v", err)
-	}
-	if m.objetivo != "" {
-		t.Errorf("el chat sin semilla no debe consultar al modelo, y lo hizo con %q", m.objetivo)
-	}
-	if strings.Contains(bloque, "## A") {
-		t.Errorf("sin consulta el bloque va solo con el objetivo: %q", bloque)
-	}
-}
-
-// TestElChatConSemillaSiConsultaAlModelo — con semilla, el modelo sigue
-// decidiendo qué es relevante: la omisión es solo del chat sin semilla.
-func TestElChatConSemillaSiConsultaAlModelo(t *testing.T) {
-	g := grafoStub{contenido: map[string]string{"a.md": "## A\n\ntexto"}}
-	m := &modeloStub{devuelve: []string{"a.md"}}
-	n := &Nodo{Grafo: g, Modelo: m, Limite: 1000, Semilla: []string{"a.md"}}
-	if _, err := n.ContextoPara(context.Background(), EtapaChat, "hola"); err != nil {
-		t.Fatalf("ContextoPara: %v", err)
-	}
-	if m.objetivo != "hola" {
-		t.Errorf("con semilla el modelo sigue decidiendo qué es relevante: %q", m.objetivo)
-	}
-}
-
-// TestUnaEtapaDeFlujoConservaElRespaldo — fuera del chat, sin selección ni
-// semilla se usan los candidatos: los flujos siguen recibiendo contexto.
-func TestUnaEtapaDeFlujoConservaElRespaldo(t *testing.T) {
-	g := grafoStub{contenido: map[string]string{"a.md": "## A\n\ntexto"}}
-	n := &Nodo{Grafo: g, Modelo: &modeloStub{devuelve: nil}, Limite: 1000}
-	bloque, err := n.ContextoPara(context.Background(), "etapa_flujo", "objetivo")
-	if err != nil {
-		t.Fatalf("ContextoPara: %v", err)
-	}
-	if !strings.Contains(bloque, "## A") {
-		t.Fatalf("la etapa de flujo conserva el respaldo a candidatos: %q", bloque)
+	if !strings.HasPrefix(recortado, "# Sección") {
+		t.Fatalf("debería entregar el inicio: %q", recortado)
 	}
 }

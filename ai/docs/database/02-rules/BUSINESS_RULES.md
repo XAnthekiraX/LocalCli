@@ -29,6 +29,8 @@ Reglas que la base no puede imponer sola, porque dependen del contexto o de lo q
 - **`change_history` es la memoria del proyecto.** Un cambio se aplica, y su registro queda con lo que había antes, para poder revertir y auditar. No es un log temporal.
 - **La selección de contexto siempre está justificada.** Una fila `context_audit` con `decision = 'descartado'` necesita `reason`; el nodo de contexto no descarta nada sin explicar por qué. Ver [[specs/SPEC-NODO-CONTEXTO]].
 - **El grafo y la cola derivan de los archivos.** SQLite no guarda un índice de documentos ni de tareas. Si un archivo y la base discrepan, manda el archivo.
+- **El aislamiento entre carpetas es lógico y no negociable.** La base es única y global, así que toda consulta de sesiones filtra por `project_id`. Saltarse el filtro no da un error: da datos de otra carpeta. Ver [[database/03-operations/QUERIES]].
+- **Abrir una carpeta reutiliza su proyecto.** El `path` es único: abrir la misma carpeta dos veces no crea una fila nueva ni sesiones duplicadas. Ver [[database/01-schema/TABLES]].
 - **`obsoleta` no es `declinada`.** Una aprobación que ya no aplica porque su sesión terminó se marca `obsoleta`, no `declinada`: el usuario no la rechazó, dejó de tener sentido.
 
 ## 2. Invariantes
@@ -36,6 +38,7 @@ Reglas que la base no puede imponer sola, porque dependen del contexto o de lo q
 Condiciones que siempre deben cumplirse.
 
 - Una sesión no tiene dos razonamientos para el mismo mensaje.
+- Una sesión pertenece a exactamente un proyecto: `sessions.project_id` nunca es `NULL` y siempre referencia una fila de `projects`. No hay sesión sin carpeta.
 - Un mensaje con razonamiento tiene `role = agent`.
 - Una aprobación `pendiente` tiene `resolved_at` en `NULL`, y resuelta lo tiene relleno.
 - Un cambio con `crear_archivo` tiene `before_content` en `NULL`; con `eliminar_archivo`, `after_content` en `NULL`.
@@ -48,6 +51,7 @@ Condiciones que siempre deben cumplirse.
 
 - **La sesión termina con una aprobación pendiente.** Las aprobaciones `pendiente` de esa sesión pasan a `obsoleta` en lugar de desaparecer, para que el historial de la sesión siga siendo coherente. Si la sesión se borra, en cambio, sí desaparecen en cascada.
 - **Se borra una sesión con cambios aplicados.** Los registros de `change_history` quedan con `session_id` en `NULL`. Ya no se sabe qué sesión los hizo, pero se sigue sabiendo qué se cambió en los archivos.
+- **Dos proyectos con una sesión del mismo nombre.** No hay conflicto: los nombres de sesión no son únicos, ni siquiera dentro de una carpeta. El `project_id` es lo que separa una sesión de otra, no su nombre.
 - **Una etapa descarta un documento y luego lo necesita.** La auditoría de la etapa siguiente es un registro nuevo. Nada se corrige en la auditoría anterior, porque es un registro de lo que pasó, no del estado actual.
 - **Un modelo no reporta tokens.** `input_tokens` y `output_tokens` quedan en `NULL`, no en `0`. El panel de contexto lo muestra como estimación o como no disponible. Ver [[specs/SPEC-PANEL-CONTEXTO]].
 - **Un modelo no devuelve razonamiento.** No se crea fila en `reasoning`, y la interfaz indica que no está disponible. Un mensaje de agente puede no tener razonamiento.

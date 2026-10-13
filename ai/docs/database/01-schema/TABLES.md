@@ -18,29 +18,42 @@ relacionado:
 
 ## 1. Tablas
 
-El esquema tiene nueve tablas. La estructura de alto nivel está en [[database/01-schema/SCHEMA]]; aquí cada columna en detalle. Las relaciones entre tablas están en [[database/01-schema/RELATIONSHIPS]] y los valores cerrados, en [[database/01-schema/ENUMS]].
+El esquema tiene diez tablas. La estructura de alto nivel está en [[database/01-schema/SCHEMA]]; aquí cada columna en detalle. Las relaciones entre tablas están en [[database/01-schema/RELATIONSHIPS]] y los valores cerrados, en [[database/01-schema/ENUMS]].
 
 Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TEXT` en ISO 8601 UTC, y los booleanos son enteros `0`/`1`. La única excepción es `todos`, que no tiene `id`: se identifica por `(session_id, position)`.
 
 ## 2. Propósito de cada tabla
 
+- **`projects`** — Un proyecto: la carpeta desde la que se abrió LocalCli. Es la raíz lógica del árbol de la base, porque el archivo es único y global y las sesiones de todos los directorios comparten estructura: toda sesión cuelga de su proyecto por `project_id`. Su `path` es único, así que abrir la misma carpeta dos veces reutiliza la fila. Ver [[specs/SPEC-SESIONES]].
 - **`sessions`** — Una sesión de trabajo. Es la unidad de la que cuelgan la conversación, las aprobaciones y la auditoría. Su campo `status` es lo que la interfaz muestra cuando cambias de sesión. Guarda además el par `motor_id`/`modelo` con el que trabaja: son recursos de la sesión, no parte de su identidad, así que cambiar uno no la renombra ni le toca el historial.
 - **`messages`** — Los turnos de la conversación. Guarda lo que escribió el usuario y lo que respondió el agente, más los tokens de cada turno y su duración. Un turno puede incluir llamadas a herramientas, pero **esas no se guardan en `messages`**: el detalle de la ejecución vive mientras dura el turno y se descarta; lo que queda es el mensaje final del agente y, aparte, su línea en `chat_evento`. Ver [[database/02-rules/DATA_FLOW]].
 - **`reasoning`** — El razonamiento del modelo de un mensaje concreto. Va en tabla aparte porque llega token a token mientras se genera y porque se consulta y se mide por separado del texto final. El diseño está en [[specs/SPEC-AGENTE-BASE]].
 - **`approvals`** — Lo que una sesión necesita que decidas antes de seguir. El panel de aprobaciones las lee todas, de cualquier sesión. Ver [[specs/SPEC-INTERFAZ-ATAJOS]].
 - **`context_audit`** — La traza de qué documentación recibió el modelo en cada etapa y qué se descartó, con el motivo. Es lo que hace auditable el nodo de contexto. Ver [[specs/SPEC-NODO-CONTEXTO]].
 - **`change_history`** — Cada cambio aplicado a un archivo del proyecto, con lo que había antes y lo que quedó. Nunca se borra. Ver [[database/02-rules/BUSINESS_RULES]].
-- **`todos`** — La lista de pasos de una sesión: el plan que el agente mantiene con `crear_todo` y `actualizar_todo`. Es estado de ejecución de la sesión, no un documento del proyecto: `actualizar_todo` la reescribe entera y `crear_todo` le añade un paso al final. Cae con su sesión. Ver [[specs/SPEC-TOOLS]].
+- **`todos`** — La lista de pasos de una sesión: el plan que el agente mantiene con `crear_todo` y `actualizar_todo`. Es estado de ejecución de la sesión, no un documento del proyecto: `actualizar_todo` la reescribe entera y `crear_todo` le añade al final un paso o una tarea principal con sus subtareas. Cae con su sesión. Ver [[specs/SPEC-TOOLS]].
 - **`flow_context`** — El bloque de contexto de un flujo con `bloque_contexto`: una aportación por etapa, ya optimizada por el modelo. Es lo que permite que la composición final arme la entrega a partir de todo el trabajo de las etapas. Es estado de ejecución de la sesión: se reemplaza en cada ejecución del flujo y cae con su sesión. Ver [[specs/SPEC-ORQUESTADOR-FLUJOS]].
 - **`chat_evento`** — Las líneas de procesamiento del chat: el sub-proceso de cada etapa de un flujo y la línea de cada herramienta. Son parte del hilo que se muestra y se recuerdan al volver a una sesión, pero **no son contexto**: al modelo solo se le entregan los turnos de `messages`. Cae en cascada con su sesión. Ver [[database/02-rules/DATA_FLOW]].
 
 ## 3. Columnas
+
+### `projects`
+
+| Columna | Qué representa | Valores permitidos | Nullable | Default |
+|---|---|---|---|---|
+| `id` | Identificador del proyecto | UUID v4 | No | — |
+| `path` | Ruta absoluta de la carpeta del proyecto | Ruta absoluta, única | No | — |
+| `created_at` | Cuándo se abrió la carpeta por primera vez | ISO 8601 UTC | No | — |
+| `updated_at` | Última actividad registrada en el proyecto | ISO 8601 UTC | No | — |
+
+`path` es `UNIQUE` y es la identidad real del proyecto: `id` es solo la clave surrogada con la que las sesiones lo referencian. Se usa UUID y no la ruta como clave primaria porque una ruta es larga, se repite en cada fila hija y puede cambiar (renombrar la carpeta, moverla); con un id estable la identidad de las sesiones no depende de dónde esté el directorio. La ruta se normaliza a absoluta al abrir, para que la misma carpeta no genere dos filas por escribirse de dos formas.
 
 ### `sessions`
 
 | Columna | Qué representa | Valores permitidos | Nullable | Default |
 |---|---|---|---|---|
 | `id` | Identificador de la sesión | UUID v4 | No | — |
+| `project_id` | Proyecto al que pertenece la sesión | UUID v4 de `projects.id` | No | — |
 | `name` | Nombre visible de la sesión | Texto libre | No | — |
 | `layer` | Capa en la que trabaja la sesión | `backend`, `frontend` | Sí | `NULL` |
 | `status` | Estado de la sesión | Ver [[database/01-schema/ENUMS]] | No | `inactiva` |
@@ -51,7 +64,7 @@ Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TE
 
 `layer` es `NULL` para una sesión general, por ejemplo cuando solo conversas o revisas contexto sin ejecutar tareas de una capa concreta.
 
-`motor_id` y `modelo` son **el par motor/modelo de la sesión**, y son su única huella de ejecución: son lo que se lee al retomar y lo que se actualiza al cambiar de motor o de modelo. Ver [[specs/SPEC-SESIONES]] y [[specs/SPEC-MODELO-MOTOR]].
+`motor_id` y `modelo` son **el par motor/modelo de la sesión**, y son su única huella de ejecución: son lo que se lee al retomar y lo que se actualiza al cambiar de motor o de modelo. Ver [[specs/SPEC-SESIONES]] y [[specs/SPEC-MODELOS-LLAMACPP]].
 
 Dos detalles que no son obvios:
 
@@ -134,6 +147,7 @@ Hay un registro por documento y por etapa. `reason` es `NULL` cuando `decision` 
 |---|---|---|---|---|
 | `session_id` | Sesión dueña de la lista | UUID v4 de `sessions.id` | No | — |
 | `position` | Orden del paso dentro de la lista | Entero ≥ 0 | No | — |
+| `parent_position` | Posición de la tarea principal que agrupa este paso | `NULL` o `position` de otra fila de la misma sesión | Sí | `NULL` |
 | `content` | Qué hay que hacer | Texto libre | No | — |
 | `status` | Estado del paso | `pendiente`, `en_progreso`, `completada`, `cancelada` | No | — |
 | `priority` | Prioridad del paso | `alta`, `media`, `baja` | No | `media` |
@@ -142,11 +156,13 @@ Hay un registro por documento y por etapa. `reason` es `NULL` cuando `decision` 
 
 La clave primaria es `(session_id, position)` y no hay `id` de fila: los pasos se numera por su índice, así que no hay identificadores que puedan quedar obsoletos. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su lista.
 
-**Las dos herramientas de la lista escriben de forma distinta, y la tabla no lo nota.** `actualizar_todo` borra la lista de la sesión y la reinserta con sus posiciones, en un solo paso atómico: o queda la lista nueva entera, o queda la anterior. `crear_todo` inserta **una fila** en la posición siguiente, y con eso un paso más: no borra nada, así que no puede perder los pasos que ya estaban ni dejar la lista a medias.
+**Las dos herramientas de la lista escriben de forma distinta, y la tabla solo lo nota como filas.** `actualizar_todo` borra la lista de la sesión y la reinserta con sus posiciones, en un solo paso atómico: o queda la lista nueva entera, o queda la anterior. `crear_todo` inserta **una o varias filas** en la posición siguiente —un paso suelto o una tarea principal con su grupo de subtareas—, y con eso añade: no borra nada, así que no puede perder los pasos que ya estaban ni dejar la lista a medias.
 
-Que `crear_todo` inserte y no reescriba es justo lo que hace segura la operación: añadir un paso no tiene forma de degenerar en «se me olvidó alguno». Y como la clave primaria es `(session_id, position)`, añadir es insertar en `position` = número de pasos actuales; no hace falta renumerar nada porque nada se mueve.
+Que `crear_todo` inserte y no reescriba es justo lo que hace segura la operación: añadir no tiene forma de degenerar en «se me olvidó alguno». Y como la clave primaria es `(session_id, position)`, añadir es insertar en `position` = número de filas actuales; no hace falta renumerar nada porque nada se mueve.
 
-El esquema no cambia con `crear_todo`: no hay migración, ni columna nueva, ni tabla nueva. Es la misma tabla con una segunda forma de escribirla.
+**La jerarquía es de un nivel y vive en `parent_position`.** Un paso raíz la lleva en `NULL`; un paso agrupado apunta a la `position` de su tarea principal dentro de la misma sesión. No es una clave foránea declarada —SQLite no puede añadir por `ALTER TABLE` una autorreferencia compuesta ni un `CHECK` que mire otras filas—, así que la validez de la referencia la impone la capa de datos al escribir. El índice `idx_todos_padre` de [[database/01-schema/INDEXES]] sirve justo para leer el grupo de una tarea principal y para verificar esa referencia. Ver [[database/02-rules/BUSINESS_RULES]].
+
+La jerarquía es un cambio de esquema: la columna `parent_position` la añade la migración `008-todo-jerarquia` ([[database/03-operations/MIGRATIONS]]), nullable y sin valor por defecto, así que las filas anteriores quedan con `NULL`, que es exactamente «paso raíz». Una base v7 se lee como una lista plana, sin ningún cambio de comportamiento: la jerarquía es una forma nueva de crear la lista, no una lectura nueva ([[specs/SPEC-TOOLS]] §Criterios de aceptación).
 
 ### `flow_context`
 
@@ -174,12 +190,13 @@ Hay una aportación por etapa y flujo dentro de la sesión: el índice único `(
 | `duration_ms` | Cuánto tardó lo que la línea describe, en milisegundos | Entero ≥ 0 | Sí | `NULL` |
 | `created_at` | Cuándo se añadió al hilo | ISO 8601 UTC | No | — |
 
-`tipo` distingue el sub-proceso de una etapa (`proceso`) de la línea de una herramienta (`herramienta`). `content` guarda el texto ya compuesto —«[Sub Proceso] Entender el problema» o «✓ LEER [AGENTS.md] · 93 líneas»—, para que al recargar la sesión el hilo se pinte igual que en vivo. Las líneas son inmutables una vez completas, como los mensajes: la línea de una herramienta se guarda cerrada, con su marca, su medida y su tiempo. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su hilo.
+`tipo` distingue el sub-proceso de una etapa (`proceso`) de la línea de una herramienta (`herramienta`). `content` guarda el texto ya compuesto —«[Sub Proceso] Entender el problema» o «✓ LEER [AGENTS.md] · 93 líneas»—, para que al recargar la sesión el hilo se pinte igual que en vivo. En una lectura por rango el tema incluye el rango real leído (por ejemplo `AGENTS.md:10-50`). Las líneas son inmutables una vez completas, como los mensajes: la línea de una herramienta se guarda cerrada, con su marca, su medida y su tiempo. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su hilo.
 
 `duration_ms` es el tiempo de **lo que esa línea describe**, no el del turno: en una línea de herramienta es el de su ejecución, y en una de sub-proceso no se mide y queda `NULL`. Sigue la misma convención que `messages.duration_ms` —`NULL` es «no se midió», no «tardó cero»—, y como la línea ya guarda su texto compuesto, el tiempo está ahí dos veces: como número, para poder consultarlo, y dentro de `content`, para que pintar el hilo no dependa de recomponerlo. Ver [[database/02-rules/DATA_FLOW]] y [[database/03-operations/MIGRATIONS]] §Nota sobre el esquema actual.
 
 ## 4. Relaciones
 
+- `projects` 1:N `sessions`: una carpeta tiene muchas sesiones y cada sesión pertenece a un solo proyecto.
 - `sessions` 1:N `messages`; `messages` 1:1 opcional `reasoning`.
 - `sessions` 1:N `approvals`.
 - `sessions` 1:N `context_audit`.
@@ -195,9 +212,12 @@ El detalle de cardinalidades, claves foráneas y cascadas está en [[database/01
 Dos sesiones de un mismo proyecto, una de backend trabajando y otra de frontend esperando permiso. Un mensaje de agente con su razonamiento, una aprobación pendiente y un cambio de archivo ya aplicado.
 
 ```
+projects
+  p1 | "/home/ana/proyectos/pedidos" | 2026-01-15T08:55:00Z | 2026-01-15T10:12:00Z
+
 sessions
-  s1 | "backend-pedidos"  | backend | trabajando    | 2026-01-15T09:00:00Z | 2026-01-15T10:12:00Z
-  s2 | "frontend-carrito" | frontend| esperando_permiso | 2026-01-15T09:05:00Z | 2026-01-15T10:10:00Z
+  s1 | p1 | "backend-pedidos"  | backend | trabajando    | 2026-01-15T09:00:00Z | 2026-01-15T10:12:00Z
+  s2 | p1 | "frontend-carrito" | frontend| esperando_permiso | 2026-01-15T09:05:00Z | 2026-01-15T10:10:00Z
 
 messages
   m1 | s1 | user  | "añade un endpoint de pedidos"          |  null | null | 09:00

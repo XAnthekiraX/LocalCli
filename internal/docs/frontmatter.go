@@ -1,11 +1,10 @@
 package docs
 
-// frontmatter.go — T-B003-02: parsear el frontmatter YAML de cada documento.
+// frontmatter.go — T-B020-02: parsear el frontmatter YAML de cada documento.
 //
 // El bloque es el estándar: líneas entre dos separadores "---" al inicio del
-// archivo (DOMAIN.md: "Frontmatter con etiquetas y enlaces que declaran
-// dependencias"). Para no arrastrar una dependencia YAML externa, se soporta
-// el subconjunto real que usan estos documentos:
+// archivo. Para no arrastrar una dependencia YAML externa, se soporta el
+// subconjunto real que usan estos documentos:
 //
 //	clave: valor            → Meta.Claves[clave] = valor
 //	clave: [a, b]           → lista inline
@@ -15,7 +14,7 @@ package docs
 //
 // Cualquier línea que no encaja (tabulaciones, dos puntos duplicados, bloques
 // anidados) produce ErrFrenteInvalido, que el cargador reporta como error
-// localizado por archivo sin abortar la carga (T-B003-06).
+// localizado por archivo sin abortar la carga.
 
 import (
 	"errors"
@@ -26,14 +25,6 @@ import (
 // ErrFrenteInvalido indica que el frontmatter no pudo parsearse. El cargador
 // lo envuelve con el código E_DOC_PARSE y la ruta del documento.
 var ErrFrenteInvalido = errors.New("frontmatter inválido")
-
-// Meta es el frontmatter parseado. Tags recoge las claves convencionales de
-// etiquetado (tags/etiquetas/keywords); el resto queda en Claves.
-type Meta struct {
-	Tags   []string
-	Claves map[string]string
-	Listas map[string][]string
-}
 
 // ParseFrontmatter separa el bloque inicial del cuerpo. Devuelve el meta, el
 // cuerpo (sin el bloque), si había frontmatter y el error de parseo. Un
@@ -95,8 +86,7 @@ func parseBloque(bloque string, m *Meta) error {
 		}
 		// Aquí solo se quita el comentario y se CONSERVAN las comillas. Quitar
 		// las comillas aquí rompía las listas inline: ["[[b]]"] perdía las
-		// comillas de sus elementos y se leía como [[[b]]], que tras el Trim
-		// se quedaba en "b", sin ningún enlace.
+		// comillas de sus elementos y se leía como [[[b]]].
 		v = sinComentario(strings.TrimSpace(v))
 		switch {
 		case v == "":
@@ -123,8 +113,7 @@ func parseBloque(bloque string, m *Meta) error {
 			i = j
 			continue
 		case strings.HasPrefix(v, "["):
-			// Una lista inline que no cierra no es un valor: es basura que no
-			// debe guardarse como una sola clave.
+			// Una lista inline que no cierra no es un valor.
 			if !strings.HasSuffix(v, "]") {
 				return fmt.Errorf("%w: lista sin cerrar en %q", ErrFrenteInvalido, linea)
 			}
@@ -150,8 +139,7 @@ func parseBloque(bloque string, m *Meta) error {
 }
 
 // sinComentario quita el comentario YAML del final de un valor y conserva las
-// comillas. Es el paso previo a decidir si el valor es escalar o lista: quitar
-// las comillas aquí rompería los elementos de una lista inline.
+// comillas. Es el paso previo a decidir si el valor es escalar o lista.
 func sinComentario(v string) string {
 	var (
 		cita  byte
@@ -177,14 +165,9 @@ func sinComentario(v string) string {
 }
 
 // desencomentar quita el comentario YAML de una línea de valor y quita las
-// comillas que envuelven el valor.
-//
-// Sin esto, `title: Mi título # nota` se guardaba con el "# nota" dentro y
-// `title: "Mi título"` se guardaba con las comillas. Las comillas también se
-// validan: una comilla sin cerrar es un frontmatter roto y no un valor
-// aceptable a medias.
+// comillas que envuelven el valor. Una comilla sin cerrar es un frontmatter
+// roto y no un valor aceptable a medias.
 func desencomentar(v string) (string, error) {
-	// El comentario solo cuenta fuera de comillas.
 	var (
 		cita  byte
 		com   bool // dentro de un comentario
@@ -194,25 +177,20 @@ func desencomentar(v string) (string, error) {
 		c := v[i]
 		switch {
 		case com:
-			continue // el resto de la línea es comentario
+			continue
 		case cita == 0 && c == '#' && (i == 0 || v[i-1] == ' ' || v[i-1] == '\t'):
 			com = true
 			continue
 		case cita == 0 && (c == '"' || c == '\''):
-			// Abre comilla:se marca el estado pero NO se copia el carácter.
-			// Copiarlo guardaba el valor con las comillas dentro.
 			cita = c
 			continue
 		case cita != 0 && c == cita:
-			cita = 0 // cierra: tampoco se copia
+			cita = 0
 			continue
 		}
 		saida.WriteByte(c)
 	}
 	if cita != 0 {
-		// Una comilla abierta y nunca cerrada no es un valor: es un
-		// frontmatter roto. Aceptarla a medias guardaba el resto de la línea
-		// como contenido del documento, y el archivo pasaba por válido.
 		return "", fmt.Errorf("comilla %q sin cerrar", string(cita))
 	}
 	return strings.TrimSpace(saida.String()), nil

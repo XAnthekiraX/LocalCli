@@ -3,14 +3,15 @@ title: SPEC — Catálogo de herramientas
 tags: [specs, requisito]
 depende_de:
   - "[[IDEA]]"
-  - "[[specs/SPEC-AGENTE-BASE]]"
   - "[[specs/SPEC-ARCHIVOS]]"
   - "[[specs/SPEC-NODO-CONTEXTO]]"
-  - "[[specs/SPEC-RESOLVER]]"
-  - "[[specs/SPEC-MODELO-MOTOR]]"
+  - "[[specs/SPEC-MODELOS-LLAMACPP]]"
 relacionado:
   - "[[backend/DECISIONS]]"
   - "[[specs/SPEC-SKILLS]]"
+  - "[[specs/SPEC-AGENTE-BASE]]"
+  - "[[specs/SPEC-ORQUESTADOR-FLUJOS]]"
+  - "[[specs/SPEC-RESOLVER]]"
 ---
 # SPEC — Catálogo de herramientas
 
@@ -18,20 +19,19 @@ Prioridad: P0 (núcleo)
 
 ## Propósito
 
-Definir qué herramientas tiene el agente para trabajar, cuáles puede usar para mirar y cuáles para escribir, en qué casos necesita permiso, cómo se le pide una herramienta al modelo y cómo puede el usuario añadir las suyas sin tocar el código.
+Definir qué herramientas tiene el agente para trabajar, cuáles puede usar para mirar y cuáles para escribir, en qué casos necesita permiso y cómo se le pide una herramienta al modelo.
 
 ## Alcance
 
-Incluye el catálogo incluido, el reparto por agente, las reglas de la terminal y de internet, la capa universal que envuelve toda ejecución, el descubrimiento de herramientas del usuario en `.localcli/tools/` y la degradación cuando el modelo no sabe usarlas.
-No incluye las reglas de permiso sobre archivos, que están en [[specs/SPEC-ARCHIVOS]], ni la selección de contexto, que está en [[specs/SPEC-NODO-CONTEXTO]], ni la conexión con el motor de inferencia, que está en [[specs/SPEC-MODELO-MOTOR]].
+Incluye el catálogo incluido, el reparto por agente, las reglas de la terminal y de internet, la capa universal que envuelve toda ejecución y la degradación cuando el modelo no sabe usarlas.
+No incluye las reglas de permiso sobre archivos, que están en [[specs/SPEC-ARCHIVOS]], ni la selección de contexto, que está en [[specs/SPEC-NODO-CONTEXTO]], ni la conexión con el motor de inferencia, que está en [[specs/SPEC-MODELOS-LLAMACPP]].
 
 ## Actores
 
-- **Usuario**: aprueba lo que lo requiere y define sus propias herramientas.
+- **Usuario**: aprueba lo que lo requiere.
 - **Agente `plan`**: solo mira, propone y pide aprobación.
 - **Agente `build`**: escribe, modifica y borra.
 - **Sistema**: ejecuta la herramienta y devuelve el resultado.
-- **Usuario como extensor**: declara herramientas propias en `.localcli/tools/`.
 
 ## Catálogo
 
@@ -70,9 +70,9 @@ No incluye las reglas de permiso sobre archivos, que están en [[specs/SPEC-ARCH
 | `crear_todo` | No toca el proyecto | `read` | Ambos |
 | `actualizar_todo` | No toca el proyecto | `read` | Ambos |
 
-Son las dos que mantienen la lista de pasos de la sesión: el plan de trabajo de varios pasos que el usuario ve en el panel. No escriben en el proyecto —es estado de la sesión—, así que la tienen los dos agentes.
+Son las dos que mantienen la lista de pasos de la sesión: el plan de trabajo de varios pasos que el usuario ve en el panel. Pueden ser pasos sueltos o una tarea principal con sus subtareas. No escriben en el proyecto —es estado de la sesión—, así que la tienen los dos agentes.
 
-**Una añade y la otra reemplaza, y no se confunden.** `crear_todo` **añade un paso al final** de la lista y nada más: no toca los que ya había. `actualizar_todo` **sustituye la lista entera** por la que mande. La primera es la vía normal para planning; la segunda, para reordenar, cancelar un paso o cambiar estados sin añadir.
+**Una añade y la otra reemplaza, y no se confunden.** `crear_todo` **añade al final** de la lista —un paso suelto o una tarea principal con sus subtareas— y nada más: no toca los que ya había. `actualizar_todo` **sustituye la lista entera** por la que mande. La primera es la vía normal para planning; la segunda, para reordenar, cancelar un paso o cambiar estados sin añadir.
 
 La separación no es cosmética. Con una sola herramienta que sustituye, un modelo que Cree estar «actualizando un paso» reescribe la lista con lo que recuerda y **borra los demás sin saberlo**. Con `crear_todo` delante, añadir es un verbo que no puede perder nada, y el modelo solo llama a `actualizar_todo` cuando de verdad quiere reescribir todo.
 
@@ -80,9 +80,13 @@ Ninguna de las dos necesita saber si la lista existe: **las dos devuelven la lis
 
 Ver «La lista de pasos» para las reglas de estado.
 
-### Del usuario
+### Flujos
 
-Las que el usuario declare en `.localcli/tools/`. Ver «Herramientas del usuario». No viven en este catálogo: se añaden al construir el registro y se reparten con las mismas reglas.
+| Herramienta | Lee o escribe | Permiso | Agente |
+|---|---|---|---|
+| `ejecutar_flujo` | Según el flujo | Derivado del flujo | Ambos, según el flujo |
+
+`ejecutar_flujo` lanza un flujo y devuelve su entrega. Es una **sola herramienta genérica** —`flujo` elige el comando y `peticion` es el objetivo—, no una herramienta por flujo: el catálogo de flujos viaja en el esquema, no en el nombre. Ver «Los flujos como herramienta».
 
 ## Cómo se le pide una herramienta al modelo
 
@@ -112,7 +116,7 @@ Toda ejecución de una herramienta pasa por la misma secuencia, sin excepciones.
 6. **Se mide** cuánto tardó la ejecución.
 7. **Se avisa** de lo que pasó, para que se vea en pantalla: el desenlace, la medida del resultado, si se recortó y cuánto tardó.
 
-La medición va **en la capa universal, no en cada herramienta**: es el único punto por el que pasan todas las ejecuciones, incluidas las del usuario, así que ninguna tiene que llevar un reloj propio para que su línea diga cuánto tardó. El tiempo medido es el de la ejecución —lo que tardó el handler—, no el del turno: el turno incluye el modelo, y son dos cosas distintas.
+La medición va **en la capa universal, no en cada herramienta**: es el único punto por el que pasan todas las ejecuciones, así que ninguna tiene que llevar un reloj propio para que su línea diga cuánto tardó. El tiempo medido es el de la ejecución —lo que tardó el handler—, no el del turno: el turno incluye el modelo, y son dos cosas distintas.
 
 ### Errores que el modelo puede corregir
 
@@ -133,46 +137,11 @@ Un fallo que el modelo no puede corregir por sí mismo —una denegación, un pe
 
 El recorte no es un castigo: la herramienta que lo ha hecho avisa de que lo ha hecho, y el modelo lo sabe para no agir como si tuviera el resultado entero. Cuando se corta por la mitad, se dice por dónde.
 
-## Herramientas del usuario
-
-El usuario puede añadir herramientas suyas sin tocar el código: deja un `.json` en `.localcli/tools/` y aparecen junto a las incluidas.
-
-Cada archivo declara una herramienta:
-
-```json
-{
-  "nombre": "contar_lineas",
-  "descripcion": "Cuenta las líneas de un archivo de texto.",
-  "modo": "lee",
-  "equipo": ["wc", "-l"]
-}
-```
-
-| Campo | Qué es |
-|---|---|
-| `nombre` | Cómo se llama. No puede coincidir con una incluida. |
-| `descripcion` | Lo que lee el modelo para decidir si la usa. |
-| `modo` | `lee`. El valor `escribe` existe en el contrato pero se rechaza; ver más abajo. |
-| `equipo` | El comando, como lista de argumentos. No es una línea de shell. |
-
-`equipo` es una lista, no un texto, y no pasa por un shell. No hay tubería, ni redirección, ni `sh -c` que puedan colarse: el ejecutable y sus argumentos son exactamente los escritos, y un argumento con un `;` es un argumento con un punto y coma.
-
-### Qué puede y qué no puede una herramienta del usuario
-
-- **Siempre pide aprobación.** Los comandos que ejecuta son los que el usuario ha escrito, no los que la herramienta conoce, así que ninguno está en la lista blanca: se pide siempre. Sin excepción.
-- **No puede escribir en el proyecto.** Corre bajo el mismo aislamiento que la terminal, así que el bloqueo es el mismo: aunque su comando intente escribir, no puede. Un archivo con `"modo": "escribe"` **se rechaza al arrancar** diciendo por qué: la única vía sancionada para escribir es la de las herramientas de archivo, que solo tiene `build` y que sí pasa por aprobación.
-- **No puede tocar tus archivos** más allá de lo que permite la terminal.
-- **No entra en la lista blanca** en ningún caso.
-- **No puede definir herramientas nuevas**: no llama a otras herramientas ni amplía el catálogo.
-- **Un JSON inválido se ignora** y se avisa, igual que un agente o un flujo inválido. El arranque no se detiene.
-
-### Nombres
-
-Una herramienta del usuario no puede llamarse igual que una incluida. Si el archivo se llama `contar_lineas.json` y declara `"nombre": "contar_lineas"`, el nombre que ve el modelo es ese. Si declarara `leer_archivo`, no se carga: choca con una incluida y se avisa.
-
 ## El reparto: `plan` mira, `build` escribe
 
 El reparto sale de los `permissions` de cada agente, que se declaran **por permiso**, con tres: `read` (mirar el proyecto, la terminal de consulta, internet y la lista de pasos de la sesión), `write` (crear, sobrescribir o borrar archivos y carpetas) y `edit` (parchear contenido existente). El catálogo efectivo de herramientas se deriva de ahí contra el catálogo: no hay una lista de herramientas suelta que pueda contradecir los permisos. El detalle de qué herramienta cae en qué permiso está en «Quién puede usar qué» de [[specs/SPEC-AGENTE-BASE]].
+
+`ejecutar_flujo` es la única herramienta sin permiso fijo: **lo hereda del flujo** que vaya a lanzar. Se arma por turno y solo llega al alcance de su permiso derivado, así que sigue siendo el reparto quien decide, no una lista suelta. Ver «Los flujos como herramienta».
 
 `plan` permite solo `read` y deniega los otros dos. Nunca recibe una herramienta que escriba en el proyecto. Existe para entender el proyecto, decidir qué hay que hacer y proponerlo.
 
@@ -180,15 +149,15 @@ El reparto sale de los `permissions` de cada agente, que se declaran **por permi
 
 Esto no es una restricción de estilo: es la garantía de que nada cambia en tu proyecto sin que `plan` lo haya propuesto antes y tú lo hayas aprobado.
 
-**Las herramientas del usuario respetan el mismo reparto.** Una declarada `"modo": "escribe"` nunca llega a `plan`, y las de lectura llegan a los dos. Extender el catálogo no abre una puerta trasera a la garantía.
-
 ## La lista de pasos
 
 La lista de pasos de la sesión es estado de la sesión, no del proyecto, y por eso la tienen los dos agentes bajo el permiso `read`. La mantienen dos herramientas, y la diferencia entre las dos es qué le pasa a lo que ya había.
 
-`crear_todo` **añade un paso al final**. Recibe `contenido` —qué hay que hacer— y `estado`; `prioridad` es opcional y por defecto es `media`. No recibe los pasos anteriores: no los necesita, porque no los toca. Lo que hace es insertar uno y devolver la lista completa, así que añadir un paso nunca puede perder los que ya estaban.
+`crear_todo` **añade al final, en un solo paso atómico: un paso suelto o una tarea principal con sus subtareas**. Un paso suelto recibe `contenido` —qué hay que hacer— y `estado`; `prioridad` es opcional y por defecto es `media`. Una tarea principal recibe `titulo` y `subtareas` —cada una con su `contenido` y su `estado`, y `prioridad` opcional— y se inserta como una fila raíz seguida de sus subtareas. No recibe los pasos anteriores: no los necesita, porque no los toca. Lo que hace es insertar y devolver la lista completa, así que añadir nunca puede perder los que ya estaban, ni una subtarea puede aparecer sin su principal. Las dos formas se excluyen: `contenido` junto a `titulo`/`subtareas` es un error corregible.
 
-`actualizar_todo` **sustituye la lista entera** por la que mande, en un solo paso atómico. Es la herramienta para reordenar, cancelar un paso, cambiar estados de golpe o dejar la lista vacía: casos en los que «añadir un paso» no basta porque hay que quitar o cambiar algo de lo anterior.
+`actualizar_todo` **sustituye la lista entera** por la que mande, en un solo paso atómico. Es la herramienta para reordenar, cancelar un paso, cambiar estados de golpe o dejar la lista vacía: casos en los que «añadir» no basta porque hay que quitar o cambiar algo de lo anterior. Cada elemento de la lista puede llevar sus propios `subtareas`, en un solo nivel; sin ellos, cada elemento se comporta como hoy y la llamada es compatible con la que ya existía.
+
+La jerarquía es de **un solo nivel**: una tarea principal puede tener subtareas, y una subtarea no tiene hijas. En la base, una fila raíz lleva `parent_position` nulo y cada subtarea apunta a la posición de su principal dentro de la misma sesión; el vínculo lo valida el harness al escribir. La jerarquía no introduce identificadores de fila: el orden sigue siendo la posición ([[database/01-schema/TABLES]] §`todos`). El panel anida las subtareas bajo su principal.
 
 El vocabulario es cerrado y lo comparten las dos: el estado de un paso es `pendiente`, `en_progreso`, `completada` o `cancelada`, y la prioridad es `alta`, `media` o `baja`. Un estado o una prioridad fuera de ese conjunto no se guarda: se devuelve al modelo el motivo y lo reintenta, como cualquier otro argumento mal formado.
 
@@ -196,11 +165,25 @@ Y se mantiene la regla de que **solo un paso puede estar `en_progreso` a la vez*
 
 Ninguna de las dos herramientas necesita preguntar por el estado actual de la lista, y por eso devuelven la lista resultante. El modelo la ve y decide el siguiente paso sin una ronda extra. Ver [[database/01-schema/TABLES]] para cómo se guarda.
 
+## Los flujos como herramienta
+
+`ejecutar_flujo` es la herramienta que usa el agente para arrancar el trabajo que pide etapas encadenadas: un informe, una implementación, una refactorización. Por fuera es una herramienta más —el modelo la pide por el canal nativo, con `flujo` (el comando del flujo) y `peticion`—, pero su handler no es un `Ejecutar` normal: **invoca al orquestador de flujos**, que corre las etapas como sub-proceso del turno.
+
+De ahí salen tres diferencias con el resto de herramientas:
+
+1. **Su permiso no es fijo: se deriva del flujo.** Si todas las etapas corren con `plan`, el flujo solo lee y lo lanza cualquier agente con `read`; si alguna etapa corre con `build`, el flujo escribe y exige `write`/`edit`. El esquema se arma **por turno con el agente activo**: solo lista los flujos que ese agente puede lanzar. Así `plan` no recibe a la vista un flujo que va a escribir, y la garantía «`plan` mira, `build` escribe» no depende de la disciplina del modelo.
+2. **Es de ejecución larga e interactiva.** El flujo no termina en la pasada en que se pide: corre sus etapas, conservando sus pausas de `continuacion` y `aprobacion`, y el turno **espera** respuesta inline. Cuando la etapa `entrega` redacta, la ejecución cierra y el resultado vuelve al agente: la entrega más el **bloque de contexto resumido** —una aportación por etapa, condensada—. Lo que no cruza es el interior del flujo: ni etapas, ni herramientas internas, ni ventana. El agente sabe qué flujo lanzó y qué entregó, no lo que pasó dentro.
+3. **Tiene profundidad uno.** `ejecutar_flujo` no está disponible dentro de una etapa de flujo: un flujo no invoca a otro.
+
+La frontera de salida es deliberada: la sesión principal no debe heredar ruido del interior del flujo. Es la misma «frontera de sesión» que describe [[specs/SPEC-ORQUESTADOR-FLUJOS]] §Invocación del flujo.
+
+En pantalla, el lanzamiento se anuncia con su verbo y su tema (ver el catálogo): `FLUJO [investigar] · "por qué el arranque cuelga"`, y a partir de ahí las líneas de sub-proceso de las etapas.
+
 ## Cuando el modelo no sabe usar herramientas
 
 No todos los modelos que se pueden elegir en el motor de inferencia saben pedir herramientas. La capacidad se puede preguntar antes de elegir, y hay modelos que responden que no.
 
-Un modelo sin esa capacidad **no puede usar herramientas, ni las incluidas ni las del usuario**, porque no hay forma nativa de pedirlas y LocalCli no las presenta en texto para que las imite.
+Un modelo sin esa capacidad **no puede usar ninguna herramienta**, porque no hay forma nativa de pedirlas y LocalCli no las presenta en texto para que las imite.
 
 Cuando ocurre, el agente activo cae a **modo conversación**: sigue respondiendo con el contexto que recibe, pero sin nada que ejecutar. La interfaz lo dice bajo la línea de entrada, donde ya se muestra si el modelo tiene esa capacidad.
 
@@ -227,6 +210,49 @@ plan lee  →  plan propone  →  tú apruebas  →  cambias a build  →  build
 Siguen las reglas de [[specs/SPEC-ARCHIVOS]]: dentro de la carpeta del proyecto son accesibles, fuera se pide permiso y el agente explica por qué, y **toda escritura pasa por aprobación**.
 
 Una diferencia importante: `crear_archivo` falla si el archivo ya existe, y `escribir_archivo` lo sobrescribe. Están separadas a propósito. Así el agente no destruye algo por accidente cuando pretendía crear.
+
+### `leer_archivo`
+
+Lee el contenido de un archivo de texto. Si el archivo es pequeño, devuelve su contenido completo; si es grande, permite leerlo por rangos de líneas.
+
+**Parámetros:**
+
+- `ruta` (obligatoria): ruta del archivo. **Para archivos del proyecto, relativa al directorio de trabajo del harness**; se aceptan absolutas solo para archivos de fuera. Nunca se empieza por `~` ni `$HOME` (no se expanden).
+- `inicio_linea` (opcional): línea inicial, contando desde 1.
+- `fin_linea` (opcional): línea final, inclusive.
+
+**Comportamiento:**
+
+1. Validar que la ruta exista y corresponda a un archivo regular.
+2. Comprobar que el archivo pueda leerse como texto.
+3. Si no se especifica un rango y el archivo no supera el límite, devolver el contenido completo.
+4. Si el archivo supera el límite, devolver un fragmento inicial e indicar que está truncado, diciendo cómo pedir otros rangos.
+5. Si se especifica un rango, devolver las líneas solicitadas dentro del límite máximo de salida.
+6. Si el rango excede el límite de salida, devolver el contenido disponible e indicar dónde terminó la lectura.
+7. Informar el número total de líneas cuando pueda determinarse.
+8. Devolver `ruta` en forma canónica: relativa al directorio de trabajo si el archivo está dentro de él, absoluta si queda fuera. El modelo ve esa forma corta en cada resultado y refuerza el uso de rutas relativas.
+
+**Respuesta:** `ruta` (ruta canónica resuelta: relativa al directorio de trabajo si el archivo está dentro, absoluta si está fuera), `contenido`, `linea_inicio` (primera línea devuelta), `linea_fin` (última línea devuelta), `total_lineas` (si se conoce), `truncado` (si se omitió contenido) y `siguiente_linea` (línea desde la que puede continuar la lectura, si corresponde).
+
+**Errores:** devolver un error claro cuando el archivo no existe, la ruta corresponde a un directorio, no hay permisos de lectura, el archivo no es compatible con la lectura de texto, o los parámetros o rangos son inválidos. Una ruta que empieza por `~` o contiene `$HOME` se rechaza con `E_BAD_ARGS` y un aviso de que esos prefijos no se expanden, para que el modelo corrija la forma en vez de chocar contra un «archivo no encontrado». Los errores de archivo inexistente y ruta que es un directorio recuerdan localizar el archivo con `buscar_archivos`/`listar_carpeta`: son corregibles y el turno no debe abandonarse por uno de ellos.
+
+**Límites (fijos en esta versión):** lectura completa, 64 KiB; máximo por respuesta, 32 KiB; numeración de líneas desde 1. Se miden en bytes. El rango se aplica **sobre el archivo original**, nunca sobre un fragmento previamente truncado. Cuando una línea individual es demasiado grande, se devuelve lo que quepa y se señala.
+
+**Restricciones:** no modifica ni elimina archivos, no ejecuta el contenido del archivo, no excede el límite máximo de salida y respeta las restricciones de acceso del harness.
+
+### Resolución de rutas
+
+Regla compartida por `leer_archivo` y `listar_carpeta`:
+
+1. Las rutas relativas se resuelven desde el directorio de trabajo actual del harness.
+2. Las rutas que contienen `..` permiten acceder a directorios superiores.
+3. Las rutas absolutas se utilizan directamente.
+4. No se busca automáticamente en otras ubicaciones si el archivo no existe.
+5. No se expande `$HOME` ni `~`; una ruta que empieza por `~` o los contiene se rechaza con `E_BAD_ARGS` y un recordatorio de usar rutas relativas —es un error corregible, no un archivo no encontrado.
+6. La normalización de rutas no debe utilizarse para eludir las restricciones de acceso del harness: una ruta que resuelve fuera de la carpeta del proyecto sigue siendo «fuera» y exige permiso y explicación ([[specs/SPEC-ARCHIVOS]]).
+7. La respuesta devuelve `ruta` en forma canónica: relativa al directorio de trabajo cuando el archivo cae dentro de él, absoluta cuando queda fuera.
+
+Para reducir el hábito del modelo de pegar la ruta completa (`leer [/home/usuario/proyecto/.agents/commands/actualizar.md]` en vez de `leer [.agents/commands/actualizar.md]`), el `desc` del parámetro `ruta` en el esquema instruye la ruta relativa conservando las subcarpetas, la respuesta la devuelve canónica y `~`/`$HOME` fallan con un aviso claro que enseña la convención.
 
 ## Herramientas de terminal
 
@@ -301,25 +327,32 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - Los argumentos se validan contra el esquema antes de ejecutar nada.
 - Un error de validación vuelve al modelo con el motivo y lo que se esperaba, para que lo corrija en la misma pasada.
 - Toda salida de herramienta se recorta, sea del tamaño que sea, y se avisa de que se ha recortado.
+- `leer_archivo` devuelve el archivo completo si no supera el límite de lectura completa, y si lo supera devuelve un fragmento inicial, lo marca como truncado e indica la línea desde la que seguir.
+- `leer_archivo` lee por rangos de línea contando desde 1; el rango se aplica sobre el archivo original y nunca sobre un fragmento ya truncado.
+- Una lectura que supera el máximo por respuesta devuelve tantas líneas como quepan e indica dónde terminó, sin exceder nunca el límite.
+- `leer_archivo` informa el total de líneas cuando puede determinarlo, y señala cuando una línea individual es demasiado grande para devolverla entera.
+- Los límites de `leer_archivo` (lectura completa y máximo por respuesta) son fijos en esta versión y se miden en bytes.
+- Las rutas relativas de `leer_archivo` y `listar_carpeta` se resuelven desde el directorio de trabajo del harness; `..` y las rutas absolutas son válidas, no se expande `~` ni `$HOME`, no se busca en otras ubicaciones y la normalización no elude las restricciones de acceso.
+- Las búsquedas de archivo (`buscar_archivos` y `buscar_en_archivos`) recorren también las carpetas ocultas de contenido —`.agents`, `.localcli`, `.github`— porque ahí vive parte del proyecto; solo se saltan los sistemas de control de versiones (`.git`, `.hg`, `.svn`) y las dependencias (`node_modules`).
+- El esquema instruye al modelo con la ruta relativa (conservando las subcarpetas, p. ej. `docs/specs/X.md`), la respuesta de `leer_archivo` devuelve la `ruta` canónica —relativa si el archivo está dentro del directorio de trabajo— y `~`/`$HOME` se rechazan con un error corregible que recuerda la convención; así el modelo no pega la ruta completa ni la reduce al nombre del archivo.
+- `leer_archivo` no modifica ni elimina archivos y no ejecuta su contenido.
 - Las ejecuciones son secuenciales, en el orden pedido.
 - Un turno tiene un máximo de pasadas; al agotarlo, termina con lo conseguido.
-- El catálogo incluido son quince herramientas y no se amplía desde fuera sin declararlas en `.localcli/tools/`.
-- Las herramientas del usuario se cargan de `.localcli/tools/*.json`; un archivo inválido se ignora y el arranque sigue.
-- Una herramienta del usuario se ejecuta como una lista de argumentos, sin shell.
-- Una herramienta del usuario siempre pide aprobación y nunca entra en la lista blanca.
-- Una herramienta del usuario no puede escribir en el proyecto: se ejecuta bajo el mismo aislamiento que la terminal.
-- Un `"modo": "escribe"` en una herramienta del usuario se rechaza al arrancar, con el motivo.
-- Una herramienta del usuario no puede llamar a otras herramientas ni ampliar el catálogo.
-- El nombre de una herramienta del usuario no puede coincidir con una incluida; si coincide, no se carga.
-- Las herramientas del usuario se reparten con las mismas reglas que las incluidas: `plan` nunca recibe una de escritura.
+- El catálogo incluido son dieciséis herramientas y **no se amplía desde fuera**: el catálogo está embebido en el código.
+- `ejecutar_flujo` es una sola herramienta: `flujo` elige el comando y `peticion` el objetivo; su permiso se deriva del flujo, su esquema se arma por turno y solo lista los flujos que el agente activo puede lanzar.
+- `ejecutar_flujo` corre el flujo como sub-proceso, conservando sus pausas de `continuacion` y `aprobacion`, y devuelve la entrega más el bloque resumido. El interior del flujo no cruza.
+- `ejecutar_flujo` no está en el catálogo dentro de una etapa de flujo: un flujo no invoca a otro.
 - El reparto sale de permisos (`read`, `write`, `edit`) declarados como `allow`/`deny`, con `default: deny`; el catálogo efectivo se deriva de ellos.
 - Un `permissions` con `default: allow` no carga: el default solo admite `deny`.
 - Un permiso o un efecto fuera de vocabulario no carga, no se ignora.
 - Un modelo que no declara capacidad de herramientas no recibe ninguna y el agente cae a modo conversación, avisando en la interfaz. No se le impide usarlo.
 - `plan` no tiene ninguna forma de escribir en el proyecto; sí mantiene la lista de pasos de la sesión.
 - `build` tiene el catálogo completo.
-- La lista de pasos de la sesión (`actualizar_todo`) la escriben los dos agentes: es estado de la sesión, no un cambio en el proyecto.
-- La lista de pasos se reescribe entera: lo que llega reemplaza lo anterior, y una lista vacía la deja en blanco.
+- La lista de pasos de la sesión (la mantienen `crear_todo` y `actualizar_todo`) la escriben los dos agentes: es estado de la sesión, no un cambio en el proyecto.
+- La lista de pasos se reescribe entera cuando llega `actualizar_todo`; lo que llega reemplaza lo anterior, y una lista vacía la deja en blanco.
+- `crear_todo` solo añade: un paso suelto o una tarea principal con sus subtareas; no puede borrar ni tocar lo que ya había.
+- La jerarquía es de un solo nivel: una tarea principal con sus subtareas, y una subtarea no tiene hijas. `parent_position` nulo es una fila raíz y, con valor, apunta a la posición de la principal en la misma sesión.
+- `contenido` (paso suelto) y `titulo`+`subtareas` (tarea principal) se excluyen en `crear_todo`; mezclarlos es un error corregible.
 - Solo un elemento de la lista puede estar `en_progreso` a la vez, y `completada` solo se marca tras verificar el paso.
 - Un estado o una prioridad fuera del vocabulario de la lista vuelve al modelo como error corregible.
 - El relevo de `plan` a `build` es explícito: propuesta, aprobación, cambio de agente, aplicación.
@@ -344,16 +377,32 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - [ ] `plan` no tiene ninguna herramienta que cree, modifique o borre.
 - [ ] `build` tiene el catálogo completo.
 - [ ] `plan` y `build` mantienen la lista de pasos de la sesión, y la lista se ve en el panel.
-- [ ] `crear_todo` añade un paso al final y no cambia los que ya había.
+- [ ] `crear_todo` añade al final —un paso suelto o una tarea principal con sus subtareas— y no cambia los que ya había.
+- [ ] `crear_todo` sin `subtareas` se comporta como un paso suelto, igual que antes.
+- [ ] `crear_todo` con `titulo` y `subtareas` crea la tarea principal y todas sus subtareas, en orden y como hijas de la principal.
 - [ ] `crear_todo` con `contenido` vacío no añade nada y devuelve el motivo.
+- [ ] `crear_todo` con `contenido` junto a `titulo` o `subtareas` no añade nada y devuelve el motivo.
 - [ ] `crear_todo` devuelve la lista resultante, sin importar si la lista estaba vacía.
 - [ ] `crear_todo` con un `estado` o una `prioridad` fuera del vocabulario devuelve al modelo un error corregible y no guarda nada.
 - [ ] `crear_todo` con un segundo paso `en_progreso` no lo añade y le dice al modelo que use `actualizar_todo`.
 - [ ] `actualizar_todo` reemplaza la lista entera; una lista vacía la deja en blanco.
+- [ ] Los elementos de `actualizar_todo` pueden llevar sus `subtareas`; sin ellas, la llamada se comporta como antes.
+- [ ] Una subtarea no tiene hijas: la jerarquía se queda en un solo nivel.
+- [ ] El panel anida las subtareas bajo su tarea principal.
 - [ ] Un estado o una prioridad fuera del vocabulario devuelve al modelo un error corregible y no guarda nada.
 - [ ] Nada se escribe sin que `plan` lo haya propuesto y tú lo hayas aprobado.
 - [ ] Una aprobación no habilita cambios distintos de los propuestos.
 - [ ] `crear_archivo` falla si el archivo ya existe; `escribir_archivo` lo sobrescribe.
+- [ ] Un archivo que no supera el límite de lectura completa se devuelve entero, sin aviso de truncado.
+- [ ] Un archivo que supera el límite de lectura completa se devuelve como fragmento inicial, marcado como truncado, con la línea desde la que continuar.
+- [ ] Una lectura por rango devuelve exactamente las líneas solicitadas, numeradas desde 1 y tomadas del archivo original.
+- [ ] Una lectura por rango que excede el máximo por respuesta devuelve hasta donde cabe e indica dónde terminó, sin pasar del límite.
+- [ ] `leer_archivo` informa el total de líneas cuando puede determinarlo y señala una línea individual demasiado grande.
+- [ ] Los errores de `leer_archivo` distinguen archivo inexistente, ruta que es un directorio, falta de permisos, archivo no legible como texto y parámetros o rangos inválidos.
+- [ ] Las rutas relativas de `leer_archivo` y `listar_carpeta` se resuelven desde el directorio de trabajo; `..` y las absolutas se aceptan; `~` y `$HOME` no se expanden; no se busca en otras ubicaciones.
+- [ ] Una ruta que empieza por `~` o contiene `$HOME` se rechaza con `E_BAD_ARGS` y un aviso que recuerda usar rutas relativas, no con «archivo no encontrado».
+- [ ] La respuesta de `leer_archivo` devuelve `ruta` relativa al directorio de trabajo cuando el archivo está dentro de él, y absoluta cuando está fuera.
+- [ ] Una ruta que resuelve fuera de la carpeta sigue exigiendo permiso y explicación, sin que la normalización lo evite.
 - [ ] Los comandos de la lista blanca se ejecutan sin pedir permiso.
 - [ ] Un comando fuera de la lista blanca pide permiso antes de ejecutarse.
 - [ ] La terminal no puede crear, editar ni borrar archivos del proyecto, ni con comandos indirectos.
@@ -362,18 +411,16 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - [ ] Un comando sin fin o con salida sin fin se corta y se avisa, sin colgar el harness.
 - [ ] La búsqueda por internet envía solo la consulta, nunca contenido del proyecto.
 - [ ] `abrir_pagina` devuelve el contenido de una página y ese contenido se audita.
-- [ ] Un `.localcli/tools/<nombre>.json` válido añade una herramienta disponible sin tocar el código.
-- [ ] La herramienta del usuario se ejecuta sin shell, con exactamente los argumentos declarados.
-- [ ] La herramienta del usuario pide aprobación siempre, aunque su comando esté en la lista blanca.
-- [ ] La herramienta del usuario no puede escribir en el proyecto, ni declarándolo ni con un comando indirecto.
-- [ ] Un `"modo": "escribe"` en una herramienta del usuario se rechaza al arrancar, diciendo por qué.
-- [ ] Una herramienta del usuario con el nombre de una incluida no se carga y se avisa.
-- [ ] Un `.localcli/tools/*.json` inválido se ignora y el arranque sigue.
-- [ ] Las herramientas del usuario siguen el reparto: `plan` no recibe ninguna de escritura.
 - [ ] Un modelo que no declara capacidad de herramientas no recibe ninguna y el turno responde en modo conversación.
 - [ ] Bajo la entrada se ve si el modelo en uso puede usar herramientas, y si no puede se dice que el agente va a conversar.
 - [ ] En el chat, el agente activo usa exactamente las herramientas derivadas de sus permisos.
 - [ ] El reparto sale de `read`, `write` y `edit`: `editar_archivo` va a `edit`, y crear, escribir, eliminar y las carpetas van a `write`.
+- [ ] `ejecutar_flujo` se pide por el canal nativo, con `flujo` y `peticion`, y su esquema se arma por turno con los flujos que el agente activo puede lanzar.
+- [ ] Con `read`, el agente lanza los flujos cuyas etapas corren todas con `plan`; un flujo con alguna etapa `build` solo se lista para quien tiene `write`/`edit`.
+- [ ] Al lanzar `ejecutar_flujo`, el turno espera mientras el flujo corre; las pausas de `continuacion` y `aprobacion` se conservan.
+- [ ] El resultado de `ejecutar_flujo` es la entrega más el bloque resumido; ninguna etapa ni herramienta interna del flujo aparece en el contexto del agente que lo invocó.
+- [ ] Dentro de una etapa de flujo, `ejecutar_flujo` no está en el catálogo: un flujo no invoca a otro.
+- [ ] En pantalla, el lanzamiento se anuncia como `FLUJO [<comando>] · <peticion>` y después entran las líneas de sub-proceso de las etapas.
 - [ ] Mientras una herramienta se ejecuta, se ve en pantalla cuál es —su verbo y su objetivo (la ruta, el patrón, el comando)— y, al terminar, si fue bien y el tamaño del resultado («70 líneas»).
 
 ## Requisitos no funcionales
@@ -385,18 +432,15 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 
 ## Dependencias funcionales
 
-- [[specs/SPEC-AGENTE-BASE]]
 - [[specs/SPEC-ARCHIVOS]]
 - [[specs/SPEC-NODO-CONTEXTO]]
-- [[specs/SPEC-RESOLVER]]
-- [[specs/SPEC-MODELO-MOTOR]]
+- [[specs/SPEC-MODELOS-LLAMACPP]]
 
 ## Supuestos
 
 - Los comandos concretos de la lista blanca, el límite de tiempo y el límite de salida se fijan en FASE 2 y FASE 3.
 - El límite de recorte de una salida de herramienta se fija en FASE 2.
 - El número máximo de pasadas por turno se fija en FASE 2.
-- Si en el futuro hacen falta herramientas del usuario con capacidad de escritura, hará falta decidir explícitamente un nivel de privilegio superior al de la terminal. Hoy no existe.
 
 ## Referencias
 

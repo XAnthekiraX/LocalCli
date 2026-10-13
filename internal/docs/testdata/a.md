@@ -1,13 +1,10 @@
 ---
 title: Documento A
 tags: [alfa, comun]
+depende_de:
+  - "[[b]]"
 ---
 
 # A
 
-Enlaza a [[b]] y a [[una/c|la C]]. También a [[no-existe]] roto.
-Y esto en código no cuenta:
-
-```
-[[tampoco-este]]
-```
+Cuerpo de A con [[b]], [[una/c]] y [[no-existe]].

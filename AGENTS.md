@@ -19,19 +19,24 @@ cada capa vive en su archivo principal bajo `ai/docs/<capa>/`.
 
 ```
 localcli/                       → proyecto Go (binario único)
-├── main.go                     → punto de entrada
+├── cmd/localcli/main.go        → punto de entrada
 ├── internal/                   → módulos internos del backend
 │                                 (arquitectura: ai/docs/backend/BACKEND.md)
 ├── ai/
 │   ├── docs/                   → documentación (PROJECT.md, specs/, frontend/, backend/, database/)
 │   └── tasks/                  → tareas de implementación (backend/: MAIN-TASKS.md + NNN-task-*.md)
 ├── .agents/                    → comandos, skills y agents del harness
-├── .localcli/                  → agents/ (agentes base y propios, versionado)
-│                                 + tools/ (herramientas del usuario, versionado)
-│                                 + state.db* (estado de ejecución, no versionado)
+├── .localcli/                  → solo si el proyecto añade agentes y flujos propios (agents/, flows/; versionado; opcional)
 ├── go.mod / go.sum
 └── AGENTS.md                   → este archivo
 ```
+
+Fuera del proyecto, en `~/.config/localcli/`, vive la raíz de la máquina: `config.json`
+y `keys.json` (preferencias y teclas), `motores.json` (registro de motores), `state.db`
+(base de datos única, con las sesiones separadas por `project_id`), y `agents/` y
+`flows/` (agentes base y flujos oficiales, sembrados desde el binario en el primer
+arranque). El proyecto solo **añade** agentes y flujos propios en `.localcli/`, de
+forma aditiva.
 
 La estructura interna de cada capa se define en su propio `FRONTEND.md`,
 `BACKEND.md` o `DATABASE.md`; aquí solo figura el nivel raíz.

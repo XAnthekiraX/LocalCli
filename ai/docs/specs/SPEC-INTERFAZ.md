@@ -4,13 +4,13 @@ tags: [specs, requisito]
 depende_de:
     - "[[IDEA]]"
     - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
-    - "[[specs/SPEC-KEYBINDS]]"
     - "[[specs/SPEC-PANEL-CONTEXTO]]"
     - "[[specs/SPEC-SESIONES]]"
     - "[[specs/SPEC-COLA-TAREAS]]"
     - "[[specs/SPEC-TOOLS]]"
 relacionado:
     - "[[specs/SPEC-ARCHIVOS]]"
+    - "[[specs/SPEC-KEYBINDS]]"
 ---
 
 # SPEC — Interfaz
@@ -67,10 +67,10 @@ uso con sus capacidades.
 
 ## Pantalla de bienvenida
 
-Es la primera vista al ejecutar `localcli`, antes de que exista conversación: el logotipo ASCII sobre el fondo, una caja de entrada con su línea de agente y modelo, la barra de pistas de teclado y la versión abajo a la derecha, como en opencode. El entorno del logotipo es la propia pantalla; solo la caja de entrada tiene superficie propia —un rectángulo sin glifos de borde—, de modo que la selección con el ratón cubre el área completa y la copia trae solo el texto.
+Es la primera vista al ejecutar `localcli`, antes de que exista conversación: el logotipo ASCII sobre el fondo, una caja de entrada con su línea de agente y modelo, la barra de pistas de teclado y la versión abajo a la derecha, como en opencode. El entorno del logotipo es la propia pantalla; solo la caja de entrada tiene superficie propia —un rectángulo sin glifos de borde—, de modo que la selección con el ratón cubre el área completa y la copia trae solo el texto. La caja de entrada es además su **propia zona de selección**: un arrastre que empieza dentro de ella se queda dentro de sus límites y no alcanza el logotipo, la barra de pistas ni la versión.
 
 ```
-              < LOGOTIPO 6×53 >
+              < LOGOTIPO >
 
 
 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
@@ -89,21 +89,22 @@ Las `░` marcan las bandas de fondo que enmarcan la caja de entrada (arriba y a
 
 El logotipo es fijo y esta es su definición, que sirve de salida dorada para las pruebas:
 
-- Texto `LocalCli` en bloques de 6 filas × 53 columnas, con los caracteres de bloque `█ ╗ ╝ ║ ╔ ═ ╚` en UTF-8.
-- La copia canónica byte a byte vive en `internal/tui/testdata/logo.txt`: seis líneas de exactamente 53 columnas, sin espacios finales. El bloque de arriba es su render fiel; la comparación de la prueba va contra el archivo.
+- Texto `LocalCli` en bloques de 6 filas (anchos 69, 69, 66, 66, 69, 69 columnas), con los caracteres de bloque `█ ╗ ╝ ║ ╔ ═ ╚` en UTF-8.
+- La copia canónica byte a byte vive en `internal/tui/testdata/logo.txt`: seis líneas con sus anchos reales (69, 69, 66, 66, 69, 69 columnas), sin espacios finales. El bloque de arriba es su render fiel; la comparación de la prueba va contra el archivo.
 - El arte va centrado sobre el fondo de la pantalla, sin caja ni borde; su entorno es el propio fondo.
-- El arte no se reescala: las 6 filas × 53 columnas se pintan íntegras, sin recorte. El conjunto (logotipo, caja de entrada y barra de pistas) se centra en la terminal, en horizontal y en vertical. En una terminal estrecha el estilo no cambia: las cajas nunca se componen por debajo del arte (la terminal recorta lo que no quepa). El bloque llano —logotipo, nombre con versión, línea de modelo y línea de entrada— queda solo para antes de la primera `WindowSizeMsg`.
+- **Dos tamaños del logotipo.** El arte completo no se reescala (sus 6 filas se pintan íntegras), pero exige terminal ancha. Por debajo de 70 columnas —la medida a la que deja de caber con margen— la bienvenida usa un **logotipo compacto** de 3 filas que deletrea `L.CLI`, con los mismos caracteres de bloque y sin espacios finales (copia canónica en `internal/tui/testdata/logo-compacto.txt`). El umbral vive en el código (`anchoMinimoLogotipoCompleto`). El conjunto (logotipo, caja de entrada y barra de pistas) se centra en la terminal, en horizontal y en vertical, y **nunca excede el ancho de la pantalla**: la caja se encoge hasta el logotipo en uso y, en el caso extremo, el marco recorta cualquier fila que aún desborde. Así, ni el logotipo ni las pistas rompen una terminal estrecha (caso típico: Termux en el móvil). El bloque llano —logotipo, nombre con versión, línea de modelo y línea de entrada— queda solo para antes de la primera `WindowSizeMsg`.
 - No entra al contexto del modelo ni a ningún historial: es arte de la aplicación.
 
 - Solo hay el logotipo sobre el fondo, la caja de entrada con su línea de agente y modelo, la barra de pistas de teclado y la versión. Ni paneles ni datos. Los modelos NO se listan en la bienvenida: se consultan y eligen desde un modal.
-- **Caja de entrada**: mientras está vacía muestra el placeholder `"Escribe para iniciar la conversacion"` entre comillas; lo escrito se pinta con su cursor. Bajo el texto va la **línea de estado** con el agente activo y el modelo en uso, rotulado con el motor que lo sirve (`[plan] • qwen3:8b (llama.cpp)`). La **barra de pistas** recuerda los atajos vigentes (`TAB agentes`, `Ctrl+P comandos`, `Ctrl+X M modelos`), generados desde el mapa de teclas. El placeholder y las etiquetas de la barra (`agentes`, `comandos`, `modelos`) van en un tono sutil propio (`#828BB8`); las teclas (`TAB`, `Ctrl+P`, `Ctrl+X M`) y el modelo en uso, en blanco. Una línea en blanco separa el texto escrito del modelo en la caja. No hay lista de modelos visible en la bienvenida.
-- **Modal de modelos**: la secuencia líder `Ctrl+X` seguida de `m` abre un modal centrado con la lista de modelos locales que reporta el motor activo de la sesión, con uno resaltado (cada fila rotula el motor). `↑`/`↓` mueven la selección, `Enter` aplica el elegido y cierra el modal, `Esc` cierra sin cambiar nada. La lista se pide al motor al abrir el modal (no en el arranque); si no responde, el modal muestra el aviso «sin modelos» y se puede cerrar con `Esc` sin bloquear nada. Mientras el modal está abierto, las teclas son solo del modal: la escritura de la bienvenida no las recibe. Lo elegido pasa al motor como modelo de la sesión y se refleja en la línea de modelo de la bienvenida. La elección del usuario prevalece sobre la autodetección del arranque ([[specs/SPEC-MODELO-MOTOR]]: el modelo lo elige el usuario). El mecanismo de la secuencia está en [[specs/SPEC-KEYBINDS]].
-- **Modal de motores**: la secuencia líder `Ctrl+X` seguida de `i` abre un modal centrado con los motores declarados, cada fila rotulada con su nombre, su tipo (`ollama` o `llamacpp`) y su estado. `↑`/`↓` mueven la selección, `Enter` aplica el elegido **como motor de la sesión activa** y cierra, `Esc` cierra sin cambiar nada. `Ctrl+X a` abre un formulario para añadir un motor, `Ctrl+X e` para editar el resaltado y `Ctrl+X d` para eliminarlo, pidiendo confirmación si alguna sesión lo usa. Editar un motor ya aplicado se avisa de que el cambio surte efecto al reiniciar; los desativados se distinguen de los activos y se pueden reactivar. El contenido y las reglas están en [[specs/SPEC-MODELO-MOTOR]].
+- **Caja de entrada**: mientras está vacía muestra el placeholder `"Escribe para iniciar la conversacion"` entre comillas; lo escrito se pinta con su cursor. Bajo el texto va la **línea de estado** con el agente activo y el modelo en uso (`[plan] • Qwen3.8`). La **barra de pistas** recuerda los atajos vigentes (`TAB agentes`, `Ctrl+P comandos`, `Ctrl+X M modelos`), generados desde el mapa de teclas. El placeholder y las etiquetas de la barra (`agentes`, `comandos`, `modelos`) van en un tono sutil propio (`#828BB8`); las teclas (`TAB`, `Ctrl+P`, `Ctrl+X M`) y el modelo en uso, en blanco. Una línea en blanco separa el texto escrito del modelo en la caja. No hay lista de modelos visible en la bienvenida.
+- **Modal de modelos**: la secuencia líder `Ctrl+X` seguida de `m` abre un modal centrado con la lista de modelos locales que sirve `llama-server`, con uno resaltado. Cada modelo se muestra **por su nombre —la carpeta en la que reside en `models/`—**, nunca por la ruta de su archivo (p. ej. `Qwen3.8`, no una ruta completa). `↑`/`↓` mueven la selección, `Enter` aplica el elegido y cierra el modal, `Esc` cierra sin cambiar nada. La lista se pide al motor al abrir el modal (no en el arranque); si no responde, el modal muestra el aviso «sin modelos» y se puede cerrar con `Esc` sin bloquear nada. Mientras el modal está abierto, las teclas son solo del modal: la escritura de la bienvenida no las recibe. Lo elegido pasa a ser el modelo de la sesión y se refleja en la línea de modelo de la bienvenida. La elección del usuario prevalece sobre la autodetección del arranque ([[specs/SPEC-MODELOS-LLAMACPP]]: el modelo lo elige el usuario). El mecanismo de la secuencia está en [[specs/SPEC-KEYBINDS]].
 - Lo que se escribe es la **primera petición de la sesión**: se envía tal cual, igual que se enviaría desde el chat.
-- La línea de entrada de la bienvenida despliega también la **paleta de comandos de flujo** al escribir `/` (§Zonas 2): escribir filtra, `↑`/`↓` la recorren, `Tab` autocompleta y `Enter` ejecuta. Un comando crea la sesión y lleva a la vista principal igual que una primera petición.
+- La línea de entrada de la bienvenida despliega también la **paleta de comandos** al escribir `/` (§Zonas 2): escribir filtra, `↑`/`↓` la recorren, `Tab` autocompleta y `Enter` ejecuta. Ejecutar un `/flow:` crea la sesión y lleva a la vista principal igual que una primera petición.
 - Al enviarla, la vista cambia a la interfaz principal y la petición aparece como primer mensaje del chat. La transición no repite la petición ni pide confirmación.
 - No hay una sesión activa antes de usar la bienvenida: la primera petición **crea** una sesión nueva, con un nombre provisional que el modelo sustituye por un título generado a partir de esa misma petición. Ver [[specs/SPEC-SESIONES]].
-- Desde la bienvenida no hay panel de contexto ni de aprobaciones: hay el logotipo enmarcado, la caja de entrada y la barra de pistas; con `Ctrl+X m` se abre el modal de modelos, con `Ctrl+X i` el de motores y con `Ctrl+X l` el de sesiones (al elegir una con `Enter`, la vista pasa a la principal con el historial de esa sesión). Se escribe y se envía —o se ejecuta un comando de flujo— y la salida es `Ctrl+C`.
+- Desde la bienvenida no hay panel de contexto ni de aprobaciones: hay el logotipo enmarcado, la caja de entrada y la barra de pistas; con `Ctrl+X m` se abre el modal de modelos y con `Ctrl+X l` el de sesiones (al elegir una con `Enter`, la vista pasa a la principal con el historial de esa sesión). Se escribe y se envía —o se ejecuta un comando de flujo— y la salida es `Ctrl+C`.
+- **Sintaxis de comandos slash.** Los comandos se escriben directamente en la entrada, en tres familias: `/comando` (comando de la interfaz, se resuelve como acción local sin enviarse al agente), `/flow:<nombre>` (flujo concreto, lo resuelve el orquestador) y `/skill:<nombre>` (skill concreta; reconocida, pero todavía sin motor que la cargue). Un `/comando` crudo que no sea de la interfaz no arranca un flujo: solo avisa. La paleta de comandos muestra el catálogo real que sirve el orquestador.
+- **Comandos `/undo`, `/redo` y `/retry`.** `/undo` deshace el último turno de la conversación —la petición del usuario y la respuesta que produjo— y recarga el hilo con lo que queda; `/redo` lo vuelve a poner en pie. Ninguno de los dos toca los archivos del proyecto: operan solo sobre el historial de la sesión, y avisan cuando no hay nada que deshacer o rehacer. `/retry` re-ejecuta la última petición del usuario, generando un nuevo turno sin modificar el historial previo; sin una petición previa solo deja un aviso. También puede re-ejecutarse un mensaje previo del hablante `Usuario` en el chat (por implementar).
 
 ## Zonas
 
@@ -113,21 +114,22 @@ El logotipo es fijo y esta es su definición, que sirve de salida dorada para la
 - Muestra el historial de la sesión activa.
 - Cada mensaje ocupa una fila de ancho completo: una franja de **una columna** con el color de quien habla —azul `#606CD5` el usuario en su borde derecho, verde `#4CEE75` el agente en el izquierdo— y el resto de la fila en el fondo del chat (`#1E2030`); el texto va en **blanco** dentro, con una celda de aire arriba, abajo y a cada lado, sin icono. Entre un mensaje y el siguiente va una fila en blanco. Sin bordes ni glifos de adorno. El área del chat entre mensajes mantiene el fondo de la pantalla; solo las filas de mensaje llevan `#1E2030`. Las líneas del sistema —herramientas, avisos— se pintan sueltas.
 - El hilo se pinta en el **orden en que ocurrió**: el texto que el modelo escribió antes de usar una herramienta queda arriba de su línea, y el que escribe después abre un globo nuevo. Los segmentos de texto de un mismo turno no se funden en uno solo por debajo de las líneas de herramienta.
-- Cada intercambio muestra la respuesta del modelo; mientras genera, un **indicador en vivo** (`[⠋ Pensando]`) sustituye al volcado del razonamiento. El texto del razonamiento se revela con `Ctrl+R` (ver §Razonamiento del modelo). El intercambio del turno en vivo —razonamiento y respuesta según llegan— es un bloque más del chat: crece dentro de la ventana del historial, así que se recorre con el scroll y nunca empuja la caja de entrada fuera de la pantalla.
+- Cada intercambio muestra la respuesta del modelo; mientras genera, la **línea de actividad** (`[⠋ Pensando]`) se pinta fija justo encima de la caja de entrada (§Zonas 2) en vez de volcar el razonamiento. El texto del razonamiento se revela con `Ctrl+R` (ver §Razonamiento del modelo). El turno en vivo —razonamiento y respuesta según llegan— crece como un bloque más dentro de la ventana del historial, así que se recorre con el scroll y nunca empuja la caja de entrada fuera de la pantalla; la línea de actividad no forma parte de ese bloque y permanece fija aunque el historial se desplace.
 - Cada respuesta del modelo muestra cuánto tardó en llegar, atenuado junto a ella. Mientras se espera, el tiempo corre en pantalla —junto al indicador en vivo— para saber que el modelo sigue trabajando.
 - Cada línea de herramienta muestra cuánto tardó esa ejecución. Usa **la misma forma de medir el número y el mismo atenuado** que el tiempo de la respuesta, pero va unido con el separador de la línea (`· 0.4 s`) en vez de entre paréntesis, porque el paréntesis es lo que marca «esto es el tiempo de una respuesta» y ahí no lo es. Los dos tiempos son cosas distintas y se lucie por separado: el de la respuesta es del turno entero, y el de la herramienta es solo de su ejecución.
 - Muestra las propuestas pendientes de aprobación.
+- **Re-ejecución de mensajes** (por implementar): un mensaje de usuario previo puede re-ejecutarse haciendo clic sobre él en el chat. Al hacerlo, su texto se reenvía como una nueva petición, creando un nuevo turno, sin modificar el historial existente. El comando `/retry` también re-ejecuta la última petición del usuario con el mismo comportamiento.
 - El historial se puede recorrer: `↑`/`↓` suben y bajan línea a línea y `pgup`/`pgdown` por páginas; la rueda del ratón también desplaza. Mientras no se sube, la vista sigue el final y baja sola con cada respuesta nueva; al subir se respeta la posición. Cuando queda historial fuera de la ventana se indica con una línea discreta («↑ N líneas arriba» / «↓ N líneas abajo»).
 
 ### 2. Entrada de texto
 
 - Una línea de escritura que crece en filas: el texto es un solo párrafo, pero al desbordar el ancho disponible salta de renglón (hasta un tope de filas; a partir de ahí se desplaza dentro de la ventana) en vez de recortarse. Al redimensionar la terminal, el reparto se reajusta. `Enter` envía la petición; no inserta saltos de línea.
 - Escribe hacia la sesión activa.
-- **Paleta de comandos de flujo.** Al escribir `/` se despliega encima de la línea la lista de comandos de flujo disponibles —los oficiales más los propios de `.localcli/flows/*.json`—, con el resaltado en el primero. Lo escrito filtra la lista; `↑`/`↓` la recorren, `Tab` autocompleta el comando resaltado dejando la línea lista para escribir la petición detrás (`/comando [petición]`) y `Enter` ejecuta. En cuanto se escribe un espacio (empieza la petición) la paleta se retira. Es un ayudante para descubrir los comandos, no una vía nueva de arranque: el flujo sigue arrancando solo con su comando explícito y el catálogo lo sirve el orquestador.
+- **Paleta de comandos.** Al escribir `/` se despliega **como overlay** encima de la línea la lista de invocaciones disponibles: los flujos —los oficiales (sembrados en `~/.config/localcli/flows/`) más los propios de `<proyecto>/.localcli/flows/`— con su prefijo `flow:`, y los comandos de la interfaz (`models`, `sessions`, `redo`, `init`, `descargar`, `retry`). Es un componente aparte con superficie propia: fondo `#B1BAF9`, texto oscuro y la fila resaltada en el azul de la aplicación, alineada con la caja de entrada y de su mismo ancho, **superpuesta** sobre el contenido (no empuja el logo en la bienvenida ni el chat en la vista principal). **Límite visible:** la paleta muestra como máximo **5 elementos** a la vez; si la lista filtrada supera ese tope, se muestra un **scroll vertical** indicado con `▲`/`▼` en los bordes. Lo escrito filtra la lista; `↑`/`↓` navegan la selección y, al llegar al borde visible, desplazan el viewport; `pgup`/`pgdown` y la **rueda del ratón** también desplazan el viewport; `Tab` autocompleta el comando resaltado dejando la línea lista para escribir la petición detrás (`/flow:<nombre> [petición]`) y `Enter` ejecuta. En cuanto se escribe un espacio (empieza la petición) la paleta se retira. Es un ayudante para descubrir los comandos, no una vía nueva de arranque: no añade invocaciones que no existan, y el catálogo lo sirve el orquestador; un flujo arranca por `/flow:<comando>` o por la herramienta `ejecutar_flujo` del agente.
 - El texto se edita en cualquier punto: las flechas mueven el cursor, `home`/`end` van al principio y al final y `ctrl+b`/`ctrl+e` son sus equivalentes. Los atajos que coincidan con una acción (por ejemplo `ctrl+a`) siguen resolviéndose como acción y no editan.
-- La **caja de la entrada** lleva el texto con una celda de aire arriba, abajo y a cada lado, y bajo él una línea de estado con el agente activo, el modelo en uso y sus chapas: `tool [*]` en verde si usa herramientas y en rojo si no (atenuada mientras no se sabe), `pensar [x]`/`pensar [ ]` —el interruptor de razonamiento, apagado por defecto y **pulsable con el ratón**; solo se enseña si el modelo declara la capacidad `thinking`—, `[v]` si acepta visión y `[T]` siempre (texto). El fondo de la caja es `#1E2030`. Cuando hay consumo que mostrar, el conteo de tokens del turno (`tokens: 54k`) se pinta justo debajo de la caja. La caja queda **siempre pegada al pie** de la columna, aunque el historial sea corto (el chat se rellena con celdas de fondo hasta la separación). La línea de entrada de la bienvenida se edita igual que esta.
-- Justo encima de la caja, mientras el modelo trabaja, se pinta la **línea de actividad**: un glifo que gira y la etiqueta de lo que pasa —`[⠋ Pensando]` si aún no hay respuesta, `[⠋ Usando herramienta: X]` si corre una herramienta, `[⠋ Generando]` si ya llega respuesta— más el tiempo transcurrido. Sustituye al volcado crudo del razonamiento.
-- **Indicador de agente en el pie de la caja**: en la línea de estado dentro de la caja de entrada se muestra el agente activo (p. ej. `[plan]`). Cambia al instante con `Tab`, que recorre los agentes disponibles (los base `plan` y `build` más los que el usuario añada en `.localcli/agents/<carpeta>/`). En la bienvenida el indicador va delante de la línea (`[plan] > `).
+- La **caja de la entrada** lleva el texto con una celda de aire arriba, abajo y a cada lado, y bajo él una línea de estado con el agente activo, el modelo en uso y sus chapas: `tool [*]` en verde si usa herramientas y en rojo si no (atenuada mientras no se sabe), `pensar [x]`/`pensar [ ]` —el interruptor de razonamiento, apagado por defecto y **pulsable con el ratón**; solo se enseña si el modelo declara la capacidad `thinking`—, `[v]` si acepta visión y `[T]` siempre (texto). Las chapas nunca se recortan: cuando no caben en una fila saltan a la siguiente, de modo que el interruptor `pensar` sigue visible y pulsable en terminales estrechas (tanto en la caja principal como en la de la bienvenida). El fondo de la caja es `#1E2030`. Cuando hay consumo que mostrar, el conteo de tokens del turno (`tokens: 54k`) se pinta justo debajo de la caja. La caja queda **siempre pegada al pie** de la columna, aunque el historial sea corto (el chat se rellena con celdas de fondo hasta la separación). La línea de entrada de la bienvenida se edita igual que esta.
+- Justo encima de la caja, mientras el modelo trabaja, se pinta la **línea de actividad**: un glifo que gira y la etiqueta de lo que pasa —`[⠋ Pensando]` si aún no hay respuesta, `[⠋ Usando herramienta: X]` si corre una herramienta, `[⠋ Generando]` si ya llega respuesta— más el tiempo transcurrido. Sustituye al volcado crudo del razonamiento. Es una **fila fija**: no forma parte del historial del chat, no se desplaza con su scroll y queda fuera de la zona de selección del chat; lo que sí crece y se desplaza dentro del chat es la respuesta en vivo.
+- **Indicador de agente en el pie de la caja**: en la línea de estado dentro de la caja de entrada se muestra el agente activo (p. ej. `[plan]`). Cambia al instante con `Tab`, que recorre los agentes disponibles (los base sembrados en `~/.config/localcli/agents/` más los que el usuario añada en `<proyecto>/.localcli/agents/<carpeta>/`). En la bienvenida el indicador va delante de la línea (`[plan] > `).
 - El agente activo responde con el catálogo derivado de sus permisos: `plan` solo lee y propone; `build` escribe con aprobación. Quién responde lo decide el indicador, no el texto escrito.
 
 ### 3. Sidebar de datos
@@ -144,9 +146,9 @@ abajo muestra:
 3. **▾ TODO**: el elemento del TODO en curso y cuántos le quedan.
 4. **LISTA DE TAREAS**: los pasos del agente cuando queda alguno accionable.
 5. **ESTADO**: capa y cola, aprobaciones y agente, en filas etiqueta + valor.
-6. El **pie**, pegado al fondo de la columna y siempre visible, con tres filas de arriba abajo:
-   el estado de **git**, la **ruta** del proyecto entre corchetes y la **firma** del
-   harness con su nombre y versión.
+6. El **pie**, pegado al fondo de la columna y siempre visible: el estado de **git**, la
+   **ruta** del proyecto entre corchetes —en una o varias filas, partiéndose si no cabe
+   en lugar de recortarse— y la **firma** del harness con su nombre y versión.
 
 Los nueve datos siguen siendo estos:
 
@@ -177,11 +179,11 @@ ni se disfraza de árbol limpio: la fila dice `sin iniciar`. Es un dato, no un �
 
 Los datos de contexto se calculan y se interpretan según [[specs/SPEC-PANEL-CONTEXTO]].
 
-La sección «LISTA DE TAREAS» muestra la lista de pasos del agente —la que mantienen `crear_todo` y `actualizar_todo`— con `[•]` en curso, `[✓]` hecho, `[x]` cancelado y `[ ]` pendiente. Se oculta cuando no hay nada accionable. Ver [[specs/SPEC-TOOLS]].
+La sección «LISTA DE TAREAS» muestra la lista de pasos del agente —la que mantienen `crear_todo` y `actualizar_todo`— con `[•]` en curso, `[✓]` hecho, `[x]` cancelado y `[ ]` pendiente. Una tarea principal muestra su título y, bajo él, sus subtareas anidadas y con sangría, para que se lea la misma jerarquía que ve el modelo en el resultado de las herramientas. Se oculta cuando no hay nada accionable. Ver [[specs/SPEC-TOOLS]].
 
 ## Razonamiento del modelo
 
-Mientras el modelo trabaja se muestra un **indicador en vivo** (`[⠋ Pensando]`, `[⠋ Usando herramienta: X]`) con su glifo girando y el tiempo transcurrido. El texto crudo del razonamiento **no se vuelca por defecto**: se **revela con `Ctrl+R`**, arriba de la respuesta, y entonces se distingue visualmente de ella.
+Mientras el modelo trabaja se muestra un **indicador en vivo** (`[⠋ Pensando]`, `[⠋ Usando herramienta: X]`) con su glifo girando y el tiempo transcurrido, pintado **fijo justo encima de la caja de entrada** (§Zonas 2), sin desplazarse con el scroll del chat. El texto crudo del razonamiento **no se vuelca por defecto**: se **revela con `Ctrl+R`**, arriba de la respuesta, y entonces se distingue visualmente de ella.
 
 - El indicador no depende de que el texto esté revelado: se ve siempre que el turno está en marcha.
 - Revelar u ocultar el texto no detiene la generación: el razonamiento se sigue acumulando y volver a revelarlo lo recupera entero.
@@ -190,12 +192,12 @@ Mientras el modelo trabaja se muestra un **indicador en vivo** (`[⠋ Pensando]`
 
 ## Modales
 
-Cuatro modales centrados comparten el mismo comportamiento: uno abierto a la vez, sus teclas capturan el teclado (`↑`/`↓` navegan, `Enter` aplica y cierra), `Esc` cierra sin cambios y `Ctrl+C` sigue saliendo de la aplicación.
+Tres modales centrados comparten el mismo comportamiento: uno abierto a la vez, sus teclas capturan el teclado (`↑`/`↓` navegan, `Enter` aplica y cierra), `Esc` cierra sin cambios y `Ctrl+C` sigue saliendo de la aplicación.
 
 | Modal        | Cómo se abre | Contenido                                                                                                                                                                                   | Al aplicar                                                                                                                       |
 | ------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Modelos**  | `Ctrl+X m`   | Lista de modelos locales del motor activo de la sesión, cada uno rotulado con su motor, cargada al abrir; el resaltado arranca en el modelo en uso; los que no declaran capacidad de herramientas se marcan; aviso «sin modelos» si no responde | El modelo elegido pasa a ser el de la sesión y se ve en la línea de modelo; si no puede usar herramientas, se avisa sin bloquear |
-| **Motores**  | `Ctrl+X i`   | Lista de los motores declarados con nombre, tipo y estado; los desactivados se distinguen de los activos; `Ctrl+X a` añade, `Ctrl+X e` edita y `Ctrl+X d` elimina (con confirmación si hay sesiones usándolo)                      | El motor elegido pasa a ser el de la sesión activa y se ve en la línea de estado; si el modelo en curso no existe en él, el modelo queda vacío y hay que elegir otro |
+| **Modelos**  | `Ctrl+X m`   | Lista de modelos locales que sirve `llama-server`, mostrados **por su nombre (la carpeta en la que residen en `models/`, sin rutas)**, cargada al abrir; el resaltado arranca en el modelo en uso; los que no declaran capacidad de herramientas se marcan; aviso «sin modelos» si no responde | El modelo elegido pasa a ser el de la sesión y se ve en la línea de modelo; si no puede usar herramientas, se avisa sin bloquear |
+| **Descargar**| `Ctrl+X d` / `/descargar` | Campo de URL para un archivo GGUF (p. ej. de Hugging Face), con nombre derivado del archivo (sin `.gguf`) y barra de progreso en vivo; reanuda descargas interrumpidas | El modelo se registra en `models.json` y aparece en el modal de modelos; `Esc` cancela la descarga en curso                     |
 | **Sesiones** | `Ctrl+X l`   | Lista de las sesiones creadas anteriormente en el proyecto (nombre y estado, incluidas las de segundo plano)                                                                                | Se abre esa sesión: el chat pasa a su historial sin detener lo que corre                                                         |
 | **Atajos**   | `Ctrl+P`     | Tabla de los atajos existentes agrupada por categorías (General, Chat, Vista, Modales, Aprobaciones, Entrada), con la tecla y su acción alineadas, incluidas las secuencias con líder       | No aplica nada: es solo lectura; `Esc` lo cierra                                                                                 |
 
@@ -231,12 +233,11 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - Cada respuesta muestra el tiempo que tardó el modelo en entregarla. Mientras el turno está en curso, ese tiempo corre en pantalla y se detiene al cerrarse el turno. Ese tiempo **se guarda** con la respuesta, así que una sesión retomada lo vuelve a mostrar; una línea anterior a esa medición se pinta sin él.
 - Cada línea de herramienta muestra cuánto tardó su ejecución, y ese tiempo también se guarda: al volver a la sesión, el hilo se pinta con los tiempos que tuvo.
 - Los dos tiempos se miden con las mismas reglas —milisegundos por debajo del segundo, décimas de segundo por debajo del minuto, minutos y segundos a partir de ahí— y los dos son opcionales: sin medición, no se pinta nada en vez de un cero.
-- No hay lista de sesiones permanente: se acceden con `Ctrl+X l`, que abre el modal de sesiones. Tampoco hay lista de motores permanente: se acceden con `Ctrl+X i`.
+- No hay lista de sesiones permanente: se acceden con `Ctrl+X l`, que abre el modal de sesiones.
 - El historial del chat se recorre con `↑`/`↓` y `pgup`/`pgdown`; mientras no se sube, la vista sigue el final. La línea de entrada nunca queda fuera de pantalla.
-- Al abrir el modal de modelos, el resaltado arranca en el modelo en uso. Los modelos que no declaran capacidad de herramientas se marcan; elegirlos avisa sin bloquear y deja al usuario cambiar de modelo.
-- Al abrir el modal de motores, el resaltado arranca en el motor de la sesión activa. Cambiar de motor a mitad de conversación no borra el historial: el chat sigue siendo el mismo y solo cambia contra quién se genera. Ver [[specs/SPEC-SESIONES]].
-- La rueda del ratón desplaza el historial. Arrastrar con el botón izquierdo selecciona texto, que se **resalta en video inverso** mientras se elige, y al soltar se copia al portapapeles —el realce desaparece y aparece el aviso transitorio `[Copiado]` arriba a la derecha, que se apaga solo—; al capturar el ratón, la selección nativa de la terminal queda disponible con `Shift`. La selección se mantiene **anclada al texto**: la rueda puede usarse mientras se selecciona y no la cancela, de modo que en un chat largo se puede seguir eligiendo al desplazarse. Con el panel de aprobaciones abierto, un clic sobre «aprobar» o «declinar» de una línea resuelve esa aprobación.
-- Con la sesión activa trabajando, el primer `esc` pide confirmación («presiona esc otra vez para cancelar razonamiento») y el segundo cancela el trabajo; cualquier otra tecla la descarta.
+- Al abrir el modal de modelos, el resaltado arranca en el modelo en uso. Los modelos que no declaran capacidad de herramientas se marcan; elegirlos avisa sin bloquear y deja al usuario cambiar de modelo. Cada fila muestra el nombre del modelo —su carpeta en `models/`—; en el modal nunca aparece una ruta.
+- La rueda del ratón desplaza el historial. Arrastrar con el botón izquierdo selecciona texto, que se **resalta en video inverso** mientras se elige, y al soltar se copia al portapapeles —el realce desaparece y aparece el aviso transitorio `[Copiado]` arriba a la derecha, que se apaga solo—; al capturar el ratón, la selección nativa de la terminal queda disponible con `Shift`. La selección se limita a la **zona donde empezó el arrastre** —el chat, el sidebar o la caja de entrada (en la bienvenida y en la vista principal)—: nunca mezcla zonas y no puede salirse de los límites de la caja de entrada. En el chat, llevar el arrastre hasta el **borde superior o inferior** de la zona desplaza el historial y la selección **se prolonga** por las líneas que van entrando, de modo que un mismo arrastre abarca texto que estaba **fuera del viewport**. La selección se mantiene **anclada al texto** que había bajo el cursor al iniciar, así que ni la rueda ni un repintado en vivo (la respuesta generándose token a token) la cancelan ni la desplazan a otro texto: se puede seguir eligiendo mientras se desplaza o mientras el modelo escribe. Mientras se arrastra, la vista deja de seguir el final. Con el panel de aprobaciones abierto, un clic sobre «aprobar» o «declinar» de una línea resuelve esa aprobación.
+- Con la sesión activa trabajando, el primer `esc` pide confirmación («presiona esc otra vez para cancelar razonamiento») y el segundo cancela el trabajo, conservando lo que el modelo ya entregó; cualquier otra tecla la descarta.
 - Bajo la entrada se muestra el modelo en uso y si tiene acceso a herramientas y a la visión (interpretar imágenes).
 - Si el texto de una petición de chat incluye la ruta de un archivo de imagen existente, la imagen se adjunta a ese turno hacia el modelo. Las imágenes son efímeras: no se guardan en el historial, así que un turno posterior que no las vuelva a mencionar no las ve.
 - Al pegar o arrastrar un archivo, la línea de entrada muestra `[nombre.ext]` resaltado; una carpeta muestra `[CARPETA N elementos]` con sus entradas de primer nivel. Al enviar se usa la ruta real, así que una imagen se adjunta igual y el mensaje conserva la referencia al archivo.
@@ -244,24 +245,23 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - Adjuntar una imagen a un modelo que no declara visión avisa en el chat sin bloquear el envío; el usuario decide si cambia de modelo.
 - El marco de la vista nunca excede el alto de la terminal: el historial se recorta a lo disponible para que la entrada no quede fuera.
 - El modal de atajos agrupa las acciones por categorías y alinea la tecla con su descripción.
-- Hay exactamente cuatro modales (modelos, motores, sesiones, atajos); solo uno puede estar abierto a la vez y `Esc` cierra cualquiera.
+- Hay exactamente tres modales (modelos, sesiones, atajos); solo uno puede estar abierto a la vez y `Esc` cierra cualquiera.
 - El agente activo se muestra siempre en el pie de la caja de entrada (y a la izquierda de la línea en la bienvenida); `Tab` recorre los agentes disponibles, en bienvenida y en la vista principal. Con un modal abierto, `Tab` no cicla.
 - Cambiar de sesión no detiene lo que está corriendo.
 - El panel refleja los datos de la sesión activa, no de otra.
 - Con el modal de sesiones abierto, `Ctrl+D` elimina la sesión resaltada; si está trabajando, se confirma antes de borrarla.
-- Con el modal de motores abierto, `Ctrl+X a` añade un motor, `Ctrl+X e` edita el resaltado y `Ctrl+X d` lo elimina; si alguna sesión lo usa, se confirma antes de borrarlo. Editar un motor aplicado se avisa de que el cambio surte efecto al reiniciar.
 - `Ctrl+X n` crea una sesión nueva y la deja activa, sin detener las demás.
 - Con el panel cerrado, el número de aprobaciones pendientes siempre se ve.
-- Una aprobación pendiente se muestra sin robar el teclado: el panel aparece con sus opciones y el input sigue escribiendo. `Ctrl+A` le da el foco (entonces `a`/`d` deciden); sin foco se resuelve con un clic sobre «aprobar» o «declinar».
+- Una aprobación pendiente se muestra sin robar el teclado: el panel aparece con sus opciones y el input sigue escribiendo. `Ctrl+A` le da el foco (entonces `a`/`d` deciden); sin foco se resuelve con un clic sobre «aprobar» o «declinar». La línea conserva **siempre** `aprobar | declinar`: en una columna estrecha cede primero la acción propuesta —y, si aún no cabe, el prefijo de sesión—, nunca las opciones.
 - El nombre y la versión de LocalCli se ven siempre que el panel esté abierto.
 - La pantalla de bienvenida es la primera vista al ejecutar `localcli` y muestra logotipo, nombre con versión, la línea con el modelo en uso y una línea de entrada, todo centrado en la terminal. Los modelos solo se ven dentro del modal.
 - Lo escrito en la bienvenida es la primera petición: crea una sesión nueva y la envía, y la vista cambia a la principal sin repetir ni confirmar.
 - El nombre de la sesión es su título: el generado por el modelo a partir de su primera petición o, mientras no lo haya, el provisional «Nueva sesión».
 - Al borrar la última sesión del proyecto, la vista vuelve a la bienvenida.
-- Desde la bienvenida no hay panel de contexto ni aprobaciones: se abre el modal de modelos (`Ctrl+X m`), el de motores (`Ctrl+X i`) o el de sesiones (`Ctrl+X l`), se escribe, se envía y se sale.
+- Desde la bienvenida no hay panel de contexto ni aprobaciones: se abre el modal de modelos (`Ctrl+X m`) o el de sesiones (`Ctrl+X l`), se escribe, se envía y se sale.
 - La vista principal es un chat: cada petición se responde como conversación. Ningún texto arranca un flujo de trabajo por sí solo.
-- Un flujo solo arranca con un comando explícito escrito en la entrada: `/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`.
-- La paleta de comandos de flujo se despliega al escribir `/` en la entrada —también en la bienvenida— y lista el catálogo que sirve el orquestador: los seis oficiales y los flujos propios de `.localcli/flows/*.json`. Es descubrimiento, no una vía nueva de arranque: no añade comandos que no existan.
+- Un flujo arranca por dos entradas: el comando explícito escrito en la entrada (`/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` o `/ejecutar`) o la herramienta `ejecutar_flujo` que el agente pide durante el turno. Sin ninguna de las dos, ninguna petición arranca un flujo.
+- La paleta de comandos de flujo se despliega al escribir `/` en la entrada —también en la bienvenida— y lista el catálogo que sirve el orquestador: los seis oficiales (sembrados en `~/.config/localcli/flows/`) y los flujos propios de `<proyecto>/.localcli/flows/`. Es descubrimiento, no una vía nueva de arranque: no añade comandos que no existan.
 - Con la paleta desplegada, `↑`/`↓` la recorren, `Tab` autocompleta el comando resaltado en vez de ciclar el agente y `Enter` ejecuta; escribir un espacio retira la paleta y deja paso a la petición.
 - Si una petición parece trabajo ordenado, el sistema puede proponer un TODO, pero no lo ejecuta hasta que el usuario confirme o escriba el comando.
 - El agente activo responde con las herramientas derivadas de sus permisos; el chat no añade ni quita herramientas.
@@ -273,11 +273,11 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] Con el panel cerrado, el chat ocupa todo el ancho.
 - [ ] El panel se abre y se cierra sin interrumpir el trabajo.
 - [ ] El panel muestra los nueve datos definidos.
-- [ ] El pie del panel son tres filas —rama y número de cambios de git, ruta y firma del harness— y se mantienen visibles aunque la lista de tareas no quepa.
+- [ ] El pie del panel conserva la rama y los cambios de git, la ruta (en una o varias filas, sin recortarse) y la firma del harness, y se mantienen visibles aunque la lista de tareas no quepa.
 - [ ] En un proyecto sin git inicializado la fila de git dice `sin iniciar`.
 - [ ] El panel muestra la lista de pasos del agente cuando queda alguno por hacer, y la oculta cuando no hay nada accionable.
 - [ ] El panel muestra los datos de la sesión activa, no los de otra.
-- [ ] Mientras el modelo trabaja se ve el indicador en vivo (`[⠋ Pensando]`, y `[⠋ Usando herramienta: X]` mientras corre una herramienta).
+- [ ] Mientras el modelo trabaja se ve el indicador en vivo (`[⠋ Pensando]`, y `[⠋ Usando herramienta: X]` mientras corre una herramienta), pintado fijo justo encima de la caja de entrada: no se desplaza con el scroll del chat.
 - [ ] El razonamiento no se vuelca por defecto; `Ctrl+R` revela su texto, arriba de la respuesta y distinguible visualmente, y volver a pulsarlo lo oculta sin perderlo.
 - [ ] El conteo de tokens del turno se ve bajo la entrada (`tokens: 54k`).
 - [ ] Cada respuesta muestra el tiempo que tardó en llegar, y mientras se espera el tiempo corre en pantalla y se detiene al cerrarse el turno.
@@ -290,8 +290,9 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] El historial del chat muestra lo escrito por el usuario y lo que responde el agente en globos de color distinto.
 - [ ] El chat respeta el orden de ejecución: el texto previo a una herramienta queda arriba de su línea y el posterior abre un globo nuevo.
 - [ ] Al abrir el modal de modelos, el resaltado está en el modelo en uso.
+- [ ] Las filas del modal de modelos muestran el nombre del modelo (su carpeta en `models/`); ninguna fila muestra una ruta completa.
 - [ ] Elegir un modelo sin capacidad de herramientas avisa sin bloquear.
-- [ ] La rueda del ratón desplaza el historial y arrastrar con el ratón copia al portapapeles el texto seleccionado, que se resalta (video inverso) mientras se elige; la rueda no cancela esa selección (el resaltado se mantiene anclado al texto) y al soltar el resaltado desaparece con el aviso `[Copiado]` arriba a la derecha. La selección no mezcla las zonas: la que empieza en el chat se queda en el chat, y la que empieza en el sidebar se queda en el sidebar.
+- [ ] La rueda del ratón desplaza el historial y arrastrar con el ratón copia al portapapeles el texto seleccionado, que se resalta (video inverso) mientras se elige; la rueda no cancela esa selección (el resaltado se mantiene anclado al texto) y al soltar el resaltado desaparece con el aviso `[Copiado]` arriba a la derecha. La selección no mezcla las zonas: la que empieza en el chat se queda en el chat, la que empieza en el sidebar se queda en el sidebar y la que empieza en la caja de entrada se queda dentro de la caja, sin alcanzar el logotipo, las pistas ni la versión. La selección está anclada al texto: un repintado de la vista (la respuesta generándose token a token) no la cancela ni la mueve a otro texto. **En el chat, un arrastre que llega al borde superior o inferior de la zona desplaza el historial y extiende la selección a las líneas que estaban fuera del viewport;** el texto copiado incluye esas líneas.
 - [ ] Con la sesión trabajando, `esc` pide confirmación y un segundo `esc` cancela; otra tecla la descarta.
 - [ ] Bajo la entrada se ve el modelo en uso y si tiene acceso a herramientas.
 - [ ] Bajo la entrada se ve también si el modelo interpreta imágenes (visión).
@@ -311,29 +312,33 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 - [ ] El nombre y la versión de LocalCli aparecen en el panel.
 - [ ] Cambiar de sesión no detiene ninguna ejecución.
 - [ ] Al ejecutar `localcli` se ve la pantalla de bienvenida con el logotipo sobre el fondo, la caja de entrada (placeholder `"Escribe para iniciar la conversacion"` y línea `[plan] • modelo`), la barra de pistas de teclado y la versión en la esquina inferior derecha, sin lista de modelos visible.
-- [ ] El conjunto de la bienvenida (logotipo, caja de entrada y barra de pistas) aparece centrado en horizontal y en vertical dentro de la terminal, sin recortar el arte; el entorno del logotipo es el fondo de la pantalla.
+- [ ] El conjunto de la bienvenida (logotipo, caja de entrada y barra de pistas) aparece centrado en horizontal y en vertical dentro de la terminal, sin recortar el arte completo cuando cabe; el entorno del logotipo es el fondo de la pantalla.
+- [ ] En una terminal de menos de 70 columnas la bienvenida se ajusta al ancho: pinta el logotipo compacto `L.CLI` y ninguna fila supera el ancho de la pantalla (ni el logotipo, ni la caja, ni la barra de pistas).
+- [ ] En una columna estrecha la línea de estado de la caja envuelve sus chapas en vez de recortarlas —el interruptor `pensar` se sigue viendo y pulsando— y la línea de aprobación conserva siempre `aprobar | declinar`.
 - [ ] La barra de pistas se genera desde el mapa de teclas vigente (`TAB agentes`, `Ctrl+P comandos`, `Ctrl+X M modelos`).
-- [ ] `Ctrl+X m` abre el modal de modelos con la lista del motor activo de la sesión, cada fila rotulada; `↑`/`↓` navegan, `Enter` aplica el resaltado y `Esc` cierra sin cambios. El modelo aplicado se usa para la primera petición y aparece en la línea de estado de la caja.
-- [ ] Sin ningún motor disponible, la bienvenida se muestra igual; al abrir el modal de modelos aparece el aviso «sin modelos» y se puede escribir y enviar.
-- [ ] `Ctrl+X i` abre el modal de motores con nombre, tipo y estado de cada uno, con el de la sesión activa resaltado; `Enter` lo aplica a esa sesión y `Esc` cierra sin cambios.
-- [ ] Con el modal de motores abierto, `Ctrl+X a` añade un motor, `Ctrl+X e` edita el resaltado y `Ctrl+X d` lo elimina pidiendo confirmación si alguna sesión lo usa.
-- [ ] Editar un motor ya aplicado a una sesión avisa de que el cambio surte efecto al reiniciar; añadir, desactivar, reactivar y eliminar se aplican al momento.
-- [ ] Cambiar de motor desde la interfaz no borra el historial ni el nombre de la sesión.
+- [ ] `Ctrl+X m` abre el modal de modelos con la lista de modelos que sirve `llama-server`; `↑`/`↓` navegan, `Enter` aplica el resaltado y `Esc` cierra sin cambios. El modelo aplicado se usa para la primera petición y aparece en la línea de estado de la caja.
+- [ ] Sin el motor disponible, la bienvenida se muestra igual; al abrir el modal de modelos aparece el aviso «sin modelos» y se puede escribir y enviar.
 - [ ] La primera petición escrita en la bienvenida aparece como primer mensaje del chat al cambiar de vista.
 - [ ] La primera petición desde la bienvenida crea una sesión nueva y su nombre pasa a ser un título generado por el modelo.
 - [ ] Al borrar la última sesión, la vista vuelve a la bienvenida.
 - [ ] La transición de bienvenida a interfaz principal no repite la petición ni pide confirmación.
-- [ ] Desde la bienvenida no hay panel de contexto ni aprobaciones; se abre el modal de modelos, el de motores o el de sesiones, se escribe, se envía y se sale.
+- [ ] Desde la bienvenida no hay panel de contexto ni aprobaciones; se abre el modal de modelos o el de sesiones, se escribe, se envía y se sale.
 - [ ] `Ctrl+X l` en la bienvenida abre el modal de sesiones; al elegir una con `Enter` la vista pasa a la principal con el historial de esa sesión.
-- [ ] La vista principal responde como chat; ningún texto arranca un flujo de trabajo sin un comando explícito.
-- [ ] `/planificar`, `/crear`, `/actualizar`, `/eliminar`, `/resolver` y `/ejecutar` arrancan su flujo.
-- [ ] Escribir `/` despliega encima de la entrada la lista de comandos de flujo; escribir filtra, `↑`/`↓` la recorren y `Tab` autocompleta el comando resaltado.
-- [ ] `Enter` con la paleta desplegada ejecuta el comando resaltado y el flujo se arranca por el orquestador; su eco aparece en el chat.
-- [ ] La paleta también se despliega en la bienvenida; ejecutar un comando desde ahí crea la sesión y lleva a la vista principal.
+- [ ] La vista principal responde como chat; ningún texto arranca un flujo de trabajo salvo `/flow:<comando>` o la herramienta `ejecutar_flujo` del agente.
+- [ ] `/flow:planificar`, `/flow:crear`, `/flow:actualizar`, `/flow:eliminar`, `/flow:resolver` y `/flow:ejecutar` arrancan su flujo.
+- [ ] Escribir `/` despliega encima de la entrada la lista de invocaciones —con su superficie propia (`#B1BAF9`) alineada y del ancho de la caja—; escribir filtra, `↑`/`↓` la recorren y `Tab` autocompleta el comando resaltado.
+- [ ] **La paleta se renderiza como overlay: no empuja el logotipo en la bienvenida ni el chat en la vista principal.**
+- [ ] **La paleta muestra como máximo 5 elementos a la vez; si la lista filtrada supera ese tope, muestra scroll vertical con indicadores `▲`/`▼`.**
+- [ ] **`↑`/`↓` navegan y desplazan el viewport al llegar al borde; `pgup`/`pgdown` y la rueda del ratón también desplazan el viewport de la paleta.**
+- [ ] `Tab` autocompleta `/flow:<nombre> ` con el flujo resaltado; `Enter` con la paleta desplegada deja la línea lista y el flujo se arranca por el orquestador al enviar; su eco aparece en el chat.
+- [ ] La paleta también se despliega en la bienvenida; ejecutar un `/flow:` desde ahí crea la sesión y lleva a la vista principal.
+- [ ] Un `/comando` de la interfaz (`/models`, `/descargar`, `/sessions`, `/undo`, `/redo`, `/retry`, `/init`) se resuelve en la vista sin enviarse al agente; `/skill:<nombre>` y un `/comando` desconocido solo dejan un aviso.
+- [ ] `/undo` deshace el último turno de la conversación y `/redo` lo rehace; ninguno toca los archivos y cada uno avisa cuando no hay nada que deshacer o rehacer.
+- [ ] `/retry` re-envía la última petición como turno nuevo; sin petición previa solo avisa.
 - [ ] Una petición sin comando se responde en el chat con las herramientas del agente activo.
 - [ ] La bienvenida se muestra aunque no haya ningún motor disponible.
 - [ ] Con la líder pulsada (`Ctrl+X`) pero sin segunda tecla, no se abre ningún modal y tras el timeout el indicador de líder desaparece.
-- [ ] El logotipo coincide byte a byte con la salida dorada de `internal/tui/testdata/logo.txt`.
+- [ ] El logotipo coincide byte a byte con la salida dorada de `internal/tui/testdata/logo.txt`; el compacto, con la de `internal/tui/testdata/logo-compacto.txt`.
 
 ## Requisitos no funcionales
 
@@ -344,7 +349,6 @@ Es la única información que se muestra fuera del panel, porque es la única cu
 ## Dependencias funcionales
 
 - [[specs/SPEC-INTERFAZ-ATAJOS]]
-- [[specs/SPEC-KEYBINDS]]
 - [[specs/SPEC-PANEL-CONTEXTO]]
 - [[specs/SPEC-SESIONES]]
 - [[specs/SPEC-COLA-TAREAS]]

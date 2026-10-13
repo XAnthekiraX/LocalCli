@@ -4,7 +4,7 @@ tags: [backend, infraestructura]
 depende_de:
   - "[[PROJECT]]"
   - "[[backend/DECISIONS]]"
-  - "[[specs/SPEC-MODELO-MOTOR]]"
+  - "[[specs/SPEC-MODELOS-LLAMACPP]]"
   - "[[specs/SPEC-SESIONES]]"
 relacionado:
   - "[[backend/03-security/SECURITY]]"
@@ -12,17 +12,24 @@ relacionado:
 ---
 # CONFIGURATION — Configuración del backend
 
-`LocalCli` no tiene configuración obligatoria. Arranca y funciona. Casi todo se deriva solo: dónde está el proyecto, qué modelos hay disponibles y qué modelos caben en tu máquina.
+`LocalCli` necesita su raíz de máquina para arrancar. Si no está creada, no arranca solo: lo avisa y pide el comando que la crea. Una vez creada, casi todo se deriva solo: dónde está el proyecto, qué modelos hay descargados y qué modelos caben en tu máquina.
 
-## 1. El comando
+## 1. El comando y sus subcomandos
 
-`localcli` es el comando para arrancar la aplicación. Se instala una vez y queda disponible en todo el ordenador, así que lo ejecutas desde cualquier carpeta:
+`localcli` es el comando. Se instala una vez y queda disponible en todo el ordenador, así que lo ejecutas desde cualquier carpeta. **La carpeta desde la que lo ejecutas es el proyecto.**
 
-```
-localcli
-```
+| Comando | Qué hace |
+|---|---|
+| `localcli` | Arranca el harness sobre la carpeta actual (el proyecto) |
+| `localcli -h` | Lista los comandos disponibles |
+| `localcli -v` | Muestra la versión |
+| `localcli init` | Crea la carpeta global `~/.config/localcli/` y siembra lo que falta |
+| `localcli create` | Crea la configuración del proyecto (`.localcli/`) en la carpeta actual |
 
-La carpeta desde la que lo ejecutas **es** el proyecto. No hay que pasar la ruta como argumento ni elegirla en un menú.
+**Requisito de arranque: la raíz global.** El harness necesita `~/.config/localcli/`. Si no existe, `localcli` **no la crea**: escribe en consola «localcli no iniciada, ejecuta el comando `localcli init`» y termina. `init` es la única forma de crearla.
+
+- **`localcli init`** — crea `~/.config/localcli/` y siembra en ella lo que falte, sin sobrescribir nada de lo que ya haya.
+- **`localcli create`** — crea la configuración **del proyecto** en la carpeta donde estás: `<carpeta actual>/.localcli/`, que es donde viven los agentes y flujos propios.
 
 ## 2. Variables de entorno
 
@@ -30,57 +37,64 @@ Ninguna es obligatoria. No hay variables que apliques por omisión.
 
 | Variable | Propósito | Por defecto | Obligatoria |
 |---|---|---|---|
-| `LOCALCLI_DB_PATH` | Sobrescribe la ruta del archivo SQLite del proyecto | Derivada de la carpeta de ejecución | No |
-| `LOCALCLI_MOTOR` | Motor con el que arrancan las sesiones nuevas: el `id` de una entrada de `motores.json` | La última entrada activa si hay alguna. **Sin ninguna activa, no hay motor de arranque** | No |
-| `LOCALCLI_CONTEXT_LIMIT` | Tope de la ventana de contexto y de los tokens que se respetan al recortar | `16384`, o la ventana del modelo si es menor | No |
+| `LOCALCLI_DB_PATH` | Sobrescribe la ruta del archivo SQLite global | `~/.config/localcli/state.db` | No |
+| `LOCALCLI_CONTEXT_LIMIT` | Fuerza (override) la ventana de contexto; sin ella, se usa el contexto real del modelo | Sin definir: el contexto del modelo (su GGUF) o `16384` si no lo declara | No |
 | `LOCALCLI_ALLOW_INTERNET` | Permite las herramientas de internet | Desactivado | No |
 
-`LOCALCLI_DB_PATH` existe solo para casos raros, como trabajar con la base en otro sitio. En el uso normal no hace falta.
+`LOCALCLI_DB_PATH` existe solo para casos raros, como trabajar con la base en otro sitio. En el uso normal no hace falta: la base es un único archivo global en `~/.config/localcli/state.db`, y no depende de la carpeta desde la que se ejecute.
 
-`LOCALCLI_MOTOR` nombra el motor con el que arrancan las sesiones nuevas, y es una comodidad de arranque, no el mecanismo: la autoridad sobre qué motores existen y cuál usa cada sesión está en `motores.json` y en la sesión. Sin declararlo se usa la última entrada activa del registro. **Si no hay ninguna activa, no se elige ningún motor**: es el estado de partida de una instalación sin runtimes, y lo propio es abrir el modal de motores. Un `LOCALCLI_MOTOR` que no exista en el registro se ignora y se avisa: no se inventa un motor con ese nombre. Ver [[specs/SPEC-MODELO-MOTOR]] y [[backend/04-infrastructure/INTEGRATIONS]].
+**El proveedor y la dirección de la API no son variables de entorno.** Viven en `~/.config/localcli/localcli.json`, y son la base con la que el harness arranca `llama-server` y con la que el cliente habla con él. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
 
-**No existe `LOCALCLI_LLAMACPP_URL`.** La URL de cada motor es un dato suyo, va en su entrada de `motores.json` y no depende del tipo: varios `llamacpp` pueden apuntar a direcciones distintas, igual que varios `ollama`.
-
-`LOCALCLI_CONTEXT_LIMIT` es el tope de la ventana de contexto y del presupuesto con que se recorta: la ventana efectiva nunca lo supera y el nodo de contexto y el historial se derivan de ahí. Bajarlo en máquinas muy justas de memoria es lo habitual. Ver [[backend/DECISIONS]].
+`LOCALCLI_CONTEXT_LIMIT` es un **override**: cuando está definido, manda él. Sin él, la ventana sale del **contexto real del modelo** (su GGUF, `general.context_length`) y, si el modelo no lo declara, de `16384`. Esa ventana se usa para arrancar `llama-server` (`-c`), para el presupuesto del historial y para el recorte por ronda. Bajarlo fuerza menos contexto; no definirlo deja que el modelo use el suyo. Ver [[backend/DECISIONS]].
 
 Sobre `LOCALCLI_ALLOW_INTERNET`: es la única integración que saca información de la máquina, así que no viene activada. El usuario la habilita. Ver [[backend/03-security/SECURITY]].
 
-## 3. Los motores: se declaran, se administran
+## 3. El proveedor: llama.cpp, administrado por el harness
 
-**El modelo no se configura por variable de entorno y no hay modelo por defecto.** El motor tampoco: se declara en un archivo. El flujo es:
+**El modelo no se configura por variable de entorno ni se declara en la configuración global.** El proveedor tampoco se administra: la decisión está cerrada. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
 
-1. `LocalCli` carga `~/.config/localcli/motores.json`, el registro de motores del usuario.
-2. Se conecta al motor de cada sesión y extrae los modelos que declara su servidor.
-3. La interfaz muestra esa lista para que el usuario elija, con el nombre del motor a la vista.
-4. El harness comprueba si el modelo elegido cabe en la máquina y avisa si no.
+1. `LocalCli` lee `~/.config/localcli/localcli.json`, que guarda el proveedor (`llama.cpp`) y la dirección base de la API (`api`). Nada más: ni el modelo ni los modelos descargados.
+2. El usuario elige un modelo del catálogo ([[#8. El catálogo de modelos]]) por su `id` (el nombre de su carpeta). La selección vive en el catálogo y en el estado de la aplicación, no en la configuración global.
+3. El harness arranca `llama-server` con la **ruta del archivo GGUF** del modelo elegido, **identificándolo a `llama-server` por su nombre (carpeta)** para que `/v1/models` y las peticiones del chat usen ese nombre y no la ruta, y con el puerto correspondiente a `api`; comprueba que el servidor responde antes de usarlo.
+4. El harness comprueba si el modelo cabe en la máquina y avisa si no.
 
-El motor se administra, no se configura: se añade, se desactiva y se elimina desde el modal de motores (`Ctrl+X i`), y el registro es un archivo global de la máquina, no del proyecto. El modelo lo elige el usuario, siempre. La lista es la del motor de la sesión, no la de otro. Ver [[specs/SPEC-MODELO-MOTOR]] y [[backend/04-infrastructure/INTEGRATIONS]].
+El servidor no se declara en ninguna parte: **quien lo levanta es el harness**, con el modelo seleccionado, y quien lo detiene también. Cambiar de modelo reinicia el servidor; LocalCli gestiona ese proceso ([[specs/SPEC-MODELOS-LLAMACPP]]). No hay otros runtimes: no se usa Ollama ni se mantiene su almacén duplicado.
 
-El tamaño de contexto no se configura por modelo. Con la extensión `num_ctx` (Ollama) se declara por petición, como la menor entre lo que reporta el modelo en `/api/tags` y el tope (`LOCALCLI_CONTEXT_LIMIT`, 16384 por defecto). Con la extensión `props` (llama.cpp) se lee del servidor, que lo fijó quien lo arrancó con `-c`. Sin extensión que la declare queda **desconocida**, y entonces manda el tope con el aviso de que el límite es del harness. En cualquier caso **el recorte lo hace el harness**, no el servidor: si no alcanza para un turno con herramientas, se avisa con la instrucción de levantar el servidor con más contexto y el turno se recorta de más nuevo a más viejo. Ver [[backend/DECISIONS]].
+El tamaño de contexto se fija **al arrancar** `llama-server` con `-c`, tomándolo del **contexto real del modelo** (su GGUF, `general.context_length`) o de `LOCALCLI_CONTEXT_LIMIT` si se define; si el modelo no lo declara, se usa `16384`. La ventana que el turno respeta es la que el servidor acepta **de verdad**, releída con la extensión `props` de llama.cpp. **El recorte lo hace el harness**, no el servidor: antes de cada ronda se descartan los mensajes más antiguos —y se trunca el resultado de herramienta que por sí solo no quepa— hasta que el prompt cabe en la ventana menos la reserva de salida, avisando del recorte. Ver [[backend/DECISIONS]].
 
 ## 4. Rutas
 
-Todo se deriva de la carpeta desde la que se ejecuta `localcli`:
+Todo se deriva de dos raíces: la carpeta desde la que se ejecuta `localcli` (el proyecto) y `~/.config/localcli/` (la raíz de la máquina).
 
 | Qué | Dónde |
 |---|---|
 | Carpeta del proyecto | La carpeta desde la que se ejecuta `localcli` |
-| Archivo SQLite | `.localcli/state.db` dentro del proyecto, o `LOCALCLI_DB_PATH` si se sobrescribe |
+| Archivo SQLite (global) | `~/.config/localcli/state.db`, o `LOCALCLI_DB_PATH` si se sobrescribe |
+| Proyecto (dimensión lógica) | Una fila de `projects` con el `path` de la carpeta abierta |
 | Documentación | `ai/docs/` dentro del proyecto |
 | TODO de trabajo | `ai/tasks/` dentro del proyecto |
-| Herramientas del usuario | `.localcli/tools/*.json` dentro del proyecto |
-| Agentes del proyecto | `.localcli/agents/<carpeta>/` dentro del proyecto, con `agent.yaml` y `prompt.md` |
+| Configuración del proveedor | `~/.config/localcli/localcli.json` (solo `proveedor` y `api`) |
+| Otras preferencias del harness | `~/.config/localcli/config.json` y `~/.config/localcli/keys.json` |
+| Modelos GGUF | `~/.config/localcli/models/`, un subdirectorio por modelo |
+| Catálogo de modelos | `~/.config/localcli/models.json` |
+| Agentes base | `~/.config/localcli/agents/`, sembrados desde el binario |
+| Flujos oficiales | `~/.config/localcli/flows/`, sembrados desde el binario |
+| Agentes y flujos propios | `<proyecto>/.localcli/agents/` y `<proyecto>/.localcli/flows/`, aditivos |
 | Archivos y carpetas | Todo lo que cuelgue de la carpeta del proyecto |
 
-El proyecto es la carpeta abierta. El chat de una carpeta nunca aparece en otra. Ver [[specs/SPEC-SESIONES]].
+El proyecto es la carpeta abierta. La base es única y global, pero el chat de una carpeta nunca aparece en otra: cada carpeta es una fila de `projects` con su `path` único, y toda sesión cuelga de ella por `project_id`. Ver [[specs/SPEC-SESIONES]].
 
-El archivo SQLite va en `.localcli/state.db` dentro del proyecto, y ese archivo está fuera de git. La ruta se deriva de la carpeta abierta y no necesita variables; `LOCALCLI_DB_PATH` existe solo para los casos raros, como trabajar con la base en otro sitio. Ver [[backend/DECISIONS]].
+El archivo SQLite vive en `~/.config/localcli/state.db`, fuera del proyecto, junto al resto de la configuración del harness, y por eso no se versiona ni se ignora por proyecto. La ruta se deriva de la raíz de la máquina y no necesita variables; `LOCALCLI_DB_PATH` existe solo para los casos raros, como trabajar con la base en otro sitio. Ver [[backend/DECISIONS]].
 
-De `.localcli/` solo se ignora el estado: `state.db` y sus archivos `-shm` y `-wal` son de la máquina. `tools/` y `agents/` son contenido del proyecto y se versionan con él, que es lo que permite que cada clon traiga los mismos agentes base.
+El proyecto solo aporta contenido **aditivo** en `.localcli/`: agentes y flujos propios. No contiene estado de la máquina, así que todo `.localcli/` es contenido del proyecto y se versiona con él.
 
-### Agentes del proyecto
+**El arranque exige la raíz global.** El primer paso del harness es comprobar `~/.config/localcli/`. Si no existe, **no continúa y no la crea**: avisa «localcli no iniciada, ejecuta el comando `localcli init`» y termina. La raíz la crea y siembra `localcli init` —los agentes base, los flujos base, la base de datos (`state.db`, nacida en su versión actual) y la configuración por defecto (`localcli.json`, `config.json`, `keys.json`, `models.json`) y crea `models/`—, sin sobrescribir nunca lo que ya haya; lo que no está en archivos simplemente no aparece: no hay datos de respaldo dentro del código. `localcli create` hace lo propio para el proyecto, creando `<carpeta actual>/.localcli/`. Ver [[backend/DECISIONS]] y [[database/03-operations/SEEDING]].
 
-Cada **carpeta** de `.localcli/agents/` declara un agente, y dentro de ella los dos archivos son obligatorios:
+### Agentes del proyecto (aditivos)
+
+Los agentes **base** (`plan`, `build`, `chat`) se siembran desde el binario en `~/.config/localcli/agents/` al ejecutar `localcli init`. Un proyecto solo **añade** agentes propios en `<proyecto>/.localcli/agents/`; la carga es aditiva y nunca sobrescribe un agente oficial. Si un agente propio declara un `name` que ya existe en los base, se avisa y se conserva el global.
+
+Cada **carpeta** de un directorio `agents/` declara un agente, y dentro de ella los dos archivos son obligatorios:
 
 ```
 .localcli/agents/build/
@@ -91,7 +105,7 @@ Cada **carpeta** de `.localcli/agents/` declara un agente, y dentro de ella los 
 - **`agent.yaml`** — la configuración: `name`, `description` y `permissions`. El nombre del agente lo decide `name`; el de la carpeta es solo donde vive.
 - **`prompt.md`** — las instrucciones del modelo, que se inyectan íntegras como mensaje de sistema.
 
-Los dos base, `plan` y `build`, se versionan con el proyecto. No hay nada que activar: si la carpeta está, el agente existe y `Tab` lo recorre. Una carpeta mal formada se avisa y se salta, y `plan` y `build` quedan disponibles con un prompt de respaldo aunque falten, porque los flujos oficiales los referencian. Un `*.json` suelto en `.localcli/agents/` —el formato antiguo— se avisa nombrándolo, sin cargar: la migración es manual. Ver [[specs/SPEC-AGENTE-BASE]] y [[backend/02-interfaces/INTERFACES-GENERAL]].
+Como los base ya vienen sembrados, no hay que versionarlos en cada proyecto. No hay nada que activar: si la carpeta está, el agente existe y `Tab` lo recorre. Una carpeta mal formada se avisa y se salta, y su disponibilidad es la de cualquier dato: si no está, no aparece —no hay agentes de respaldo en el código—. Un `*.json` suelto en un directorio `agents/` —el formato antiguo— se avisa nombrándolo, sin cargar: la migración es manual. Ver [[specs/SPEC-AGENTE-BASE]] y [[backend/02-interfaces/INTERFACES-GENERAL]].
 
 El ejemplo, tal cual está en disco:
 
@@ -107,32 +121,13 @@ permissions:
 
 Lo que no se nombre queda en `deny`, y `default: allow` no se admite: un `allow` donde se quería un `deny` concedería todo en silencio. Un campo desconocido —`skills`, `herramientas`, `prompt`— hace que el agente no cargue.
 
-### Herramientas del usuario
-
-El usuario puede añadir herramientas sin tocar el código: cada archivo `.json` de `.localcli/tools/` declara una. La carpeta es del proyecto, así que se versiona con él y cada uno lleva las suyas. No hay nada que activar: si el archivo está, la herramienta existe.
-
-```json
-{
-  "nombre": "contar_lineas",
-  "descripcion": "Cuenta las líneas de un archivo del proyecto.",
-  "modo": "lee",
-  "equipo": ["wc", "-l"]
-}
-```
-
-- **Se declaran, no se ejecutan al leerlas.** Un archivo mal formado se avisa y se salta; no rompe el arranque ni las demás herramientas.
-- **No se confiables por estar en la carpeta.** Toda ejecución pide permiso, sin excepción, aunque el agente ya tenga permiso para herramientas de lectura. Ver [[backend/03-security/SECURITY]].
-- **Solo lectura.** `modo` tiene un único valor admisible, `lee`. Declarar `escribe` se rechaza con un aviso: Landlock impide que un proceso escriba en el proyecto, así que una herramienta de escritura no podría cumplir su promesa y fallaría de forma confusa. Si algún día se admite, será una decisión de seguridad nueva, no un cambio de configuración. Ver [[backend/02-interfaces/TOOLS]].
-- **`equipo` es argv, no una línea de shell.** El primer elemento es el programa y los siguientes sus argumentos. No hay shell, no hay comillas que interpretar y no hay encadenado con `|`, `>` ni `&&`.
-- **Se ejecutan como un subproceso** con la misma lista blanca y el mismo aislamiento que la terminal, y su salida se recorta antes de volver al modelo. Ver [[specs/SPEC-TOOLS]].
-
 ## 5. Configuración por ambiente
 
 No hay ambientes de servidor. Hay tres formas de ejecutar:
 
 | Modo | Para qué | Base de datos | Internet |
 |---|---|---|---|
-| Normal | Uso diario | Un archivo por proyecto | Solo si se habilita |
+| Normal | Uso diario | Un único archivo global | Solo si se habilita |
 | Pruebas | Tests automatizados | Base temporal, aislada, que se destruye al terminar | Desactivado |
 | Sin aislamiento fuerte | Sistema sin Landlock | Igual que el normal | Igual que el normal |
 
@@ -142,10 +137,10 @@ El tercer modo no es un flag: depende de si Landlock está disponible en el sist
 
 | Servicio | Necesario para | Si no está |
 |---|---|---|
-| Al menos un motor corriendo en local —`ollama` o `llama-server`— | Generar respuestas y listar los modelos disponibles | El harness no puede generar nada; la interfaz sigue viva y avisa de cómo levantarlo |
+| `llama-server` (lo arranca el propio harness) | Generar respuestas | El harness no puede generar nada; lo arranca con el modelo elegido y, si falta el binario o el modelo no está descargado, avisa de cómo resolverlo |
 | Landlock (Linux 5.13+) | El bloqueo estructural de escritura en la terminal | La terminal sigue funcionando, con garantía más débil, y el harness lo dice |
 
-No hay más servicios. No hay base de datos que levantar, ni migraciones que aplicar a mano, ni cuentas que crear. Ver [[specs/SPEC-MODELO-MOTOR]].
+`llama-server` no es un servicio externo que haya que mantener: forma parte del ciclo de vida que gestiona LocalCli. No hay más servicios. No hay base de datos que levantar, ni migraciones que aplicar a mano, ni cuentas que crear. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
 
 ## 7. Preferencias del usuario
 
@@ -153,106 +148,66 @@ Además de `~/.config/localcli/keys.json` (el mapa de teclas), el usuario tiene 
 
 ```json
 {
-  "ultimo_motor": "ollama-local",
-  "ultimo_modelo": "llama3.2",
   "ultimo_agente": "build",
   "historial_tokens": 4096
 }
 ```
 
 - Son **globales del usuario**, no de un proyecto: viven fuera de la carpeta y no se versionan.
-- `ultimo_motor` guarda el `id` de la última entrada de `motores.json` que se usó, y es de qué motor era cuando se eligió `ultimo_modelo`. Los dos van juntos: **el mismo nombre de modelo no significa lo mismo en runtimes distintos**, así que el modelo recordado solo se reutiliza si el motor recordado es el que tiene la sesión. Si uno de los dos no cuadra con el motor de la sesión, se vuelve a autodetectar.
-- El par motor/modelo de una sesión se guarda **en la sesión** (`sessions`), no en este archivo. Estas preferencias son el punto de partida de las sesiones nuevas, no el estado de las existentes.
-- `historial_tokens` es el presupuesto de tokens del historial de conversación que se le entrega al modelo; sin él se usa `LOCALCLI_CONTEXT_LIMIT` y, en su defecto, un valor por defecto. Ver [[specs/SPEC-HISTORIAL-CONVERSACION]].
-- Un archivo ausente o ilegible no rompe el arranque: se usan los valores por defecto (`plan` como agente, autodetección como modelo y motor).
-- Un `ultimo_motor` que ya no esté registrado o activo no se reutiliza, y **no se sustituye por otro automático**: es el caso del registro sin motores activos, que se resuelve abriendo el modal.
-- La interfaz los escribe al elegir motor o modelo, o al cambiar de agente; no hay que editar el archivo a mano. Ver [[specs/SPEC-MODELO-MOTOR]].
+- **El modelo elegido no está aquí.** La selección del modelo se gestiona por el catálogo y el estado de la aplicación ([[#8. El catálogo de modelos]]), no en la configuración global: `localcli.json` solo guarda `proveedor` y `api`. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
+- `ultimo_agente` es el punto de partida de las sesiones nuevas.
+- `historial_tokens` es el presupuesto de tokens del historial de conversación que se le entrega al modelo; sin él se usa `LOCALCLI_CONTEXT_LIMIT` y, en su defecto, la mitad de la ventana efectiva (y `4096` si no se conoce la ventana). Ver [[specs/SPEC-HISTORIAL-CONVERSACION]].
+- Un archivo ausente o ilegible no rompe el arranque: se usan los valores por defecto (`plan` como agente).
+- La interfaz los escribe al cambiar de agente; no hay que editar el archivo a mano.
 
-## 8. El registro de motores
+## 8. El catálogo de modelos
 
-Los motores viven en `~/.config/localcli/motores.json`, un archivo global de la máquina:
+Los modelos descargados viven en `~/.config/localcli/models/`, un archivo GGUF original **por modelo dentro de su subdirectorio**, sin copias de ejecución. **La carpeta de cada modelo es su nombre** (`id`): con ese nombre se le lista en la interfaz, se le selecciona y se le nombra al servidor; la ruta del GGUF es solo el detalle interno de arranque:
+
+```
+~/.config/localcli/models/
+└── qwen3-14b/
+    ├── qwen3-14b-q4_k_m.gguf
+    └── info.json
+```
+
+El registro de lo descargado es el catálogo `~/.config/localcli/models.json`, **independiente de la configuración global**:
 
 ```json
 {
-  "motores": [
+  "modelos": [
     {
-      "id": "ollama-local",
-      "nombre": "Ollama local",
-      "tipo": "ollama",
-      "url": "http://localhost:11434",
-      "activo": true,
-      "extensiones": ["num_ctx", "show", "tags"]
-    },
-    {
-      "id": "router-13b",
-      "nombre": "Router 13B",
-      "tipo": "llamacpp",
-      "url": "http://localhost:8080",
-      "activo": true,
-      "extensiones": ["props"]
-    },
-    {
-      "id": "gpu-remota",
-      "nombre": "GPU de casa",
-      "tipo": "ollama",
-      "url": "http://192.168.1.20:11434",
-      "activo": false,
-      "extensiones": ["num_ctx", "show", "tags"]
+      "id": "qwen3-14b",
+      "ruta": "~/.config/localcli/models/qwen3-14b/qwen3-14b-q4_k_m.gguf",
+      "repo": "QuantFactory/Qwen3-14B-GGUF",
+      "archivo": "qwen3-14b-q4_k_m.gguf",
+      "mmproj": "mmproj-f16.gguf",
+      "ventana": 4096,
+      "tamano": 9123456789
     }
   ],
-  "modelos_por_motor": {
-    "ollama-local": ["qwen3:8b", "gemma3:12b"],
-    "router-13b": ["qwen3-14b-q4"]
-  }
+  "seleccionado": "qwen3-14b"
 }
 ```
 
-- **`id`** — identidad estable del motor, con la que las sesiones lo nombran. No cambia aunque se le edite el nombre o la URL, para que las sesiones que lo usaban no se queden huérfanas.
-- **`nombre`** — etiqueta para el usuario, la que se ve en el modal y en la línea de estado.
-- **`tipo`** — `ollama` o `llamacpp`. Es cerrado: un tipo desconocido se rechaza al cargar y se avisa con el nombre.
-- **`url`** — dirección base del servidor. Es del motor, no del tipo, así que admite varias instancias de cada tipo.
-- **`activo`** — si el motor se puede usar. Desactivar no borra nada: el registro se queda y las sesiones que lo usaban siguen existiendo, solo que avisan hasta que se elija otro o se reactive.
-- **`modelos_por_motor`** — el último catálogo que se vio de cada motor, para que el modal abra al instante. Es una caché de lo último conocido, no una verdad: al abrir se pregunta al motor y lo que responda manda.
+- **`id`** — identidad del modelo en el catálogo y su **nombre**: el nombre de su subdirectorio en `models/`. Es con lo que las sesiones lo nombran, la interfaz lo muestra y el servidor lo identifica al arrancarlo. Nunca es una ruta.
+- **`ruta`** — ruta del archivo GGUF original en `models/`. Es la que se pasa a `llama-server` al arrancar; no se copia el archivo a ningún otro sitio y no se expone como nombre del modelo.
+- **`repo`** / **`archivo`** — repositorio de Hugging Face de origen y nombre de la variante GGUF, para identificar el modelo y reanudar o redescargarlo.
+- **`mmproj`** — nombre del proyector multimodal dentro de la carpeta del modelo, si es multimodal. Es opcional: si falta, el harness usa por convención el primer `mmproj*.gguf` de la carpeta (`models/<id>/`). El proyector se pasa a `llama-server` con `--mmproj`; sin él, el modelo no procesa imágenes. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
+- **`ventana`** / **`tamano`** — metadatos del modelo: **contexto real del modelo** (leído de su GGUF, `general.context_length`, al registrarlo) y tamaño, con los que el harness fija el `-c` de `llama-server` y comprueba si el modelo cabe.
+- **`seleccionado`** — el modelo activo, por su `id` (nombre de carpeta). La selección se gestiona por el catálogo y el estado de la aplicación, **nunca** en `localcli.json`. Cambiar de modelo reinicia `llama-server`. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
 
-El archivo es del usuario y se administra desde el modal de motores (`Ctrl+X i`), pero se puede editar a mano. **Si el archivo está ausente, el registro queda vacío y no se siembra nada**: LocalCli se puede instalar en una máquina sin ningún runtime de inferencia, así que no se presupone que haya uno. Es un estado válido y estable, no un error; lo propio es abrir el modal de motores y activar o dar de alta el que haya. Si está mal formado, se avisa el error y el registro queda igualmente vacío. Ver [[specs/SPEC-MODELO-MOTOR]].
+El catálogo **no se siembra con modelos**: nace vacío (`"modelos": [], "seleccionado": null`), porque los modelos los descarga el usuario. Sí se siembra el archivo y se crea `models/`. LocalCli escribe el catálogo al **descargar** un modelo (antes de empezar, comprueba si el archivo ya existe para no descargarlo dos veces) y al **seleccionarlo**, y nunca borra un modelo existente aunque haya errores. Una descarga interrumpida se reanuda si el servidor lo permite. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
 
-**El registro se entrega escrito.** LocalCli trae un `motores.json` de ejemplo con las dos entradas ya configuradas —tipo, dirección y extensiones— y **`activo: false`**, para que el usuario solo tenga que activar la que tenga instalada en vez de escribir las direcciones de referencia:
+La descarga se inicia desde la interfaz con el modal «DESCARGAR MODELOS» (`/descargar` o `<leader>d`): el usuario pega la URL de un archivo `.gguf`, el nombre se deriva del archivo (sin la extensión) y se muestra en directo; al confirmar, la descarga corre en segundo plano con reanudación, validación de tamaño y, si la URL es de Hugging Face, resolución del hash SHA256 vía la API del repositorio. El archivo se guarda en `models/<nombre>/<archivo>` y se registra en `models.json`; una descarga en curso se cancela al lanzar otra o al cerrar el modal con `Esc`. Ver [[specs/SPEC-INTERFAZ]] y [[specs/SPEC-KEYBINDS]].
 
-```json
-{
-  "motores": [
-    {
-      "id": "ollama-local",
-      "nombre": "Ollama local",
-      "tipo": "ollama",
-      "url": "http://localhost:11434",
-      "activo": false,
-      "extensiones": ["num_ctx", "show", "tags"]
-    },
-    {
-      "id": "llamacpp-local",
-      "nombre": "llama.cpp local",
-      "tipo": "llamacpp",
-      "url": "http://localhost:8080",
-      "activo": false,
-      "extensiones": ["props"]
-    }
-  ],
-  "modelos_por_motor": {}
-}
-```
-
-Que ninguna entre activa es lo que hace que no haya proveedor por defecto: **el default que no existe es el activo**, no los datos. Ver [[specs/SPEC-MODELO-MOTOR]].
-
-El campo `extensiones` es opcional y ausente se lee como «solo núcleo común». Un motor sin él funciona y el harness declara desconocido lo que no informa, en vez de suponerlo.
-
-**Editar un motor ya aplicado se aplica al reiniciar.** Añadir, desactivar, reactivar y eliminar sí se aplican al momento. La razón está en [[backend/DECISIONS]]: el adaptador vive en memoria mientras corre el harness, y recrearlo en caliente dejaría dos versiones del mismo motor sirviendo turnos a la vez.
+Un archivo ausente se trata como catálogo vacío; uno mal formado se avisa y se trata igual, sin sobrescribirlo. Los errores de validación **no sobrescriben** la configuración ni el catálogo.
 
 ## Referencias
 
-- [[backend/02-interfaces/TOOLS]] — el contrato de una herramienta del usuario y cómo se ejecuta.
+- [[backend/02-interfaces/TOOLS]] — el contrato del catálogo de herramientas y su capa universal.
 - [[specs/SPEC-TOOLS]] — la especificación funcional del catálogo.
-- [[backend/04-infrastructure/INTEGRATIONS]] — cómo se habla con los motores de inferencia y cómo se listan los modelos.
+- [[backend/04-infrastructure/INTEGRATIONS]] — cómo se habla con llama-server y cómo se listan los modelos.
 - [[backend/03-security/SECURITY]] — los límites de lo que puede hacer una herramienta.
 - [[backend/DECISIONS]] — decisiones de configuración ya cerradas.
 - [[PROJECT]] — requisitos en la máquina y despliegue.

@@ -1,3 +1,3 @@
 # Sin frontmatter
 
-Cuerpo plano que enlaza a [[a]].
+Solo cuerpo, sin bloque.

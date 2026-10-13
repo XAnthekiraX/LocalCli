@@ -1,117 +1,149 @@
 package agent
 
-// loader.go — T-B034-05: cargar un agente desde su CARPETA.
-//
-// Fuente de verdad: ai/docs/specs/SPEC-AGENTE-BASE.md §Dónde se definen (cada
-// agente es una carpeta con `agent.yaml` y `prompt.md`; los dos obligatorios) y
-// ai/docs/backend/04-infrastructure/CONFIGURATION.md §Agentes del proyecto.
-//
-// Los agentes son datos: este módulo solo los lee. Cada error de carga nombra la
-// carpeta, para que un YAML roto no se confunda con otro. El nombre del agente
-// sale del campo `name`, no del nombre de la carpeta. El `prompt.md` se lee
-// íntegro, sin recortar, y un archivo vacío hace que el agente no cargue.
-
 import (
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"localcli/internal/tools"
 )
 
-// Los dos archivos de una carpeta de agente.
-const (
-	ArchivoConfig = "agent.yaml"
-	ArchivoPrompt = "prompt.md"
-)
-
-// Cargar lee y valida un agente desde una carpeta: `agent.yaml` y `prompt.md`
-// son los dos obligatorios. El nombre del agente sale de `name`, no del nombre
-// de la carpeta; el `prompt.md` se lee íntegro, sin recortar, y un archivo vacío
-// hace que el agente no cargue.
+// Cargar lee y valida un agente de su carpeta. `agent.yaml` y `prompt.md` son
+// obligatorios; un prompt vacío no carga.
 func Cargar(dir string) (Agente, error) {
-	rutaConfig := filepath.Join(dir, ArchivoConfig)
-	datos, err := os.ReadFile(rutaConfig)
+	datos, err := os.ReadFile(filepath.Join(dir, ArchivoConfig))
 	if err != nil {
-		return Agente{}, errAgente("no se pudo leer " + rutaConfig + ": " + err.Error())
+		return Agente{}, errorf("falta `%s` en %s: %w", ArchivoConfig, dir, err)
 	}
 	a, err := DecodificarAgente(datos)
 	if err != nil {
-		return Agente{}, errAgente(dir + ": " + err.Error())
+		return Agente{}, errorf("%s: %w", dir, err)
 	}
-	rutaPrompt := filepath.Join(dir, ArchivoPrompt)
-	prompt, err := os.ReadFile(rutaPrompt)
+	prompt, err := os.ReadFile(filepath.Join(dir, ArchivoPrompt))
 	if err != nil {
-		return Agente{}, errAgente(dir + ": falta `" + ArchivoPrompt + "`: " + err.Error())
+		return Agente{}, errorf("falta `%s` en %s: %w", ArchivoPrompt, dir, err)
 	}
 	if strings.TrimSpace(string(prompt)) == "" {
-		return Agente{}, errAgente(dir + ": `" + ArchivoPrompt + "` está vacío")
+		return Agente{}, errorf("`%s` está vacío en %s", ArchivoPrompt, dir)
 	}
 	a.Prompt = string(prompt)
+	a.Origen = dir
 	return a, nil
 }
 
-// CargarCarpeta lee todos los agentes de un directorio de agentes: cada
-// SUBcarpeta es un agente, en orden alfabético. Un archivo suelto se ignora (el
-// arranque avisa aparte de los `*.json` del formato antiguo). Un agente roto
-// detiene la carga: no se arranca con un catálogo a medias sin avisar.
-func CargarCarpeta(dir string) ([]Agente, error) {
+// CargarCarpeta carga cada subcarpeta como un agente. Una carpeta inválida se
+// salta con un aviso, igual que un `*.json` suelto (formato antiguo). Una
+// carpeta inexistente no es un error.
+func CargarCarpeta(dir string) (agentes []Agente, avisos []string) {
 	entradas, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, errAgente("no se pudo leer la carpeta de agentes " + dir + ": " + err.Error())
-	}
-	nombres := make([]string, 0, len(entradas))
-	for _, e := range entradas {
-		if !e.IsDir() {
-			continue
+		if os.IsNotExist(err) {
+			return nil, nil
 		}
-		nombres = append(nombres, e.Name())
+		return nil, []string{"agentes: no se pudo leer " + dir + ": " + err.Error()}
 	}
-	sort.Strings(nombres)
 
-	agentes := make([]Agente, 0, len(nombres))
-	for _, nombre := range nombres {
+	for _, e := range entradas {
+		if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".json") {
+			avisos = append(avisos, "agentes: `"+e.Name()+"` usa el formato antiguo; "+
+				"conviértelo a una carpeta con `"+ArchivoConfig+"` y `"+ArchivoPrompt+"`")
+		}
+	}
+
+	for _, nombre := range subcarpetas(entradas) {
 		a, err := Cargar(filepath.Join(dir, nombre))
 		if err != nil {
-			return nil, err
+			avisos = append(avisos, "agentes: se ignora la carpeta `"+nombre+"`: "+err.Error())
+			continue
 		}
 		agentes = append(agentes, a)
 	}
-	return agentes, nil
+	return agentes, avisos
 }
 
-// PorNombre devuelve el agente con ese nombre exacto. El segundo valor es
-// false si no está: el relevo `plan`→`build` falla si falta cualquiera de los
-// dos, en vez de seguir con un agente a medias.
-func PorNombre(agentes []Agente, nombre string) (Agente, bool) {
-	for _, a := range agentes {
-		if a.Nombre == nombre {
-			return a, true
+func subcarpetas(entradas []os.DirEntry) []string {
+	nombres := make([]string, 0, len(entradas))
+	for _, e := range entradas {
+		if e.IsDir() {
+			nombres = append(nombres, e.Name())
 		}
 	}
-	return Agente{}, false
+	sort.Strings(nombres)
+	return nombres
 }
 
-// OrdenarNombres devuelve los nombres de un catálogo de agentes en un orden
-// estable para presentarlos: `plan` y `build` primero —son los agentes base y
-// los que arrancan los flujos por defecto— y el resto alfabético. Un catálogo
-// vacío devuelve una lista vacía.
-func OrdenarNombres(agentes map[string]Agente) []string {
-	primeros := []string{tools.AgentePlan, tools.AgenteBuild}
-	out := make([]string, 0, len(agentes))
-	for _, n := range primeros {
-		if _, ok := agentes[n]; ok {
-			out = append(out, n)
-		}
+// CargarAditivo carga los agentes base y los propios. Ante una colisión de
+// `name`, avisa y conserva el base.
+func CargarAditivo(baseDir, proyectoDir string) (*Catalogo, []string) {
+	c := NuevoCatalogo()
+
+	base, avisos := CargarCarpeta(baseDir)
+	enBase := make(map[string]bool, len(base))
+	for _, a := range base {
+		c.Agregar(a)
+		enBase[a.Nombre] = true
 	}
-	resto := make([]string, 0, len(agentes))
-	for n := range agentes {
-		if n == tools.AgentePlan || n == tools.AgenteBuild {
+
+	propios, av := CargarCarpeta(proyectoDir)
+	avisos = append(avisos, av...)
+	for _, a := range propios {
+		existente, ok := c.Buscar(a.Nombre)
+		if !ok {
+			c.Agregar(a)
 			continue
 		}
-		resto = append(resto, n)
+		if enBase[a.Nombre] {
+			avisos = append(avisos, "agentes: el agente propio `"+a.Nombre+"` ("+a.Origen+
+				") repite el nombre de un agente base ("+existente.Origen+"); se conserva el base")
+			continue
+		}
+		avisos = append(avisos, "agentes: el agente propio `"+a.Nombre+"` ("+a.Origen+
+			") repite el nombre de otro agente propio ("+existente.Origen+"); se conserva el primero")
 	}
-	sort.Strings(resto)
-	return append(out, resto...)
+	return c, avisos
 }
+
+// Catalogo es el conjunto de agentes disponibles, indexado por `name`.
+type Catalogo struct {
+	porNombre map[string]Agente
+	orden     []string
+}
+
+// NuevoCatalogo devuelve un catálogo vacío.
+func NuevoCatalogo() *Catalogo {
+	return &Catalogo{porNombre: map[string]Agente{}}
+}
+
+// Agregar mete un agente si su `name` no estaba ya. Devuelve false si lo repite.
+func (c *Catalogo) Agregar(a Agente) bool {
+	if _, existe := c.porNombre[a.Nombre]; existe {
+		return false
+	}
+	c.porNombre[a.Nombre] = a
+	c.orden = append(c.orden, a.Nombre)
+	return true
+}
+
+// Buscar devuelve el agente con ese `name` exacto.
+func (c *Catalogo) Buscar(nombre string) (Agente, bool) {
+	a, ok := c.porNombre[nombre]
+	return a, ok
+}
+
+// Nombres devuelve los nombres en orden de carga.
+func (c *Catalogo) Nombres() []string {
+	out := make([]string, len(c.orden))
+	copy(out, c.orden)
+	return out
+}
+
+// Agentes devuelve los agentes en orden de carga.
+func (c *Catalogo) Agentes() []Agente {
+	out := make([]Agente, 0, len(c.orden))
+	for _, nombre := range c.orden {
+		out = append(out, c.porNombre[nombre])
+	}
+	return out
+}
+
+// Len devuelve cuántos agentes tiene el catálogo.
+func (c *Catalogo) Len() int { return len(c.orden) }

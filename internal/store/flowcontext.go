@@ -1,88 +1,77 @@
 package store
 
-// flowcontext.go — el bloque de contexto de un flujo (migración 003).
-//
-// Fuente de verdad: ai/docs/specs/SPEC-MOTOR-FLUJOS.md §Bloque de contexto y
-// ai/docs/database/01-schema/TABLES.md §flow_context. Cada etapa de un flujo deja
-// aquí su aportación optimizada; la etapa `entrega` la lee entera para redactar.
-// Es estado de ejecución de la sesión: se
-// reemplaza en cada ejecución del flujo y cae en cascada con su sesión.
-//
-// El orden es la `position`, que es el índice de la etapa en la secuencia del
-// flujo; la clave única (session_id, flow, stage) hace idempotente volver a
-// correr el mismo flujo.
+import (
+	"database/sql"
+	"fmt"
+	"time"
 
-import "database/sql"
+	"github.com/google/uuid"
+)
 
-// FlowContext es una fila de `flow_context`: la aportación de una etapa al
-// bloque de contexto de un flujo.
-type FlowContext struct {
-	ID        string
-	SessionID string
-	Flow      string // nombre del flujo (p. ej. "resolver")
-	Stage     string // id de la etapa
-	StageName string // nombre visible de la etapa
-	Position  int    // orden en la secuencia, 0-indexado
-	Content   string // aportación optimizada
-	CreatedAt string
+// AporteFlow es la contribución de una etapa al bloque de contexto de su flujo.
+type AporteFlow struct {
+	Etapa     string
+	Nombre    string
+	Posicion  int
+	Contenido string
 }
 
-// LimpiarBloque deja vacío el bloque de un flujo en una sesión. Se llama al
-// arrancar una ejecución: el bloque nuevo no hereda las aportaciones del
-// anterior.
-func LimpiarBloque(db *sql.DB, sessionID, flujo string) error {
-	_, err := db.Exec(`DELETE FROM flow_context WHERE session_id = ? AND flow = ?`, sessionID, flujo)
-	return traducirError(err)
-}
-
-// GuardarEntradaBloque inserta o reemplaza la aportación de una etapa. La clave
-// única (session_id, flow, stage) hace que re-ejecutar el flujo actualice la
-// fila en vez de duplicarla.
-func GuardarEntradaBloque(db *sql.DB, sessionID string, x *FlowContext) error {
-	now := x.CreatedAt
-	if now == "" {
-		now = nowISO()
+// GuardarFlowContext guarda (o reemplaza) la contribución de una etapa al bloque
+// de contexto de un flujo de la sesión.
+func GuardarFlowContext(db *sql.DB, projectID, sessionID, flujo, etapa, nombre string, posicion int, contenido string) error {
+	if err := sesionEnProyecto(db, projectID, sessionID); err != nil {
+		return err
 	}
-	id := x.ID
-	if id == "" {
-		id = newID()
-	}
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO flow_context (id, session_id, flow, stage, stage_name, position, content, created_at)
- VALUES (?, ?, ?, ?, ?, ?, ?, ?)
- ON CONFLICT (session_id, flow, stage) DO UPDATE SET
-   stage_name = excluded.stage_name,
-   position   = excluded.position,
-   content    = excluded.content,
-   created_at = excluded.created_at`,
-		id, sessionID, x.Flow, x.Stage, x.StageName, x.Position, x.Content, now,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT (session_id, flow, stage) DO UPDATE SET
+		   stage_name = excluded.stage_name,
+		   position   = excluded.position,
+		   content    = excluded.content`,
+		uuid.New().String(), sessionID, flujo, etapa, nombre, posicion, contenido, now,
 	)
 	if err != nil {
-		return traducirError(err)
+		return fmt.Errorf("store: no se pudo guardar el bloque del flujo: %w", err)
 	}
-	x.ID, x.SessionID, x.CreatedAt = id, sessionID, now
 	return nil
 }
 
-// EntradasDelBloque devuelve las aportaciones de un flujo en una sesión, en el
-// orden de la secuencia. Acelera idx_flow_context_unico.
-func EntradasDelBloque(db *sql.DB, sessionID, flujo string) ([]FlowContext, error) {
+// ListarFlowContext devuelve las contribuciones de un flujo, en orden de etapa.
+func ListarFlowContext(db *sql.DB, projectID, sessionID, flujo string) ([]AporteFlow, error) {
+	if err := sesionEnProyecto(db, projectID, sessionID); err != nil {
+		return nil, err
+	}
 	rows, err := db.Query(
-		`SELECT id, session_id, flow, stage, stage_name, position, content, created_at
- FROM flow_context
- WHERE session_id = ? AND flow = ?
- ORDER BY position`, sessionID, flujo)
+		`SELECT stage, stage_name, position, content FROM flow_context
+		 WHERE session_id = ? AND flow = ? ORDER BY position`,
+		sessionID, flujo,
+	)
 	if err != nil {
-		return nil, traducirError(err)
+		return nil, err
 	}
 	defer rows.Close()
-	var out []FlowContext
+
+	var aportes []AporteFlow
 	for rows.Next() {
-		var x FlowContext
-		if err := rows.Scan(&x.ID, &x.SessionID, &x.Flow, &x.Stage, &x.StageName, &x.Position, &x.Content, &x.CreatedAt); err != nil {
-			return nil, traducirError(err)
+		var a AporteFlow
+		if err := rows.Scan(&a.Etapa, &a.Nombre, &a.Posicion, &a.Contenido); err != nil {
+			return nil, err
 		}
-		out = append(out, x)
+		aportes = append(aportes, a)
 	}
-	return out, traducirError(rows.Err())
+	return aportes, rows.Err()
+}
+
+// VaciarFlowContext deja el bloque de un flujo en blanco: cada corrida no hereda
+// la anterior.
+func VaciarFlowContext(db *sql.DB, projectID, sessionID, flujo string) error {
+	if err := sesionEnProyecto(db, projectID, sessionID); err != nil {
+		return err
+	}
+	if _, err := db.Exec("DELETE FROM flow_context WHERE session_id = ? AND flow = ?", sessionID, flujo); err != nil {
+		return fmt.Errorf("store: no se pudo vaciar el bloque del flujo: %w", err)
+	}
+	return nil
 }

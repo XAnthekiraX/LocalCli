@@ -12,10 +12,10 @@
                                                                                                     
                                               MODELOS                                               
                                                                                                     
-                                               llama3.2                                             
-                                             › qwen2.5                                              
+                           › Ollama local / qwen2.5                                                 
+                             Ollama local / llama3.2  (sin herramientas)                            
+                             llama.cpp 8080 / mistral                                               
                               (↑/↓ mover · enter aplicar · esc cerrar)                              
-                                                                                                    
                                                                                                     
                                                                                                     
                                                                                                     

@@ -17,7 +17,7 @@ relacionado:
 
 ## 1. Estructura global
 
-La base de datos de LocalCli es un archivo SQLite por proyecto, en la carpeta de estado de la carpeta abierta. El modo WAL está activo. No hay servidor de base de datos.
+La base de datos de LocalCli es un **único archivo SQLite global**, en `~/.config/localcli/state.db`. Guarda las sesiones de todos los proyectos y las separa por la ruta de la carpeta abierta: cada proyecto es una fila de `projects` y cada sesión cuelga de él por `project_id`. El modo WAL está activo. No hay servidor de base de datos.
 
 El esquema tiene dos naturalezas y conviene no confundirlas:
 
@@ -26,7 +26,7 @@ El esquema tiene dos naturalezas y conviene no confundirlas:
 
 SQLite solo modela el primer grupo. El segundo se documenta en [[database/02-rules/DATA_FLOW]].
 
-No hay usuarios ni autenticación: el proyecto es una carpeta y el acceso lo controla el sistema de archivos. El aislamiento entre proyectos es físico, un archivo por carpeta.
+No hay usuarios ni autenticación: el proyecto es una carpeta y el acceso lo controla el sistema de archivos. El aislamiento entre proyectos es **lógico**, no físico: un solo archivo guarda todos los proyectos y toda consulta se acota por `project_id`. Un `JOIN` olvidado sería una fuga entre carpetas; por eso el proyecto es una columna obligatoria de `sessions` y no una convención del código.
 
 ### Convenciones
 
@@ -41,13 +41,14 @@ La versión del esquema no ocupa tabla: se guarda en el `PRAGMA user_version` de
 
 | Tabla | Propósito |
 |---|---|
+| `projects` | Un proyecto: la carpeta abierta, que agrupa las sesiones de ese directorio |
 | `sessions` | Una sesión de trabajo: nombre, capa, estado y el par motor/modelo con el que trabaja |
 | `messages` | Los mensajes de la conversación, de usuario y de agente |
 | `reasoning` | El razonamiento del modelo de cada mensaje de agente, acumulado del streaming |
 | `approvals` | Las aprobaciones pendientes y resueltas de cada sesión |
 | `context_audit` | Qué documentación entró o salió del contexto de cada etapa, y por qué |
 | `change_history` | Qué archivo se cambió, qué había antes y qué quedó |
-| `todos` | La lista de pasos de una sesión, mantenida con `actualizar_todo` |
+| `todos` | La lista de pasos de una sesión, mantenida con `crear_todo` y `actualizar_todo`; una tarea principal puede agrupar sus subtareas |
 | `flow_context` | El bloque de contexto de un flujo: una aportación optimizada por etapa |
 | `chat_evento` | Las líneas de procesamiento del chat: sub-procesos y herramientas, que se pintan pero no entran al contexto |
 
@@ -57,11 +58,21 @@ El detalle de cada columna está en [[database/01-schema/TABLES]]. Las relacione
 
 Resumen estructural. Los valores permitidos, los `NULL` y los valores por defecto de cada columna están en [[database/01-schema/TABLES]].
 
+### `projects`
+
+| Campo | Tipo | Clave | Notas |
+|---|---|---|---|
+| `id` | TEXT | PK | UUID v4, identidad estable de la fila |
+| `path` | TEXT | UNIQUE | Ruta absoluta de la carpeta del proyecto. `UNIQUE`: una carpeta es un proyecto |
+| `created_at` | TEXT | | ISO 8601 UTC |
+| `updated_at` | TEXT | | ISO 8601 UTC |
+
 ### `sessions`
 
 | Campo | Tipo | Clave | Notas |
 |---|---|---|---|
 | `id` | TEXT | PK | UUID v4 |
+| `project_id` | TEXT | FK → `projects.id` | `ON DELETE CASCADE`. Proyecto al que pertenece la sesión |
 | `name` | TEXT | | Nombre de la sesión |
 | `layer` | TEXT | | Capa en la que trabaja. `NULL` si la sesión es general |
 | `status` | TEXT | | Ver [[database/01-schema/ENUMS]] |
@@ -136,11 +147,14 @@ Resumen estructural. Los valores permitidos, los `NULL` y los valores por defect
 |---|---|---|---|
 | `session_id` | TEXT | PK | FK → `sessions.id`. `ON DELETE CASCADE` |
 | `position` | INTEGER | PK | Orden del paso. Clave compuesta `(session_id, position)` |
+| `parent_position` | INTEGER | | Posición de la tarea principal que agrupa este paso. `NULL` si el paso es raíz |
 | `content` | TEXT | | Qué hay que hacer |
 | `status` | TEXT | | `pendiente`, `en_progreso`, `completada` o `cancelada` |
 | `priority` | TEXT | | `alta`, `media` o `baja`. Por defecto `media` |
 | `created_at` | TEXT | | ISO 8601 UTC |
 | `updated_at` | TEXT | | ISO 8601 UTC |
+
+La jerarquía es de un nivel y vive en `parent_position`: los pasos raíz la llevan en `NULL` y los agrupados apuntan a la `position` de otra fila de la misma sesión. No es una clave foránea declarada —SQLite no puede añadir por `ALTER TABLE` una autorreferencia compuesta ni un `CHECK` que mire otras filas—: la validez de la referencia la impone la capa de datos al escribir. Ver [[database/02-rules/BUSINESS_RULES]] y [[database/01-schema/TABLES]].
 
 ### `flow_context`
 

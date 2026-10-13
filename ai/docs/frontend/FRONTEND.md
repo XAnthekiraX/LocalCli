@@ -18,7 +18,7 @@ relacionado:
 
 # FRONTEND — LocalCli
 
-La capa de interfaz: una TUI en terminal construida con Bubble Tea y Lip Gloss. Es el único consumidor del motor de inferencia y su único trabajo es pintar lo que llega y enviar lo que pulsas. No ejecuta nada por su cuenta: no habla con el motor de inferencia, no escribe en SQLite y no toca archivos. Administrar los motores tampoco es suyo —el modal solo muestra y devuelve la elección, y el registro vive en `llm`—.
+La capa de interfaz: una TUI en terminal construida con Bubble Tea y Lip Gloss. Es el único consumidor del motor de inferencia y su único trabajo es pintar lo que llega y enviar lo que pulsas. No ejecuta nada por su cuenta: no habla con el motor de inferencia, no escribe en SQLite y no toca archivos.
 
 Este documento es el mapa de navegación del frontend. El orquestador está en [[backend/BACKEND]]; los datos, en [[database/DATABASE]].
 
@@ -32,31 +32,39 @@ Este documento es el mapa de navegación del frontend. El orquestador está en [
 
 ```
 internal/tui/
-  app.go        modelo raíz, enrutado de eventos y suscripciones
-  welcome.go    pantalla de bienvenida estilo opencode: logotipo sobre el fondo, caja de entrada con línea de estado y pistas de teclado
-  chat.go       historial de la sesión activa: respuesta, líneas compactas de herramienta y razonamiento revelable
-  input.go      caja de entrada con fondo: línea de texto y pie con el agente y el modelo
-  comandos.go   paleta de comandos de flujo: catálogo del orquestador, filtro y render sobre el input
-  panel.go      sidebar de datos plegable: título, contexto, TODO, tareas, estado y pie
-               (git, ruta y firma del harness)
-  reasoning.go  estado del razonamiento en vivo (texto revelado u oculto)
-  approvals.go  panel de aprobaciones pendientes de todas las sesiones
-  notify.go     línea de aviso de aprobaciones pendientes con el panel cerrado
-  modelsmodal.go modal de modelos (Ctrl+X m): lista del motor de la sesión cargada bajo demanda
-  motorsmodal.go modal de motores (Ctrl+X i): alta, edición, desactivación y borrado del registro
-  sessionsmodal.go modal de sesiones (Ctrl+X l): al aplicar abre esa sesión
-  keysmodal.go  modal de atajos (Ctrl+P): listado de acción + tecla
-  keymap.go     mapa central de teclas: acciones, bindings múltiples y tecla líder
+  app.go         modelo raíz, enrutado de eventos y suscripciones, y composición de la vista
+                 principal (la línea de actividad se pinta fija encima de la caja de entrada)
+  teclado.go     resolución de una pulsación: modales, paleta, edición de las cajas y despacho de acciones
+  peticiones.go  enviar lo escrito, crear sesión en la bienvenida y lanzar/cancelar turnos
+  eventos.go     aplicación de los eventos del orquestador al estado de vista
+ comandos.go    paleta de comandos de flujo: catálogo del orquestador, filtro y render; superficie
+                  propia (#B1BAF9) alineada y del ancho de la caja de entrada; **overlay que
+                  muestra como máximo 5 elementos y scroll vertical (▲/▼)**
+  approvals.go   panel de aprobaciones pendientes de todas las sesiones
+  notify.go      línea de aviso de aprobaciones pendientes con el panel cerrado
+  selection.go   selección con el ratón, limitada a la zona donde empezó el arrastre y anclada al texto:
+                 en el chat se ve en coordenadas de contenido y se prolonga fuera del viewport al llegar
+                 a un borde (desplazamiento automático); copia al portapapeles
+  keymap.go      mapa central de teclas: acciones, bindings múltiples y tecla líder
   keyresolver.go KeyResolver: líder ctrl+x, timeout, contexto y acciones
-  keys.go       persistencia del mapa de teclas en ~/.config/localcli/keys.json
-  config.go     preferencias del usuario: último motor, último modelo y último agente
-  adjuntos.go   tokens de archivo, carpeta o texto pegados o arrastrados ([nombre.ext], [CARPETA N elementos], [PEGADO N líneas]) y su expansión al valor real
-  selection.go  selección con el ratón y copia al portapapeles
-  styles.go     estilos Lip Gloss y render de bloques
-  marco.go      capa común de render: normaliza el marco a Ancho×Alto celdas con fondo (superficie rectangular continua)
-  wire.go       Puerto: la frontera de la tui con el orquestador (eventos y peticiones)
-  doc.go        documentación del paquete
-  testdata/     salidas doradas: logo.txt (logotipo canónico de la bienvenida) y *.golden
+  keys.go        persistencia del mapa de teclas en ~/.config/localcli/keys.json
+  config.go      preferencias del usuario: último agente, presupuesto de historial y razonamiento
+  logo.go        logotipos canónicos de la bienvenida (completo y compacto)
+  wire.go        Puerto: la frontera de la tui con el orquestador (eventos y peticiones)
+  arranque.go    arranque del programa Bubble Tea (alt screen, ratón)
+  doc.go         documentación del paquete
+  render/        capa común de render: estilos Lip Gloss, normalización del marco y envoltura de texto
+  components/
+    adjuntos/    motor compartido de tokens de archivo, carpeta o texto pegado ([nombre.ext],
+                 [CARPETA N elementos], [PEGADO N líneas]) y su expansión al valor real
+    welcome/     pantalla de bienvenida estilo opencode: logotipo sobre el fondo, caja de entrada con
+                 línea de estado —y pegado tokenizado— y pistas de teclado
+    chat/        historial de la sesión activa: respuesta, líneas compactas de herramienta, razonamiento
+                 revelable y la línea de actividad en vivo
+    input/       caja de entrada con fondo: línea de texto —con pegado tokenizado— y pie con el agente y el modelo
+    panel/       sidebar de datos plegable: título, contexto, TODO, tareas, estado y pie
+    modals/      modales de modelos (Ctrl+X m), sesiones (Ctrl+X l) y atajos (Ctrl+P)
+  testdata/      salidas doradas: logo.txt (logotipo canónico de la bienvenida) y *.golden
 ```
 
 ## 3. Contratos
@@ -64,7 +72,7 @@ internal/tui/
 - **Entradas:** teclado y eventos del orquestador. Ver [[frontend/02-interfaces/INTERFACES]].
 - **Salidas:** peticiones a `session` (enviar mensaje, cambiar de sesión, aprobar, declinar, cancelar flujo).
 - **Lecturas:** solo las consultas definidas en [[database/03-operations/QUERIES]]. Nunca escribe en la base: el estado lo persiste el orquestador.
-- **Configuración propia:** el mapa de teclas vive en `~/.config/localcli/keys.json` y las preferencias del usuario —último modelo y último agente— en `~/.config/localcli/config.json`, fuera del proyecto, porque son preferencia del usuario y no contenido del proyecto.
+- **Configuración propia:** el mapa de teclas vive en `~/.config/localcli/keys.json` y las preferencias del usuario —último agente, presupuesto de historial y razonamiento— en `~/.config/localcli/config.json`, fuera del proyecto, porque son preferencia del usuario y no contenido del proyecto. El modelo activo no se guarda en `config.json`: lo resuelve el catálogo (`models.json`), única autoridad al arrancar.
 
 ## 4. Decisiones
 
@@ -73,9 +81,9 @@ internal/tui/
 | Presentación pura, sin lógica de negocio                | Todo lo que la TUI decidiera habría que auditarlo dos veces: en el módulo y en la pantalla                                                       | Repartir decisiones entre pantalla y orquestador                                          |
 | Estado de vista en memoria, nada persistido por la TUI  | Lo que vale está en SQLite o en archivos; lo que muere con el proceso es solo vista (scroll, plegado, foco)                                      | Persistir el estado de vista, que añadiría una cuarta fuente de verdad                     |
 | Mapa de teclas en `~/.config/localcli/keys.json`        | El atajo es del usuario, no del proyecto; ubicación XDG estándar, editable a mano o desde la ayuda                                               | Guardarlo dentro del proyecto, que mezclaría preferencia personal con contenido versionado |
-| Preferencias en `~/.config/localcli/config.json`        | El último modelo y el último agente son preferencia del usuario, no estado del proyecto                                                          | Persistirlos en SQLite, que los ataría a un solo proyecto                                  |
-| Ratón capturado en la TUI                               | Permite seleccionar y copiar texto con el ratón y desplazar con la rueda                                                                         | No capturarlo, que deja a la app sin poder copiar al instante                              |
-| Paleta de comandos alimentada por el catálogo del orquestador | Un solo origen de verdad: los flujos oficiales y los propios de `.localcli/flows/*.json` se descubren sin mantener una segunda lista en la vista | Cablear los comandos en la TUI, que se desincronizaría de los flujos reales                |
+| Preferencias en `~/.config/localcli/config.json`        | El último agente, el presupuesto de historial y el razonamiento son preferencia del usuario, no estado del proyecto; el modelo activo lo persiste el catálogo (`models.json`)                                                          | Persistirlos en SQLite, que los ataría a un solo proyecto                                  |
+| Ratón capturado en la TUI                               | Permite seleccionar y copiar texto con el ratón y desplazar con la rueda; la selección se acota a su zona de origen, se ancla al texto y, en el chat, se prolonga fuera del viewport al llegar a un borde (el historial se desplaza solo mientras se arrastra) | No capturarlo, que deja a la app sin poder copiar al instante |
+| Paleta de comandos alimentada por el catálogo del orquestador | Un solo origen de verdad: los flujos oficiales (sembrados en `~/.config/localcli/flows/`) y los propios de `<proyecto>/.localcli/flows/` se descubren sin mantener una segunda lista en la vista; **overlay con máximo 5 elementos y scroll** | Cablear los comandos en la TUI, que se desincronizaría de los flujos reales                |
 
 ## Mapa de Navegación
 

@@ -6,7 +6,7 @@ depende_de:
   - "[[specs/SPEC-ARCHIVOS]]"
   - "[[specs/SPEC-TOOLS]]"
 relacionado:
-  - "[[specs/SPEC-MODELO-MOTOR]]"
+  - "[[specs/SPEC-MODELOS-LLAMACPP]]"
   - "[[backend/01-domain/DOMAIN]]"
   - "[[backend/02-interfaces/TOOLS]]"
   - "[[backend/04-infrastructure/CONFIGURATION]]"
@@ -34,13 +34,13 @@ No hay roles de usuario. La autorización se resuelve en tres capas, y por eso e
 | Si la petición está permitida | `tools` | Que la herramienta exista y que el agente la tenga |
 | Si el efecto se aplica | `fileops`, `exec` | La aprobación concreta, la frontera de rutas, la lista blanca y Landlock |
 
-El paso 2 ocurre en **la capa universal de `tools`**, antes de que se ejecute nada y antes de que se toque el disco. Es el mismo punto para las quince herramientas incluidas y para las del usuario: no hay un camino alternativo que se salte la comprobación.
+El paso 2 ocurre en **la capa universal de `tools`**, antes de que se ejecute nada y antes de que se toque el disco. Es el mismo punto para las dieciséis herramientas incluidas: no hay un camino alternativo que se salte la comprobación. `ejecutar_flujo` no rompe la garantía: su permiso es **derivado** del flujo que se pide (todas sus etapas `plan` exigen `read`, y `read`/`edit` si alguna es `build`), se resuelve en el mismo punto de la capa universal y, si el agente no lo tiene, la herramienta no llega a su esquema. Ver [[backend/02-interfaces/TOOLS]].
 
 La garantía central: **`plan` no tiene herramientas que escriban en el proyecto**. No es que las tenga bloqueadas, es que no existen para él, porque su `agent.yaml` concede solo `read` y todo lo demás cae en el `default: deny`. La lista de pasos de la sesión también es `read` —es estado de la sesión, no del proyecto—, así que la tienen los dos agentes sin debilitar la garantía. Ver [[specs/SPEC-AGENTE-BASE]] y [[backend/02-interfaces/TOOLS]] §2.
 
 **Una aprobación vale para el cambio propuesto, no para lo que siga.** Si `build` necesita algo que `plan` no propuso, vuelve a preguntar.
 
-**La aprobación es un mecanismo único.** Vive en `Contexto.Ask`, no dentro de los handlers. Eso significa que toda herramienta —incluida una escrita por el usuario— pasa por el mismo camino, y que no puede existir una herramienta cuya aprobación se comporte de otra manera. Una política de permiso repartida en quince sitios es una política que en algún sitio se olvidó.
+**La aprobación es un mecanismo único.** Vive en `Contexto.Ask`, no dentro de los handlers. Eso significa que toda herramienta pasa por el mismo camino, y que no puede existir una herramienta cuya aprobación se comporte de otra manera. Una política de permiso repartida en quince sitios es una política que en algún sitio se olvidó.
 
 ## 3. Protección de las operaciones
 
@@ -67,27 +67,7 @@ Lo único con escritura concedida es el espacio propio del comando —temporales
 
 La terminal tampoco puede descartar cambios del repositorio, hacer commits ni subir cambios.
 
-## 3.1 Herramientas del usuario
-
-Un `.json` en `.localcli/tools/` añade una herramienta. Eso abre una superficie que antes no existía —el usuario puede hacer que LocalCli ejecute lo que quiera— y por eso tiene reglas propias, todas en [[specs/SPEC-TOOLS]] y [[backend/02-interfaces/TOOLS]].
-
-**No es código, es una declaración.** Un `.json` no puede ejecutar nada por sí mismo: LocalCli lo lee y lo ejecuta con su propio ejecutor. No hay intérprete, ni runtime, ni plugin compilado. La diferencia no es cosmética: no hay nada en el formato que permita ejecutar una función.
-
-**El aislamiento es el de la terminal, no uno nuevo.** La herramienta corre sobre `exec.Ejecutor`, así que hereda Landlock, el límite de tiempo y la cola. La garantía de que no puede escribir en el proyecto no hay que volver a pensarla ni volver a probarla: es la misma.
-
-**No hay shell.** `equipo` es una lista de argumentos que se pasa al ejecutable tal cual. Sin intérprete de shell no existen las tuberías, ni las redirecciones, ni `sh -c`. Un argumento con un `;` es un argumento con un punto y coma. Esto es lo que hace que la garantía estructural de Landlock se sostenga también para estas herramientas: un argumento que no pasa por un shell no puede convertir un argumento en una escritura.
-
-**Siempre pide aprobación, y no se toca la lista blanca.** El ejecutable lo eligió el usuario, así que LocalCli no sabe qué hace aunque se llame como un comando que ya conoce. Que la lista blanca sea solo para los comandos que el harness conoce es precisamente lo que hace predecible el control: si dependiera del nombre, un binario con el mismo nombre y otro comportamiento se ejecutaría sin preguntar.
-
-**`modo: escribe` se rechaza al arrancar.** La única vía sancionada para escribir en el proyecto son las herramientas de archivo: solo las tiene `build`, pasan por aprobación y quedan registradas en `change_history`. Aceptar una segunda vía de escritura con reglas distintas rompería la garantía central por la puerta de atrás.
-
-**No puede escalar.** El handler de una herramienta del usuario no tiene acceso al registro, así que no puede pedir otras herramientas, no puede encadenar y no puede elevarse de permisos. No hay una ruta de una herramienta del usuario a una capacidad que no tuviera.
-
-**Un JSON inválido no detiene nada.** Se ignora y se avisa, como con un agente o un flujo inválido. Un error de carga deja el catálogo como estaba, no lo deja a medias.
-
-**El coste de aceptar esto.** El esquema que ve el modelo para una herramienta del usuario es genérico —un objeto, sin properties— porque el harness no puede saber qué argumentos espera un ejecutable que no es suyo. En la práctica eso significa que el modelo improvisa los argumentos de una herramienta del usuario, y que un error de nombre de argumento se descubre al ejecutar, no antes. Es un precio asumido a cambio de que añadir una herramienta no requiera recompilar; queda dicho aquí y en [[backend/02-interfaces/dto/TOOLS-DTO]] para que no sorprenda.
-
-## 3.2 El servidor del motor de inferencia
+## 3.1 El servidor del motor de inferencia
 
 El harness trata al motor como una caja de la que solo consume inferencia; el estado del servidor —qué modelos tiene, con qué ventana— es de quien lo levanta. Eso fija dos requisitos:
 
@@ -113,20 +93,20 @@ Las dos herramientas de internet son las únicas que hacen salir información de
 
 ## 6. Riesgos relevantes
 
-- **Rate limiting:** no aplica. No hay red pública. Lo equivalente es el presupuesto de contexto, que recorta la entrada y evita que una respuesta o un comando desborden. Ver [[specs/SPEC-MODELO-MOTOR]].
+- **Rate limiting:** no aplica. No hay red pública. Lo equivalente es el presupuesto de contexto, que recorta la entrada y evita que una respuesta o un comando desborden. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
 - **CORS:** no aplica. No hay navegador ni servidor.
-- **Secrets:** los dos motores de inferencia corren en local, sin credenciales (el `--api-key` opcional de `llama-server` no se usa). La búsqueda por internet es la única salida y solo lleva la consulta. LocalCli no guarda ni pide claves de API. Una herramienta del usuario puede llevar sus propias credenciales en sus argumentos, que viajan al modelo y al registro de auditoría: quien declare una sabe que el argumento queda visible ahí.
-- **Aislamiento en sistemas sin Landlock:** en sistemas que no son Linux, o en Linux sin Landlock, la terminal no tiene el bloqueo estructural. La garantía es más débil y queda documentada como tal; el proyecto lo asume. Ver [[backend/04-infrastructure/CONFIGURATION]]. **Las herramientas del usuario heredan esta limitación tal cual**: sin Landlock no tienen el bloqueo de escritura, y su única defensa restante es la aprobación, que es una decisión del usuario y no una garantía.
-- **El servidor del motor con acceso al sistema de archivos.** Un `llama-server` levantado con `--tools`, `--agent` o `--mcp-servers-json` sirve lectura o escritura de archivos por HTTP, fuera de la frontera de rutas y de la aprobación del harness; por eso no es un motor admisible. Ver §3.2.
+- **Secrets:** los dos motores de inferencia corren en local, sin credenciales (el `--api-key` opcional de `llama-server` no se usa). La búsqueda por internet es la única salida y solo lleva la consulta. LocalCli no guarda ni pide claves de API.
+- **Aislamiento en sistemas sin Landlock:** en sistemas que no son Linux, o en Linux sin Landlock, la terminal no tiene el bloqueo estructural. La garantía es más débil y queda documentada como tal; el proyecto lo asume. Ver [[backend/04-infrastructure/CONFIGURATION]].
+- **El servidor del motor con acceso al sistema de archivos.** Un `llama-server` levantado con `--tools`, `--agent` o `--mcp-servers-json` sirve lectura o escritura de archivos por HTTP, fuera de la frontera de rutas y de la aprobación del harness; por eso no es un motor admisible. Ver §3.1.
 - **El modelo no es de fiar para decidir permisos.** `plan` y `build` tienen herramientas fijas, y el permiso lo comprueban módulos, no el modelo. El modelo no puede concederse permisos.
-- **Confiar en el texto del comando es un error.** Cualquier intento de validar la terminal leyendo el comando es frágil por diseño; por eso el bloqueo es estructural. Y por eso las herramientas del usuario pasan una lista de argumentos en vez de una línea de texto: quitar el shell es quitar esa clase de ataque entera, no cerrar sus casos sueltos.
+- **Confiar en el texto del comando es un error.** Cualquier intento de validar la terminal leyendo el comando es frágil por diseño; por eso el bloqueo es estructural: quitar el shell es quitar esa clase de ataque entera, no cerrar sus casos sueltos.
 - **Un error de herramienta no termina el turno.** El fallo se le devuelve al modelo para que lo corrija. Eso es intencionado, y es también un riesgo: un modelo puede insistir en una herramienta que falla. Por eso el máximo de pasadas por turno es un límite duro, no un detalle de implementación.
 
 ## Referencias
 
 - [[specs/SPEC-ARCHIVOS]] — reglas de permiso sobre archivos.
-- [[specs/SPEC-TOOLS]] — el catálogo, la terminal y las herramientas del usuario.
-- [[backend/02-interfaces/TOOLS]] — el reparto `plan`/`build`, la capa universal y el punto de extensión.
-- [[backend/02-interfaces/dto/TOOLS-DTO]] — los esquemas derivados y el caso genérico del usuario.
-- [[backend/DECISIONS]] — por qué Landlock, por qué `plan` no escribe y por qué no hay shell en las herramientas del usuario.
+- [[specs/SPEC-TOOLS]] — el catálogo y la terminal.
+- [[backend/02-interfaces/TOOLS]] — el reparto `plan`/`build` y la capa universal.
+- [[backend/02-interfaces/dto/TOOLS-DTO]] — los esquemas derivados.
+- [[backend/DECISIONS]] — por qué Landlock y por qué `plan` no escribe.
 - [[backend/04-infrastructure/INTEGRATIONS]] — la integración de los motores de inferencia e internet.

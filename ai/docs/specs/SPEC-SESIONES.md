@@ -3,9 +3,10 @@ title: SPEC — Sesiones por proyecto
 tags: [specs, requisito]
 depende_de:
   - "[[IDEA]]"
-  - "[[specs/SPEC-ARCHIVOS]]"
+  - "[[specs/SPEC-MODELOS-LLAMACPP]]"
+relacionado:
   - "[[specs/SPEC-ORQUESTADOR-FLUJOS]]"
-  - "[[specs/SPEC-MODELO-MOTOR]]"
+  - "[[specs/SPEC-ARCHIVOS]]"
 ---
 # SPEC — Sesiones por proyecto
 
@@ -17,8 +18,8 @@ Varias sesiones por proyecto, cada una con su contexto independiente, que pueden
 
 ## Alcance
 
-Incluye crear, cambiar, retomar y cerrar sesiones, el aislamiento entre proyectos y la ejecución en segundo plano con estado visible. Incluye qué motor y qué modelo usa cada sesión y qué le pasa cuando se cambian o cuando el motor desaparece.
-No incluye qué hace el trabajo que corre dentro de una sesión, que está en [[specs/SPEC-ORQUESTADOR-FLUJOS]], ni la administración de los motores, que está en [[specs/SPEC-MODELO-MOTOR]].
+Incluye crear, cambiar, retomar y cerrar sesiones, el aislamiento entre proyectos y la ejecución en segundo plano con estado visible. Incluye qué modelo usa cada sesión y qué le pasa cuando se cambia o cuando el modelo desaparece.
+No incluye qué hace el trabajo que corre dentro de una sesión, que está en [[specs/SPEC-ORQUESTADOR-FLUJOS]], ni la gestión de los modelos, que está en [[specs/SPEC-MODELOS-LLAMACPP]].
 
 ## Actores
 
@@ -57,18 +58,19 @@ Se abre una sesión y se deja una tarea de frontend trabajando. Se abre otra ses
 - Cada sesión expone su estado: inactiva, trabajando, esperando permiso, terminada o con error.
 - Cambiar de sesión no detiene nada.
 - El chat de una carpeta nunca aparece en otra carpeta.
+- **El aislamiento entre carpetas es lógico, no físico.** Todas las sesiones viven en un único archivo global (`~/.config/localcli/state.db`); cada carpeta es una fila de `projects` y toda sesión cuelga de su `project_id`. El comportamiento visible es el mismo que con una base por carpeta —el chat de una carpeta nunca aparece en otra—, pero la separación la garantiza el filtro por proyecto, no el archivo. Ver [[database/01-schema/SCHEMA]].
 - El contexto acumulado de una sesión no se comparte con las demás del mismo proyecto; su historial se reconstruye para el modelo según [[specs/SPEC-HISTORIAL-CONVERSACION]].
-- **El motor y el modelo son recursos de la sesión, no parte de su identidad.** Cada sesión guarda el par que está usando, así que puede cambiarlo sin que cambien su identificador, su nombre ni su historial, y la conversación continúa donde estaba. Ver [[specs/SPEC-MODELO-MOTOR]].
-- Una sesión puede cambiar de motor, cambiar de modelo o cambiar ambos a la vez. Al hacerlo, su historial sigue siendo el mismo.
-- El par motor/modelo de una sesión se conserva al salir y volver: al retomarla se trabaja contra el motor que tenía.
-- Una sesión nueva no nace con motor propio: parte del último usado, que es una preferencia global del usuario.
-- **Eliminar el motor de una sesión no elimina ni invalida la sesión.** Sigue existiendo, con su historial; lo que hace es avisar de que su motor ya no está y esperar a que el usuario elija otro.
-- Desactivar el motor de una sesión tampoco la elimina: avisa y espera, con el historial intacto.
-- Que el motor sea por sesión no significa que dos sesiones generen a la vez. Es para trabajar por separado con un motor en una sesión y otro en otra. Ver [[specs/SPEC-MODELO-MOTOR]].
+- **El modelo es un recurso de la sesión, no parte de su identidad.** Cada sesión guarda el modelo que está usando, así que puede cambiarlo sin que cambien su identificador, su nombre ni su historial, y la conversación continúa donde estaba. El motor es único (llama.cpp) y no se elige por sesión. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
+- Una sesión puede cambiar de modelo: al hacerlo, su historial sigue siendo el mismo.
+- El modelo de una sesión se conserva al salir y volver: al retomarla se trabaja con el que tenía.
+- Una sesión nueva no nace con modelo propio: parte del último usado, que es una preferencia global del usuario.
+- **Eliminar el modelo de una sesión no elimina ni invalida la sesión.** Sigue existiendo, con su historial; lo que hace es avisar de que su modelo ya no está y esperar a que el usuario elija otro.
+- Que el modelo sea por sesión no significa que dos sesiones generen a la vez: el motor es único y serializa las respuestas por orden de llegada. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
 
 ## Criterios de aceptación
 
 - [ ] Al abrir una carpeta, su chat es independiente de cualquier otra carpeta.
+- [ ] El estado y las sesiones de una carpeta no se ven desde otra, aunque todas compartan un único archivo de base global.
 - [ ] Un proyecto puede tener varias sesiones simultáneas.
 - [ ] Los chats de dos sesiones del mismo proyecto no se mezclan.
 - [ ] Una sesión en segundo plano sigue trabajando y su estado es visible desde otra sesión.
@@ -79,11 +81,10 @@ Se abre una sesión y se deja una tarea de frontend trabajando. Se abre otra ses
 - [ ] Una sesión recién creada se llama «Nueva sesión» y pasa a llevar un título generado por el modelo tras su primera petición.
 - [ ] Si el modelo no puede generar el título, la sesión conserva el nombre provisional y lo reintenta con la siguiente petición.
 - [ ] Al borrar la última sesión del proyecto, la vista vuelve a la bienvenida.
-- [ ] Al retomar una sesión, se trabaja con el motor y el modelo que tenía guardados.
-- [ ] Cambiar de motor o de modelo no cambia el identificador, el nombre ni el historial de la sesión, y la conversación continúa.
-- [ ] Una sesión nueva arranca con el último motor y modelo usados.
-- [ ] Si el motor de una sesión se elimina o se desactiva, la sesión sigue existiendo con su historial y avisa de que necesita otro motor, sin bloquear el resto de sesiones.
-- [ ] Reactivar un motor previamente desactivado devuelve las sesiones que lo usaban a poder trabajar sin que el usuario tenga que reconfigurarlas.
+- [ ] Al retomar una sesión, se trabaja con el modelo que tenía guardado.
+- [ ] Cambiar de modelo no cambia el identificador, el nombre ni el historial de la sesión, y la conversación continúa.
+- [ ] Una sesión nueva arranca con el último modelo usado.
+- [ ] Si el modelo de una sesión se elimina, la sesión sigue existiendo con su historial y avisa de que necesita otro modelo, sin bloquear el resto de sesiones.
 
 ## Requisitos no funcionales
 
@@ -92,9 +93,7 @@ Se abre una sesión y se deja una tarea de frontend trabajando. Se abre otra ses
 
 ## Dependencias funcionales
 
-- [[specs/SPEC-ARCHIVOS]]
-- [[specs/SPEC-ORQUESTADOR-FLUJOS]]
-- [[specs/SPEC-MODELO-MOTOR]]
+- [[specs/SPEC-MODELOS-LLAMACPP]]
 
 ## Supuestos
 

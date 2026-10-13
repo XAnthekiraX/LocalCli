@@ -1,7 +1,8 @@
 ---
 title: Documento C
+tags: [comun]
 ---
 
 # C
 
-De vuelta a [[b]].
+Ve a [[a]].

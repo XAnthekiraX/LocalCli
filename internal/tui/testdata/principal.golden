@@ -1,24 +1,24 @@
                                                                                                     
- arregla el login                                           api de pedidos (trabajando)             
+ arregla el login                                           arreglar el login (trabajando)          
                                                                                                     
                                                             CONTEXTO                                
                                                               1234 tokens (estimado)                
-  voy a revisarlo                                             61% usada                             
-                                                                                                    
+  Voy a revisar el flujo de autenticación y después las       61% usada                             
+   pruebas. (1.5 s)                                                                                 
                                                             ▾ TODO                                  
-                                                              T-B014 · quedan 3                     
-                                                                                                    
+                                                              T-F009 · quedan 3                     
+  [Sub Proceso] Diagnosticar                                                                        
                                                             LISTA DE TAREAS                         
-                                                              [•] migrar la tabla                   
-                                                                                                    
+  ✓ LEER [internal/tui/app.go] · 70 líneas · 400 ms           [•] escribir las doradas              
+                                                              [✓] unitarias de render               
+  ✗ EJEC [go test ./...] · 42 líneas · recortado · el co      [x] probar los modales                
+                                                              [ ] revisar el marco                  
+  cambio aplicado en internal/tui/app.go                                                            
                                                             ESTADO                                  
-                                                            Capa y cola backend · 2 tareas grandes  
-                                                            Aprobaciones 0 esperando decisión       
-                                                            Agente plan                             
-                                                                                                    
- Escribe para iniciar la conversacion                                                               
-                                                                                                    
- [plan] · * llama3.2 · tool [?]  [v?] [T]                   Git master · 0                          
-                                                            [/tmp/proyecto]                         
+                                                            Capa y cola frontend · 2 tareas grand…  
+ y añade una prueba▌                                        Aprobaciones 1 esperando decisión       
+                                                            Agente build                            
+ [build] · qwen3:8b (llama.cpp) · tool [*] · pensar [ ]     Git refact/logic · 2                    
+ [v] · [T]                                                  [/tmp/proyecto]                         
                                                             LocalCli · v0.1 alpha                   
-tokens: 1.2k                                                                                        
+ tokens: 1.2k                                                                                       

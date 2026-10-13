@@ -44,7 +44,7 @@ Los que el usuario puede encontrarse y merece la pena distinguir:
 | Un comando no termina o no para de imprimir | Aviso de que se cortó | Se corta; el harness no se cuelga ni llena el contexto |
 | Una tarea está bloqueada | Aviso de qué dependencia falta | La cola sigue con otra si nada depende de ella |
 | Se intenta borrar fuera de la carpeta | Pide permiso y explicación | Sin las dos, se rechaza |
-| La base del proyecto es de una versión anterior del binario | Aviso de que hay que borrar `.localcli/state.db` | No se escribe sobre un esquema que no reconoce; la base es estado del proyecto, no dato del usuario |
+| La base es de una versión anterior del binario | Aviso de que hay que borrar `~/.config/localcli/state.db` | No se escribe sobre un esquema que no reconoce; la base es estado local, no dato del usuario |
 
 ## 3. Códigos internos
 
@@ -73,6 +73,9 @@ Los que el usuario puede encontrarse y merece la pena distinguir:
 | `E_STAGE_FAILED` | Una etapa falló (incluida una que no responde a su pregunta tras el reintento); el flujo se detiene |
 | `E_NO_RESPONSE` | Un turno de chat agotó sus rondas y, tras reintentar la redacción, el modelo no entregó texto; no se guarda como respuesta |
 | `E_FLOW_CANCELLED` | El flujo fue cancelado |
+| `E_FLOW_UNKNOWN` | `ejecutar_flujo` pidió un flujo que no existe en el registro cargado (oficiales + propios) |
+| `E_FLOW_NOT_ALLOWED` | El agente pidió un flujo que su permiso derivado no admite (un flujo que escribe, desde un agente sin `write`/`edit`); corregible: el enum del esquema ya solo lista lo permitido |
+| `E_FLOW_DEPTH` | Se intentó lanzar un flujo desde dentro de una etapa de flujo (profundidad uno) |
 | `E_DB_UNAVAILABLE` | No se pudo abrir o leer la base de datos del proyecto |
 | `E_DB_SCHEMA_OUTDATED` | El archivo de base no corresponde a la versión del binario |
 | `E_DB_CONSTRAINT` | Un `CHECK` o un `NOT NULL` rechazó la escritura |
@@ -94,7 +97,7 @@ Go no tiene excepciones, así que el "manejo" es explícito en cada punto donde 
 ## 5. Errores por operación
 
 - **Escritura de archivo:** `E_PATH_OUTSIDE`, `E_PATH_EXISTS`, `E_NEEDS_APPROVAL`, `E_APPROVAL_DECLINED`, `E_NEEDS_CONFIRM` (al borrar), `E_BAD_ARGS`. Al aplicar, si falla la base, el archivo puede quedar sin registrar; se deja constancia. Ver [[database/02-rules/DATA_FLOW]].
-- **Lectura de archivo:** `E_PATH_OUTSIDE` (fuera de la carpeta sin permiso), `E_BAD_ARGS`, y un error de archivo que no existe.
+- **Lectura de archivo:** `E_PATH_OUTSIDE` (fuera de la carpeta sin permiso), `E_BAD_ARGS` (parámetros o rangos inválidos: `inicio_linea`/`fin_linea` no enteros, menores que 1, o `inicio_linea` mayor que `fin_linea`; también una ruta que empieza por `~` o contiene `$HOME`, para que el modelo corrija y use la forma relativa en vez de chocar contra un «archivo no encontrado»), y errores de negocio corregibles que el modelo ve y puede arreglar: el archivo no existe, la ruta es un directorio, no hay permisos de lectura o el archivo no es legible como texto. Que una lectura supere el máximo por respuesta **no** es un error: devuelve lo que cabe, con `truncado` y `siguiente_linea`.
 - **Comando de terminal:** `E_CMD_NOT_WHITELISTED`, `E_NEEDS_APPROVAL`, `E_CMD_TIMEOUT`, `E_CMD_OUTPUT_TRUNCATED`. Un comando que sale con error no es un `E_`: es un resultado con la salida de error, y el agente sigue.
 - **Lista de pasos de la sesión (`crear_todo` y `actualizar_todo`):** `E_BAD_ARGS` si el contenido está vacío, el estado no está en `pendiente`/`en_progreso`/`completada`/`cancelada`, o la prioridad no está en `alta`/`media`/`baja`. `crear_todo` produce además un `E_BAD_ARGS` corregible si intenta añadir un segundo paso `en_progreso`: el mensaje nombra `actualizar_todo` como la vía para cambiar cuál está en curso. Un fallo de la base al guardar no es `E_BAD_ARGS`: es de otra capa.
 - **Internet:** `E_BAD_ARGS` si la consulta o la dirección no valen. Lo que vuelve es contenido sin confianza, no un error.
@@ -105,7 +108,7 @@ Go no tiene excepciones, así que el "manejo" es explícito en cada punto donde 
   sin avisar; el código propio queda en el mensaje como diagnóstico. Una raíz que no es carpeta de
   documentación es `E_STAGE_FAILED` directo.
 - **Cola:** `E_ELEMENTO_BLOQUEADO`; la cola no es un error, sigue con otra.
-- **Flujo:** `E_STAGE_FAILED` (una etapa falla o no responde a su pregunta tras el reintento), `E_FLOW_CANCELLED`.
+- **Flujo:** `E_STAGE_FAILED` (una etapa falla o no responde a su pregunta tras el reintento), `E_FLOW_CANCELLED`. Al lanzar un flujo por herramienta (`ejecutar_flujo`): `E_FLOW_UNKNOWN` (comando inexistente), `E_FLOW_NOT_ALLOWED` (flujo que su permiso derivado no admite, corregible), `E_FLOW_DEPTH` (un flujo invocando a otro desde una etapa). Ver [[backend/02-interfaces/TOOLS]] §Los flujos como herramienta.
 - **Sesiones:** `E_NO_RESPONSE` cuando un turno de chat no entrega texto (la sesión queda en `error` con el motivo); los demás casos son operacionales, no de arranque.
 - **Base de datos:** `E_DB_UNAVAILABLE`, `E_DB_SCHEMA_OUTDATED`, `E_DB_CONSTRAINT`, `E_DB_FOREIGN_KEY`, `E_DB_CONFLICT`, `E_DB_LOCKED`. Ninguno de ellos es `E_BAD_ARGS`: ese código es para el contrato de una herramienta, y un fallo de la base es de otra capa. Ver [[database/02-rules/DATA_FLOW]].
 - **Motor de inferencia:** `E_MOTOR_NO_DISPONIBLE`, `E_MOTOR_TIPO_DESCONOCIDO`, `E_REGISTRO_MOTORES_INVALIDO`, `E_MODEL_TOO_BIG`. Ver [[backend/04-infrastructure/INTEGRATIONS]].

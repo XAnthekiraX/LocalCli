@@ -20,7 +20,8 @@ relacionado:
 
 | Tabla | Columnas |
 |---|---|
-| `sessions` | `id`, `name`, `status`, `created_at`, `updated_at` |
+| `projects` | `id`, `path`, `created_at`, `updated_at` |
+| `sessions` | `id`, `project_id`, `name`, `status`, `created_at`, `updated_at` |
 | `messages` | `id`, `session_id`, `role`, `content`, `created_at` |
 | `reasoning` | `id`, `message_id`, `content`, `created_at` |
 | `approvals` | `id`, `session_id`, `description`, `status`, `created_at` |
@@ -29,12 +30,14 @@ relacionado:
 
 Las columnas que sí admiten `NULL` están justificadas en [[database/01-schema/TABLES]]: `sessions.layer` para una sesión general, `sessions.motor_id` y `sessions.modelo` para una sesión a la que todavía no se le ha asignado motor, `messages.input_tokens` y `output_tokens` cuando el modelo no los reporta, `reasoning` no tiene ninguno opcional, `approvals.resolved_at` mientras está pendiente, `context_audit.reason` y `tokens`, y las dos columnas de contenido de `change_history` más su `session_id`.
 
-**`sessions.motor_id` no tiene clave foránea, y esa ausencia es deliberada.** El registro de motores es `~/.config/localcli/motores.json`, un archivo global de la máquina, no una tabla de este proyecto: no hay contra qué declarar integridad referencial. La consecuencia se acepta a cambio de la garantía que da —eliminar o desactivar un motor **no invalida** las sesiones que lo usaban, que sobreviven con su historial y avisan—, y esa garantía es de interfaz, no de base. La comprobación de que el motor exista y esté activo se hace al usarlo. Ver [[specs/SPEC-MODELO-MOTOR]] y [[specs/SPEC-SESIONES]].
+**`sessions.motor_id` no tiene clave foránea, y esa ausencia es deliberada.** El registro de motores es `~/.config/localcli/motores.json`, un archivo global de la máquina, no una tabla de este proyecto: no hay contra qué declarar integridad referencial. La consecuencia se acepta a cambio de la garantía que da —eliminar o desactivar un motor **no invalida** las sesiones que lo usaban, que sobreviven con su historial y avisan—, y esa garantía es de interfaz, no de base. La comprobación de que el motor exista y esté activo se hace al usarlo. Ver [[specs/SPEC-MODELOS-LLAMACPP]] y [[specs/SPEC-SESIONES]].
 
 ### UNIQUE
 
 | Restricción | Propósito |
 |---|---|
+| `projects.id` (PK) | Identificador único de proyecto |
+| `projects.path` (UNIQUE) | Una carpeta es un proyecto: abrirla dos veces no duplica la fila |
 | `sessions.id` (PK) | Identificador único de sesión |
 | `messages.id` (PK) | Identificador único de mensaje |
 | `reasoning.id` (PK) | Identificador único de razonamiento |
@@ -63,7 +66,7 @@ Los valores permitidos y su significado están en [[database/01-schema/ENUMS]].
 
 ### Foreign keys
 
-Están definidas en [[database/01-schema/RELATIONSHIPS]]. Todas con `ON UPDATE CASCADE` y con `ON DELETE CASCADE` salvo `change_history.session_id`, que usa `SET NULL` para que el historial sobreviva a la sesión.
+Están definidas en [[database/01-schema/RELATIONSHIPS]]. Todas con `ON UPDATE CASCADE` y con `ON DELETE CASCADE` salvo `change_history.session_id`, que usa `SET NULL` para que el historial sobreviva a la sesión. `sessions.project_id` es `NOT NULL` con `CASCADE`: una sesión no puede quedar sin proyecto, y borrar un proyecto se lleva sus sesiones.
 
 ## 2. Restricciones especiales
 

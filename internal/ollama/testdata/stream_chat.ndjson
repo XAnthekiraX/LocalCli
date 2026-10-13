@@ -1,5 +1,0 @@
-{"model":"qwen3","message":{"role":"assistant","content":"","thinking":"Voy a "},"done":false}
-{"model":"qwen3","message":{"role":"assistant","content":"","thinking":"pensar. "},"done":false}
-{"model":"qwen3","message":{"role":"assistant","content":"La ","thinking":""},"done":false}
-{"model":"qwen3","message":{"role":"assistant","content":"respuesta.","thinking":""},"done":false}
-{"model":"qwen3","message":{"role":"assistant","content":"","thinking":""},"done":true,"prompt_eval_count":11,"eval_count":2}

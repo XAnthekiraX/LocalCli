@@ -18,7 +18,30 @@ relacionado:
 
 ## 1. Consultas complejas
 
-La base es pequeña y las consultas son directas. No hay necesidad de `JOIN` complejo. Estas son las que merecen atención.
+La base es pequeña y las consultas son directas. No hay necesidad de `JOIN` complejo, salvo el filtro constante por proyecto. Estas son las que merecen atención.
+
+### Resolver el proyecto de la carpeta abierta
+
+Antes que nada, traducir el directorio actual a su `project_id`. Si no existe la fila, se crea.
+
+```sql
+SELECT id FROM projects WHERE path = ?;
+```
+
+Acelera `idx_projects_path`. Es la primera consulta del arranque y de la que depende el aislamiento: sin este `project_id`, cualquier consulta de sesiones podría cruzar carpetas. Ver [[database/02-rules/BUSINESS_RULES]].
+
+### Sesiones del proyecto actual
+
+Alimenta el selector de sesiones, acotado a la carpeta abierta.
+
+```sql
+SELECT id, name, layer, status, created_at, updated_at
+FROM sessions
+WHERE project_id = ?
+ORDER BY updated_at DESC;
+```
+
+Acelera `idx_sessions_project`. El filtro `project_id` no es opcional: sin él se verían las sesiones de otros proyectos.
 
 ### Historial de una sesión, en orden
 
@@ -35,7 +58,7 @@ ORDER BY m.created_at;
 
 El `LEFT JOIN` con `reasoning` es necesario porque un mensaje de agente puede no tener razonamiento, si el modelo no lo devolvió. Un `INNER JOIN` perdería esos mensajes. Ver [[database/01-schema/ENUMS]].
 
-### Aprobaciones pendientes de cualquier sesión
+### Aprobaciones pendientes del proyecto actual
 
 La consulta que alimenta el panel de aprobaciones y el contador que se ve con el panel de datos cerrado.
 
@@ -43,11 +66,11 @@ La consulta que alimenta el panel de aprobaciones y el contador que se ve con el
 SELECT a.id, a.session_id, s.name AS session_name, a.description, a.created_at
 FROM approvals a
 JOIN sessions s ON s.id = a.session_id
-WHERE a.status = 'pendiente'
+WHERE a.status = 'pendiente' AND s.project_id = ?
 ORDER BY a.created_at;
 ```
 
-Acelera el índice parcial `idx_approvals_pending`. La ejecuta el panel global, así que se ejecuta sobre las sesiones de cualquier capa. Ver [[specs/SPEC-INTERFAZ-ATAJOS]].
+Acelera el índice parcial `idx_approvals_pending` para el estado y `idx_sessions_project` para el proyecto. La ejecuta el panel global, así que abarca las sesiones de cualquier capa **del proyecto actual**, nunca las de otra carpeta. Ver [[specs/SPEC-INTERFAZ-ATAJOS]].
 
 ### Auditoría de una etapa concreta
 
@@ -85,14 +108,15 @@ Acelera `idx_change_history_file`. Devuelve cambios de sesiones distintas, y est
 | Escribir streaming | `reasoning` | El modelo, token a token |
 | Registrar y leer auditoría | `context_audit` | El nodo de contexto y el usuario |
 | Registrar y leer historial | `change_history` | Las herramientas de archivo y el usuario |
-| Listar por estado y actividad | `sessions` | El selector de sesiones |
+| Resolver el proyecto de la carpeta | `projects` | El arranque, una vez por apertura |
+| Listar por estado y actividad | `sessions` | El selector de sesiones, acotado a `project_id` |
 
-El patrón dominante es **leer por sesión** y **escribir por operación**. Casi ninguna consulta cruza más de dos tablas.
+El patrón dominante es **leer por sesión** y **escribir por operación**. Casi ninguna consulta cruza más de dos tablas. La excepción estructural es el filtro por `project_id` en las consultas de sesiones: aparece siempre que se listan o agregan datos de la carpeta actual.
 
 ## 3. Joins y agregaciones
 
 - El historial de una sesión hace un `LEFT JOIN` entre `messages` y `reasoning`. Es el único `JOIN` de la aplicación que une dos tablas hijas de la misma sesión.
-- El panel de aprobaciones hace un `JOIN` de `approvals` con `sessions` para mostrar el nombre de la sesión que espera. Necesita el nombre, que solo está en `sessions`.
+- El panel de aprobaciones hace un `JOIN` de `approvals` con `sessions` para mostrar el nombre de la sesión que espera. Necesita el nombre, que solo está en `sessions`, y el `project_id`, que es lo que acota el panel a la carpeta actual.
 - El historial de un archivo no hace `JOIN`: si la sesión ya no existe, `session_id` es `NULL` y no hay nada que unir. Ver [[database/01-schema/RELATIONSHIPS]].
 - **No hay agregaciones.** No se cuenta ni se suma nada en la base. El contador de aprobaciones pendientes cuenta filas, y el panel de contexto calcula la ocupación del contexto en memoria a partir de los tokens que trae el modelo. Ver [[specs/SPEC-PANEL-CONTEXTO]].
 
@@ -102,11 +126,12 @@ Estas consultas se usan desde más de un sitio y conviene tenerlas en un solo lu
 
 | Consulta | Dónde se usa |
 |---|---|
+| Resolver el proyecto de la carpeta abierta | El arranque y cualquier consulta que liste sesiones |
 | Contar aprobaciones pendientes | El panel de aprobaciones y el contador del panel de datos |
 | Historial de una sesión | La TUI al abrir y al cambiar de sesión |
 | Auditoría de una etapa | El registro que consulta el usuario |
 | Historial de cambios de un archivo | La reversión y la auditoría de archivos |
-| Listar sesiones por actividad | El selector de sesiones |
+| Listar sesiones por actividad | El selector de sesiones, con `project_id` |
 
 Ninguna consulta se escribe dos veces en el código. Vienen de la base de datos en [[database/01-schema/SCHEMA]] y no leen nada de la base que no esté en esa estructura.
 
@@ -117,6 +142,7 @@ Ninguna consulta se escribe dos veces en el código. Vienen de la base de datos 
 - **No recuperar el contenido del razonamiento si no se va a mostrar.** El `LEFT JOIN` de `reasoning` trae el texto completo. Para listar mensajes sin razonamiento, se consulta `messages` sin el `JOIN`. El razonamiento puede ser largo y se paga en memoria.
 - **No hacer `JOIN` de `change_history` con `sessions` para saber qué sesión hizo un cambio.** Si la sesión fue borrada, el `JOIN` devuelve nada y se pierde el registro. El `session_id` se muestra tal cual, o `NULL`. Ver [[database/01-schema/RELATIONSHIPS]].
 - **No escribir en `change_history` desde la base directamente.** Solo el módulo de herramientas de archivo escribe ahí, y solo tras una aprobación. Ver [[database/02-rules/BUSINESS_RULES]].
+- **No listar ni contar sesiones sin filtrar por `project_id`.** La base es única y global: una consulta de sesiones sin el filtro de proyecto devuelve las de todas las carpetas. Es la única regla que no admite excepción, porque el aislamiento es lógico y depende de esa cláusula. Ver [[database/02-rules/BUSINESS_RULES]].
 - **No borrar `change_history`.** No hay caso en el que se borre. Si parece que hay, el problema es el diseño de la consulta, no la operación.
 
 ## Referencias

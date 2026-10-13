@@ -57,7 +57,7 @@ Lo que sí se guarda del turno es el mensaje `agent` final, que ya dice en su te
 | Valor | Significado |
 |---|---|
 | `proceso` | El sub-proceso de una etapa de un flujo: «[Sub Proceso] Entender el problema» |
-| `herramienta` | La línea de una herramienta, ya cerrada: «✓ LEER [AGENTS.md] · 93 líneas» |
+| `herramienta` | La línea de una herramienta, ya cerrada: «✓ LEER [AGENTS.md] · 93 líneas» o, si la lectura fue por rango, «✓ LEER [AGENTS.md:10-50] · 41 líneas» |
 
 Son líneas del hilo que se muestran al usuario, no turnos de conversación: al modelo no se le entregan. Viven en su propia tabla, `chat_evento`, para que esa frontera —se muestra / se envía al modelo— sea la frontera de la tabla y no un filtro que alguien pueda olvidar. Ver [[database/01-schema/TABLES]].
 
@@ -86,8 +86,6 @@ Los seis valores coinciden con las seis herramientas de escritura del catálogo,
 | `eliminar_carpeta` | `eliminar_carpeta` | Una carpeta borrada |
 
 `crear_archivo` y `escribir_archivo` están separados a propósito: el primero falla si el archivo ya existe, el segundo lo sobrescribe. La base refleja esa diferencia.
-
-**Una herramienta del usuario no genera una operación nueva.** Sus comandos se ejecutan bajo Landlock, que no le permite escribir en el proyecto, así que nunca hay una escritura que registrar. Si en el futuro se permitiera, sería un valor nuevo aquí y una migración; hoy el conjunto de seis sigue completo. Ver [[backend/03-security/SECURITY]].
 
 ## 3. Estados y transiciones
 
@@ -140,4 +138,4 @@ Una aprobación se vuelve `obsoleta` si la sesión termina mientras esperaba, o 
 - [[database/01-schema/CONSTRAINTS]] — los `CHECK` que los validan.
 - [[database/02-rules/DATA_FLOW]] — qué se guarda de un turno y qué no.
 - [[specs/SPEC-SESIONES]] — de dónde salen los estados de sesión.
-- [[specs/SPEC-TOOLS]] — el catálogo del que salen las operaciones de archivo y las herramientas del usuario.
+- [[specs/SPEC-TOOLS]] — el catálogo del que salen las operaciones de archivo.

@@ -1,5 +1,0 @@
-name: lector
-description: Agente de prueba que solo lee.
-permissions:
-  default: deny
-  read: allow

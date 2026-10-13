@@ -1,4 +1,3 @@
-// Package tui — módulo tui de LocalCli.
-//
-// Pantalla Bubble Tea: chat, panel de datos, los tres modales, aprobaciones y razonamiento en vivo. No decide nada ni habla con el modelo; pinta lo que llega y manda lo que se pulsa.
+// Package tui es el modelo raíz de la interfaz: enruta entre la bienvenida y la
+// vista principal, y compone el marco de la pantalla.
 package tui
