@@ -154,3 +154,57 @@ func ActualizarNombreSesion(db *sql.DB, projectID, sessionID, name string) error
 	}
 	return nil
 }
+
+// ResumenHistorial es el resumen compactado del historial de una sesión y el id
+// del último mensaje que abarca. Un `HastaID` vacío con texto dice que el resumen
+// cubre todo el historial hasta el momento de guardarlo.
+type ResumenHistorial struct {
+	Texto   string
+	HastaID string
+}
+
+// ObtenerResumenHistorial lee el resumen compactado de una sesión del proyecto.
+// Devuelve `false` cuando no hay resumen guardado (columnas NULL o texto vacío).
+func ObtenerResumenHistorial(db *sql.DB, projectID, sessionID string) (ResumenHistorial, bool, error) {
+	var texto, hasta sql.NullString
+	err := db.QueryRow(
+		"SELECT summary, summary_upto FROM sessions WHERE id = ? AND project_id = ?",
+		sessionID, projectID,
+	).Scan(&texto, &hasta)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return ResumenHistorial{}, false, nil
+		}
+		return ResumenHistorial{}, false, fmt.Errorf("store: no se pudo leer el resumen: %w", err)
+	}
+	if !texto.Valid || texto.String == "" {
+		return ResumenHistorial{}, false, nil
+	}
+	return ResumenHistorial{Texto: texto.String, HastaID: hasta.String}, true, nil
+}
+
+// GuardarResumenHistorial persiste el resumen compactado de una sesión y hasta
+// qué mensaje abarca.
+func GuardarResumenHistorial(db *sql.DB, projectID, sessionID, texto, hastaID string) error {
+	_, err := db.Exec(
+		"UPDATE sessions SET summary = ?, summary_upto = ? WHERE id = ? AND project_id = ?",
+		texto, hastaID, sessionID, projectID,
+	)
+	if err != nil {
+		return fmt.Errorf("store: no se pudo guardar el resumen: %w", err)
+	}
+	return nil
+}
+
+// LimpiarResumenHistorial borra el resumen compactado de una sesión: el historial
+// vuelve a entregarse entero.
+func LimpiarResumenHistorial(db *sql.DB, projectID, sessionID string) error {
+	_, err := db.Exec(
+		"UPDATE sessions SET summary = NULL, summary_upto = NULL WHERE id = ? AND project_id = ?",
+		sessionID, projectID,
+	)
+	if err != nil {
+		return fmt.Errorf("store: no se pudo limpiar el resumen: %w", err)
+	}
+	return nil
+}

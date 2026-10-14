@@ -2,11 +2,13 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
 
 	"localcli/internal/agent"
+	"localcli/internal/compact"
 	"localcli/internal/llm/openai"
 	"localcli/internal/store"
 	"localcli/internal/tui"
@@ -17,20 +19,11 @@ const presupuestoHistorialDefecto = 4096
 
 const cabeceraResumen = "Resumen de la conversación anterior:\n"
 
-const longitudMaximaResumen = 4000
+const longitudMaximaResumen = 8000
 
-const promptResumen = "Resume la conversación siguiente en pocas líneas, conservando " +
-	"los datos y las decisiones importantes y sin añadir nada que no aparezca en ella. " +
-	"Devuelve solo el resumen."
-
-// opcionesResumen acotan el resumen: con tope y sin razonamiento.
-var opcionesResumen = openai.Opciones{MaxTokens: 512, SinRazonamiento: true}
-
-// resumenSesion es el resumen del tramo antiguo y el id del último mensaje que abarca.
-type resumenSesion struct {
-	texto   string
-	hastaID string
-}
+// opcionesResumen acotan el resumen: con tope y sin razonamiento. El tope da
+// margen al formato estructurado, que ocupa más que un resumen libre.
+var opcionesResumen = openai.Opciones{MaxTokens: 1024, SinRazonamiento: true}
 
 // mensajeConv es un mensaje cerrado con el id de su fila.
 type mensajeConv struct {
@@ -39,6 +32,8 @@ type mensajeConv struct {
 }
 
 // historialPara arma el historial del modelo: entero si cabe, o resumen + recientes.
+// Un resumen ya persistido —automático o de `/compactar`— manda: se entrega él y
+// lo posterior literal, y solo se amplía si lo reciente no cabe en el presupuesto.
 func (o *Orquestador) historialPara(ctx context.Context, sesionID string) ([]agent.Mensaje, error) {
 	filas, err := store.ListarMensajes(o.db, o.projectID, sesionID)
 	if err != nil {
@@ -48,39 +43,115 @@ func (o *Orquestador) historialPara(ctx context.Context, sesionID string) ([]age
 	if len(conv) == 0 {
 		return nil, nil
 	}
-	presupuesto := presupuestoHistorial(o.ventanaActual())
-	if tokensDe(conv) <= presupuesto {
+	prefs := preferenciasSeguras()
+	presupuesto := presupuestoHistorial(o.ventanaActual(), prefs)
+
+	sum, hay := o.resumenPersistido(sesionID)
+	cubierto := indiceCubierto(conv, sum.HastaID)
+	if hay && cubierto == 0 {
+		// El historial ya no contiene el tramo resumido (p. ej. se deshizo): el
+		// resumen quedó obsoleto.
+		_ = store.LimpiarResumenHistorial(o.db, o.projectID, sesionID)
+		hay = false
+	}
+	if hay && tokensDe(conv[cubierto:]) <= presupuesto {
+		return armarHistorial(conv, cubierto, sum.Texto), nil
+	}
+	if !hay && tokensDe(conv) <= presupuesto {
 		return mensajesDe(conv), nil
 	}
 
-	corte, resumen := o.compactar(ctx, sesionID, conv, presupuesto)
+	corte, resumen := o.compactar(ctx, sesionID, conv, recenciaDeCompactacion(prefs, presupuesto), prefs)
 	if corte <= 0 {
+		if hay {
+			return armarHistorial(conv, cubierto, sum.Texto), nil
+		}
 		return mensajesDe(conv), nil
 	}
+	return armarHistorial(conv, corte, resumen), nil
+}
+
+// armarHistorial compone la entrega al modelo: el resumen como mensaje de sistema
+// seguido del tramo reciente literal. Sin resumen, solo el tramo reciente.
+func armarHistorial(conv []mensajeConv, corte int, resumen string) []agent.Mensaje {
 	recientes := mensajesDe(conv[corte:])
-	if resumen == "" {
-		return recientes, nil
+	if strings.TrimSpace(resumen) == "" {
+		return recientes
 	}
 	salida := make([]agent.Mensaje, 0, len(recientes)+1)
 	salida = append(salida, agent.Mensaje{Rol: agent.RolSistema, Contenido: cabeceraResumen + resumen})
-	return append(salida, recientes...), nil
+	return append(salida, recientes...)
 }
 
-// compactar decide el corte y el resumen, reutilizando el ya calculado si cubre el tramo.
-func (o *Orquestador) compactar(ctx context.Context, sesionID string, conv []mensajeConv, presupuesto int) (int, string) {
-	corte := cortePorRecencia(conv, presupuesto/2)
+// compactar decide el corte y el resumen. Reutiliza el resumen persistido si ya
+// cubre el tramo; lo amplía de forma incremental si quedó corto; y lo pide entero
+// si no hay ninguno. Devuelve el corte (0 = no se compactó) y el resumen a usar.
+func (o *Orquestador) compactar(ctx context.Context, sesionID string, conv []mensajeConv, recencia int, prefs tui.Preferencias) (int, string) {
+	corte := cortePorRecencia(conv, recencia)
 	if corte <= 0 {
 		return 0, ""
 	}
-	if cache, ok := o.resumenGuardado(sesionID); ok && cache.hastaID == conv[corte-1].id {
-		return corte, cache.texto
+
+	sum, hay := o.resumenPersistido(sesionID)
+	cubierto := indiceCubierto(conv, sum.HastaID)
+	if hay && cubierto >= corte {
+		// El resumen ya abarca el tramo reciente: se reutiliza sin llamar al modelo.
+		return cubierto, sum.Texto
 	}
-	resumen, ok := o.resumir(ctx, transcripcionDe(conv[:corte]))
+	if hay && cubierto > 0 {
+		resumen, ok := o.resumir(ctx, prefs, sum.Texto, transcripcionDe(conv[cubierto:corte]))
+		if !ok {
+			// No se pudo ampliar: se conserva el resumen previo y, literales, los
+			// mensajes que aún no abarcaba —nada se pierde.
+			return cubierto, sum.Texto
+		}
+		o.persistirResumen(sesionID, resumen, conv[corte-1].id)
+		return corte, resumen
+	}
+	resumen, ok := o.resumir(ctx, prefs, "", transcripcionDe(conv[:corte]))
 	if !ok {
 		return corte, ""
 	}
-	o.guardarResumen(sesionID, resumenSesion{texto: resumen, hastaID: conv[corte-1].id})
+	o.persistirResumen(sesionID, resumen, conv[corte-1].id)
 	return corte, resumen
+}
+
+// Compactar fuerza la compactación del historial de una sesión: resume todo lo
+// anterior al tramo reciente y lo deja persistido para los próximos turnos. Es lo
+// que dispara `/compactar` ([[specs/SPEC-HISTORIAL-CONVERSACION]]).
+func (o *Orquestador) Compactar(ctx context.Context, sesionID string) error {
+	filas, err := store.ListarMensajes(o.db, o.projectID, sesionID)
+	if err != nil {
+		return err
+	}
+	conv := conversacionDe(filas)
+	if len(conv) == 0 {
+		return nil
+	}
+	prefs := preferenciasSeguras()
+	recencia := prefs.Compactacion.ConservarEfectivo()
+	if tokensDe(conv) <= recencia {
+		return nil
+	}
+	corte, resumen := o.compactar(ctx, sesionID, conv, recencia, prefs)
+	if corte <= 0 || strings.TrimSpace(resumen) == "" {
+		return fmt.Errorf("session: no se pudo resumir el historial")
+	}
+	return nil
+}
+
+// indiceCubierto devuelve cuántos mensajes ya abarca un resumen cuyo último
+// mensaje es `hastaID`; 0 si no lo encuentra (historial deshecho, por ejemplo).
+func indiceCubierto(conv []mensajeConv, hastaID string) int {
+	if hastaID == "" {
+		return 0
+	}
+	for i, c := range conv {
+		if c.id == hastaID {
+			return i + 1
+		}
+	}
+	return 0
 }
 
 // cortePorRecencia devuelve el primer índice del tramo reciente que cabe en la recencia.
@@ -99,17 +170,26 @@ func cortePorRecencia(conv []mensajeConv, recencia int) int {
 	return 0
 }
 
-// resumir pide al modelo el resumen; un fallo o una respuesta vacía son «sin resumen».
-func (o *Orquestador) resumir(ctx context.Context, transcripcion string) (string, bool) {
-	if o.llm == nil || strings.TrimSpace(transcripcion) == "" {
+// resumir pide al modelo el resumen de un tramo; si hay un resumen anterior, pide
+// su actualización incremental. Un fallo o una respuesta vacía son «sin resumen».
+func (o *Orquestador) resumir(ctx context.Context, prefs tui.Preferencias, anterior, tramo string) (string, bool) {
+	if o.llm == nil || strings.TrimSpace(tramo) == "" {
 		return "", false
 	}
+	op := compact.Opciones{
+		Formato:   prefs.Compactacion.FormatoEfectivo(),
+		Plantilla: prefs.Compactacion.PlantillaDeCompactacion(),
+	}
+	prompt := op.PromptInicial()
+	if strings.TrimSpace(anterior) != "" {
+		prompt = op.PromptIncremental(anterior)
+	}
 	mensajes := []openai.Mensaje{
-		{Rol: "system", Contenido: promptResumen},
-		{Rol: "user", Contenido: transcripcion},
+		{Rol: "system", Contenido: prompt},
+		{Rol: "user", Contenido: tramo},
 	}
 	var b strings.Builder
-	if _, err := o.llm.Completar(ctx, o.modeloActual(), mensajes, nil, opcionesResumen, func(d openai.Delta) error {
+	if _, err := o.llm.Completar(ctx, o.modeloDeCompactacion(prefs), mensajes, nil, opcionesResumen, func(d openai.Delta) error {
 		if !d.Razonamiento {
 			b.WriteString(d.Texto)
 		}
@@ -124,19 +204,67 @@ func (o *Orquestador) resumir(ctx context.Context, transcripcion string) (string
 	return r, true
 }
 
+// modeloDeCompactacion elige el modelo que produce el resumen: el configurado
+// para compactar o, sin él, el activo.
+func (o *Orquestador) modeloDeCompactacion(prefs tui.Preferencias) string {
+	if m := prefs.Compactacion.ModeloDeCompactacion(); m != "" {
+		return m
+	}
+	return o.modeloActual()
+}
+
+// resumenPersistido lee el resumen guardado de una sesión.
+func (o *Orquestador) resumenPersistido(sesionID string) (store.ResumenHistorial, bool) {
+	sum, ok, err := store.ObtenerResumenHistorial(o.db, o.projectID, sesionID)
+	if err != nil {
+		return store.ResumenHistorial{}, false
+	}
+	return sum, ok
+}
+
+// persistirResumen guarda el resumen para reutilizarlo en los próximos turnos.
+func (o *Orquestador) persistirResumen(sesionID, texto, hastaID string) {
+	if err := store.GuardarResumenHistorial(o.db, o.projectID, sesionID, texto, hastaID); err != nil {
+		o.avisar(sesionID, "no se pudo guardar el resumen de contexto: "+err.Error(), "")
+	}
+}
+
+// preferenciasSeguras lee las preferencias del usuario; un fallo devuelve las
+// vacías, que resuelven a los valores por defecto.
+func preferenciasSeguras() tui.Preferencias {
+	prefs, err := tui.CargarPreferencias()
+	if err != nil {
+		return tui.Preferencias{}
+	}
+	return prefs
+}
+
+// recenciaDeCompactacion acota el tramo reciente literal al presupuesto: la
+// preferencia de compactación, sin superar lo que cabe.
+func recenciaDeCompactacion(prefs tui.Preferencias, presupuesto int) int {
+	recencia := prefs.Compactacion.ConservarEfectivo()
+	if presupuesto > 0 && recencia > presupuesto {
+		recencia = presupuesto
+	}
+	if recencia < 0 {
+		recencia = 0
+	}
+	return recencia
+}
+
 // presupuestoHistorial resuelve el presupuesto del historial: la preferencia del
-// usuario, si no el override de entorno, si no una fracción de la ventana —el
-// resto queda para el prompt, las herramientas y el recorte por ronda— y, sin
-// ventana conocida, el defecto.
-func presupuestoHistorial(ventana int) int {
-	if p, err := tui.CargarPreferencias(); err == nil && p.HistorialTokens > 0 {
-		return p.HistorialTokens
+// usuario, si no el override de entorno y, si no, la fracción de la ventana que
+// fija el umbral de compactación —el resto queda para el prompt, las herramientas
+// y el recorte por ronda—; sin ventana conocida, el defecto.
+func presupuestoHistorial(ventana int, prefs tui.Preferencias) int {
+	if prefs.HistorialTokens > 0 {
+		return prefs.HistorialTokens
 	}
 	if v := limiteDeEntorno(); v > 0 {
 		return v
 	}
 	if ventana > 0 {
-		return ventana / 2
+		return int(float64(ventana) * prefs.Compactacion.UmbralEfectivo())
 	}
 	return presupuestoHistorialDefecto
 }
@@ -229,25 +357,4 @@ func LimpiarResumen(s string) string {
 		s = string(r[:longitudMaximaResumen])
 	}
 	return s
-}
-
-// resumenGuardado lee el resumen en memoria de una sesión.
-func (o *Orquestador) resumenGuardado(sesionID string) (resumenSesion, bool) {
-	o.muResumen.Lock()
-	defer o.muResumen.Unlock()
-	if o.resumenes == nil {
-		return resumenSesion{}, false
-	}
-	r, ok := o.resumenes[sesionID]
-	return r, ok
-}
-
-// guardarResumen deja el resumen en memoria para reutilizarlo.
-func (o *Orquestador) guardarResumen(sesionID string, r resumenSesion) {
-	o.muResumen.Lock()
-	defer o.muResumen.Unlock()
-	if o.resumenes == nil {
-		o.resumenes = map[string]resumenSesion{}
-	}
-	o.resumenes[sesionID] = r
 }

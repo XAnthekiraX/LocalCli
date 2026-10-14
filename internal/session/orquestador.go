@@ -50,10 +50,6 @@ type Orquestador struct {
 	// inyecta el cableado, que es quien conoce la dirección del motor.
 	resolverCapacidades func() llm.Capacidades
 
-	// resumenes guarda el resumen del historial ya calculado, por sesión.
-	muResumen sync.Mutex
-	resumenes map[string]resumenSesion
-
 	// deshechos guarda, por sesión, los turnos deshechos pendientes de rehacer, en
 	// orden de deshacer: el último es el primero en rehacerse.
 	muDeshechos sync.Mutex
@@ -806,43 +802,24 @@ func (o *Orquestador) Enviar(ctx context.Context, sesionID, agenteNombre, texto 
 
 	// Las imágenes que el usuario escribió en la petición acompañan a ese turno;
 	// son efímeras y solo las ve el modelo (DATA_FLOW §Creación).
-	if imagenes := o.imagenesDelTurno(ctx, sesionID, texto); len(imagenes) > 0 {
+	imagenes := o.imagenesDelTurno(ctx, sesionID, texto)
+	if len(imagenes) > 0 {
 		historial = adjuntarAlUltimoUsuario(historial, imagenes, texto)
 	}
 
-	ejecutor := &agent.Ejecutor{
-		Agente:    agenteActivo,
-		Motor:     motorOpenAI{cliente: o.llm, modelo: o.modeloActual, sinRazonamiento: func() bool { return !o.pensarActual() }},
-		Capacidad: llm.Soportada,
-		Ventana:   o.ventanaActual(),
-		Avisar:    func(motivo, siguiente string) { o.avisar(sesionID, motivo, siguiente) },
-	}
-	if o.herramientas != nil {
-		ejecutor.Cerrado = o.catalogoDelTurno(agenteActivo)
-		ejecutor.Herramientas = adaptadorHerramientas{
-			registro: o.herramientas,
-			sesion:   sesionID,
-			permisos: agenteActivo.Permisos(),
-			Ask: func(ctx context.Context, s tools.Solicitud) (tools.Decision, error) {
-				return o.pedirAprobacion(ctx, sesionID, s)
-			},
-		}
-	}
-
 	inicio := time.Now()
+	ejecutor := o.nuevoEjecutorDeTurno(agenteActivo, sesionID)
 	// Lo que el modelo vaya entregando se acumula por si el turno se detiene a
 	// mitad: lo parcial no se pierde, se guarda como su respuesta.
-	var parcial []string
-	resultado, err := ejecutor.Turno(ctx, historial, func(d agent.Delta) error {
-		datos := map[string]string{"texto": d.Texto}
-		if d.Razonamiento {
-			datos["razonamiento"] = "true"
-		} else {
-			parcial = append(parcial, d.Texto)
+	resultado, parcial, err := o.correrTurno(ctx, sesionID, ejecutor, historial)
+	if err != nil && esErrorDeVentana(err) && o.compactacionAuto() {
+		// El prompt no cupo en la ventana pese a la estimación: se compacta a la
+		// fuerza y se reintenta una sola vez antes de darse por vencido.
+		if hist2, ok := o.recompactar(ctx, sesionID, imagenes, texto); ok {
+			ejecutor = o.nuevoEjecutorDeTurno(agenteActivo, sesionID)
+			resultado, parcial, err = o.correrTurno(ctx, sesionID, ejecutor, hist2)
 		}
-		o.emitir(tui.Evento{Sesion: sesionID, Tipo: tui.EventoToken, Datos: datos})
-		return nil
-	})
+	}
 	duracion := int(time.Since(inicio).Milliseconds())
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -877,6 +854,97 @@ func (o *Orquestador) Enviar(ctx context.Context, sesionID, agenteNombre, texto 
 
 	o.cerrarTurno(sesionID, false)
 	return nil
+}
+
+// nuevoEjecutorDeTurno arma el ejecutor del agente activo para un turno de chat,
+// con el catálogo de herramientas y el canal de aprobación de la sesión.
+func (o *Orquestador) nuevoEjecutorDeTurno(agenteActivo agent.Agente, sesionID string) *agent.Ejecutor {
+	ejecutor := &agent.Ejecutor{
+		Agente:    agenteActivo,
+		Motor:     motorOpenAI{cliente: o.llm, modelo: o.modeloActual, sinRazonamiento: func() bool { return !o.pensarActual() }},
+		Capacidad: llm.Soportada,
+		Ventana:   o.ventanaActual(),
+		Avisar:    func(motivo, siguiente string) { o.avisar(sesionID, motivo, siguiente) },
+	}
+	if o.herramientas != nil {
+		ejecutor.Cerrado = o.catalogoDelTurno(agenteActivo)
+		ejecutor.Herramientas = adaptadorHerramientas{
+			registro: o.herramientas,
+			sesion:   sesionID,
+			permisos: agenteActivo.Permisos(),
+			Ask: func(ctx context.Context, s tools.Solicitud) (tools.Decision, error) {
+				return o.pedirAprobacion(ctx, sesionID, s)
+			},
+		}
+	}
+	return ejecutor
+}
+
+// correrTurno ejecuta el ciclo del agente emitiendo lo que el modelo entrega y
+// acumulando el texto parcial por si el turno se detiene a mitad.
+func (o *Orquestador) correrTurno(ctx context.Context, sesionID string, ejecutor *agent.Ejecutor, historial []agent.Mensaje) (agent.Respuesta, []string, error) {
+	var parcial []string
+	resultado, err := ejecutor.Turno(ctx, historial, func(d agent.Delta) error {
+		datos := map[string]string{"texto": d.Texto}
+		if d.Razonamiento {
+			datos["razonamiento"] = "true"
+		} else {
+			parcial = append(parcial, d.Texto)
+		}
+		o.emitir(tui.Evento{Sesion: sesionID, Tipo: tui.EventoToken, Datos: datos})
+		return nil
+	})
+	return resultado, parcial, err
+}
+
+// recompactar fuerza una compactación más agresiva —la mitad del tramo reciente—
+// para liberar ventana y volver a armar el historial del turno. Es el reintento
+// ante un desbordamiento real del servidor ([[specs/SPEC-HISTORIAL-CONVERSACION]]).
+func (o *Orquestador) recompactar(ctx context.Context, sesionID string, imagenes []agent.Imagen, texto string) ([]agent.Mensaje, bool) {
+	filas, err := store.ListarMensajes(o.db, o.projectID, sesionID)
+	if err != nil {
+		return nil, false
+	}
+	conv := conversacionDe(filas)
+	if len(conv) == 0 {
+		return nil, false
+	}
+	prefs := preferenciasSeguras()
+	recencia := prefs.Compactacion.ConservarEfectivo() / 2
+	if recencia < 1 {
+		recencia = 1
+	}
+	corte, resumen := o.compactar(ctx, sesionID, conv, recencia, prefs)
+	if corte <= 0 {
+		return nil, false
+	}
+	historial := armarHistorial(conv, corte, resumen)
+	if len(imagenes) > 0 {
+		historial = adjuntarAlUltimoUsuario(historial, imagenes, texto)
+	}
+	return historial, true
+}
+
+// compactacionAuto dice si el usuario tiene encendida la compactación automática.
+func (o *Orquestador) compactacionAuto() bool {
+	return preferenciasSeguras().Compactacion.AutoActivo()
+}
+
+// esErrorDeVentana reconoce el rechazo del servidor por exceso de contexto: un
+// 4xx cuyo mensaje habla de la ventana o del tamaño de la petición.
+func esErrorDeVentana(err error) bool {
+	var eErr *openai.ErrorServidor
+	if !errors.As(err, &eErr) {
+		return false
+	}
+	if eErr.Codigo < 400 || eErr.Codigo >= 500 {
+		return false
+	}
+	m := strings.ToLower(eErr.Mensaje)
+	return strings.Contains(m, "exceeds the available context") ||
+		strings.Contains(m, "context length") ||
+		strings.Contains(m, "context size") ||
+		strings.Contains(m, "n_ctx")
 }
 
 // guardarParcial conserva lo que el modelo entregó antes de detenerse: lo guarda

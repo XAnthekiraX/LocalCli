@@ -34,6 +34,7 @@ type puertoFalso struct {
 	rehechos        []string
 	deshacerN       int
 	rehacerN        int
+	compactadas     []string
 }
 
 func (p *puertoFalso) Agentes() []string                  { return []string{AgentePlan, AgenteBuild} }
@@ -100,6 +101,11 @@ func (p *puertoFalso) Deshacer(sesionID string) (int, error) {
 func (p *puertoFalso) Rehacer(sesionID string) (int, error) {
 	p.rehechos = append(p.rehechos, sesionID)
 	return p.rehacerN, nil
+}
+
+func (p *puertoFalso) Compactar(_ context.Context, sesionID string) error {
+	p.compactadas = append(p.compactadas, sesionID)
+	return nil
 }
 
 func teclaRuna(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
@@ -382,7 +388,7 @@ func TestLaPaletaDeComandosSeDespliegaConLaBarra(t *testing.T) {
 		t.Fatalf("la paleta no lista los flujos:\n%s", pantalla)
 	}
 
-	for _, r := range "res" {
+	for _, r := range "resol" {
 		pulsar(app, teclaRuna(string(r)))
 	}
 	filtrados := app.paleta.Filtrados()

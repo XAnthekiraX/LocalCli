@@ -36,6 +36,7 @@ Descomposición de la capa backend, **en el orden de construcción acordado**. C
 | T-B009 | crear  | Nodo de contexto: selección y recorte por etapa                         | T-B008                 | completada  | `009-task-nodo-contexto.md`         |
 | T-B010 | crear  | Persistencia de sesiones y mensajes (store)                             | T-B001                 | completada | `010-task-store-sesion-mensajes.md` |
 | T-B011 | crear  | TUI de chat: bienvenida, streaming en vivo y panel                      | T-B007                 | completada | `011-task-tui-chat.md`              |
+| T-B024 | actualizar | Compactación del historial: resumen persistido en la sesión, disparo por umbral y por desbordamiento, formato y modelo configurables, `/compactar` | T-B007, T-B023 | completada | `024-task-compactacion-contexto.md` |
 
 ## Bloque 4 — Herramientas
 

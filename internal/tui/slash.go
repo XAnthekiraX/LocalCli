@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -52,6 +53,8 @@ func (a *App) ejecutarComandoLocal(texto string) (tea.Cmd, bool) {
 		return a.rehacerTurno(), true
 	case "/retry":
 		return a.repetirUltimaPeticion(), true
+	case "/compactar":
+		return a.compactarContexto(), true
 	case "/init":
 		a.notificarLocal("/init todavía no está implementado")
 		return nil, true
@@ -94,6 +97,26 @@ func (a *App) rehacerTurno() tea.Cmd {
 	}
 	return turnoTocadoCmd(a.puerto, a.sesion.ID,
 		"no se pudo rehacer", "turno rehecho", "no hay nada que rehacer", Puerto.Rehacer)
+}
+
+// compactarContexto fuerza la compactación del historial de la sesión activa y
+// deja el aviso en el hilo. Sin sesión solo avisa.
+func (a *App) compactarContexto() tea.Cmd {
+	if a.sesion == nil {
+		a.notificarLocal("no hay una sesión activa para compactar")
+		return nil
+	}
+	sesionID := a.sesion.ID
+	p := a.puerto
+	return func() tea.Msg {
+		if p == nil {
+			return nil
+		}
+		if err := p.Compactar(context.Background(), sesionID); err != nil {
+			return avisoTurnoMsg{ID: sesionID, Texto: "no se pudo compactar: " + err.Error()}
+		}
+		return avisoTurnoMsg{ID: sesionID, Texto: "contexto compactado"}
+	}
 }
 
 // turnoTocadoCmd ejecuta el deshacer o el rehacer y trae de vuelta el hilo ya

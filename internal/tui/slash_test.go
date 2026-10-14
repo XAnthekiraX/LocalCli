@@ -141,6 +141,31 @@ func TestRedoRehaceElTurno(t *testing.T) {
 	}
 }
 
+// TestCompactarResumeLaSesionActiva: `/compactar` manda a resumir la sesión
+// activa y deja el aviso; sin sesión solo avisa.
+func TestCompactarResumeLaSesionActiva(t *testing.T) {
+	p := &puertoFalso{}
+	app := appDePrueba(p)
+	app.sesion = &Sesion{ID: "activa", Nombre: "S", Estado: EstadoTrabajando}
+	app.vista = VistaPrincipal
+	app.entrada.Texto = "/compactar"
+	pulsar(app, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if len(p.compactadas) != 1 || p.compactadas[0] != "activa" {
+		t.Fatalf("`/compactar` debería compactar la sesión activa: %v", p.compactadas)
+	}
+	if hilo := render.SinANSI(app.chat.Hilo(80)); !strings.Contains(hilo, "contexto compactado") {
+		t.Fatalf("`/compactar` debería dejar el aviso en el hilo:\n%s", hilo)
+	}
+
+	app.sesion = nil
+	app.entrada.Texto = "/compactar"
+	pulsar(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(p.compactadas) != 1 {
+		t.Fatalf("sin sesión no debería compactar: %v", p.compactadas)
+	}
+}
+
 // TestSkillYComandosDesconocidosSoloAvisan: `/skill:…` y un `/comando` que no se
 // reconoce no envían nada al agente: dejan un aviso en la vista.
 func TestSkillYComandosDesconocidosSoloAvisan(t *testing.T) {

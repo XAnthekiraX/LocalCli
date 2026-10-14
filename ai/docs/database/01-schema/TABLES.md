@@ -61,10 +61,14 @@ Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TE
 | `updated_at` | Última actividad | ISO 8601 UTC | No | — |
 | `motor_id` | Motor de inferencia que usa la sesión | `id` de una entrada de `motores.json` | Sí | `NULL` |
 | `modelo` | Modelo que usa la sesión | Nombre tal cual lo declara el motor | Sí | `NULL` |
+| `summary` | Resumen compactado del historial, ya optimizado por el modelo | Texto libre | Sí | `NULL` |
+| `summary_upto` | `id` del último mensaje que el resumen abarca | UUID v4 de `messages.id` | Sí | `NULL` |
 
 `layer` es `NULL` para una sesión general, por ejemplo cuando solo conversas o revisas contexto sin ejecutar tareas de una capa concreta.
 
 `motor_id` y `modelo` son **el par motor/modelo de la sesión**, y son su única huella de ejecución: son lo que se lee al retomar y lo que se actualiza al cambiar de motor o de modelo. Ver [[specs/SPEC-SESIONES]] y [[specs/SPEC-MODELOS-LLAMACPP]].
+
+`summary` y `summary_upto` son **el resumen persistido del historial**. Viven en la sesión y no en una tabla aparte porque son un único valor derivado por sesión: el resumen compactado y hasta qué mensaje llega dan lo necesario para reutilizarlo entre turnos y ampliarlo de forma incremental sin resumir dos veces. Van nullable: una sesión sin compactar tiene las dos en `NULL` —no hay resumen ni, por tanto, un punto de corte—. Guardarlo aquí no sustituye a los mensajes, que siguen completos; es una caché del tramo antiguo ya resumido. Una sesión deshecha hasta un punto anterior al corte deja el resumen obsoleto y se limpia. Ver [[specs/SPEC-HISTORIAL-CONVERSACION]].
 
 Dos detalles que no son obvios:
 
@@ -162,7 +166,7 @@ Que `crear_todo` inserte y no reescriba es justo lo que hace segura la operació
 
 **La jerarquía es de un nivel y vive en `parent_position`.** Un paso raíz la lleva en `NULL`; un paso agrupado apunta a la `position` de su tarea principal dentro de la misma sesión. No es una clave foránea declarada —SQLite no puede añadir por `ALTER TABLE` una autorreferencia compuesta ni un `CHECK` que mire otras filas—, así que la validez de la referencia la impone la capa de datos al escribir. El índice `idx_todos_padre` de [[database/01-schema/INDEXES]] sirve justo para leer el grupo de una tarea principal y para verificar esa referencia. Ver [[database/02-rules/BUSINESS_RULES]].
 
-La jerarquía es un cambio de esquema: la columna `parent_position` la añade la migración `008-todo-jerarquia` ([[database/03-operations/MIGRATIONS]]), nullable y sin valor por defecto, así que las filas anteriores quedan con `NULL`, que es exactamente «paso raíz». Una base v7 se lee como una lista plana, sin ningún cambio de comportamiento: la jerarquía es una forma nueva de crear la lista, no una lectura nueva ([[specs/SPEC-TOOLS]] §Criterios de aceptación).
+La jerarquía es un cambio de esquema: la columna `parent_position` la añade la migración `009-todo-jerarquia` ([[database/03-operations/MIGRATIONS]], pendiente de la tarea T-B022), nullable y sin valor por defecto, así que las filas anteriores quedan con `NULL`, que es exactamente «paso raíz». Una base v8 se lee como una lista plana, sin ningún cambio de comportamiento: la jerarquía es una forma nueva de crear la lista, no una lectura nueva ([[specs/SPEC-TOOLS]] §Criterios de aceptación).
 
 ### `flow_context`
 

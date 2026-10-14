@@ -429,6 +429,7 @@ func ComandosDeLaEntrada(p Puerto) []Comando {
 		Comando{Nombre: "undo", Descripcion: "deshace el último turno"},
 		Comando{Nombre: "redo", Descripcion: "rehace el turno deshecho"},
 		Comando{Nombre: "retry", Descripcion: "repite la última petición"},
+		Comando{Nombre: "compactar", Descripcion: "resume el historial de la sesión activa"},
 		Comando{Nombre: "init", Descripcion: "inicializa el proyecto (pendiente)"},
 	)
 }

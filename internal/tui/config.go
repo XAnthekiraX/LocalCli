@@ -22,6 +22,95 @@ type Preferencias struct {
 	HistorialTokens int `json:"historial_tokens,omitempty"`
 	// Pensar es si el chat deja razonar al modelo antes de responder.
 	Pensar bool `json:"pensar,omitempty"`
+	// Compactacion configura el gestor de contexto y la compactación automática.
+	// Sin ella se usan los valores por defecto. Ver
+	// [[specs/SPEC-HISTORIAL-CONVERSACION]].
+	Compactacion *Compactacion `json:"compactacion,omitempty"`
+}
+
+// Compactacion es la configuración del gestor de contexto. Todos los campos son
+// opcionales: los ceros se resuelven con los valores por defecto a través de los
+// métodos `*Efectivo`. Vive dentro de `config.json`, en
+// `~/.config/localcli/` ([[specs/SPEC-HISTORIAL-CONVERSACION]] §Disparadores y configuración).
+type Compactacion struct {
+	// Auto decide si la compactación se dispara sola al superar el umbral o ante
+	// un desbordamiento de ventana. Puntero para distinguir «no dicho» de «false».
+	Auto *bool `json:"auto,omitempty"`
+	// Umbral es la fracción de la ventana de contexto a partir de la cual se
+	// compacta el historial (0 < umbral ≤ 1). Por defecto 0.60.
+	Umbral float64 `json:"umbral,omitempty"`
+	// ConservarTokens es cuántos tokens recientes se entregan literales tras
+	// compactar; el resto se resume. Por defecto 15000.
+	ConservarTokens int `json:"conservar_tokens,omitempty"`
+	// Modelo es el modelo que produce los resúmenes; vacío usa el modelo activo.
+	Modelo string `json:"modelo,omitempty"`
+	// Formato elige la plantilla del resumen: "opencode" (estructurado, por
+	// defecto), "legacy" (resumen libre) o "custom" (usa `Plantilla`).
+	Formato string `json:"formato,omitempty"`
+	// Plantilla es el prompt de compactación cuando `Formato` es "custom".
+	Plantilla string `json:"plantilla,omitempty"`
+}
+
+// Valores por defecto de la compactación ([[specs/SPEC-HISTORIAL-CONVERSACION]]).
+const (
+	// UmbralCompactacionPorDefecto compacta al 60 % de la ventana.
+	UmbralCompactacionPorDefecto = 0.60
+	// ConservarTokensCompactacionPorDefecto es el tramo reciente literal.
+	ConservarTokensCompactacionPorDefecto = 15000
+	// FormatoCompactacionPorDefecto es el resumen estructurado estilo OpenCode.
+	FormatoCompactacionPorDefecto = "opencode"
+)
+
+// AutoActivo dice si la compactación automática está encendida; sin preferencia,
+// sí.
+func (c *Compactacion) AutoActivo() bool {
+	if c == nil || c.Auto == nil {
+		return true
+	}
+	return *c.Auto
+}
+
+// UmbralEfectivo devuelve la fracción de la ventana para compactar, acotada a
+// (0, 1]; sin preferencia, el 60 %.
+func (c *Compactacion) UmbralEfectivo() float64 {
+	if c == nil || c.Umbral <= 0 || c.Umbral > 1 {
+		return UmbralCompactacionPorDefecto
+	}
+	return c.Umbral
+}
+
+// ConservarEfectivo devuelve cuántos tokens recientes viajan literales; sin
+// preferencia, 15000.
+func (c *Compactacion) ConservarEfectivo() int {
+	if c == nil || c.ConservarTokens <= 0 {
+		return ConservarTokensCompactacionPorDefecto
+	}
+	return c.ConservarTokens
+}
+
+// FormatoEfectivo devuelve el formato del resumen; sin preferencia, "opencode".
+func (c *Compactacion) FormatoEfectivo() string {
+	if c == nil || c.Formato == "" {
+		return FormatoCompactacionPorDefecto
+	}
+	return c.Formato
+}
+
+// ModeloDeCompactacion devuelve el modelo configurado para resumir, o vacío si
+// debe usarse el activo.
+func (c *Compactacion) ModeloDeCompactacion() string {
+	if c == nil {
+		return ""
+	}
+	return c.Modelo
+}
+
+// PlantillaDeCompactacion devuelve la plantilla del formato "custom".
+func (c *Compactacion) PlantillaDeCompactacion() string {
+	if c == nil {
+		return ""
+	}
+	return c.Plantilla
 }
 
 // RutaConfig resuelve la ruta del archivo de preferencias, en la misma carpeta

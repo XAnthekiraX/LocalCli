@@ -149,7 +149,13 @@ Además de `~/.config/localcli/keys.json` (el mapa de teclas), el usuario tiene 
 ```json
 {
   "ultimo_agente": "build",
-  "historial_tokens": 4096
+  "historial_tokens": 4096,
+  "compactacion": {
+    "auto": true,
+    "umbral": 0.6,
+    "conservar_tokens": 15000,
+    "formato": "opencode"
+  }
 }
 ```
 
@@ -157,8 +163,15 @@ Además de `~/.config/localcli/keys.json` (el mapa de teclas), el usuario tiene 
 - **El modelo elegido no está aquí.** La selección del modelo se gestiona por el catálogo y el estado de la aplicación ([[#8. El catálogo de modelos]]), no en la configuración global: `localcli.json` solo guarda `proveedor` y `api`. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
 - `ultimo_agente` es el punto de partida de las sesiones nuevas.
 - `historial_tokens` es el presupuesto de tokens del historial de conversación que se le entrega al modelo; sin él se usa `LOCALCLI_CONTEXT_LIMIT` y, en su defecto, la mitad de la ventana efectiva (y `4096` si no se conoce la ventana). Ver [[specs/SPEC-HISTORIAL-CONVERSACION]].
+- `compactacion` gobierna la compactación del historial ([[specs/SPEC-HISTORIAL-CONVERSACION]]):
+  - `auto` — si la compactación automática está activa. Por defecto `true`.
+  - `umbral` — fracción de la ventana efectiva a la que se dispara la compactación. Por defecto `0.6` (60 %).
+  - `conservar_tokens` — tokens recientes que viajan literales tras el resumen. Por defecto `15000`; nunca supera el presupuesto del historial.
+  - `modelo` — modelo que resume; sin él, el modelo activo. Pensado para uno ligero.
+  - `formato` — `opencode` (por defecto), `legacy` o `custom`.
+  - `plantilla` — prompt literal del resumen, solo con `formato: "custom"`.
 - Un archivo ausente o ilegible no rompe el arranque: se usan los valores por defecto (`plan` como agente).
-- La interfaz los escribe al cambiar de agente; no hay que editar el archivo a mano.
+- La interfaz los escribe al cambiar de agente; no hay que editar el archivo a mano. El bloque `compactacion` se edita a mano (la interfaz aún no lo expone).
 
 ## 8. El catálogo de modelos
 

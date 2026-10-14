@@ -11,7 +11,7 @@
 - [[database/01-schema/TABLES]] §`todos` — columna `parent_position` y cómo se impone la referencia
 - [[database/01-schema/SCHEMA]] §`todos` — el campo en el esquema
 - [[database/01-schema/INDEXES]] §`idx_todos_padre` — lectura del grupo de subtareas
-- [[database/03-operations/MIGRATIONS]] §`008-todo-jerarquia` — columna e índice aditivos
+- [[database/03-operations/MIGRATIONS]] §`009-todo-jerarquia` — columna e índice aditivos
 - [[backend/04-infrastructure/EVENTS]] §3 `todo_actualizada` — payload con `padre`
 - [[backend/01-domain/BUSINESS_RULES]] §Agentes — reglas de las dos herramientas
 
@@ -26,18 +26,18 @@ Esta tarea la añade, con una **jerarquía de un nivel**: `crear_todo` acepta, a
 del paso suelto (`contenido`), una tarea principal con `titulo` y `subtareas`,
 insertada como un grupo atómico; `actualizar_todo` admite `subtareas` opcionales en
 cada elemento. En la base, la jerarquía vive en la columna nullable
-`todos.parent_position` (la migración `008-todo-jerarquia` la añade junto con el
+`todos.parent_position` (la migración `009-todo-jerarquia` la añade junto con el
 índice `idx_todos_padre`); la referencia no se puede declarar como clave foránea con
 `ALTER TABLE`, así que su validez se impone en la capa de datos al escribir.
 
 No cambia el comportamiento de una llamada sin subtareas: un paso suelto se inserta
-igual que hoy, y las bases v7 se leen como listas planas.
+igual que hoy, y las bases v8 se leen como listas planas.
 
 ## Tareas pequeñas
 
 | ID         | Acción    | Tarea                                                                                                                   | Estado    | Archivos                              | Verificación                                                                                                                   |
 | ---------- | --------- | ----------------------------------------------------------------------------------------------------------------------- | --------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| T-B022-01  | actualizar | Migración `008-todo-jerarquia`: `ALTER TABLE todos ADD COLUMN parent_position INTEGER NULL` + índice `idx_todos_padre` (`session_id, parent_position`); DDL de creación en v8 y `user_version = 8` | pendiente | `internal/store/migraciones.go`, `internal/store/schema.go` | Una base v7 abre y pasa a v8 sin tocar filas; el DDL de creación nueva y la migración dejan el mismo esquema                     |
+| T-B022-01  | actualizar | Migración `009-todo-jerarquia`: `ALTER TABLE todos ADD COLUMN parent_position INTEGER NULL` + índice `idx_todos_padre` (`session_id, parent_position`); DDL de creación en v9 y `user_version = 9` | pendiente | `internal/store/migraciones.go`, `internal/store/schema.go` | Una base v8 abre y pasa a v9 sin tocar filas; el DDL de creación nueva y la migración dejan el mismo esquema                     |
 | T-B022-02  | actualizar | Store: `Todo` gana `PosicionPadre` (`*int`); `CrearTodo` inserta el grupo (principal + subtareas) en una transacción; `ReemplazarTodos` escribe `parent_position`; la lectura devuelve `parent_position` y valida que apunte a una fila existente de la sesión | pendiente | `internal/store/todos.go`              | Crear un grupo deja la principal y sus subtareas seguidas en una transacción; un `parent_position` huérfano da error al escribir  |
 | T-B022-03  | actualizar | Peticiones y esquemas: `PeticionCrearTodo` gana `Titulo` y `Subtareas []ElementoTodo` (excluyentes con `Contenido`); `actualizar_todo` admite `subtareas` opcional por elemento; rellenar `Propiedad.Enum` para `estado`/`prioridad` en `esquema.go` | pendiente | `internal/tools/peticiones.go`, `internal/tools/catalogo.go`, `internal/tools/esquema.go` | `titulo`+`subtareas` conviven con `contenido`+`estado`+`prioridad`; mezclar ambos o ninguno da `E_BAD_ARGS`; el esquema generado muestra el enum de estado y prioridad |
 | T-B022-04  | actualizar | Handlers de sesión: `crear_todo` acepta las dos formas y devuelve el checklist con las subtareas anidadas bajo su título; `actualizar_todo` acepta `subtareas` por elemento; el `en_progreso` único se cuenta sobre toda la lista, incluidas las subtareas | pendiente | `internal/session/todos.go`            | «Crea un TODO con las fases del ciclo de vida del software» produce «Ciclo de vida del software» con sus 7 fases como subtareas; sin `subtareas` la llamada se comporta como hoy                                  |

@@ -233,3 +233,50 @@ func TestMensajeSinImagenViajaComoCadena(t *testing.T) {
 		t.Fatalf("sin imágenes el content debería ser una cadena: %s", datos)
 	}
 }
+
+func TestUnSoloMensajeDeSistemaAlPrincipio(t *testing.T) {
+	// El prompt del agente y el resumen del historial llegan como dos mensajes de
+	// sistema seguidos: deben fundirse en uno solo al principio.
+	got := normalizarMensajes([]Mensaje{
+		{Rol: rolSistema, Contenido: "prompt del agente"},
+		{Rol: rolSistema, Contenido: "resumen del historial"},
+		{Rol: rolUsuario, Contenido: "hola"},
+	})
+	if len(got) != 2 {
+		t.Fatalf("debería quedar prompt+resumen fundidos y el usuario: %+v", got)
+	}
+	if got[0].Rol != rolSistema || !strings.Contains(got[0].Contenido, "prompt del agente") || !strings.Contains(got[0].Contenido, "resumen del historial") {
+		t.Fatalf("el bloque inicial de sistema debería fundirse en uno: %+v", got[0])
+	}
+	if got[1].Rol != rolUsuario || got[1].Contenido != "hola" {
+		t.Fatalf("el turno de usuario no debería cambiar: %+v", got[1])
+	}
+}
+
+func TestUnSistemaIntermedioPasaAUsuario(t *testing.T) {
+	// Un empujón de continuación viaja como mensaje de sistema a mitad del turno:
+	// para respetar la plantilla pasa a rol de usuario, conservando su posición.
+	got := normalizarMensajes([]Mensaje{
+		{Rol: rolSistema, Contenido: "prompt"},
+		{Rol: rolUsuario, Contenido: "usa la herramienta"},
+		{Rol: "tool", Contenido: "resultado", IDLlamada: "1"},
+		{Rol: rolSistema, Contenido: "no cierres el turno"},
+	})
+	if len(got) != 4 {
+		t.Fatalf("no debería perderse ningún turno: %+v", got)
+	}
+	if got[0].Rol != rolSistema {
+		t.Fatalf("el prompt debería seguir siendo el sistema: %+v", got[0])
+	}
+	ultimo := got[len(got)-1]
+	if ultimo.Rol != rolUsuario || ultimo.Contenido != "no cierres el turno" {
+		t.Fatalf("el sistema intermedio debería pasar a usuario: %+v", ultimo)
+	}
+}
+
+func TestNormalizarSinSistemaNoTocaNada(t *testing.T) {
+	got := normalizarMensajes([]Mensaje{{Rol: rolUsuario, Contenido: "hola"}})
+	if len(got) != 1 || got[0].Rol != rolUsuario {
+		t.Fatalf("sin sistema no debería cambiar nada: %+v", got)
+	}
+}

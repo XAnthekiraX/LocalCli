@@ -190,6 +190,10 @@ DescargarModelo(ggufURL, mmprojURL string) error
 	Eliminar(sesionID string) error
 	Crear() (*Sesion, error)
 	Enviar(ctx context.Context, sesionID, agente, texto string) error
+	// Compactar fuerza la compactación del historial de una sesión: resume lo
+	// antiguo y deja persistido el resumen. Lo usa el comando `/compactar`. Sin
+	// nada que compactar no hace nada.
+	Compactar(ctx context.Context, sesionID string) error
 	// ResponderAprobacion entrega la decisión de una línea del panel de
 	// aprobaciones: la sesión que la pidió deja de esperar y continúa o se corta.
 	ResponderAprobacion(sesionID, aprobacionID string, aprobar bool) error

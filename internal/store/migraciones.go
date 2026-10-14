@@ -8,14 +8,14 @@ import (
 )
 
 // versionEsquema es la versión actual del esquema ([[database/03-operations/MIGRATIONS]]).
-const versionEsquema = 7
+const versionEsquema = 8
 
 // Migrar lleva la base a la versión objetivo aplicando, en orden y una a una, las
 // migraciones que falten ([[database/03-operations/MIGRATIONS]] §1 y §2).
 //
 // Un archivo recién creado (user_version = 0, sin esquema) nace ya en la versión
 // actual: se crea el esquema completo de una vez en lugar de encadenar las
-// migraciones 001..007, que dejarían el archivo a medias si algo se interrumpe.
+// migraciones 001..008, que dejarían el archivo a medias si algo se interrumpe.
 // El 001 no puede distinguir «archivo vacío» de «v1» por el número solo, así que
 // el 0 se resuelve como «sin esquema» y se crea todo.
 func Migrar(db *sql.DB, versionObjetivo int) error {
@@ -74,6 +74,8 @@ func aplicarMigracion(db *sql.DB, desde int) error {
 		migrar = migracion005
 	case 5:
 		migrar = migracion006
+	case 7:
+		migrar = migracion008
 	default:
 		return fmt.Errorf("store: migración desde versión %d no soportada", desde)
 	}
@@ -270,4 +272,17 @@ SELECT id, ?, name, layer, status, created_at, updated_at, motor_id, modelo FROM
 		return err
 	}
 	return tx.Commit()
+}
+
+// migracion008 (`008-resumen-sesion`) es aditiva y solo añade a `sessions` las
+// columnas `summary` (el resumen compactado del historial) y `summary_upto` (el
+// id del último mensaje que ese resumen abarca), ambas nullable: las sesiones
+// anteriores quedan con NULL, que significa «sin resumen». Ver
+// [[specs/SPEC-HISTORIAL-CONVERSACION]] y [[database/03-operations/MIGRATIONS]].
+func migracion008(tx *sql.Tx) error {
+	if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN summary TEXT;`); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN summary_upto TEXT;`)
+	return err
 }

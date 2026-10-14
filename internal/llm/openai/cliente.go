@@ -160,7 +160,7 @@ func (c *Cliente) Chat(ctx context.Context, modelo string, mensajes []Mensaje, a
 func (c *Cliente) Completar(ctx context.Context, modelo string, mensajes []Mensaje, herramientas []Herramienta, opciones Opciones, alDelta func(Delta) error) (Respuesta, error) {
 	p := peticion{
 		Modelo:       modelo,
-		Mensajes:     mensajes,
+		Mensajes:     normalizarMensajes(mensajes),
 		Herramientas: herramientas,
 		Stream:       true,
 		Uso:          &opcionesUso{Incluir: true},
@@ -196,6 +196,46 @@ func (c *Cliente) Completar(ctx context.Context, modelo string, mensajes []Mensa
 		return Respuesta{}, nuevoErrorServidor(resp.StatusCode, body)
 	}
 	return leerStream(resp.Body, alDelta)
+}
+
+// Roles del protocolo que el harness maneja. El resto viaja como cadena tal cual.
+const (
+	rolSistema = "system"
+	rolUsuario = "user"
+)
+
+// normalizarMensajes ajusta los turnos al contrato del chat de llama.cpp: como
+// mucho un mensaje de sistema y siempre el primero. El bloque inicial de
+// mensajes de sistema se funde en uno solo —el prompt del agente y el resumen del
+// historial comparten ese sitio—; un mensaje de sistema posterior, que el harness
+// inyecta a mitad del turno como empujón o instrucción de redacción, pasa a rol de
+// usuario para conservar su posición. Sin esto, una plantilla de chat estricta
+// —la de Qwen, por ejemplo— rechaza la petición con «System message must be at the
+// beginning».
+func normalizarMensajes(mensajes []Mensaje) []Mensaje {
+	if len(mensajes) == 0 {
+		return mensajes
+	}
+	sistema := make([]string, 0, 1)
+	i := 0
+	for i < len(mensajes) && mensajes[i].Rol == rolSistema {
+		if c := strings.TrimSpace(mensajes[i].Contenido); c != "" {
+			sistema = append(sistema, c)
+		}
+		i++
+	}
+	salida := make([]Mensaje, 0, len(mensajes))
+	if len(sistema) > 0 {
+		salida = append(salida, Mensaje{Rol: rolSistema, Contenido: strings.Join(sistema, "\n\n")})
+	}
+	for ; i < len(mensajes); i++ {
+		m := mensajes[i]
+		if m.Rol == rolSistema {
+			m.Rol = rolUsuario
+		}
+		salida = append(salida, m)
+	}
+	return salida
 }
 
 // Modelos lista los modelos que sirve el servidor.
