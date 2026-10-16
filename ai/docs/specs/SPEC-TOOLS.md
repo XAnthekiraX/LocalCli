@@ -267,14 +267,15 @@ Para reducir el hábito del modelo de pegar la ruta completa (`leer [/home/usuar
 
 Tiene **dos controles independientes**: una regla de confirmación que decide cuándo te interrumpe, y un bloqueo que garantiza que no puede tocar tus archivos.
 
-### Control 1 — solo lo destructivo o lo de fuera pregunta
+### Control 1 — lo destructivo, lo de red y lo de fuera preguntan
 
-La confirmación solo la piden dos casos, y todo lo demás corre sin preguntar:
+La confirmación solo la piden tres casos, y todo lo demás corre sin preguntar:
 
-- **Comandos destructivos:** los que borran, machacan o apagan —`rm`, `rmdir`, `mv`, `dd`, `truncate`, `kill`, `shutdown`, `mkfs*`— y los subcomandos de git que descartan trabajo o lo suben a la fuerza (`reset`, `clean`, `checkout`, `restore`, `branch -D`, `push --force`).
+- **Comandos destructivos:** los que borran, machacan o apagan —`rm`, `rmdir`, `mv`, `dd`, `truncate`, `kill`, `shutdown`, `mkfs*`— y los subcomandos de git que descartan trabajo o lo publican (`reset`, `clean`, `checkout`, `restore`, `branch -D`, `push`).
+- **Comandos que sacan información de la máquina:** `curl`, `wget`, `nc`, `telnet`, `ssh`, `scp`, `sftp` y `rsync`. La red solo sale por ellos y por las herramientas de internet, y aquí la revisas tú.
 - **Rutas fuera de la carpeta del proyecto:** un argumento absoluto que queda fuera de la raíz.
 
-Lo que se repite en cada iteración —compilar, correr las pruebas, revisar estilo, ver estado y diferencias— y cualquier otro comando inocuo se ejecutan directo. La regla es la misma que la de los archivos: dentro y sin destruir, adelante; destructivo o fuera, preguntas.
+Lo que se repite en cada iteración —compilar, correr las pruebas, revisar estilo, ver estado y diferencias— y cualquier otro comando inocuo se ejecutan directo. La regla es la misma que la de los archivos: dentro y sin destruir, adelante; destructivo, hacia fuera o hacia la red, preguntas.
 
 ### Control 2 — no toca tus archivos
 
@@ -285,13 +286,14 @@ Un filtro de texto no sirve: `find -delete`, `tee`, una tubería hacia un archiv
 Lo que sí puede hacer:
 
 - Usar su propio espacio: caché de compilación, temporales y una carpeta de trabajo por sesión.
-- Correr los comandos que no son destructivos ni tocan rutas fuera de la carpeta.
+- Correr los comandos que no son destructivos, no sacan información a la red ni tocan rutas fuera de la carpeta.
 
 Lo que no puede hacer, aunque se le pida:
 
 - Crear, editar o borrar archivos del proyecto. Para eso están las herramientas de escritura, que solo tiene `build` y donde los borrados sí piden confirmación.
-- Descartar cambios del repositorio.
-- Hacer commits, subir cambios o publicar.
+- Descartar cambios del repositorio (`checkout`, `reset`, `clean`, `restore`): piden confirmación, y Landlock impide además que escriban.
+- Hacer commits: Landlock bloquea la escritura en el repositorio, así que fracasan aunque no pidan confirmación.
+- Publicar (`push`): pide confirmación antes de salir a la red.
 
 ### Otras reglas
 
@@ -299,11 +301,11 @@ Lo que no puede hacer, aunque se le pida:
 - La salida está limitada. Un comando que no termina o que genera salida sin fin no puede colgar el harness ni llenar el contexto. Si se corta, se avisa de que se cortó.
 - El resultado indica si el comando terminó bien o mal, con la salida de error cuando la hay.
 - Un comando que falla no detiene el trabajo: el agente ve el error y sigue.
-- Las herramientas del usuario se rigen por la misma regla de confirmación que `ejecutar_comando`: destructivo o fuera de la carpeta, preguntas; lo demás, no.
+- Las herramientas del usuario se rigen por la misma regla de confirmación que `ejecutar_comando`: destructivo, con salida de red o fuera de la carpeta, preguntas; lo demás, no.
 
 ## Herramientas de internet
 
-Son las únicas que hacen salir información de la máquina.
+Son la vía de salida pensada para la red: la otra es la terminal, y ahí cada comando que pueda sacar información —`curl`, `wget`, `nc`, `telnet`, `ssh`, `scp`, `sftp`, `rsync`— pide confirmación.
 
 ### Qué sale
 
@@ -365,7 +367,7 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - Un estado o una prioridad fuera del vocabulario de la lista vuelve al modelo como error corregible.
 - El relevo de `plan` a `build` es explícito: propuesta, aprobación, cambio de agente, aplicación.
 - Una aprobación vale para el cambio propuesto. No habilita nada más.
-- **Solo pide confirmación lo que queda fuera de la carpeta del proyecto o lo destructivo:** borrar archivos y carpetas, comandos destructivos y comandos con rutas absolutas de fuera. Todo lo demás, dentro de la carpeta, se ejecuta sin interrumpir, también dentro de un flujo en curso.
+- **Solo pide confirmación lo destructivo, lo que sale a la red o lo que queda fuera de la carpeta:** borrar archivos y carpetas, comandos destructivos, los programas de egreso y comandos con rutas absolutas de fuera. Todo lo demás, dentro de la carpeta, se ejecuta sin interrumpir, también dentro de un flujo en curso.
 - Las herramientas de terminal nunca se saltan las reglas de permiso.
 - La terminal no puede modificar nada del proyecto, y esa garantía no depende de revisar el comando.
 - Por internet, solo sale la consulta, nunca nada del proyecto.
@@ -418,10 +420,11 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - [ ] Una ruta que resuelve fuera de la carpeta sigue exigiendo permiso y explicación, sin que la normalización lo evite.
 - [ ] Un comando inocuo, dentro de la carpeta y sin tocar rutas de fuera, se ejecuta sin pedir permiso.
 - [ ] Un comando destructivo —borrado, machaque o los subcomandos git que descartan trabajo— pide permiso antes de ejecutarse.
+- [ ] Un comando que saca información a la red (`curl`, `wget`, `ssh`, `push`...) pide permiso antes de ejecutarse.
 - [ ] Un comando con una ruta absoluta fuera de la carpeta del proyecto pide permiso antes de ejecutarse.
 - [ ] La terminal no puede crear, editar ni borrar archivos del proyecto, ni con comandos indirectos.
 - [ ] La terminal sí puede compilar, correr pruebas y revisar estilo y tipos.
-- [ ] No puede descartar cambios del repositorio ni hacer commits.
+- [ ] No puede descartar cambios del repositorio ni hacer commits; descartar pide permiso y los commits los frena Landlock.
 - [ ] Un comando sin fin o con salida sin fin se corta y se avisa, sin colgar el harness.
 - [ ] La búsqueda por internet envía solo la consulta, nunca contenido del proyecto.
 - [ ] `abrir_pagina` devuelve el contenido de una página y ese contenido se audita.
@@ -452,7 +455,7 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 
 ## Supuestos
 
-- Los comandos concretos de la lista blanca, el límite de tiempo y el límite de salida se fijan en FASE 2 y FASE 3.
+- Las listas concretas que exigen confirmación —los programas destructivos y los de egreso; la lista cerrada vive en `internal/exec/riesgo.go`—, el límite de tiempo y el límite de salida se fijan en FASE 2 y FASE 3.
 - El límite de recorte de una salida de herramienta se fija en FASE 2.
 - El número máximo de pasadas por turno se fija en FASE 2.
 

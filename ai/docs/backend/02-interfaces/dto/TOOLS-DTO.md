@@ -114,7 +114,7 @@ Todas las herramientas de archivos admiten además `motivo` (string, **opcional*
 
 | Herramienta | Campo | Tipo | Obligatorio | `desc` |
 |---|---|---|---|---|
-| `ejecutar_comando` | `comando` | string | Sí | Comando a correr; se valida contra la lista blanca, no contra su texto |
+| `ejecutar_comando` | `comando` | string | Sí | Comando a correr; se confirma si es destructivo, saca información a la red o toca una ruta de fuera, nunca por el texto del comando |
 | `ejecutar_comando` | `carpeta` | string | No | Carpeta de trabajo; por defecto, la del proyecto |
 
 ### Internet

@@ -62,7 +62,7 @@ type PeticionEliminarCarpeta struct {
 }
 
 type PeticionEjecutarComando struct {
-	Comando string `json:"comando"          desc:"Comando a correr; se valida contra la lista blanca, no contra su texto"`
+	Comando string `json:"comando"          desc:"Comando a correr; pide confirmación si es destructivo, si sale a la red o si toca una ruta fuera de la carpeta"`
 	Carpeta string `json:"carpeta,omitempty" desc:"Carpeta de trabajo; por defecto, la del proyecto"`
 }
 

@@ -32,7 +32,7 @@ Cada módulo tiene una responsabilidad y un límite. Si un módulo necesita hace
 | `openai`, `llamacpp` | El motor, en dos piezas: el **núcleo común** (`openai`) habla el protocolo OpenAI con `llama-server`; la extensión (`llamacpp`) aporta **solo** lo que el protocolo no cubre (`/props`) | `openai` no sabe de runtimes; la extensión no decide ni traduce la conversación |
 | `tools` | Registro de las dieciséis herramientas, comprobación de permiso, validación, recorte, medición y eventos; envolver toda ejecución | No inventa herramientas ni las aplica |
 | `fileops` | Operaciones de archivo y carpeta, frontera de rutas, historial de cambios | No decide permisos; comprueba y aplica |
-| `exec` | Terminal: lista blanca y bloqueo estructural de escritura | No es una puerta trasera a los archivos del proyecto |
+| `exec` | Terminal: confirmación selectiva y bloqueo estructural de escritura | No es una puerta trasera a los archivos del proyecto |
 | `store` | Único acceso a SQLite: esquema, WAL, transacciones | No decide nada de negocio |
 | `docs` | Cargar documentación, leer frontmatter, construir el grafo | No guarda nada |
 | `task` | Leer y escribir el TODO de la ejecución: sus elementos, su orden y su estado | No detecta qué hay que hacer; eso es `flow`, y no lo consume, eso es `queue` |

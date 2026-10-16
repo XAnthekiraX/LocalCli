@@ -45,7 +45,7 @@ Qué se valida antes de que algo ocurra: rutas, argumentos de herramientas, peti
 ### Comandos de terminal
 
 - El comando corre en la carpeta del proyecto.
-- Un comando destructivo —los de la lista cerrada de `riesgo.go`, incluidos los subcomandos git que descartan trabajo— y un comando con una ruta absoluta fuera de la raíz piden confirmación; todo lo demás corre sin preguntar.
+- Un comando destructivo —los de la lista cerrada de `riesgo.go`, incluidos los subcomandos git que descartan trabajo o publican—, un programa de egreso (`curl`, `wget`, `nc`, `telnet`, `ssh`, `scp`, `sftp`, `rsync`) y un comando con una ruta absoluta fuera de la raíz piden confirmación; todo lo demás corre sin preguntar.
 - El texto del comando no se usa para decidir si es seguro: el bloqueo es estructural. La validación no intenta adivinar si un comando escribe; Landlock lo impide. Ver [[backend/02-interfaces/TOOLS]].
 - Un comando sin fin o con salida sin fin se corta por tiempo y por tamaño de salida, y se avisa.
 

@@ -96,7 +96,7 @@ Ejemplo: un elemento "implementar API de pedidos" puede necesitar elementos de d
 - El orden del TODO es el orden de ejecución, y se respeta.
 - Se ejecuta un elemento por iteración, nunca varios a la vez.
 - Los elementos de documentación y de código siguen las mismas reglas de permiso.
-- Nada se aplica sin aprobación, en ninguna de las dos clases de elemento.
+- Nada destructivo ni ninguna operación fuera de la carpeta se aplica sin aprobación, en ninguna de las dos clases de elemento.
 - Un elemento bloqueado no detiene la cola si nada depende de él.
 - La cola refleja siempre el estado real del TODO.
 - El estado de la cola es visible desde cualquier sesión.

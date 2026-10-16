@@ -86,7 +86,7 @@ internal/
   task/            archivos de tarea
   tools/           catálogo y capa universal de ejecución
   fileops/         validación de rutas, acceso a archivos e historial de cambios
-  exec/            terminal: lista blanca y bloqueo estructural de escritura
+  exec/            terminal: confirmación selectiva y bloqueo estructural de escritura
   store/           persistencia SQLite
   docs/            carga de documentación y lectura de frontmatter
 ```
@@ -142,10 +142,10 @@ La cola se deriva de los archivos de tarea y se reconstruye al arrancar en memor
 
 ## Seguridad
 
-- **Aprobación de toda escritura.** Sin excepción, ni dentro de un flujo en curso.
+- **Confirmación de lo destructivo, lo de red y lo de fuera.** Borrar —un archivo, una carpeta—, sacar información a la red desde la terminal (`curl`, `wget`, `ssh`, `push`...) o tocar una ruta fuera de la carpeta del proyecto pide tu aprobación, también dentro de un flujo en curso. Crear, sobrescribir y editar dentro de la carpeta no interrumpen.
 - **Bloqueo estructural de la terminal.** Landlock impide que un proceso hijo escriba en los archivos del proyecto, sin depender de revisar el texto del comando. En sistemas sin Landlock, la garantía es más débil y queda documentada como tal.
 - **Frontera de rutas.** Fuera de la carpeta del proyecto hace falta permiso y además la explicación del agente.
-- **Sin operaciones destructivas de git.** Ni `checkout`, ni `reset`, ni `clean`, ni commits, ni push.
+- **Confirmación de los git destructivos y de la publicación.** `reset`, `clean`, `checkout` y `restore` piden aprobación; los commits los frena Landlock; `push` pide aprobación.
 - **Historial de cambios.** Cada cambio aplicado guarda lo que había antes y lo que quedó, para poder revertir y auditar.
 
 ## Pruebas
@@ -233,7 +233,7 @@ cuenta, pero son menciones, no dependencias declaradas. Ver
 Las decisiones de backend están centralizadas en [[backend/DECISIONS]]. Las globales que siguen abiertas:
 
 - Formato definitivo del archivo de tarea (`NNN-task-<nombre>.md`) y su bloque de contexto.
-- Comandos concretos de la lista blanca de la terminal, con su límite de tiempo y de salida.
+- Los programas destructivos que exigen confirmación en la terminal (la lista cerrada está en `internal/exec/riesgo.go`), con su límite de tiempo y de salida.
 - Parámetros de arranque de `llama-server` por defecto para el perfil recomendado.
 
 ## Referencias

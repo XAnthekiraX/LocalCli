@@ -12,7 +12,7 @@ import (
 )
 
 func TestPeligroso(t *testing.T) {
-	destructivos := [][]string{
+	confirmables := [][]string{
 		{"rm", "f.txt"},
 		{"rm", "-rf", "build"},
 		{"rmdir", "x"},
@@ -25,10 +25,18 @@ func TestPeligroso(t *testing.T) {
 		{"git", "reset", "--hard"},
 		{"git", "clean", "-fd"},
 		{"git", "checkout", "--", "f.go"},
+		{"git", "push"},
+		{"git", "push", "origin", "main"},
 		{"git", "push", "--force"},
 		{"git", "branch", "-D", "temp"},
+		{"curl", "http://example.com"},
+		{"wget", "http://example.com/f"},
+		{"ssh", "host"},
+		{"scp", "f.txt", "host:/tmp"},
+		{"nc", "-l", "8080"},
+		{"rsync", "-a", "src/", "host:/tmp"},
 	}
-	for _, argv := range destructivos {
+	for _, argv := range confirmables {
 		if !Peligroso(argv) {
 			t.Errorf("`%s` debería pedir confirmación", strings.Join(argv, " "))
 		}
@@ -41,7 +49,8 @@ func TestPeligroso(t *testing.T) {
 		{"git", "status"},
 		{"git", "diff"},
 		{"git", "log", "-5"},
-		{"git", "push", "origin", "main"},
+		{"git", "commit", "-m", "msg"},
+		{"git", "fetch"},
 		{"git", "branch", "-d", "temp"},
 		{"echo", "hola"},
 		{"ls", "-la"},
@@ -89,6 +98,20 @@ func TestComandoDestructivoDeclinadoNoSeEjecuta(t *testing.T) {
 	var te *Error
 	if err == nil || !asTE(err, &te) || te.Codigo != tools.CodApprovalDeclined {
 		t.Fatalf("un comando destructivo declinado debería dar E_APPROVAL_DECLINED: %v", err)
+	}
+}
+
+// TestComandoConEgresoDeclinadoNoSeEjecuta: un comando que saca información de
+// la máquina pide confirmación; declinado, no llega a correr.
+func TestComandoConEgresoDeclinadoNoSeEjecuta(t *testing.T) {
+	e := &Ejecutor{Proyecto: t.TempDir()}
+	c := tools.Contexto{Ask: func(context.Context, tools.Solicitud) (tools.Decision, error) {
+		return tools.Declinar, nil
+	}}
+	_, err := e.Ejecutar(context.Background(), Solicitud{Comando: "curl http://localhost:1/"}, c)
+	var te *Error
+	if err == nil || !asTE(err, &te) || te.Codigo != tools.CodApprovalDeclined {
+		t.Fatalf("un comando con salida de red declinado debería dar E_APPROVAL_DECLINED: %v", err)
 	}
 }
 

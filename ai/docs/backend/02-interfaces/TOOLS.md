@@ -179,11 +179,12 @@ Compartida con `listar_carpeta`: las rutas relativas se resuelven desde el direc
 
 Dos controles independientes: cuándo te interrumpe y qué no puede tocar.
 
-### Control 1 — solo lo destructivo o lo de fuera pregunta
+### Control 1 — lo destructivo, lo de red y lo de fuera preguntan
 
-La confirmación solo la piden dos casos; todo lo demás corre sin preguntar:
+La confirmación solo la piden tres casos; todo lo demás corre sin preguntar:
 
-- **Comandos destructivos** (`internal/exec/riesgo.go`, lista cerrada): los que borran, machacan o apagan —`rm`, `rmdir`, `mv`, `dd`, `truncate`, `kill`, `shutdown`, `mkfs*`— y los subcomandos de git que descartan trabajo o lo suben a la fuerza (`reset`, `clean`, `checkout`, `restore`, `branch -D`, `push --force`).
+- **Comandos destructivos** (`internal/exec/riesgo.go`, lista cerrada): los que borran, machacan o apagan —`rm`, `rmdir`, `mv`, `dd`, `truncate`, `kill`, `shutdown`, `mkfs*`— y los subcomandos de git que descartan trabajo o lo publican (`reset`, `clean`, `checkout`, `restore`, `branch -D`, `push`).
+- **Programas de egreso** (`curl`, `wget`, `nc`, `ncat`, `netcat`, `telnet`, `ssh`, `scp`, `sftp`, `rsync`): la red solo sale por ellos y por las herramientas de internet, y aquí la revisas tú.
 - **Rutas fuera de la carpeta del proyecto:** un argumento con ruta absoluta que queda fuera de la raíz.
 
 Lo que se repite en cada iteración —compilar, correr pruebas, revisar estilo, ver estado y diferencias— y cualquier otro comando inocuo se ejecuta directo. `EjecutarEquipo` (herramientas del usuario) aplica exactamente la misma regla.
@@ -192,9 +193,9 @@ Lo que se repite en cada iteración —compilar, correr pruebas, revisar estilo,
 
 El bloqueo **no depende de revisar el texto del comando**. La terminal no puede crear, editar ni borrar ningún archivo del usuario, por más indirecto que sea: `find -delete`, `tee`, una tubería hacia un archivo, `python3 -c` o un `sh -c` con redirección se colarían por un filtro de texto, y por eso el bloqueo es estructural, con Landlock.
 
-Lo que sí puede hacer: usar su propio espacio (caché de compilación, temporales, carpeta de trabajo por sesión) y los dispositivos nulos (`/dev/null`, `/dev/zero`, `/dev/full`), y correr los comandos que no son destructivos ni tocan rutas de fuera.
+Lo que sí puede hacer: usar su propio espacio (caché de compilación, temporales, carpeta de trabajo por sesión) y los dispositivos nulos (`/dev/null`, `/dev/zero`, `/dev/full`), y correr los comandos que no son destructivos, no salen a la red ni tocan rutas de fuera.
 
-Lo que no puede hacer, aunque se le pida: crear, editar o borrar archivos del proyecto (para eso están las herramientas de escritura, que solo tiene `build` y donde los borrados sí piden confirmación), descartar cambios del repositorio, hacer commits o subir cambios.
+Lo que no puede hacer, aunque se le pida: crear, editar o borrar archivos del proyecto (para eso están las herramientas de escritura, que solo tiene `build` y donde los borrados sí piden confirmación), descartar cambios del repositorio —que además piden confirmación y Landlock impide—, hacer commits —los frena Landlock—, y publicar sin confirmación.
 
 ### Otras reglas de la terminal
 
@@ -206,7 +207,7 @@ Lo que no puede hacer, aunque se le pida: crear, editar o borrar archivos del pr
 
 ## 6. Herramientas de internet
 
-Son las únicas que hacen salir información de la máquina.
+Son la vía de salida pensada para la red. La otra es la terminal, y ahí cada programa que pueda sacar información —`curl`, `wget`, `nc`, `ssh`, `scp`, `rsync`...— pide confirmación (Control 1).
 
 - **Qué sale:** solo la consulta que redacta el modelo. Nunca el contenido de tus archivos, de la documentación, del historial de la conversación ni de tus tareas. Si una búsqueda necesita el proyecto para ser útil, el agente te lo pide a ti.
 - **Qué vuelve:** `buscar_en_internet` devuelve resultados; `abrir_pagina` devuelve el contenido de una página. Ese contenido entra al contexto, ocupa el mismo espacio que el resto, y está sujeto al mismo recorte y al mismo registro de auditoría que en [[backend/01-domain/DOMAIN]].

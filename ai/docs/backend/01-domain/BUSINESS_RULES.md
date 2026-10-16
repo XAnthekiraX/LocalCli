@@ -120,10 +120,11 @@ Las reglas que rigen el orquestador. Las que dependen de cómo se guardan los da
 ### Herramientas y terminal
 
 - El catálogo es cerrado: el agente no puede inventar herramientas.
-- Los comandos de la lista blanca (compilar, probar, revisar estilo y tipos, ver estado y diferencias de git) se ejecutan sin preguntar.
-- Cualquier otro comando pide aprobación antes de ejecutarse.
+- Solo piden confirmación los comandos destructivos —una lista cerrada de programas que borran, machacan o apagan, más los subcomandos de git que descartan trabajo o publican—, los programas de egreso que sacan información a la red (`curl`, `wget`, `nc`, `telnet`, `ssh`, `scp`, `sftp`, `rsync`) y los que llevan una ruta absoluta fuera de la carpeta del proyecto.
+- Un comando inocuo (compilar, probar, revisar estilo y tipos, ver estado y diferencias de git, y cualquier otro) corre sin preguntar.
+- Lo mismo rige para las herramientas del usuario: destructivo, con salida de red o fuera de la carpeta, preguntas; lo demás, no.
 - La terminal no puede crear, editar ni borrar archivos del proyecto, y esa garantía es estructural, no depende de revisar el texto del comando.
-- La terminal no puede descartar cambios del repositorio, hacer commits ni subir cambios.
+- La terminal no puede descartar cambios del repositorio —piden confirmación y Landlock impide que escriban— ni hacer commits: la escritura en el repositorio la bloquea el kernel. Publicar (`push`) pide confirmación.
 - Un comando que no termina o genera salida sin fin se corta y se avisa; no puede colgar el harness ni llenar el contexto.
 - Un comando que falla no detiene el trabajo: el agente ve el error y sigue.
 - El comando corre en la carpeta del proyecto.
@@ -132,7 +133,7 @@ Las reglas que rigen el orquestador. Las que dependen de cómo se guardan los da
 
 Condiciones que siempre se cumplen, sin excepción:
 
-- **Ninguna escritura sin aprobación.** Ni dentro de la carpeta, ni fuera, ni dentro de un flujo en curso.
+- **Ninguna operación destructiva ni fuera de la carpeta sin aprobación.** Borrar, o tocar una ruta que no cuelga de la carpeta del proyecto, nunca se aplica sin confirmación, tampoco dentro de un flujo en curso. Lo inocuo dentro de la carpeta —crear, sobrescribir, editar, un comando sin destruir— no interrumpe.
 - **`plan` nunca escribe.** No es una política que se pueda desactivar: sencillamente no tiene en su catálogo ninguna herramienta de escritura ni de edición.
 - **El modelo nunca ve el proyecto entero.** Ve lo que el nodo de contexto decidió y recortó.
 - **Lo que entra al contexto se leyó antes** y **lo que salió queda registrado**.

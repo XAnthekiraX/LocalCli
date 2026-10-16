@@ -49,7 +49,7 @@ internal/
   task/            archivos de tarea
   tools/           catálogo, capa universal de ejecución y hooks
   fileops/         validación de rutas, acceso a archivos e historial
-  exec/            terminal: lista blanca y bloqueo estructural
+  exec/            terminal: confirmación selectiva (destructivo o fuera) y bloqueo estructural
   store/           persistencia SQLite
   docs/            carga de documentación y lectura de frontmatter
 ```

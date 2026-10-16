@@ -49,7 +49,7 @@ impacto  →  plan  →  documentación  →  tarea  →  cola
 
 Las tres primeras son **acciones de cambio**: describen qué le pasa al producto y son las tres entradas del
 ciclo. `verificar` no es un cambio: comprueba algo que ya está hecho y no deja nada distinto detrás, así que no
-entra por ninguna de las tres entradas, no genera un diff que revisar y no pide aprobación de escritura. Es una
+entra por ninguna de las tres entradas y no genera un diff que revisar. Es una
 tarea más de la cola, con su propia acción, no un cuarto tipo de cambio. Etiquetar una verificación como
 `actualizar` sería mentir sobre lo que hace: no actualiza nada.
 
@@ -143,7 +143,7 @@ La ejecución no se pide aquí. El elemento entra en la cola de [[specs/SPEC-COL
 - La acción de cada elemento del TODO coincide con la de su tarea principal.
 - `plan` propone y `build` escribe. `plan` no escribe ningún archivo.
 - Cada fase pide aprobación antes de pasar a la siguiente.
-- Ningún cambio de código se aplica sin aprobación, también dentro de la cola.
+- Ningún cambio destructivo ni ninguna operación fuera de la carpeta se aplica sin aprobación, también dentro de la cola.
 - El ciclo no es una secuencia fija e inmutable: es un flujo oficial compuesto por etapas, y admite etapas intermedias.
 - El resultado se guarda y se puede volver a ejecutar más adelante.
 

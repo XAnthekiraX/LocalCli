@@ -55,7 +55,7 @@ Reglas:
 - **Ninguna migración borra `change_history`.** Jamás. Es el único dato cuya pérdida no se puede recuperar, porque no se puede reconstruir qué se tocó en los archivos del proyecto.
 - **Ninguna migración borra masivamente filas de `sessions`, `messages` o `reasoning`** para simplificar el esquema. Si una columna sobra, se deja o se ignora; no se tira lo que hay.
 - **Una migración que destruya datos la escribe una persona, no el agente durante una fase de trabajo.** `build` no crea ni aplica migraciones destructivas por su cuenta. Es una operación que requiere una decisión explícita del usuario, porque afecta al historial.
-- **Una migración destructiva se anuncia antes de aplicarse.** El usuario sabe qué se va a perder y lo aprueba, con la misma mecánica de aprobación que el resto de escrituras. Ver [[specs/SPEC-ARCHIVOS]].
+- **Una migración destructiva se anuncia antes de aplicarse.** El usuario sabe qué se va a perder y lo aprueba, con la misma mecánica de confirmación que un borrado de archivo. Ver [[specs/SPEC-ARCHIVOS]].
 - **Antes de una migración destructiva se recomienda una copia del archivo SQLite.** Es un archivo, se copia entero. La base es local (un único archivo en `~/.config/localcli/`), no de un servidor, así que la copia es trivial. Como el archivo es único y guarda todos los proyectos, la copia protege de golpe el estado de todas las carpetas.
 
 ## Nota sobre el esquema actual

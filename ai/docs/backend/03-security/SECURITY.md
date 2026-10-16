@@ -46,9 +46,9 @@ La garantía central: **`plan` no tiene herramientas que escriban en el proyecto
 
 No hay endpoints. Lo que hay son operaciones, y cada una tiene su regla.
 
-### Solo lo destructivo o lo de fuera pide aprobación
+### Solo lo destructivo, la red o lo de fuera pide aprobación
 
-La interrupción está acotada a dos casos: **borrar** (archivos y carpetas) y **tocar una ruta fuera de la carpeta del proyecto**, en las herramientas de archivo; y en la terminal, **un comando destructivo** o **un argumento con ruta absoluta de fuera**. Todo lo demás —crear, sobrescribir, editar dentro de la carpeta, y cualquier comando inocuo— se aplica sin preguntar, también dentro de un flujo en curso. Ver [[specs/SPEC-ARCHIVOS]] y [[specs/SPEC-TOOLS]] §Control 1.
+La interrupción está acotada a tres casos: **borrar** (archivos y carpetas), **tocar una ruta fuera de la carpeta del proyecto** y, en la terminal, **un comando destructivo**, **un programa de egreso** (`curl`, `wget`, `nc`, `telnet`, `ssh`, `scp`, `sftp`, `rsync`) o **un argumento con ruta absoluta de fuera**. Todo lo demás —crear, sobrescribir, editar dentro de la carpeta, y cualquier comando inocuo— se aplica sin preguntar, también dentro de un flujo en curso. Ver [[specs/SPEC-ARCHIVOS]] y [[specs/SPEC-TOOLS]] §Control 1.
 
 ### Frontera de rutas
 
@@ -60,12 +60,12 @@ La interrupción está acotada a dos casos: **borrar** (archivos y carpetas) y *
 
 La terminal tiene dos controles independientes:
 
-1. **Confirmación selectiva:** solo piden permiso los comandos destructivos —una lista cerrada de programas que borran, machacan o apagan, más los subcomandos de git que descartan trabajo o suben a la fuerza— y los que llevan una ruta absoluta fuera de la raíz. Un comando inocuo corre sin preguntar, como los que se repiten en cada iteración: compilar, probar, revisar estilo y tipos, ver estado/diferencias/historial de git.
+1. **Confirmación selectiva:** solo piden permiso los comandos destructivos —una lista cerrada de programas que borran, machacan o apagan, más los subcomandos de git que descartan trabajo o publican—, los programas de egreso (que sacan información a la red) y los que llevan una ruta absoluta fuera de la raíz. Un comando inocuo corre sin preguntar, como los que se repiten en cada iteración: compilar, probar, revisar estilo y tipos, ver estado/diferencias/historial de git.
 2. **Bloqueo de escritura:** la terminal no puede crear, editar ni borrar archivos del proyecto, y la garantía es del kernel (Landlock), no del texto del comando. Por eso `find -delete`, `tee`, una tubería hacia un archivo, `python3 -c` o `sh -c` con redirección no la esquivan.
 
 Lo único con escritura concedida es el espacio propio del comando —temporales, caché de compilación y carpeta de trabajo por sesión— y los **dispositivos nulos** (`/dev/null`, `/dev/zero`, `/dev/full`): programas como `git` abren `/dev/null` con `O_RDWR` aunque no guarden nada, y sin ese permiso `git status`, `git diff` y `git log` fallaban. La regla de Landlock se ancla en cada dispositivo, no en `/dev`, así que el resto del sistema sigue denegado.
 
-La terminal tampoco puede descartar cambios del repositorio, hacer commits ni subir cambios.
+La terminal tampoco puede descartar cambios del repositorio —`checkout`, `reset`, `clean`, `restore` piden confirmación y Landlock impide que escriban— ni hacer commits: la escritura en el repositorio la bloquea el kernel. Publicar (`push`) pide confirmación.
 
 ## 3.1 El servidor del motor de inferencia
 
@@ -79,7 +79,7 @@ Que `llama-server` acepte `--api-key` no cambia la frontera: el servidor es de l
 
 ## 4. Frontera de internet
 
-Las dos herramientas de internet son las únicas que hacen salir información de la máquina, y ahí la regla es estrecha:
+Las dos herramientas de internet son la vía de salida pensada para la red. La otra es la terminal, y ahí el egreso está sujeto a confirmación: cada comando que pueda sacar información —`curl`, `wget`, `nc`, `telnet`, `ssh`, `scp`, `sftp`, `rsync`— pide aprobación antes de correr. La regla estrecha:
 
 - **Solo sale la consulta que redacta el modelo.** Nunca el contenido de tus archivos, de la documentación, del historial ni de tus tareas.
 - **Si una búsqueda necesita el proyecto para ser útil, el agente te lo pide a ti** en lugar de mandarlo.
@@ -95,9 +95,9 @@ Las dos herramientas de internet son las únicas que hacen salir información de
 
 - **Rate limiting:** no aplica. No hay red pública. Lo equivalente es el presupuesto de contexto, que recorta la entrada y evita que una respuesta o un comando desborden. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
 - **CORS:** no aplica. No hay navegador ni servidor.
-- **Secrets:** los dos motores de inferencia corren en local, sin credenciales (el `--api-key` opcional de `llama-server` no se usa). La búsqueda por internet es la única salida y solo lleva la consulta. LocalCli no guarda ni pide claves de API.
+- **Secrets:** los dos motores de inferencia corren en local, sin credenciales (el `--api-key` opcional de `llama-server` no se usa). La búsqueda por internet es la salida directa; la terminal solo saca información por los programas de egreso, que piden confirmación. LocalCli no guarda ni pide claves de API.
 - **Aislamiento en sistemas sin Landlock:** en sistemas que no son Linux, o en Linux sin Landlock, la terminal no tiene el bloqueo estructural. La garantía es más débil y queda documentada como tal; el proyecto lo asume. Ver [[backend/04-infrastructure/CONFIGURATION]].
-- **El servidor del motor con acceso al sistema de archivos.** Un `llama-server` levantado con `--tools`, `--agent` o `--mcp-servers-json` sirve lectura o escritura de archivos por HTTP, fuera de la frontera de rutas y de la aprobación del harness; por eso no es un motor admisible. Ver §3.1.
+- **El servidor del motor con acceso al sistema de archivos.** Un `llama-server` levantado con `--tools`, `--agent` o `--mcp-servers-json` sirve lectura o escritura de archivos por HTTP, fuera de la frontera de rutas y de la confirmación del harness; por eso no es un motor admisible. Ver §3.1.
 - **El modelo no es de fiar para decidir permisos.** `plan` y `build` tienen herramientas fijas, y el permiso lo comprueban módulos, no el modelo. El modelo no puede concederse permisos.
 - **Confiar en el texto del comando es un error.** Cualquier intento de validar la terminal leyendo el comando es frágil por diseño; por eso el bloqueo es estructural: quitar el shell es quitar esa clase de ataque entera, no cerrar sus casos sueltos.
 - **Un error de herramienta no termina el turno.** El fallo se le devuelve al modelo para que lo corrija. Eso es intencionado, y es también un riesgo: un modelo puede insistir en una herramienta que falla. Por eso el máximo de pasadas por turno es un límite duro, no un detalle de implementación.

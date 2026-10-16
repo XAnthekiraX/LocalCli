@@ -12,9 +12,19 @@ var programasPeligrosos = []string{
 	"kill", "pkill", "shutdown", "reboot",
 }
 
-// Peligroso dice si un comando ya partido en argv es destructivo y por tanto
-// exige confirmación explícita. Un programa que se nombra con prefijo `mkfs`
-// lo es sin figurar en la lista ([[specs/SPEC-TOOLS]] §Control 1).
+// programasEgreso sacan información de la máquina, que es justo lo que se
+// quiere revisar antes de que ocurra: sin ellos, la única puerta de salida
+// son las herramientas de internet ([[specs/SPEC-TOOLS]] §Herramientas de
+// internet).
+var programasEgreso = []string{
+	"curl", "wget", "nc", "ncat", "netcat", "telnet",
+	"ssh", "scp", "sftp", "rsync",
+}
+
+// Peligroso dice si un comando ya partido en argv es destructivo o hace salir
+// información de la máquina, y por tanto exige confirmación explícita. Un
+// programa que se nombra con prefijo `mkfs` lo es sin figurar en la lista
+// ([[specs/SPEC-TOOLS]] §Control 1).
 func Peligroso(argv []string) bool {
 	if len(argv) == 0 {
 		return false
@@ -26,19 +36,20 @@ func Peligroso(argv []string) bool {
 	if programa == "git" {
 		return gitPeligroso(argv[1:])
 	}
-	return contiene(programasPeligrosos, programa)
+	return contiene(programasPeligrosos, programa) || contiene(programasEgreso, programa)
 }
 
 // gitPeligroso marca los subcomandos de git que descartan trabajo o lo suben a
-// la fuerza: el resto de git (`status`, `diff`, `log`, `commit`) no lo es.
+// la fuerza, y `push` —publicar no se deshace—: el resto de git (`status`,
+// `diff`, `log`, `commit`) no lo es.
 func gitPeligroso(args []string) bool {
 	switch primerSubcomando(args) {
+	case "push":
+		return true
 	case "reset", "clean", "checkout", "restore":
 		return true
 	case "branch":
 		return tiene(args, "-D")
-	case "push":
-		return tiene(args, "-f") || tiene(args, "--force") || tiene(args, "--force-with-lease")
 	}
 	return false
 }
@@ -60,8 +71,8 @@ func FueraDelProyecto(raiz string, argv []string) bool {
 	return false
 }
 
-// PideConfirmacion es la regla única de la terminal: destructivo o fuera de la
-// carpeta; cualquier otro comando corre sin preguntar.
+// PideConfirmacion es la regla única de la terminal: destructivo, con salida de
+// red o fuera de la carpeta; cualquier otro comando corre sin preguntar.
 func PideConfirmacion(raiz string, argv []string) bool {
 	return Peligroso(argv) || FueraDelProyecto(raiz, argv)
 }

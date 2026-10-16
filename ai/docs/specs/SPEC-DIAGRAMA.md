@@ -4,8 +4,8 @@ tags: [specs, requisito]
 depende_de:
   - "[[IDEA]]"
   - "[[specs/SPEC-TOOLS]]"
-relacionado:
   - "[[specs/SPEC-INTERFAZ]]"
+relacionado:
   - "[[specs/SPEC-VISTA-CODIGO]]"
   - "[[backend/02-interfaces/TOOLS]]"
   - "[[backend/04-infrastructure/EVENTS]]"

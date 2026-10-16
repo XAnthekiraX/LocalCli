@@ -51,7 +51,7 @@ Los estados de sesión y sus transiciones están en [[database/01-schema/ENUMS]]
 
 Con el contrato en prosa, la llamada a una herramienta viajaba dentro del texto que el modelo escribía, y el usuario la veía porque era texto en pantalla. Con el canal estructurado la llamada **sale del texto**: el modelo pide la herramienta y lo que escribe es otra cosa. Ese canal es **el mismo en todos los motores** —viene del núcleo común—, así que este par de eventos ya no depende del runtime: ni el productor ni el consumidor distinguen Ollama de llama.cpp. Ver [[backend/04-infrastructure/INTEGRATIONS]].
 
-Sin un evento, el efecto sería que mientras el agente lee un archivo o corre las pruebas la pantalla se queda quieta, y de repente aparece una respuesta como si nada. En el caso peor —una escritura esperando tu aprobación— el silencio es justo lo que más confunde.
+Sin un evento, el efecto sería que mientras el agente lee un archivo o corre las pruebas la pantalla se queda quieta, y de repente aparece una respuesta como si nada. En el caso peor —un borrado esperando tu confirmación— el silencio es justo lo que más confunde.
 
 Por eso los emite `tools` y no `agent`: la capa universal ya está en ese punto para todas las herramientas, y es el único sitio donde se puede emitir **antes** de ejecutar y **después**, sin instrumentar quince handlers.
 

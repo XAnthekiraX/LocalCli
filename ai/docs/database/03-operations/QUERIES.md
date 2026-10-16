@@ -141,7 +141,7 @@ Ninguna consulta se escribe dos veces en el código. Vienen de la base de datos 
 - **No cargar el historial completo de una sesión para mostrar la última línea.** Se pide el último mensaje con `ORDER BY created_at DESC LIMIT 1`. Cargar todo para descartar casi todo llena la memoria y el contexto sin necesidad.
 - **No recuperar el contenido del razonamiento si no se va a mostrar.** El `LEFT JOIN` de `reasoning` trae el texto completo. Para listar mensajes sin razonamiento, se consulta `messages` sin el `JOIN`. El razonamiento puede ser largo y se paga en memoria.
 - **No hacer `JOIN` de `change_history` con `sessions` para saber qué sesión hizo un cambio.** Si la sesión fue borrada, el `JOIN` devuelve nada y se pierde el registro. El `session_id` se muestra tal cual, o `NULL`. Ver [[database/01-schema/RELATIONSHIPS]].
-- **No escribir en `change_history` desde la base directamente.** Solo el módulo de herramientas de archivo escribe ahí, y solo tras una aprobación. Ver [[database/02-rules/BUSINESS_RULES]].
+- **No escribir en `change_history` desde la base directamente.** Solo el módulo de herramientas de archivo escribe ahí, una fila por cada cambio aplicado, con su antes y su después. Ver [[database/02-rules/BUSINESS_RULES]].
 - **No listar ni contar sesiones sin filtrar por `project_id`.** La base es única y global: una consulta de sesiones sin el filtro de proyecto devuelve las de todas las carpetas. Es la única regla que no admite excepción, porque el aislamiento es lógico y depende de esa cláusula. Ver [[database/02-rules/BUSINESS_RULES]].
 - **No borrar `change_history`.** No hay caso en el que se borre. Si parece que hay, el problema es el diseño de la consulta, no la operación.
 

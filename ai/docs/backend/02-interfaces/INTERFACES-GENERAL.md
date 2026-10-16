@@ -77,7 +77,7 @@ Lo que cada módulo expone a los que dependen de él. El detalle de payloads est
 | `llamacpp` | La extensión nativa de llama.cpp: aporta **solo lo que el protocolo no cubre** (`/props`, de donde lee la ventana y las capacidades). No implementa la conversación, que es del núcleo común | `llm` |
 | `tools` | Registrar el catálogo; exponer el esquema de las herramientas de un agente; **envolver toda ejecución** con permiso, validación, recorte y eventos | `agent` |
 | `fileops` | Aplicar una operación de archivo o carpeta; registrar el cambio. **Inyectado** como handler, no importado | `arranque` |
-| `exec` | Ejecutar un comando de la lista blanca o aprobado, con Landlock. **Inyectado** como handler, no importado | `arranque` |
+| `exec` | Ejecutar un comando —confirma si es destructivo, saca información a la red o toca una ruta de fuera— con Landlock. **Inyectado** como handler, no importado | `arranque` |
 | `store` | Abrir, migrar y escribir en el único archivo SQLite global (`~/.config/localcli/state.db`), y resolver el proyecto (`project_id`) de la carpeta abierta | todos los que persisten |
 | `docs` | Cargar documentación; exponer el grafo de frontmatter | `context` |
 | `task` | Leer y escribir archivos de tarea | `queue` |

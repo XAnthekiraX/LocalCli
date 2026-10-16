@@ -21,7 +21,7 @@ relacionado:
 
 Reglas que la base no puede imponer sola, porque dependen del contexto o de lo que decidió el usuario.
 
-- **Toda escritura pasa por aprobación.** Nada llega a `change_history` sin que antes un usuario lo autorizara. La regla vive en el módulo de herramientas, no en la base. Ver [[specs/SPEC-ARCHIVOS]].
+- **Toda escritura queda registrada, y lo destructivo o de fuera se autoriza antes.** Nada se aplica sin quedar en `change_history` con su antes y su después; y borrar o tocar una ruta fuera de la carpeta del proyecto no se aplica sin que el usuario lo autorice. La regla vive en el módulo de herramientas, no en la base. Ver [[specs/SPEC-ARCHIVOS]].
 - **`plan` no escribe.** El razonamiento de un agente de planificación no produce entradas en `change_history`. Solo el agente de construcción, tras el relevo, lo hace. Ver [[specs/SPEC-AGENTE-BASE]].
 - **Una aprobación habilita solo el cambio propuesto.** Que exista una fila `aprobada` no autoriza cambios distintos de los que se describen en su campo `description`.
 - **Nada se borra de la base.** El contenido de `change_history` no se modifica ni se elimina nunca, ni siquiera al corregir un cambio posterior. Ver [[database/DATABASE]].

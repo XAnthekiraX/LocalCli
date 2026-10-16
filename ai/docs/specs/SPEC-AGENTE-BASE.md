@@ -227,10 +227,10 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 - Ambos responden en el idioma en que el usuario escribió.
 - Ninguno busca archivos por su cuenta: esperan el contexto que entrega el nodo de contexto.
 - Si el contexto no alcanza, lo dicen y piden más. No rellenan los huecos con suposiciones.
-- Ninguna escritura pasa sin que `plan` la haya propuesto y tú la hayas aprobado.
+- Nada se escribe sin que `plan` lo haya propuesto y tú hayas cambiado a `build`: solo `build` tiene herramientas de escritura.
 - `build` no inventa endpoints, entidades, reglas de negocio ni relaciones.
 - Un intercambio de chat empieza con el contexto de esa sesión, no con el de otra.
-- Fuera de un flujo, ambos agentes atienden el chat con el catálogo derivado de sus permisos: `plan` lee y propone, `build` escribe con aprobación.
+- Fuera de un flujo, ambos agentes atienden el chat con el catálogo derivado de sus permisos: `plan` lee y propone, `build` escribe (pidiendo confirmación solo para lo destructivo o lo de fuera de la carpeta).
 - `plan` propone y `build` aplica dentro de un flujo; un flujo arranca por el comando del usuario o por la herramienta `ejecutar_flujo` del agente.
 - Ambos agentes lanzan los flujos que admite su permiso derivado: `plan` solo los que no escriben (todas sus etapas corren con `plan`), `build` también los que escriben. El esquema de la herramienta se arma por turno con esa vista.
 - `ejecutar_flujo` no está disponible dentro de una etapa de flujo: un agente que está corriendo una etapa no puede invocar otro flujo.
