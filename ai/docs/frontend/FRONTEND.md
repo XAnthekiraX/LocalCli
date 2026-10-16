@@ -45,22 +45,28 @@ internal/tui/
   selection.go   selección con el ratón, limitada a la zona donde empezó el arrastre y anclada al texto:
                  en el chat se ve en coordenadas de contenido y se prolonga fuera del viewport al llegar
                  a un borde (desplazamiento automático); copia al portapapeles
+  botones.go     hit-test de los botones clicables del chat: el botón de copiar de la cabecera de un bloque
+                 de código copia su cuerpo al portapapeles (SPEC-VISTA-CODIGO), como los botones de aprobación
   keymap.go      mapa central de teclas: acciones, bindings múltiples y tecla líder
   keyresolver.go KeyResolver: líder ctrl+x, timeout, contexto y acciones
   keys.go        persistencia del mapa de teclas en ~/.config/localcli/keys.json
+  estilos.go     paleta del usuario: lee/siembra ~/.config/localcli/styles.json y la aplica
   config.go      preferencias del usuario: último agente, presupuesto de historial y razonamiento
   logo.go        logotipos canónicos de la bienvenida (completo y compacto)
   wire.go        Puerto: la frontera de la tui con el orquestador (eventos y peticiones)
   arranque.go    arranque del programa Bubble Tea (alt screen, ratón)
   doc.go         documentación del paquete
-  render/        capa común de render: estilos Lip Gloss, normalización del marco y envoltura de texto
+  render/        capa común de render: estilos Lip Gloss —incluido el estilo del bloque de código y su botón—
+                 sobre una paleta de tokens editable (colores de texto y fondos), normalización del marco
+                 y envoltura de texto
   components/
     adjuntos/    motor compartido de tokens de archivo, carpeta o texto pegado ([nombre.ext],
                  [CARPETA N elementos], [PEGADO N líneas]) y su expansión al valor real
     welcome/     pantalla de bienvenida estilo opencode: logotipo sobre el fondo, caja de entrada con
                  línea de estado —y pegado tokenizado— y pistas de teclado
-    chat/        historial de la sesión activa: respuesta, líneas compactas de herramienta, razonamiento
-                 revelable y la línea de actividad en vivo
+    chat/        historial de la sesión activa: respuesta —con su Markdown interpretado al pintar, bloques
+                 de código y botón de copiar (SPEC-VISTA-CODIGO)—, líneas compactas de herramienta,
+                 razonamiento revelable y la línea de actividad en vivo
     input/       caja de entrada con fondo: línea de texto —con pegado tokenizado— y pie con el agente y el modelo
     panel/       sidebar de datos plegable: título, contexto, TODO, tareas, estado y pie
     modals/      modales de modelos (Ctrl+X m), sesiones (Ctrl+X l) y atajos (Ctrl+P)
@@ -72,7 +78,8 @@ internal/tui/
 - **Entradas:** teclado y eventos del orquestador. Ver [[frontend/02-interfaces/INTERFACES]].
 - **Salidas:** peticiones a `session` (enviar mensaje, cambiar de sesión, aprobar, declinar, cancelar flujo).
 - **Lecturas:** solo las consultas definidas en [[database/03-operations/QUERIES]]. Nunca escribe en la base: el estado lo persiste el orquestador.
-- **Configuración propia:** el mapa de teclas vive en `~/.config/localcli/keys.json` y las preferencias del usuario —último agente, presupuesto de historial y razonamiento— en `~/.config/localcli/config.json`, fuera del proyecto, porque son preferencia del usuario y no contenido del proyecto. El modelo activo no se guarda en `config.json`: lo resuelve el catálogo (`models.json`), única autoridad al arrancar.
+- **Configuración propia:** el mapa de teclas vive en `~/.config/localcli/keys.json`, las preferencias del usuario —último agente, presupuesto de historial y razonamiento— en `~/.config/localcli/config.json` y la paleta visual —colores de texto y fondos— en `~/.config/localcli/styles.json`, fuera del proyecto, porque son preferencia del usuario y no contenido del proyecto. El modelo activo no se guarda en `config.json`: lo resuelve el catálogo (`models.json`), única autoridad al arrancar.
+- **Paleta editable:** `styles.json` es un mapa `clave: valor` de tokens de color (`color_*` de texto, `fondo_*` de fondo) a hex `#RRGGBB` o índice ANSI `0..255`; los valores ausentes conservan su valor de fábrica y un token desconocido o un color mal formado se rechazan enteros, arrancando con la paleta de fábrica. El archivo se siembra con los valores por defecto en el primer arranque si no existe.
 
 ## 4. Decisiones
 
@@ -81,6 +88,7 @@ internal/tui/
 | Presentación pura, sin lógica de negocio                | Todo lo que la TUI decidiera habría que auditarlo dos veces: en el módulo y en la pantalla                                                       | Repartir decisiones entre pantalla y orquestador                                          |
 | Estado de vista en memoria, nada persistido por la TUI  | Lo que vale está en SQLite o en archivos; lo que muere con el proceso es solo vista (scroll, plegado, foco)                                      | Persistir el estado de vista, que añadiría una cuarta fuente de verdad                     |
 | Mapa de teclas en `~/.config/localcli/keys.json`        | El atajo es del usuario, no del proyecto; ubicación XDG estándar, editable a mano o desde la ayuda                                               | Guardarlo dentro del proyecto, que mezclaría preferencia personal con contenido versionado |
+| Paleta visual en `~/.config/localcli/styles.json`       | Los colores de texto y fondos son preferencia del usuario; un mapa `clave: valor` de tokens se edita a mano sin recompilar, y los estilos se reconstruyen al arrancar | Cablear los colores en el código, que obliga a recompilar para cada ajuste visual          |
 | Preferencias en `~/.config/localcli/config.json`        | El último agente, el presupuesto de historial y el razonamiento son preferencia del usuario, no estado del proyecto; el modelo activo lo persiste el catálogo (`models.json`)                                                          | Persistirlos en SQLite, que los ataría a un solo proyecto                                  |
 | Ratón capturado en la TUI                               | Permite seleccionar y copiar texto con el ratón y desplazar con la rueda; la selección se acota a su zona de origen, se ancla al texto y, en el chat, se prolonga fuera del viewport al llegar a un borde (el historial se desplaza solo mientras se arrastra) | No capturarlo, que deja a la app sin poder copiar al instante |
 | Paleta de comandos alimentada por el catálogo del orquestador | Un solo origen de verdad: los flujos oficiales (sembrados en `~/.config/localcli/flows/`) y los propios de `<proyecto>/.localcli/flows/` se descubren sin mantener una segunda lista en la vista; **overlay con máximo 5 elementos y scroll** | Cablear los comandos en la TUI, que se desincronizaría de los flujos reales                |

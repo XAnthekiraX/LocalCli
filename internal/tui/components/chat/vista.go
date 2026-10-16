@@ -15,23 +15,51 @@ func (m *Model) Hilo(ancho int) string {
 	if interno < 1 {
 		interno = 1
 	}
-	var bloques []string
-	for _, pieza := range m.piezas {
-		switch p := pieza.(type) {
-		case *Segmento:
-			if b := bloque(contenidoSegmento(*p, m.MostrarRazonamiento, interno), p.Hablante, ancho); b != "" {
-				bloques = append(bloques, b)
-			}
-		case *Linea:
-			if l := lineaSuelta(*p, ancho); l != "" {
-				bloques = append(bloques, l)
-			}
+	var lineas []string
+	var mapa []int
+	m.botones = nil
+	// agregar cuelga un bloque del hilo, con una fila en blanco de separación
+	// antes de cada uno salvo el primero, y anota a qué pieza pertenece cada línea
+	// (−1 para la separación y el turno en vivo). Los botones de copia del bloque
+	// se traducen de coordenadas del contenido a coordenadas del hilo: se les suma
+	// la línea donde empieza el contenido (tras la celda de aire de arriba) y la
+	// columna del prefijo del hablante.
+	agregar := func(pieza int, bloque string, hablante Hablante, botones []BotonCopia) {
+		if bloque == "" {
+			return
+		}
+		if len(lineas) > 0 {
+			lineas = append(lineas, "")
+			mapa = append(mapa, -1)
+		}
+		base := len(lineas)
+		for _, l := range strings.Split(bloque, "\n") {
+			lineas = append(lineas, l)
+			mapa = append(mapa, pieza)
+		}
+		desplazamiento := 1
+		if hablante == Agente {
+			desplazamiento = franja + 1
+		}
+		for _, b := range botones {
+			b.Linea += base + 1
+			b.Col += desplazamiento
+			m.botones = append(m.botones, b)
 		}
 	}
-	if vivo := m.bloqueVivo(ancho, interno); vivo != "" {
-		bloques = append(bloques, vivo)
+	for i, pieza := range m.piezas {
+		switch p := pieza.(type) {
+		case *Segmento:
+			contenido, botones := contenidoSegmento(*p, m.MostrarRazonamiento, interno)
+			agregar(i, bloque(contenido, p.Hablante, ancho), p.Hablante, botones)
+		case *Linea:
+			agregar(i, lineaSuelta(*p, ancho), "", nil)
+		}
 	}
-	return strings.Join(bloques, "\n\n")
+	bloqueEnVivo, botonesEnVivo := m.bloqueVivo(ancho, interno)
+	agregar(-1, bloqueEnVivo, Agente, botonesEnVivo)
+	m.lineasPieza = mapa
+	return strings.Join(lineas, "\n")
 }
 
 // Vista pinta la ventana del historial para el alto disponible y deja lista la
@@ -141,51 +169,102 @@ func (m *Model) avisoAbajo() string {
 
 // contenidoSegmento compone las líneas de un segmento: el razonamiento revelado
 // arriba, una fila en blanco y la respuesta, con su tiempo al final y atenuado.
-// De cada parte sin nada que decir no queda hueco.
-func contenidoSegmento(s Segmento, revelar bool, ancho int) []string {
+// De cada parte sin nada que decir no queda hueco. La respuesta del agente se
+// interpreta como Markdown —solo al pintar— y devuelve además los botones de copia
+// de sus bloques de código, en coordenadas del contenido (SPEC-VISTA-CODIGO).
+func contenidoSegmento(s Segmento, revelar bool, ancho int) ([]string, []BotonCopia) {
 	var lineas []string
 	if r := renderRazonamiento(s.Razonamiento, revelar, s.SinRazonamiento, ancho); r != "" {
 		lineas = append(lineas, strings.Split(r, "\n")...)
 	}
-	respuesta := envolver(s.Texto, ancho)
+	respuesta, botones := respuestaSegmento(s, ancho)
 	if len(respuesta) == 0 {
-		return lineas
+		return lineas, nil
 	}
 	if len(lineas) > 0 {
 		lineas = append(lineas, "")
 	}
+	sufijo := sufijoDuracion(s.Duracion)
 	for i, linea := range respuesta {
-		pintada := render.EstiloBlanco.Render(linea)
-		if i == len(respuesta)-1 {
-			if sufijo := sufijoDuracion(s.Duracion); sufijo != "" {
-				pintada += " " + sufijo
-			}
+		if i == len(respuesta)-1 && sufijo != "" {
+			// El tiempo se cuelga de la última línea; del relleno de una superficie
+			// de código solo se quita el sobrante, para no comerse el sufijo.
+			lineas = append(lineas, sinPaddingFinal(linea)+" "+sufijo)
+			continue
 		}
-		lineas = append(lineas, pintada)
+		lineas = append(lineas, linea)
 	}
-	return lineas
+	return lineas, botones
+}
+
+// respuestaSegmento compone la respuesta de un segmento ya pintada: la del agente
+// se interpreta como Markdown y expone los botones de copia de sus bloques; la del
+// usuario —y cualquier otra— se envuelve y se pinta llana, sin interpretar nada.
+// Es una función pura.
+func respuestaSegmento(s Segmento, ancho int) ([]string, []BotonCopia) {
+	if s.Hablante == Agente {
+		return renderRespuesta(s.Texto, ancho)
+	}
+	filas := envolver(s.Texto, ancho)
+	salida := make([]string, 0, len(filas))
+	for _, fila := range filas {
+		salida = append(salida, render.EstiloBlanco.Render(fila))
+	}
+	return salida, nil
+}
+
+// sinPaddingFinal quita los espacios de relleno del final de una línea ya pintada,
+// conservando su último código ANSI (el reinicio de estilo): así un sufijo pegado
+// a la línea no queda tras el relleno y no lo recorta el ancho. Es una función pura.
+func sinPaddingFinal(linea string) string {
+	if idx := strings.LastIndexByte(linea, 0x1b); idx >= 0 {
+		return strings.TrimRight(linea[:idx], " ") + linea[idx:]
+	}
+	return strings.TrimRight(linea, " ")
 }
 
 // lineaSuelta pinta una línea del sistema: va suelta, sin bloque ni banda, en el
 // mismo tono atenuado con el que se lee el tiempo de una respuesta. Se recorta al
-// ancho para no romper el marco.
+// ancho para no romper el marco. En una línea de herramienta, el objetivo —la ruta
+// entre corchetes— se pinta en el color de ruta.
 func lineaSuelta(l Linea, ancho int) string {
 	if strings.TrimSpace(l.Texto) == "" {
 		return ""
 	}
-	return render.EstiloSutil.Render(render.RecortarColumnas("  "+l.Texto, ancho))
+	texto := render.RecortarColumnas("  "+l.Texto, ancho)
+	if l.Tipo == LineaHerramienta {
+		return pintarLineaHerramienta(texto)
+	}
+	return render.EstiloSutil.Render(texto)
+}
+
+// pintarLineaHerramienta pinta una línea de herramienta con su ruta destacada: el
+// tramo entre corchetes —el objetivo, «LEER [ruta]» o «LEER [ruta:10-50]»— va en el
+// color de ruta y el resto en el tono atenuado. Sin el corchete de cierre —una
+// línea recortada— se pinta toda atenuada. Es una función pura.
+func pintarLineaHerramienta(texto string) string {
+	inicio := strings.IndexByte(texto, '[')
+	fin := strings.IndexByte(texto, ']')
+	if inicio < 0 || fin < inicio {
+		return render.EstiloSutil.Render(texto)
+	}
+	return render.EstiloSutil.Render(texto[:inicio]) +
+		render.EstiloRuta.Render(texto[inicio:fin+1]) +
+		render.EstiloSutil.Render(texto[fin+1:])
 }
 
 // bloqueVivo es el turno que se está generando: el razonamiento revelado arriba
-// y la respuesta. Sin nada que decir no deja bloque.
-func (m *Model) bloqueVivo(ancho, interno int) string {
+// y la respuesta. Sin nada que decir no deja bloque. Devuelve también los botones
+// de copia de los bloques de código ya cerrados dentro del turno en vivo.
+func (m *Model) bloqueVivo(ancho, interno int) (string, []BotonCopia) {
 	respuesta := strings.Join(m.respuesta, "")
 	razonamiento := strings.Join(m.razonamiento, "")
 	if respuesta == "" && razonamiento == "" {
-		return ""
+		return "", nil
 	}
 	enVivo := Segmento{Hablante: Agente, Texto: respuesta, Razonamiento: razonamiento}
-	return bloque(contenidoSegmento(enVivo, m.MostrarRazonamiento, interno), Agente, ancho)
+	contenido, botones := contenidoSegmento(enVivo, m.MostrarRazonamiento, interno)
+	return bloque(contenido, Agente, ancho), botones
 }
 
 // acotar encierra un valor entre dos límites.

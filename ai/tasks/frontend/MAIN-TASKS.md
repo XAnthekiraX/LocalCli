@@ -16,3 +16,4 @@
 | T-F011 | actualizar | Línea de actividad fija sobre la caja de entrada               | T-F003             | completada | `011-task-indicador-fijo.md` |
 | T-F012 | actualizar | Cableado del pegado (bracketed paste) y resaltado de tokens en la caja de entrada | T-F001 | completada | `012-task-pegado-bracketed.md` |
 | T-F013 | actualizar | Pegado tokenizado en la bienvenida con el motor de adjuntos compartido | T-F001, T-F012 | completada | `013-task-pegado-bienvenida.md` |
+| T-F014 | crear  | Vista de código real: Markdown de la respuesta y botón de copiar por bloque | T-F003 | completada | `014-task-vista-codigo.md` |

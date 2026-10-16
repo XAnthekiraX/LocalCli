@@ -49,3 +49,38 @@ turno.
 longitud); exponer el bloque `compactacion` en la interfaz (se edita a mano);
 implementar la jerarquía `todos.parent_position` de la tarea T-B022, que solo se
 renumeró de `008` a `009`.
+
+## Resolución — `/compactar` y Enter en la paleta (2026-10-14)
+
+**Diagnóstico.** `/compactar` «no hacía nada» por dos causas:
+
+1. Interfaz: con la paleta visible, `Enter` autocompletaba el comando resaltado en
+   vez de ejecutarlo, contra [[specs/SPEC-INTERFAZ]] §Zonas 2 (`Tab` autocompleta,
+   `Enter` ejecuta). El comando solo corría con un segundo `Enter`.
+2. Backend: `Orquestador.Compactar` salía sin resumir cuando el historial cabía en
+   `ConservarEfectivo()` (15000 por defecto), devolviendo `nil` —no-op silencioso—
+   mientras la interfaz decía «contexto compactado».
+
+Además, el historial entregado podía superar el presupuesto: la recencia se acotaba
+al presupuesto y el resumen se añadía encima.
+
+**Cambios.**
+
+- `internal/tui/teclado.go` — `Enter` con la paleta visible cae al envío normal y
+  ejecuta; `Tab` sigue autocompletando. `enviarEntrada`/`enviar` retiran la paleta.
+- `internal/session/historial.go` — `Compactar` devuelve `(bool, error)`: fuerza la
+  compactación sin la puerta por `conservar`, acota la recencia con
+  `recenciaDeCompactacion` y reporta `false` cuando no hay tramo antiguo que resumir.
+  `recenciaDeCompactacion` reserva un margen (`reservaResumenTokens`) para el resumen.
+- `internal/tui/wire.go`, `internal/tui/slash.go` — el puerto devuelve el `bool`; sin
+  nada que compactar avisa «no había nada que compactar».
+
+**Verificación.** Tests nuevos: `TestLaPaletaDejaEjecutarConEnter` (tui),
+`TestCompactarSinTramoAntiguoNoHaceNada` y `TestLaEntregaNoSuperaElPresupuesto`
+(session). `go test ./...` y `go vet ./...` en verde.
+
+**Documentación.** [[specs/SPEC-HISTORIAL-CONVERSACION]] §Reglas de negocio
+(`/compactar` y margen del resumen) y §Criterios; [[specs/SPEC-INTERFAZ]]
+§Criterios (Enter ejecuta); [[backend/04-infrastructure/CONFIGURATION]] §7
+(`conservar_tokens`, presupuesto por umbral).
+

@@ -3,7 +3,6 @@ package store
 import (
 	"database/sql"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -33,7 +32,7 @@ func CrearMensaje(db *sql.DB, projectID, sessionID, role, content string, inputT
 	}
 
 	id := uuid.New().String()
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := ahora()
 
 	_, err := db.Exec(
 		"INSERT INTO messages (id, session_id, role, content, input_tokens, output_tokens, created_at, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",

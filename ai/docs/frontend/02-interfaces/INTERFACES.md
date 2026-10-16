@@ -10,6 +10,7 @@ relacionado:
     - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
     - "[[specs/SPEC-TOOLS]]"
     - "[[specs/SPEC-MODELOS-LLAMACPP]]"
+    - "[[specs/SPEC-VISTA-CODIGO]]"
     - "[[database/03-operations/QUERIES]]"
 ---
 
@@ -106,7 +107,7 @@ Todas van a `session`, la única puerta del orquestador:
 
 ## 3. Lecturas a `store`
 
-Solo lectura, con las consultas de [[database/03-operations/QUERIES]]: historial de la sesión activa, la lista de pasos de la sesión activa, aprobaciones pendientes de todas las sesiones, auditoría de una etapa y datos del panel. Nunca escribe: si algo cambia, es el orquestador quien lo persiste y notifica.
+Solo lectura, con las consultas de [[database/03-operations/QUERIES]]: historial (mensajes + líneas del sistema) de la sesión activa, la lista de pasos de la sesión activa, aprobaciones pendientes de todas las sesiones, auditoría de una etapa y datos del panel. Nunca escribe: si algo cambia, es el orquestador quien lo persiste y notifica.
 
 ### 3.1 Lecturas del arranque
 
@@ -170,7 +171,7 @@ Las sesiones se crean con `Ctrl+X n` desde la vista principal o enviando la prim
 
 **Paleta de comandos de flujo.** Al escribir `/` en la entrada —principal o bienvenida— se despliega encima la lista de comandos que sirve el orquestador (los oficiales sembrados en `~/.config/localcli/flows/` y los propios de `<proyecto>/.localcli/flows/`). Mientras está desplegada, `↑`/`↓` la recorren, `Tab` autocompleta el comando resaltado dejando la línea lista para la petición (`/comando [petición]`) y `Enter` lo ejecuta; un espacio retira la paleta y lo escrito pasa a ser la petición. Lo que no coincide con ningún comando —aunque empiece por `/`— se responde como chat.
 
-**Ratón.** La rueda desplaza el historial del chat. Arrastrar con el botón izquierdo selecciona texto, que se **resalta en video inverso** mientras se elige, y al soltar se copia al portapapeles —el realce desaparece y aparece el aviso transitorio `[Copiado]` arriba a la derecha, que se apaga solo—. Al capturar el ratón —necesario para poder copiar—, la selección nativa de la terminal queda disponible manteniendo `Shift`. La selección se **limita a la zona donde empezó el arrastre** —el chat, el sidebar o la caja de entrada (bienvenida y vista principal)—: no mezcla zonas y no puede salirse de los límites de la caja de entrada. Además queda **anclada al texto** que había bajo el cursor al iniciar, de modo que ni la rueda al desplazar ni un repintado en vivo (la respuesta generándose token a token) la cancelan ni la mueven a otro texto; en un chat largo se puede seguir eligiendo al desplazarse o mientras el modelo escribe. **En el chat, arrastrar hasta el borde superior o inferior** de la zona desplaza el historial y prolonga la selección por las líneas que van entrando, de modo que un mismo arrastre abarca texto que estaba **fuera del viewport** y la copia al soltar incluye esas líneas. Mientras se arrastra, la vista deja de seguir el final. Con el panel de aprobaciones visible, un clic sobre «aprobar» o «declinar» de una línea resuelve esa aprobación, sin necesidad de darle el foco con el teclado (un clic, no un arrastre: arrastrar sigue seleccionando texto).
+**Ratón.** La rueda desplaza el historial del chat. Arrastrar con el botón izquierdo selecciona texto, que se **resalta en video inverso** mientras se elige, y al soltar se copia al portapapeles —el realce desaparece y aparece el aviso transitorio `[Copiado]` arriba a la derecha, que se apaga solo—. Al capturar el ratón —necesario para poder copiar—, la selección nativa de la terminal queda disponible manteniendo `Shift`. La selección se **limita a la zona donde empezó el arrastre** —el chat, el sidebar o la caja de entrada (bienvenida y vista principal)—: no mezcla zonas y no puede salirse de los límites de la caja de entrada. Además queda **anclada al texto** que había bajo el cursor al iniciar, de modo que ni la rueda al desplazar ni un repintado en vivo (la respuesta generándose token a token) la cancelan ni la mueven a otro texto; en un chat largo se puede seguir eligiendo al desplazarse o mientras el modelo escribe. **En el chat, arrastrar hasta el borde superior o inferior** de la zona desplaza el historial y prolonga la selección por las líneas que van entrando, de modo que un mismo arrastre abarca texto que estaba **fuera del viewport** y la copia al soltar incluye esas líneas. Mientras se arrastra, la vista deja de seguir el final. Con el panel de aprobaciones visible, un clic sobre «aprobar» o «declinar» de una línea resuelve esa aprobación, sin necesidad de darle el foco con el teclado (un clic, no un arrastre: arrastrar sigue seleccionando texto). Un clic sobre el botón de copiar de la cabecera de un bloque de código ([[specs/SPEC-VISTA-CODIGO]]) copia el cuerpo de ese bloque al portapapeles y muestra el aviso `[Copiado]`; es una acción, como los botones del panel de aprobaciones, y no inicia una selección.
 
 Reglas, según [[specs/SPEC-INTERFAZ-ATAJOS]] y [[specs/SPEC-KEYBINDS]]:
 

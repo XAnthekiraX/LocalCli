@@ -9,6 +9,7 @@ import (
 
 	"localcli/internal/agent"
 	"localcli/internal/flow"
+	"localcli/internal/linea"
 	"localcli/internal/llm"
 	"localcli/internal/store"
 	"localcli/internal/tools"
@@ -75,6 +76,7 @@ func (o *Orquestador) correrFlujo(ctx context.Context, sesionID string, f flow.F
 		o.emitir(tui.Evento{Sesion: sesionID, Tipo: tui.EventoEtapaIniciada, Datos: map[string]string{
 			"etapa": etapa.ID, "nombre": etapa.Nombre,
 		}})
+		o.guardarEventoChat(sesionID, store.ChatEventoProceso, linea.Proceso(etapa.Nombre), nil)
 
 		agenteEtapa, ok := o.agentes.Buscar(etapa.Agente)
 		if !ok {

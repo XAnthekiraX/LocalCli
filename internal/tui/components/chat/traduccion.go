@@ -10,6 +10,22 @@ func (m Model) LineasContenido() []string { return m.hiloLineas }
 // TotalContenido es cuántas líneas tiene el hilo.
 func (m Model) TotalContenido() int { return len(m.hiloLineas) }
 
+// SegmentoEnLinea devuelve el segmento cerrado que pinta la línea de contenido
+// dada, si esa línea cae dentro del globo de un segmento. Las líneas de
+// separación, las sueltas y el turno en vivo no pertenecen a ningún globo: ahí
+// devuelve ok=false. Es lo que permite abrir el menú de un globo al hacer clic.
+func (m *Model) SegmentoEnLinea(contenido int) (*Segmento, bool) {
+	if contenido < 0 || contenido >= len(m.lineasPieza) {
+		return nil, false
+	}
+	idx := m.lineasPieza[contenido]
+	if idx < 0 || idx >= len(m.piezas) {
+		return nil, false
+	}
+	seg, ok := m.piezas[idx].(*Segmento)
+	return seg, ok
+}
+
 // SuspenderSeguimiento deja la vista anclada donde está mientras dura el arrastre
 // y devuelve si seguía el final, para restaurarlo al soltar.
 func (m *Model) SuspenderSeguimiento() bool {
@@ -62,4 +78,21 @@ func (m Model) VentanaDeContenido(contenido int) (int, bool) {
 		return 0, false
 	}
 	return fila, true
+}
+
+// BotonEnVentana busca el botón de copiar que cae en una celda de la ventana: la
+// fila traducida a línea del hilo y la columna, ya medida desde el borde de la
+// zona del chat. Devuelve el botón y si hay uno en esa celda; es lo que dispara la
+// copia al hacer clic (SPEC-VISTA-CODIGO §Reglas de negocio).
+func (m Model) BotonEnVentana(ventana, columna int) (BotonCopia, bool) {
+	contenido, ok := m.ContenidoBajoVentana(ventana)
+	if !ok {
+		return BotonCopia{}, false
+	}
+	for _, b := range m.botones {
+		if b.Linea == contenido && columna >= b.Col && columna < b.Col+b.Ancho {
+			return b, true
+		}
+	}
+	return BotonCopia{}, false
 }

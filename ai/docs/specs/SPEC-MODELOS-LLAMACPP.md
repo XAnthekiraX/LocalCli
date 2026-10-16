@@ -74,7 +74,7 @@ LocalCLI deberá poder iniciar y detener el servidor, configurar el puerto y com
 
 Al seleccionar un modelo, LocalCLI utilizará la ruta de su archivo GGUF para iniciar el servidor con los parámetros correspondientes. No deberá copiar el archivo a otra ubicación.
 
-La **ventana de contexto** con la que se arranca el servidor (`-c`) sale del **contexto real del modelo**, leído de su GGUF (`general.context_length`) al registrarlo en el catálogo; `LOCALCLI_CONTEXT_LIMIT` la fuerza si está definido, y si el modelo no declara contexto se usa un valor por defecto. La ventana efectiva que respeta el turno se confirma luego con el servidor (`props`). Ver [[backend/DECISIONS]] y [[backend/04-infrastructure/INTEGRATIONS]].
+La **ventana de contexto** con la que se arranca el servidor (`-c`) sale del **contexto declarado del modelo**, leído de su GGUF (preferentemente `<arch>.context_length` sobre `general.context_length`) al registrarlo en el catálogo, con un **margen del 80 %** para dejar espacio para la respuesta; `LOCALCLI_CONTEXT_LIMIT` la fuerza si está definido (sin margen), y si el modelo no declara contexto se usa un valor por defecto. La ventana efectiva que respeta el turno se confirma luego con el servidor (`props`). Ver [[backend/DECISIONS]] y [[backend/04-infrastructure/INTEGRATIONS]].
 
 Al arrancar el servidor con un modelo, LocalCLI debe identificarlo a `llama-server` **por el nombre del modelo (su carpeta)**, no por su ruta desnuda: el `id` que el servidor publica en `/v1/models` y el nombre que acepta en las peticiones han de ser el nombre de la carpeta (por ejemplo, con el alias correspondiente en el arranque). Así la lista de modelos y las peticiones del chat nombran siempre al modelo igual que la interfaz.
 

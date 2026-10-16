@@ -19,6 +19,9 @@ func VentanaDeContexto(declarada, tope int) (tokens int, conocida bool) {
 	return declarada, true
 }
 
+// MargenContextoPorDefecto es el porcentaje de la ventana que se usa realmente.
+const MargenContextoPorDefecto = 0.80
+
 // VentanaEfectiva resuelve la ventana del turno por precedencia: el override del
 // usuario si está definido; si no, el contexto real del modelo; y si el modelo
 // no lo declara, el valor por defecto. El contexto del modelo manda sobre el
@@ -29,6 +32,19 @@ func VentanaEfectiva(override, contextoModelo, defecto int) int {
 	}
 	if contextoModelo > 0 {
 		return contextoModelo
+	}
+	return defecto
+}
+
+// VentanaDeArranque resuelve la ventana con la que arrancar el servidor.
+// Se aplica el margen 80% a la ventana declarada (GGUF/per-model), sin
+// aplicar margen al override ni al defecto.
+func VentanaDeArranque(override, declarado, defecto int) int {
+	if override > 0 {
+		return override
+	}
+	if declarado > 0 {
+		return int(float64(declarado) * MargenContextoPorDefecto)
 	}
 	return defecto
 }

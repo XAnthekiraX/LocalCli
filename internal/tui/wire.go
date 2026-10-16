@@ -69,11 +69,18 @@ type Sesion struct {
 	Estado string
 }
 
-// MensajeHistorial es un turno guardado de una sesión, ya traducido para que la
-// vista lo pinte al retomarla: quién habló, su texto, el razonamiento del turno y
-// lo que tardó. La vista no importa el paquete del almacén: lo guardado llega
-// traducido a este dato mínimo.
+// PiezaHistorial es un tramo del hilo guardado, ya traducido para que la vista lo
+// pinte al retomar la sesión: o un turno de la conversación o una línea del
+// sistema (una herramienta o una etapa de un flujo). La vista no importa el
+// paquete del almacén: lo guardado llega traducido a estos datos mínimos.
+type PiezaHistorial interface{ esPiezaHistorial() }
+
+// MensajeHistorial es un turno guardado de una sesión: quién habló, su texto, el
+// razonamiento del turno y lo que tardó.
 type MensajeHistorial struct {
+	// ID es el identificador del mensaje en la base. Permite referirse a un turno
+	// concreto —revertir hasta él o bifurcar desde él— sin depender de su posición.
+	ID string
 	// Rol es quién produjo el turno: "user" o "agent", como en la base.
 	Rol   string
 	Texto string
@@ -82,6 +89,19 @@ type MensajeHistorial struct {
 	// Duracion es lo que tardó la respuesta; cero = no se midió.
 	Duracion time.Duration
 }
+
+func (*MensajeHistorial) esPiezaHistorial() {}
+
+// LineaHistorial es una línea del sistema guardada del hilo: una herramienta o una
+// etapa de un flujo. `Texto` llega ya compuesto, tal como se vio en vivo.
+type LineaHistorial struct {
+	// Tipo es el tipo de línea guardada: "herramienta" o "proceso", como en la base.
+	Tipo string
+	// Texto es la línea tal como se pintó.
+	Texto string
+}
+
+func (*LineaHistorial) esPiezaHistorial() {}
 
 // ModeloLocal es una entrada del modal de modelos: el nombre que reporta el
 // motor, el motor que lo sirve y si declara capacidad de herramientas. La vista
@@ -155,11 +175,11 @@ type Puerto interface {
 	// ahora: lo elegido por el usuario prevalece sobre la autodetección del
 	// arranque.
 	FijarModelo(nombre string)
-// DescargarModelo arranca la descarga de un modelo desde una URL directa de
-// GGUF y, opcionalmente, su proyector multimodal (mmproj). Valida las URLs y
-// devuelve el error de inmediato si no sirven; el avance y el desenlace llegan
-// por los eventos de descarga.
-DescargarModelo(ggufURL, mmprojURL string) error
+	// DescargarModelo arranca la descarga de un modelo desde una URL directa de
+	// GGUF y, opcionalmente, su proyector multimodal (mmproj). Valida las URLs y
+	// devuelve el error de inmediato si no sirven; el avance y el desenlace llegan
+	// por los eventos de descarga.
+	DescargarModelo(ggufURL, mmprojURL string) error
 	// CancelarDescarga corta la descarga en curso, si la hay.
 	CancelarDescarga()
 	// NombreDeURL deriva el nombre del modelo de una URL de descarga, para que el
@@ -177,7 +197,7 @@ DescargarModelo(ggufURL, mmprojURL string) error
 	// Historial devuelve los mensajes guardados de una sesión, para pintarlos al
 	// retomarla. Solo los de esa sesión: el contexto de una nunca se mezcla con el
 	// de otra (SPEC-SESIONES).
-	Historial(sesionID string) ([]MensajeHistorial, error)
+	Historial(sesionID string) ([]PiezaHistorial, error)
 	// Deshacer deshace el último turno de la conversación de una sesión y
 	// Rehacer lo vuelve a poner en pie; ninguno toca los archivos. Devuelven
 	// cuántos mensajes cambiaron de estado: 0 es «no había nada que
@@ -191,11 +211,19 @@ DescargarModelo(ggufURL, mmprojURL string) error
 	Crear() (*Sesion, error)
 	Enviar(ctx context.Context, sesionID, agente, texto string) error
 	// Compactar fuerza la compactación del historial de una sesión: resume lo
-	// antiguo y deja persistido el resumen. Lo usa el comando `/compactar`. Sin
-	// nada que compactar no hace nada.
-	Compactar(ctx context.Context, sesionID string) error
+	// antiguo y deja persistido el resumen. Lo usa el comando `/compactar`.
+	// Devuelve `true` si persistió un resumen y `false` si no había nada que
+	// resumir (el historial entero cabe en el tramo reciente).
+	Compactar(ctx context.Context, sesionID string) (bool, error)
 	// ResponderAprobacion entrega la decisión de una línea del panel de
 	// aprobaciones: la sesión que la pidió deja de esperar y continúa o se corta.
 	ResponderAprobacion(sesionID, aprobacionID string, aprobar bool) error
 	Suscribir() (<-chan Evento, func())
+	// DeshacerDesde revierte la conversación de una sesión desde el mensaje
+	// indicado hasta el final. Devuelve cuántos mensajes se sacaron; 0 significa
+	// que no había nada que revertir.
+	DeshacerDesde(sesionID, mensajeID string) (int, error)
+	// Bifurcar abre una sesión nueva con el historial de la sesión indicada hasta
+	// el mensaje dado, incluido, y la devuelve para que la vista la adopte.
+	Bifurcar(sesionID, mensajeID string) (*Sesion, error)
 }

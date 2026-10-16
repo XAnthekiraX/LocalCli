@@ -17,6 +17,7 @@ import (
 	"localcli/internal/agent"
 	"localcli/internal/arranque"
 	"localcli/internal/flow"
+	"localcli/internal/linea"
 	"localcli/internal/llama"
 	"localcli/internal/llm"
 	"localcli/internal/llm/llamacpp"
@@ -139,6 +140,7 @@ func (o *Orquestador) ConHerramientas(registro *tools.Registro, catalogo []agent
 				datos["error"] = e.Error
 			}
 			o.emitir(tui.Evento{Sesion: e.Sesion, Tipo: tui.EventoHerramientaResultado, Datos: datos})
+			o.guardarLineaHerramienta(e)
 		},
 	}
 	// Los handlers de la lista de pasos son de la sesión: cierran sobre el
@@ -147,6 +149,29 @@ func (o *Orquestador) ConHerramientas(registro *tools.Registro, catalogo []agent
 	registro.Instalar("actualizar_todo", o.actualizarTodo)
 	// `ejecutar_flujo` también es de la sesión: su handler corre el flujo.
 	registro.Instalar("ejecutar_flujo", o.ejecutarFlujo)
+}
+
+// guardarEventoChat guarda una línea de pantalla de la sesión —una herramienta o
+// una etapa de un flujo— para que el hilo se recargue igual al retomarla. El hilo
+// en vivo no depende de que se guarde, así que el fallo se avisa y el turno sigue
+// (DATA_FLOW §Creación: «Crear una línea de procesamiento»).
+func (o *Orquestador) guardarEventoChat(sesionID, tipo, contenido string, durationMs *int) {
+	if _, err := store.CrearChatEvento(o.db, o.projectID, sesionID, tipo, contenido, durationMs); err != nil {
+		o.avisar(sesionID, "no se pudo guardar una línea del hilo: "+err.Error(), "")
+	}
+}
+
+// guardarLineaHerramienta guarda la línea cerrada de una herramienta, tal como se
+// pintó, con la duración de su ejecución cuando se midió.
+func (o *Orquestador) guardarLineaHerramienta(e tools.EventoResultado) {
+	base := linea.HerramientaAbierta(e.Verbo, e.Tema)
+	texto := linea.HerramientaCerrada(base, e.OK, e.Truncado, e.Medida, e.Error, e.Duracion)
+	var ms *int
+	if e.Duracion > 0 {
+		n := int(e.Duracion.Milliseconds())
+		ms = &n
+	}
+	o.guardarEventoChat(e.Sesion, store.ChatEventoHerramienta, texto, ms)
 }
 
 // ConFlujos inyecta el catálogo de flujos cargado del disco.
@@ -658,9 +683,14 @@ func (o *Orquestador) aplicarAlServidor(nombre string) {
 		}
 		// La ventana efectiva es la que el servidor acepta de verdad: si reutilizó
 		// uno externo, su `n_ctx` manda sobre el contexto pedido.
-		o.fijarVentana(o.ventanaDelServidor(contexto))
+		nueva := o.ventanaDelServidor(contexto)
+		antigua := o.ventanaActual()
+		o.fijarVentana(nueva)
 		for _, aviso := range avisos {
 			o.avisarSinSesion(aviso, "")
+		}
+		if nueva < antigua {
+			o.avisarSinSesion("modelo "+entrada.ID+": ventana reducida a "+strconv.Itoa(nueva)+"; los historiales más largos se compactarán", "")
 		}
 		o.avisarSinSesion("modelo activo: "+entrada.ID, "")
 		o.refrescarCapacidades()
@@ -671,7 +701,7 @@ func (o *Orquestador) aplicarAlServidor(nombre string) {
 // modelo: el override del usuario, si no el contexto real de su GGUF y, si no lo
 // declara, el defecto del harness.
 func contextoDeModelo(e models.Entrada) int {
-	return llm.VentanaEfectiva(arranque.LimiteContextoOverride(), e.ContextoReal(), arranque.LimiteContextoPorDefecto)
+	return llm.VentanaDeArranque(arranque.LimiteContextoOverride(), e.ContextoReal(), arranque.LimiteContextoPorDefecto)
 }
 
 // ventanaDelServidor es la ventana que el servidor acepta de verdad (su `n_ctx`
@@ -721,26 +751,59 @@ func (o *Orquestador) Eliminar(sesionID string) error {
 	return store.EliminarSesion(o.db, o.projectID, sesionID)
 }
 
-// Historial devuelve los mensajes guardados de una sesión, traducidos a lo que la
-// vista pinta al retomarla. Es la lectura que hace visible la conversación al
-// reabrir la carpeta: los mensajes se guardan turno a turno en `Enviar`.
-func (o *Orquestador) Historial(sesionID string) ([]tui.MensajeHistorial, error) {
-	filas, err := store.Historial(o.db, o.projectID, sesionID)
+// Historial devuelve el hilo guardado de una sesión, traducido a lo que la vista
+// pinta al retomarla. Es la lectura que hace visible la conversación al reabrir la
+// carpeta: los mensajes se guardan turno a turno en `Enviar` y las líneas del
+// sistema —herramientas y sub-procesos— en `chat_evento`, y aquí se intercalan en
+// su orden cronológico para que el hilo se lea igual que en vivo (DATA_FLOW
+// §Creación, INTERFACES §1.1).
+func (o *Orquestador) Historial(sesionID string) ([]tui.PiezaHistorial, error) {
+	mensajes, err := store.Historial(o.db, o.projectID, sesionID)
 	if err != nil {
 		return nil, err
 	}
-	salida := make([]tui.MensajeHistorial, 0, len(filas))
-	for _, f := range filas {
-		m := tui.MensajeHistorial{Rol: f.Role, Texto: f.Content}
-		if f.Razonamiento != nil {
-			m.Razonamiento = *f.Razonamiento
+	eventos, err := store.ListarChatEventos(o.db, o.projectID, sesionID)
+	if err != nil {
+		return nil, err
+	}
+
+	salida := make([]tui.PiezaHistorial, 0, len(mensajes)+len(eventos))
+	i, j := 0, 0
+	for i < len(mensajes) || j < len(eventos) {
+		// Se elige el más antiguo; a igual instante gana el mensaje, porque la
+		// línea se interpone entre el mensaje que la precede y el que la sigue.
+		tomarMensaje := i < len(mensajes) && (j >= len(eventos) || !despues(mensajes[i].CreatedAt, eventos[j].CreatedAt))
+		if tomarMensaje {
+			f := mensajes[i]
+			m := &tui.MensajeHistorial{ID: f.ID, Rol: f.Role, Texto: f.Content}
+			if f.Razonamiento != nil {
+				m.Razonamiento = *f.Razonamiento
+			}
+			if f.DurationMs != nil {
+				m.Duracion = time.Duration(*f.DurationMs) * time.Millisecond
+			}
+			salida = append(salida, m)
+			i++
+			continue
 		}
-		if f.DurationMs != nil {
-			m.Duracion = time.Duration(*f.DurationMs) * time.Millisecond
-		}
-		salida = append(salida, m)
+		e := eventos[j]
+		salida = append(salida, &tui.LineaHistorial{Tipo: e.Tipo, Texto: e.Content})
+		j++
 	}
 	return salida, nil
+}
+
+// despues dice si el instante `a` es posterior a `b`. Los tiempos se guardan en
+// ISO 8601 UTC; mensajes con precisión de segundo y líneas con nanosegundos, así
+// que se comparan ya interpretados. Un instante ilegible cuenta como «no
+// posterior», para no adelantar una línea sin motivo.
+func despues(a, b string) bool {
+	ta, errA := time.Parse(time.RFC3339Nano, a)
+	tb, errB := time.Parse(time.RFC3339Nano, b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	return ta.After(tb)
 }
 
 // Crear abre una sesión nueva. Nace con el nombre provisional; el modelo lo

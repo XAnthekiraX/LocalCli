@@ -48,12 +48,12 @@ No incluye qué documentos entran al contexto, que está en [[specs/SPEC-NODO-CO
 - El presupuesto se configura en las preferencias del usuario (`~/.config/localcli/config.json`); sin preferencia se usa `LOCALCLI_CONTEXT_LIMIT` y, en su defecto, un valor por defecto.
 - La compactación se dispara por dos vías: **automática**, cuando el tamaño estimado del historial supera el umbral de la ventana; y **por desbordamiento**, cuando el servidor rechaza el turno porque la petición excede su contexto. La vía automática resume antes de enviar; la de desbordamiento resume con un tramo reciente menor y **reintenta el turno una sola vez**.
 - El **umbral** de la vía automática es una fracción de la ventana efectiva (60 % por defecto), configurable.
-- El **tramo reciente que viaja literal** tras el resumen se mide en tokens (`conservar_tokens`, 15000 por defecto), configurable; nunca puede superar el presupuesto del historial.
+- El **tramo reciente que viaja literal** tras el resumen se mide en tokens (`conservar_tokens`, 15000 por defecto), configurable; nunca puede superar el presupuesto del historial y se le reserva un margen al propio resumen, de modo que resumen y recientes juntos caben en el presupuesto.
 - El resumen se pide a un **modelo de compactación** configurable, pensado para ser ligero; sin preferencia es el modelo activo de la sesión.
 - El resumen tiene un **formato** configurable: `opencode` (por defecto, con las secciones Objective / Important Details / Work State / Next Move / Relevant Files), `legacy` (resumen en prosa) o `custom` con una plantilla propia. El prompt pide devolver solo el resumen.
 - El resumen se **persiste con la sesión** (`sessions.summary` y `sessions.summary_upto`): no se resume dos veces lo mismo. Si llegan mensajes nuevos que no caben, el resumen persistido se **amplía** con lo añadido en lugar de rehacerse.
 - Un resumen **obsoleto** —cuando se deshace hasta un punto anterior a su corte— se descarta y se vuelve a compactar desde cero.
-- `/compactar` **fuerza** la compactación de la sesión activa aunque el historial quepa en el presupuesto.
+- `/compactar` **fuerza** la compactación de la sesión activa aunque el historial quepa en el presupuesto: resume todo lo anterior al tramo reciente y lo persiste. Si el historial entero cabe en ese tramo no hay nada que resumir, y lo informa en vez de dar por hecha la compactación.
 
 ## Disparadores y configuración
 
@@ -78,7 +78,7 @@ No incluye qué documentos entran al contexto, que está en [[specs/SPEC-NODO-CO
 - [ ] Al superar el umbral, el historial se compacta antes de enviar el turno.
 - [ ] Si el servidor rechaza el turno por desbordamiento, se compacta y se reintenta una vez.
 - [ ] El resumen persistido se amplía de forma incremental en lugar de rehacerse entero.
-- [ ] `/compactar` resume la sesión activa aunque el historial quepa.
+- [ ] `/compactar` resume la sesión activa aunque el historial quepa en el presupuesto; sin tramo antiguo que resumir, lo informa.
 - [ ] El formato y el modelo del resumen se toman de la preferencia; sin ella, del valor por defecto.
 - [ ] Deshacer hasta un punto anterior al corte descarta el resumen obsoleto.
 

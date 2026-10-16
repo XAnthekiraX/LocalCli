@@ -66,21 +66,27 @@ type (
 		ID  string
 		Err error
 	}
-	// historialMsg trae los mensajes guardados de una sesión al retomarla —o al
+	// historialMsg trae el hilo guardado de una sesión al retomarla —o al
 	// deshacer o rehacer un turno—. `ID` ata la respuesta a su sesión: si
 	// mientras tanto se cambió a otra, se descarta para no mezclar contextos
 	// (SPEC-SESIONES). `Aviso`, si viene, se deja en el hilo tras pintarlo.
 	historialMsg struct {
-		ID       string
-		Mensajes []MensajeHistorial
-		Aviso    string
-		Err      error
+		ID     string
+		Piezas []PiezaHistorial
+		Aviso  string
+		Err    error
 	}
 	// avisoTurnoMsg deja un aviso de un deshacer o rehacer que no cambió el hilo
 	// (nada que deshacer, nada que rehacer, o un fallo): no recarga nada.
 	avisoTurnoMsg struct {
 		ID    string
 		Texto string
+	}
+	// bifurcadaMsg trae la sesión nueva creada al bifurcar un globo, para que el
+	// app la adopte. Un error deja el aviso sin cambiar de sesión.
+	bifurcadaMsg struct {
+		Sesion *Sesion
+		Err    error
 	}
 )
 
@@ -153,6 +159,12 @@ type App struct {
 	sel        seleccion
 	copiado    bool
 	copiadoGen uint64
+
+	// globo es el menú emergente del globo de un mensaje del usuario; clicGlobo
+	// recuerda el globo pulsado mientras el botón sigue abajo, para distinguir un
+	// clic simple (abre el menú) de un arrastre (selecciona).
+	globo     MenuGlobo
+	clicGlobo clicGlobo
 	// scrollAntes recuerda si el chat seguía el final al empezar un arrastre, para
 	// restaurarlo al soltar.
 	scrollAntes bool
@@ -178,6 +190,7 @@ func Nueva(puerto Puerto) *App {
 		paleta:       NuevoPaleta(),
 		panel:        panel.Nuevo(),
 		aprobaciones: NuevaAprobaciones(),
+		globo:        NuevoMenuGlobo(),
 	}
 	app.paleta.EstablecerCatalogo(ComandosDeLaEntrada(puerto))
 	if puerto == nil {
@@ -284,7 +297,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Solo se pinta si sigue siendo la sesión activa: un cambio de sesión
 		// mientras la lectura viajaba no debe volcar el hilo de otra.
 		if a.sesion != nil && a.sesion.ID == m.ID {
-			a.pintarHistorial(m.Mensajes)
+			a.pintarHistorial(m.Piezas)
 			// El aviso va después de pintar: el hilo se reemplaza entero, así
 			// que uno puesto antes se perdería con la recarga.
 			if m.Aviso != "" {
@@ -297,6 +310,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.chat.AnotarAviso(m.Texto)
 		}
 		return a, nil
+	case bifurcadaMsg:
+		if m.Err != nil {
+			a.aviso = "no se pudo bifurcar: " + m.Err.Error()
+			return a, nil
+		}
+		if m.Sesion == nil {
+			return a, nil
+		}
+		return a, a.adoptarSesion(modals.Sesion{ID: m.Sesion.ID, Nombre: m.Sesion.Nombre, Estado: m.Sesion.Estado})
 	case frameMsg:
 		return a, a.latido()
 	case eventoMsg:
@@ -323,6 +345,11 @@ func (a *App) View() string {
 	// Overlay de la paleta de comandos (si está visible)
 	if a.paleta.Visible() {
 		frame = a.overlayPaleta(frame)
+	}
+	// Overlay del menú del globo de un mensaje del usuario
+	if a.globo.Visible() {
+		fila, col, _, _ := a.rectGlobo()
+		frame = render.Superponer(frame, a.globo.View(), fila, col)
 	}
 	switch {
 	case a.copiado:
@@ -769,30 +796,50 @@ func cargarHistorial(p Puerto, sesionID string) tea.Cmd {
 		if p == nil {
 			return historialMsg{ID: sesionID}
 		}
-		mensajes, err := p.Historial(sesionID)
-		return historialMsg{ID: sesionID, Mensajes: mensajes, Err: err}
+		piezas, err := p.Historial(sesionID)
+		return historialMsg{ID: sesionID, Piezas: piezas, Err: err}
 	}
 }
 
-// pintarHistorial vuelca los mensajes guardados en el hilo de la sesión activa, en
-// su orden: usuario y agente con su razonamiento y su duración. Es lo que hace
+// pintarHistorial vuelca el hilo guardado en la sesión activa, en su orden:
+// usuario y agente con su razonamiento y su duración, y las líneas del sistema
+// —herramientas y sub-procesos— que se intercalaron entre ellos. Es lo que hace
 // visible la conversación al retomar la sesión.
-func (a *App) pintarHistorial(mensajes []MensajeHistorial) {
-	segmentos := make([]chat.Segmento, 0, len(mensajes))
-	for _, m := range mensajes {
-		hablante := chat.Usuario
-		if m.Rol == "agent" {
-			hablante = chat.Agente
+func (a *App) pintarHistorial(piezas []PiezaHistorial) {
+	hilo := make([]chat.Pieza, 0, len(piezas))
+	for _, p := range piezas {
+		switch m := p.(type) {
+		case *MensajeHistorial:
+			hablante := chat.Usuario
+			if m.Rol == "agent" {
+				hablante = chat.Agente
+			}
+			hilo = append(hilo, &chat.Segmento{
+				ID:              m.ID,
+				Hablante:        hablante,
+				Texto:           m.Texto,
+				Razonamiento:    m.Razonamiento,
+				SinRazonamiento: hablante == chat.Agente && m.Razonamiento == "",
+				Duracion:        m.Duracion,
+			})
+		case *LineaHistorial:
+			hilo = append(hilo, &chat.Linea{Tipo: tipoDeLinea(m.Tipo), Texto: m.Texto})
 		}
-		segmentos = append(segmentos, chat.Segmento{
-			Hablante:        hablante,
-			Texto:           m.Texto,
-			Razonamiento:    m.Razonamiento,
-			SinRazonamiento: hablante == chat.Agente && m.Razonamiento == "",
-			Duracion:        m.Duracion,
-		})
 	}
-	a.chat.ReemplazarHistorial(segmentos)
+	a.chat.ReemplazarHistorial(hilo)
+}
+
+// tipoDeLinea traduce el tipo guardado en `chat_evento` al tipo de línea de la
+// vista. Un tipo desconocido cae en aviso, que se pinta suelto y sin adorno.
+func tipoDeLinea(tipo string) chat.TipoLinea {
+	switch tipo {
+	case "herramienta":
+		return chat.LineaHerramienta
+	case "proceso":
+		return chat.LineaSubProceso
+	default:
+		return chat.LineaAviso
+	}
 }
 
 // eliminarResaltada resuelve `ctrl+d` en el modal de sesiones: la primera
@@ -1013,6 +1060,7 @@ func (a *App) vistaBienvenida() (string, welcome.Limites) {
 // vacía la caja; sin sesión no hay a quién mandarlo.
 func (a *App) enviarEntrada(texto string) tea.Cmd {
 	a.entrada.Limpiar()
+	a.paleta.Ocultar()
 	a.notificacionBajoInput = ""
 	if cmd, consumido := a.ejecutarComandoLocal(texto); consumido {
 		return cmd
@@ -1241,6 +1289,15 @@ func (a *App) cargarPreferencias() {
 	a.entrada.Pensar = p.Pensar
 	if a.puerto != nil {
 		a.puerto.FijarPensar(p.Pensar)
+	}
+}
+
+// cargarEstilos aplica la paleta del usuario (`~/.config/localcli/styles.json`).
+// Si el archivo es inválido se rechaza entero y se arranca con los estilos de
+// fábrica, avisando.
+func (a *App) cargarEstilos() {
+	if err := CargarEstilos(); err != nil {
+		a.aviso = "no se pudo cargar styles.json; se usan los estilos de fábrica: " + err.Error()
 	}
 }
 

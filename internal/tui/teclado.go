@@ -11,6 +11,12 @@ func (a *App) tecla(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if a.modalAbierto() {
 		return a.teclaDeModal(m)
 	}
+	// El menú del globo, mientras está desplegado, es dueño del teclado: ↑/↓ lo
+	// recorren, Enter resuelve la opción y Esc lo cierra; el resto no pasa a la
+	// caja ni a la vista de abajo.
+	if a.globo.Visible() {
+		return a.teclaMenuGlobo(m)
+	}
 	// `esc` detiene al agente desde el núcleo, sin depender del keymap del
 	// usuario: un `keys.json` que ignore `cancel` no puede dejarte sin parada.
 	if m.Type == tea.KeyEsc && !a.teclaRes.EsperandoLider() && a.cancelarTurno != nil && a.chat.HayTurno() {
@@ -50,27 +56,9 @@ func (a *App) tecla(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			a.paleta.ActualizarDesdeLinea(a.textoVigente())
 			return a, nil
-		case tea.KeyEnter:
-			// Enter expone el comando resaltado al app (sin arrancar nada)
-			// Según tarea: "Enter expone el comando resaltado al `app` (sin arrancar nada)"
-			// Pero también hay comportamiento normal de enviar; con paleta visible,
-			// la especificación dice "Enter lo ejecuta" cuando se elige comando.
-			// Para cumplir ambas intenciones del flujo: con comando válido, ejecutar comando de flujo.
-			cmd := a.paleta.ComandoResaltado()
-			if cmd.Nombre != "" {
-				completado := "/" + cmd.Nombre + " "
-				if a.vista == VistaBienvenida {
-					a.bienvenida.Texto = completado
-					a.bienvenida.Pos = len([]rune(completado))
-				} else {
-					a.entrada.Texto = completado
-					a.entrada.Pos = len([]rune(completado))
-				}
-				a.paleta.Ocultar()
-				return a, nil
-			}
-			// Si no hay comando válido, continuar con flujo normal
 		}
+		// Enter no se interrumpe aquí: cae al envío normal y ejecuta lo escrito
+		// (SPEC-INTERFAZ §Zonas 2: `Tab` autocompleta y `Enter` ejecuta).
 	}
 	if !a.teclaRes.EsperandoLider() && EsTeclaDeEdicion(m) {
 		return a, a.editar(m)

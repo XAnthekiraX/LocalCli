@@ -8,26 +8,29 @@ import (
 )
 
 // Turno es un turno de la conversación capturado al deshacerlo: sus mensajes con
-// su razonamiento y sus marcas de tiempo, para poder rehacerlo tal cual.
+// su razonamiento y las líneas del hilo —herramientas y sub-procesos— que produjo,
+// con sus marcas de tiempo, para poder rehacerlo tal cual.
 type Turno struct {
 	Mensajes []MensajeConRazonamiento
+	Eventos  []ChatEvento
 }
 
 // DeshacerTurno saca de la conversación el último turno de la sesión —el último
-// mensaje del usuario y lo que vino después— y lo devuelve para poder rehacerlo.
-// Devuelve el turno capturado (vacío si no había ninguno) y cuántos mensajes se
-// sacaron. No toca los archivos del proyecto.
+// mensaje del usuario y lo que vino después, con sus líneas del hilo— y lo
+// devuelve para poder rehacerlo. Devuelve el turno capturado (vacío si no había
+// ninguno) y cuántos mensajes se sacaron. No toca los archivos del proyecto.
 func DeshacerTurno(db *sql.DB, projectID, sessionID string) (Turno, int, error) {
 	if err := sesionEnProyecto(db, projectID, sessionID); err != nil {
 		return Turno{}, 0, err
 	}
 	var desde int64
+	var desdeMarca string
 	err := db.QueryRow(
-		`SELECT rowid FROM messages
+		`SELECT rowid, created_at FROM messages
 		 WHERE session_id = ? AND role = 'user'
 		 ORDER BY created_at DESC, rowid DESC LIMIT 1`,
 		sessionID,
-	).Scan(&desde)
+	).Scan(&desde, &desdeMarca)
 	if err == sql.ErrNoRows {
 		return Turno{}, 0, nil
 	}
@@ -38,15 +41,24 @@ func DeshacerTurno(db *sql.DB, projectID, sessionID string) (Turno, int, error) 
 	if err != nil {
 		return Turno{}, 0, err
 	}
+	// Las líneas del turno son las creadas desde su mensaje del usuario: ninguna
+	// línea nace fuera de un turno.
+	turno.Eventos, err = eventosDesde(db, sessionID, desdeMarca)
+	if err != nil {
+		return Turno{}, 0, err
+	}
 	if _, err := db.Exec(`DELETE FROM messages WHERE session_id = ? AND rowid >= ?`, sessionID, desde); err != nil {
+		return Turno{}, 0, fmt.Errorf("store: no se pudo deshacer el turno: %w", err)
+	}
+	if _, err := db.Exec(`DELETE FROM chat_evento WHERE session_id = ? AND created_at >= ?`, sessionID, desdeMarca); err != nil {
 		return Turno{}, 0, fmt.Errorf("store: no se pudo deshacer el turno: %w", err)
 	}
 	return turno, len(turno.Mensajes), nil
 }
 
 // RehacerTurno vuelve a escribir un turno deshecho, con sus mensajes, su
-// razonamiento y sus marcas de tiempo, en una sola transacción: o vuelve el turno
-// entero, o no vuelve nada.
+// razonamiento, sus líneas del hilo y sus marcas de tiempo, en una sola
+// transacción: o vuelve el turno entero, o no vuelve nada.
 func RehacerTurno(db *sql.DB, turno Turno) error {
 	if len(turno.Mensajes) == 0 {
 		return nil
@@ -71,6 +83,14 @@ func RehacerTurno(db *sql.DB, turno Turno) error {
 			); err != nil {
 				return fmt.Errorf("store: no se pudo rehacer el razonamiento: %w", err)
 			}
+		}
+	}
+	for _, e := range turno.Eventos {
+		if _, err := tx.Exec(
+			`INSERT INTO chat_evento (id, session_id, tipo, content, created_at, duration_ms) VALUES (?, ?, ?, ?, ?, ?)`,
+			e.ID, e.SessionID, e.Tipo, e.Content, e.CreatedAt, e.DurationMs,
+		); err != nil {
+			return fmt.Errorf("store: no se pudo rehacer la línea del hilo: %w", err)
 		}
 	}
 	return tx.Commit()
@@ -103,4 +123,30 @@ func turnoDesde(db *sql.DB, sessionID string, desde int64) (Turno, error) {
 		return Turno{}, err
 	}
 	return Turno{Mensajes: mensajes}, nil
+}
+
+// eventosDesde lee las líneas del hilo de la sesión creadas desde `desde`
+// (incluida), en orden. `desde` es la marca del mensaje que abre el turno.
+func eventosDesde(db *sql.DB, sessionID, desde string) ([]ChatEvento, error) {
+	rows, err := db.Query(
+		`SELECT id, session_id, tipo, content, created_at, duration_ms FROM chat_evento
+		 WHERE session_id = ? AND created_at >= ?
+		 ORDER BY created_at, rowid`,
+		sessionID, desde,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var eventos []ChatEvento
+	for rows.Next() {
+		var e ChatEvento
+		var durationMs sql.NullInt64
+		if err := rows.Scan(&e.ID, &e.SessionID, &e.Tipo, &e.Content, &e.CreatedAt, &durationMs); err != nil {
+			return nil, err
+		}
+		e.DurationMs = enteroOpcional(durationMs)
+		eventos = append(eventos, e)
+	}
+	return eventos, rows.Err()
 }

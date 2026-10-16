@@ -24,7 +24,7 @@ type puertoFalso struct {
 	creadas         int
 	pensado         bool
 	pedido          bool
-	historial       []MensajeHistorial
+	historial       []PiezaHistorial
 	historialPedido string
 	respondidas     []string
 	capacidades     Capacidades
@@ -34,6 +34,8 @@ type puertoFalso struct {
 	rehechos        []string
 	deshacerN       int
 	rehacerN        int
+	desdeIDs        []string
+	bifurcadas      []string
 	compactadas     []string
 }
 
@@ -65,8 +67,11 @@ func (p *puertoFalso) Modelos() ([]ModeloLocal, error) {
 	return p.modelos, p.errModelos
 }
 
-func (p *puertoFalso) DescargarModelo(ggufURL, mmprojURL string) error { p.descargado = ggufURL; return nil }
-func (p *puertoFalso) CancelarDescarga()                { p.cancelado = true }
+func (p *puertoFalso) DescargarModelo(ggufURL, mmprojURL string) error {
+	p.descargado = ggufURL
+	return nil
+}
+func (p *puertoFalso) CancelarDescarga() { p.cancelado = true }
 func (p *puertoFalso) NombreDeURL(url string) string {
 	base := url
 	if i := strings.IndexByte(base, '?'); i >= 0 {
@@ -83,7 +88,7 @@ func (p *puertoFalso) FijarPensar(pensar bool)   { p.pensado = pensar }
 func (p *puertoFalso) Flujos() []FlujoVista      { return p.flujos }
 func (p *puertoFalso) Listar() ([]Sesion, error) { return p.sesiones, nil }
 
-func (p *puertoFalso) Historial(sesionID string) ([]MensajeHistorial, error) {
+func (p *puertoFalso) Historial(sesionID string) ([]PiezaHistorial, error) {
 	p.historialPedido = sesionID
 	return p.historial, nil
 }
@@ -103,9 +108,19 @@ func (p *puertoFalso) Rehacer(sesionID string) (int, error) {
 	return p.rehacerN, nil
 }
 
-func (p *puertoFalso) Compactar(_ context.Context, sesionID string) error {
+func (p *puertoFalso) DeshacerDesde(sesionID, mensajeID string) (int, error) {
+	p.desdeIDs = append(p.desdeIDs, mensajeID)
+	return p.deshacerN, nil
+}
+
+func (p *puertoFalso) Bifurcar(sesionID, mensajeID string) (*Sesion, error) {
+	p.bifurcadas = append(p.bifurcadas, mensajeID)
+	return &Sesion{ID: "fork", Nombre: "FORK:primera", Estado: EstadoInactiva}, nil
+}
+
+func (p *puertoFalso) Compactar(_ context.Context, sesionID string) (bool, error) {
 	p.compactadas = append(p.compactadas, sesionID)
-	return nil
+	return true, nil
 }
 
 func teclaRuna(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
@@ -283,9 +298,9 @@ func TestElModalDeSesionesEligeYConfirmaElBorrado(t *testing.T) {
 func TestRetomarUnaSesionPintaSuHistorial(t *testing.T) {
 	p := &puertoFalso{
 		sesiones: []Sesion{{ID: "s2", Nombre: "segunda", Estado: EstadoInactiva}},
-		historial: []MensajeHistorial{
-			{Rol: "user", Texto: "hola viejo"},
-			{Rol: "agent", Texto: "buenas, viejo", Razonamiento: "pensaba"},
+		historial: []PiezaHistorial{
+			&MensajeHistorial{Rol: "user", Texto: "hola viejo"},
+			&MensajeHistorial{Rol: "agent", Texto: "buenas, viejo", Razonamiento: "pensaba"},
 		},
 	}
 	app := appDePrueba(p)
@@ -299,6 +314,33 @@ func TestRetomarUnaSesionPintaSuHistorial(t *testing.T) {
 	hilo := render.SinANSI(app.chat.Hilo(80))
 	if !strings.Contains(hilo, "hola viejo") || !strings.Contains(hilo, "buenas, viejo") {
 		t.Fatalf("el historial de la sesión no se pintó: %q", hilo)
+	}
+}
+
+// El hilo guardado incluye las líneas del sistema —herramientas y sub-procesos—,
+// que se repintan al retomar la sesión igual que se vieron en vivo: antes no se
+// guardaban y desaparecían (DATA_FLOW §Creación, INTERFACES §1.1).
+func TestRetomarUnaSesionRepintaSusLineas(t *testing.T) {
+	p := &puertoFalso{
+		sesiones: []Sesion{{ID: "s2", Nombre: "segunda", Estado: EstadoInactiva}},
+		historial: []PiezaHistorial{
+			&MensajeHistorial{Rol: "user", Texto: "hazlo"},
+			&LineaHistorial{Tipo: "proceso", Texto: "[Sub Proceso] Diagnosticar"},
+			&LineaHistorial{Tipo: "herramienta", Texto: "✓ LEER [AGENTS.md] · 93 líneas · 0.4 s"},
+			&MensajeHistorial{Rol: "agent", Texto: "listo"},
+		},
+	}
+	app := appDePrueba(p)
+
+	abrirAtajo(app, "l")
+	pulsar(app, tea.KeyMsg{Type: tea.KeyEnter})
+
+	hilo := render.SinANSI(app.chat.Hilo(80))
+	if !strings.Contains(hilo, "[Sub Proceso] Diagnosticar") {
+		t.Fatalf("la línea del sub-proceso no se repintó: %q", hilo)
+	}
+	if !strings.Contains(hilo, "LEER [AGENTS.md]") {
+		t.Fatalf("la línea de la herramienta no se repintó: %q", hilo)
 	}
 }
 
@@ -403,6 +445,33 @@ func TestLaPaletaDeComandosSeDespliegaConLaBarra(t *testing.T) {
 	pulsar(app, teclaRuna(" "))
 	if app.paleta.Visible() {
 		t.Fatal("un espacio debería retirar la paleta")
+	}
+}
+
+// Con un comando ya escrito, el primer `enter` lo ejecuta: la paleta no lo
+// secuestra para autocompletar —eso es lo que hace `tab`— (SPEC-INTERFAZ §2).
+func TestLaPaletaDejaEjecutarConEnter(t *testing.T) {
+	p := &puertoFalso{}
+	app := appDePrueba(p)
+	app.sesion = &Sesion{ID: "activa", Nombre: "S", Estado: EstadoTrabajando}
+	app.vista = VistaPrincipal
+
+	for _, r := range "/compactar" {
+		pulsar(app, teclaRuna(string(r)))
+	}
+	if !app.paleta.Visible() {
+		t.Fatal("escribir `/compactar` no desplegó la paleta")
+	}
+
+	pulsar(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(p.compactadas) != 1 || p.compactadas[0] != "activa" {
+		t.Fatalf("el primer `enter` debería ejecutar `/compactar`: %v", p.compactadas)
+	}
+	if app.paleta.Visible() {
+		t.Fatal("ejecutar el comando debería retirar la paleta")
+	}
+	if got := app.entrada.Texto; got != "" {
+		t.Fatalf("la entrada debería quedar vacía tras ejecutar: %q", got)
 	}
 }
 

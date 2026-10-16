@@ -9,6 +9,7 @@ relacionado:
     - "[[database/01-schema/ENUMS]]"
     - "[[specs/SPEC-INTERFAZ]]"
     - "[[specs/SPEC-INTERFAZ-ATAJOS]]"
+    - "[[specs/SPEC-VISTA-CODIGO]]"
 ---
 
 # TESTING — Pruebas de la TUI
@@ -48,10 +49,12 @@ Qué se prueba en la capa de presentación y cómo. La estrategia global está e
 - La línea de herramienta cerrada se pinta con su duración al recargar la sesión, igual que en vivo: el hilo recuperado no pierde los tiempos.
 - La duración de una línea de herramienta y la de su respuesta salen del mismo formateador —milisegundos por debajo del segundo, décimas de segundo por debajo del minuto, minutos y segundos a partir de ahí— con el mismo atenuado; y una duración ausente no produce ni un `0` ni un hueco reservado.
 - El chat respeta el orden de ejecución: el texto que precede a una herramienta queda en un globo arriba de su línea y el que viene después abre un globo nuevo, con su propio razonamiento; los segmentos de texto de un turno no se funden en uno solo.
+- El chat interpreta el Markdown de la respuesta al pintar ([[specs/SPEC-VISTA-CODIGO]]): un bloque de código entre fences se pinta como superficie propia con su cabecera y su lenguaje, sin mostrar los fences; las líneas largas se envuelven; el Markdown del cuerpo no se interpreta; títulos, negrita, cursiva, código inline, listas, citas y reglas se pintan con su estilo y el resto queda literal. El parser y el render del subconjunto son funciones puras.
+- Un clic sobre el botón de copiar de la cabecera de un bloque copia el cuerpo exacto del bloque (sin fences ni cabecera) al portapapeles y muestra `[Copiado]`; el clic no inicia una selección. La copia usa el doble de portapapeles en las pruebas.
 - Al ejecutar la aplicación se ve la bienvenida centrada: logotipo ASCII, nombre con versión, la línea con el modelo en uso y una línea de entrada; sin panel de contexto, sin aprobaciones y sin lista de modelos visible. `Ctrl+X m` abre el modal con los modelos que sirve `llama-server`, mostrados por su nombre —la carpeta en `models/`— (aviso «sin modelos» si no responde); `↑`/`↓` navegan, `Enter` aplica y viaja con la primera petición, `Esc` cierra sin cambios.
 - La primera petición escrita en la bienvenida llega a `session` y aparece como primer mensaje del chat al cambiar de vista, sin repetirse ni pedir confirmación.
 - La bienvenida se pinta sin motor de inferencia ni base: se comprueba con ambos no disponibles.
-- El logotipo se compara byte a byte contra la salida dorada `internal/tui/testdata/logo.txt`: 6 filas (anchos 69, 69, 66, 66, 69, 69 columnas), arte fijo, sin variaciones. El compacto (`internal/tui/testdata/logo-compacto.txt`, 3 filas, `L.CLI`) también se compara byte a byte. La definición canónica está en [[specs/SPEC-INTERFAZ]].
+- El logotipo se compara byte a byte contra la salida dorada `internal/tui/testdata/logo.txt`: 6 filas (anchos 69, 69, 66, 66, 69, 69 columnas), arte fijo, sin variaciones. El compacto (`internal/tui/testdata/logo-compacto.txt`, 6 filas, anchos 39, 39, 36, 36, 39, 39 columnas, `L.CLI`) también se compara byte a byte. La definición canónica está en [[specs/SPEC-INTERFAZ]].
 - La bienvenida se prueba a distintos anchos: por debajo de 70 columnas pinta el logotipo compacto y ninguna fila supera el ancho de la pantalla.
 - La línea de estado de la caja —en la bienvenida y en la principal— envuelve sus chapas en vez de recortarlas cuando no caben, de modo que el interruptor `pensar` sigue visible y su rectángulo sigue localizable para el ratón; las líneas del panel de aprobaciones conservan siempre `aprobar | declinar` en cualquier ancho.
 

@@ -324,6 +324,16 @@ func (a *App) raton(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.Action == tea.MouseActionPress && m.Button == tea.MouseButtonLeft:
 		p := punto{Fila: m.Y, Columna: m.X}
+		a.clicGlobo = clicGlobo{}
+		// El menú del globo, si está abierto, atiende primero: un clic sobre una
+		// de sus filas resuelve la opción; fuera de él se cierra y el clic sigue
+		// su curso normal.
+		if a.globo.Visible() {
+			if accion, ok := a.clicEnMenuGlobo(p); ok {
+				return a, a.ejecutarMenuGlobo(accion)
+			}
+			a.globo.Cerrar()
+		}
 		if a.decidirAprobacionEn(p) {
 			return a, nil
 		}
@@ -331,15 +341,41 @@ func (a *App) raton(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 			a.alternarPensar()
 			return a, nil
 		}
+		// El botón de copiar de un bloque de código atiende antes que la selección:
+		// copiar no debe arrastrar el ratón ni abrir el menú del globo.
+		if cmd, ok := a.copiarBotonEn(p); ok {
+			return a, cmd
+		}
+		a.prepararClicGlobo(p)
 		a.empezarSeleccion(p)
 	case m.Action == tea.MouseActionMotion && a.sel.arrastrando:
-		if a.sel.contenido {
-			a.moverSeleccionChat(punto{Fila: m.Y, Columna: m.X})
-		} else {
-			a.sel.extender(punto{Fila: m.Y, Columna: m.X}, a.lineasMarco())
+		actual := punto{Fila: m.Y, Columna: m.X}
+		// Cualquier movimiento convierte el clic en un arrastre: el candidato a
+		// menú se descarta y la selección sigue su curso.
+		if a.clicGlobo.activo && actual != a.clicGlobo.inicio {
+			a.clicGlobo.activo = false
 		}
-	case m.Action == tea.MouseActionRelease && a.sel.arrastrando:
-		return a, a.terminarSeleccion()
+		if a.sel.contenido {
+			a.moverSeleccionChat(actual)
+		} else {
+			a.sel.extender(actual, a.lineasMarco())
+		}
+	case m.Action == tea.MouseActionRelease && m.Button == tea.MouseButtonLeft:
+		// Un clic sin arrastre sobre el globo de un mensaje del usuario abre su
+		// menú en vez de copiar la selección.
+		if a.clicGlobo.activo {
+			id := a.clicGlobo.mensajeID
+			contenido := a.clicGlobo.contenido
+			a.clicGlobo = clicGlobo{}
+			a.chat.ReanudarSeguimiento(a.scrollAntes)
+			a.sel.limpiar()
+			a.globo.Abrir(id, contenido)
+			return a, nil
+		}
+		if a.sel.arrastrando {
+			return a, a.terminarSeleccion()
+		}
+		a.clicGlobo = clicGlobo{}
 	case m.Button == tea.MouseButtonWheelUp:
 		if a.paleta.Visible() && a.ratonSobrePaleta(punto{Fila: m.Y, Columna: m.X}) {
 			a.paleta.ScrollArriba()

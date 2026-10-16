@@ -19,7 +19,7 @@ Harness de terminal en Go que planifica y ejecuta desarrollo de software con un 
 
 ## Alcance funcional aprobado
 
-Definido en 19 especificaciones funcionales bajo `ai/docs/specs/`.
+Definido en 20 especificaciones funcionales bajo `ai/docs/specs/`.
 
 ### Núcleo (P0)
 
@@ -44,6 +44,7 @@ Definido en 19 especificaciones funcionales bajo `ai/docs/specs/`.
 ### Interfaz (P2)
 
 - [[specs/SPEC-INTERFAZ-ATAJOS]] — atajos de teclado y panel de aprobaciones.
+- [[specs/SPEC-VISTA-CODIGO]] — render del Markdown de la respuesta: bloques de código y botón de copiar.
 
 ### Personalización (P3)
 
@@ -209,7 +210,7 @@ relacionado:
 - `relacionado`: a qué otros documentos toca, sin que este necesite de ellos.
 
 **`depende_de` y `relacionado` no son sinónimos.** Un índice publica sus hijos
-y no depende de ellos: `PROJECT.md` lista diecinueve specs, y declararlas haría
+y no depende de ellos: `PROJECT.md` lista veinte specs, y declararlas haría
 que cargar la raíz arrastrara el proyecto entero. La dirección real va al revés,
 de la hoja a la raíz.
 

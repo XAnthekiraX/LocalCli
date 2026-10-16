@@ -112,8 +112,12 @@ func (a *App) compactarContexto() tea.Cmd {
 		if p == nil {
 			return nil
 		}
-		if err := p.Compactar(context.Background(), sesionID); err != nil {
+		compactado, err := p.Compactar(context.Background(), sesionID)
+		if err != nil {
 			return avisoTurnoMsg{ID: sesionID, Texto: "no se pudo compactar: " + err.Error()}
+		}
+		if !compactado {
+			return avisoTurnoMsg{ID: sesionID, Texto: "no había nada que compactar"}
 		}
 		return avisoTurnoMsg{ID: sesionID, Texto: "contexto compactado"}
 	}
@@ -137,11 +141,11 @@ func turnoTocadoCmd(p Puerto, sesionID, fallo, exito, vacio string, op func(Puer
 		if n == 0 {
 			return avisoTurnoMsg{ID: sesionID, Texto: vacio}
 		}
-		mensajes, err := p.Historial(sesionID)
+		piezas, err := p.Historial(sesionID)
 		if err != nil {
 			return avisoTurnoMsg{ID: sesionID, Texto: "no se pudo leer el historial: " + err.Error()}
 		}
-		return historialMsg{ID: sesionID, Mensajes: mensajes, Aviso: exito}
+		return historialMsg{ID: sesionID, Piezas: piezas, Aviso: exito}
 	}
 }
 

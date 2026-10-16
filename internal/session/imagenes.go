@@ -10,7 +10,6 @@ import (
 
 	"localcli/internal/agent"
 	"localcli/internal/llm"
-	"localcli/internal/tools"
 )
 
 // topeImagen es el tamaño máximo de una imagen adjunta. Por encima no se lee.
@@ -44,16 +43,6 @@ func (o *Orquestador) imagenesDelTurno(ctx context.Context, sesionID, texto stri
 		abs := filepath.Clean(expandirHOME(ruta))
 		if !filepath.IsAbs(abs) {
 			abs = filepath.Join(o.cwd, abs)
-		}
-		if !dentroDeLaRaiz(o.cwd, abs) {
-			decision, err := o.pedirAprobacion(ctx, sesionID, tools.Solicitud{
-				Titulo:      "Adjuntar imagen fuera de la carpeta",
-				Descripcion: abs,
-			})
-			if err != nil || decision != tools.Aprobar {
-				o.avisar(sesionID, "no se adjuntó la imagen "+ruta, "está fuera del proyecto y no se aprobó")
-				continue
-			}
 		}
 		imagen, ok := leerImagen(abs)
 		if !ok {
@@ -158,15 +147,6 @@ func mimeDeImagen(datos []byte) (string, bool) {
 		return http.DetectContentType(muestra), true
 	}
 	return "", false
-}
-
-// dentroDeLaRaiz dice si una ruta absoluta cuelga de la raíz del proyecto.
-func dentroDeLaRaiz(raiz, abs string) bool {
-	rel, err := filepath.Rel(raiz, abs)
-	if err != nil {
-		return false
-	}
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // expandirHOME resuelve un `~` inicial al directorio del usuario.

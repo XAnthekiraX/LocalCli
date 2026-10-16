@@ -15,6 +15,7 @@ func (a *App) enviar() tea.Cmd {
 	if texto == "" {
 		return nil
 	}
+	a.paleta.Ocultar()
 	if cmd, consumido := a.ejecutarComandoLocal(texto); consumido {
 		a.bienvenida.Limpiar()
 		return cmd

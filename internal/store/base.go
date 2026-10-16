@@ -5,9 +5,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+// marcaTiempo es el formato de las marcas de tiempo: ISO 8601 UTC con fracción
+// fija de nanosegundos. La fracción de ancho fijo hace que el orden textual de
+// `created_at` coincida con el cronológico, que es lo que permite intercalar los
+// mensajes y las líneas del hilo fuera del mismo segundo (DATA_FLOW §Creación).
+const marcaTiempo = "2006-01-02T15:04:05.000000000Z07:00"
+
+// ahora devuelve la marca de tiempo del momento, en el formato de la base.
+func ahora() string { return time.Now().UTC().Format(marcaTiempo) }
 
 // RutaGlobal devuelve la ruta del archivo SQLite global.
 func RutaGlobal() (string, error) {

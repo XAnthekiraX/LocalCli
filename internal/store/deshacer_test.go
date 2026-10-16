@@ -109,6 +109,53 @@ func TestRehacerConservaElRazonamiento(t *testing.T) {
 	}
 }
 
+// Las líneas del hilo del turno —herramientas y sub-procesos— acompañan al
+// deshacer y al rehacer: el hilo que queda, y el que vuelve, se lee igual que el
+// que se vio en vivo (DATA_FLOW §Creación, SPEC-INTERFAZ §/undo).
+func TestDeshacerYRehacerTurnoSeLlevaSusLineas(t *testing.T) {
+	db, proyecto, sesion := sesionDePrueba(t)
+	crear := mensajesDePrueba(t, db, proyecto, sesion)
+	crear("user", "uno")
+	crear("agent", "resp uno")
+	crear("user", "dos")
+	crear("agent", "resp dos")
+
+	ms := 400
+	if _, err := CrearChatEvento(db, proyecto, sesion, ChatEventoProceso, "[Sub Proceso] X", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CrearChatEvento(db, proyecto, sesion, ChatEventoHerramienta, "✓ LEER [x] · 70 líneas", &ms); err != nil {
+		t.Fatal(err)
+	}
+
+	turno, n, err := DeshacerTurno(db, proyecto, sesion)
+	if err != nil || n != 2 {
+		t.Fatalf("deshacer = (%d, %v), quiero (2, nil)", n, err)
+	}
+	// Las líneas del turno deshecho no deben quedar huérfanas.
+	if eventos, err := ListarChatEventos(db, proyecto, sesion); err != nil || len(eventos) != 0 {
+		t.Fatalf("tras deshacer quedaron %d líneas: %v", len(eventos), err)
+	}
+
+	if err := RehacerTurno(db, turno); err != nil {
+		t.Fatal(err)
+	}
+	eventos, err := ListarChatEventos(db, proyecto, sesion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eventos) != 2 {
+		t.Fatalf("rehacer debería devolver las 2 líneas del turno, hay %d", len(eventos))
+	}
+	// Las líneas vuelven en su orden y con su contenido.
+	if eventos[0].Tipo != ChatEventoProceso || eventos[0].Content != "[Sub Proceso] X" {
+		t.Fatalf("la primera línea no volvió igual: %+v", eventos[0])
+	}
+	if eventos[1].Tipo != ChatEventoHerramienta || eventos[1].DurationMs == nil || *eventos[1].DurationMs != 400 {
+		t.Fatalf("la segunda línea no volvió igual: %+v", eventos[1])
+	}
+}
+
 // Sin un turno que deshacer, deshacer no cambia nada y rehacer no escribe nada.
 func TestDeshacerYRehacerSinTurnoNoHacenNada(t *testing.T) {
 	db, proyecto, sesion := sesionDePrueba(t)

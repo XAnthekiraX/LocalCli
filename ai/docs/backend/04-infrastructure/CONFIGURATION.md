@@ -38,14 +38,14 @@ Ninguna es obligatoria. No hay variables que apliques por omisión.
 | Variable | Propósito | Por defecto | Obligatoria |
 |---|---|---|---|
 | `LOCALCLI_DB_PATH` | Sobrescribe la ruta del archivo SQLite global | `~/.config/localcli/state.db` | No |
-| `LOCALCLI_CONTEXT_LIMIT` | Fuerza (override) la ventana de contexto; sin ella, se usa el contexto real del modelo | Sin definir: el contexto del modelo (su GGUF) o `16384` si no lo declara | No |
+| `LOCALCLI_CONTEXT_LIMIT` | Fuerza (override) la ventana de contexto; sin ella, se usa el contexto real del modelo con margen 80% | Sin definir: el contexto del modelo (su GGUF, preferentemente `<arch>.context_length`) o `16384` si no lo declara | No |
 | `LOCALCLI_ALLOW_INTERNET` | Permite las herramientas de internet | Desactivado | No |
 
 `LOCALCLI_DB_PATH` existe solo para casos raros, como trabajar con la base en otro sitio. En el uso normal no hace falta: la base es un único archivo global en `~/.config/localcli/state.db`, y no depende de la carpeta desde la que se ejecute.
 
 **El proveedor y la dirección de la API no son variables de entorno.** Viven en `~/.config/localcli/localcli.json`, y son la base con la que el harness arranca `llama-server` y con la que el cliente habla con él. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
 
-`LOCALCLI_CONTEXT_LIMIT` es un **override**: cuando está definido, manda él. Sin él, la ventana sale del **contexto real del modelo** (su GGUF, `general.context_length`) y, si el modelo no lo declara, de `16384`. Esa ventana se usa para arrancar `llama-server` (`-c`), para el presupuesto del historial y para el recorte por ronda. Bajarlo fuerza menos contexto; no definirlo deja que el modelo use el suyo. Ver [[backend/DECISIONS]].
+`LOCALCLI_CONTEXT_LIMIT` es un **override**: cuando está definido, manda él (sin margen). Sin él, la ventana sale del **contexto declarado del modelo** (su GGUF, preferentemente `<arch>.context_length`) con un **margen del 80 %**, y, si el modelo no lo declara, de `16384`. Esa ventana se usa para arrancar `llama-server` (`-c`), para el presupuesto del historial y para el recorte por ronda. Bajarlo fuerza menos contexto; no definirlo deja que el modelo use el suyo. Ver [[backend/DECISIONS]].
 
 Sobre `LOCALCLI_ALLOW_INTERNET`: es la única integración que saca información de la máquina, así que no viene activada. El usuario la habilita. Ver [[backend/03-security/SECURITY]].
 
@@ -60,7 +60,7 @@ Sobre `LOCALCLI_ALLOW_INTERNET`: es la única integración que saca información
 
 El servidor no se declara en ninguna parte: **quien lo levanta es el harness**, con el modelo seleccionado, y quien lo detiene también. Cambiar de modelo reinicia el servidor; LocalCli gestiona ese proceso ([[specs/SPEC-MODELOS-LLAMACPP]]). No hay otros runtimes: no se usa Ollama ni se mantiene su almacén duplicado.
 
-El tamaño de contexto se fija **al arrancar** `llama-server` con `-c`, tomándolo del **contexto real del modelo** (su GGUF, `general.context_length`) o de `LOCALCLI_CONTEXT_LIMIT` si se define; si el modelo no lo declara, se usa `16384`. La ventana que el turno respeta es la que el servidor acepta **de verdad**, releída con la extensión `props` de llama.cpp. **El recorte lo hace el harness**, no el servidor: antes de cada ronda se descartan los mensajes más antiguos —y se trunca el resultado de herramienta que por sí solo no quepa— hasta que el prompt cabe en la ventana menos la reserva de salida, avisando del recorte. Ver [[backend/DECISIONS]].
+El tamaño de contexto se fija **al arrancar** `llama-server` con `-c`, tomándolo del **contexto declarado del modelo** (su GGUF, preferentemente `<arch>.context_length` sobre `general.context_length`) con un **margen del 80 %**, o de `LOCALCLI_CONTEXT_LIMIT` si se define (sin margen); si el modelo no declara contexto, se usa `16384`. La ventana que el turno respeta es la que el servidor acepta **de verdad**, releída con la extensión `props` de llama.cpp. **El recorte lo hace el harness**, no el servidor: antes de cada ronda se descartan los mensajes más antiguos —y se trunca el resultado de herramienta que por sí solo no quepa— hasta que el prompt cabe en la ventana menos la reserva de salida, avisando del recorte. Ver [[backend/DECISIONS]].
 
 ## 4. Rutas
 
@@ -162,11 +162,11 @@ Además de `~/.config/localcli/keys.json` (el mapa de teclas), el usuario tiene 
 - Son **globales del usuario**, no de un proyecto: viven fuera de la carpeta y no se versionan.
 - **El modelo elegido no está aquí.** La selección del modelo se gestiona por el catálogo y el estado de la aplicación ([[#8. El catálogo de modelos]]), no en la configuración global: `localcli.json` solo guarda `proveedor` y `api`. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
 - `ultimo_agente` es el punto de partida de las sesiones nuevas.
-- `historial_tokens` es el presupuesto de tokens del historial de conversación que se le entrega al modelo; sin él se usa `LOCALCLI_CONTEXT_LIMIT` y, en su defecto, la mitad de la ventana efectiva (y `4096` si no se conoce la ventana). Ver [[specs/SPEC-HISTORIAL-CONVERSACION]].
+- `historial_tokens` es el presupuesto de tokens del historial de conversación que se le entrega al modelo; sin él se usa `LOCALCLI_CONTEXT_LIMIT` y, en su defecto, la fracción de la ventana efectiva que fija el umbral de compactación (60 % por defecto) y `4096` si no se conoce la ventana. Ver [[specs/SPEC-HISTORIAL-CONVERSACION]].
 - `compactacion` gobierna la compactación del historial ([[specs/SPEC-HISTORIAL-CONVERSACION]]):
   - `auto` — si la compactación automática está activa. Por defecto `true`.
   - `umbral` — fracción de la ventana efectiva a la que se dispara la compactación. Por defecto `0.6` (60 %).
-  - `conservar_tokens` — tokens recientes que viajan literales tras el resumen. Por defecto `15000`; nunca supera el presupuesto del historial.
+  - `conservar_tokens` — tokens recientes que viajan literales tras el resumen. Por defecto `15000`; nunca supera el presupuesto del historial, al que además se le reserva un margen para el propio resumen.
   - `modelo` — modelo que resume; sin él, el modelo activo. Pensado para uno ligero.
   - `formato` — `opencode` (por defecto), `legacy` o `custom`.
   - `plantilla` — prompt literal del resumen, solo con `formato: "custom"`.
@@ -207,7 +207,7 @@ El registro de lo descargado es el catálogo `~/.config/localcli/models.json`, *
 - **`ruta`** — ruta del archivo GGUF original en `models/`. Es la que se pasa a `llama-server` al arrancar; no se copia el archivo a ningún otro sitio y no se expone como nombre del modelo.
 - **`repo`** / **`archivo`** — repositorio de Hugging Face de origen y nombre de la variante GGUF, para identificar el modelo y reanudar o redescargarlo.
 - **`mmproj`** — nombre del proyector multimodal dentro de la carpeta del modelo, si es multimodal. Es opcional: si falta, el harness usa por convención el primer `mmproj*.gguf` de la carpeta (`models/<id>/`). El proyector se pasa a `llama-server` con `--mmproj`; sin él, el modelo no procesa imágenes. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
-- **`ventana`** / **`tamano`** — metadatos del modelo: **contexto real del modelo** (leído de su GGUF, `general.context_length`, al registrarlo) y tamaño, con los que el harness fija el `-c` de `llama-server` y comprueba si el modelo cabe.
+- **`ventana`** / **`tamano`** — metadatos del modelo: **contexto declarado del modelo** (leído de su GGUF, preferentemente `<arch>.context_length`, al registrarlo) y tamaño, con los que el harness fija el `-c` de `llama-server` (aplicando el margen del 80 %) y comprueba si el modelo cabe. Si `ventana` es `0` el harness avisa.
 - **`seleccionado`** — el modelo activo, por su `id` (nombre de carpeta). La selección se gestiona por el catálogo y el estado de la aplicación, **nunca** en `localcli.json`. Cambiar de modelo reinicia `llama-server`. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
 
 El catálogo **no se siembra con modelos**: nace vacío (`"modelos": [], "seleccionado": null`), porque los modelos los descarga el usuario. Sí se siembra el archivo y se crea `models/`. LocalCli escribe el catálogo al **descargar** un modelo (antes de empezar, comprueba si el archivo ya existe para no descargarlo dos veces) y al **seleccionarlo**, y nunca borra un modelo existente aunque haya errores. Una descarga interrumpida se reanuda si el servidor lo permite. Ver [[specs/SPEC-MODELOS-LLAMACPP]].

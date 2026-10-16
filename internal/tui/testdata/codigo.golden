@@ -1,0 +1,24 @@
+                                                                                                    
+ ¿cómo compilo?                                             arreglar el login (trabajando)          
+                                                                                                    
+                                                            CONTEXTO                                
+                                                              1234 tokens (estimado)                
+  Compilar                                                    61% usada                             
+                                                                                                    
+  Usa go build y después make test:                         ▾ TODO                                  
+                                                              T-F009 · quedan 3                     
+  bash                                           copiar                                             
+  go build -o bin/app ./cmd/app                             LISTA DE TAREAS                         
+  make test                                                   [•] escribir las doradas              
+                                                              [✓] unitarias de render               
+  • primer paso                                               [x] probar los modales                
+  • segundo paso                                              [ ] revisar el marco                  
+   (1.2 s)                                                                                          
+                                                            ESTADO                                  
+                                                            Capa y cola frontend · 2 tareas grand…  
+                                                            Aprobaciones 1 esperando decisión       
+ "Escribe para iniciar la conversacion"                     Agente build                            
+                                                            Git refact/logic · 2                    
+ [build] · qwen3:8b (llama.cpp) · tool [*] · pensar [ ]     [/tmp/proyecto]                         
+ [v] · [T]                                                  LocalCli · v0.1 alpha                   
+                                                                                                    

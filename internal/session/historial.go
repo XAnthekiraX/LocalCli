@@ -118,26 +118,29 @@ func (o *Orquestador) compactar(ctx context.Context, sesionID string, conv []men
 
 // Compactar fuerza la compactación del historial de una sesión: resume todo lo
 // anterior al tramo reciente y lo deja persistido para los próximos turnos. Es lo
-// que dispara `/compactar` ([[specs/SPEC-HISTORIAL-CONVERSACION]]).
-func (o *Orquestador) Compactar(ctx context.Context, sesionID string) error {
+// que dispara `/compactar` ([[specs/SPEC-HISTORIAL-CONVERSACION]]). No se salta
+// porque el historial quepa en el presupuesto: se pide a mano para reducir el
+// contexto ahora. Devuelve `true` si dejó un resumen persistido y `false` si no
+// había tramo antiguo que resumir (todo cabe en el tramo reciente).
+func (o *Orquestador) Compactar(ctx context.Context, sesionID string) (bool, error) {
 	filas, err := store.ListarMensajes(o.db, o.projectID, sesionID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	conv := conversacionDe(filas)
 	if len(conv) == 0 {
-		return nil
+		return false, nil
 	}
 	prefs := preferenciasSeguras()
-	recencia := prefs.Compactacion.ConservarEfectivo()
-	if tokensDe(conv) <= recencia {
-		return nil
-	}
+	recencia := recenciaDeCompactacion(prefs, presupuestoHistorial(o.ventanaActual(), prefs))
 	corte, resumen := o.compactar(ctx, sesionID, conv, recencia, prefs)
-	if corte <= 0 || strings.TrimSpace(resumen) == "" {
-		return fmt.Errorf("session: no se pudo resumir el historial")
+	if corte <= 0 {
+		return false, nil
 	}
-	return nil
+	if strings.TrimSpace(resumen) == "" {
+		return false, fmt.Errorf("session: no se pudo resumir el historial")
+	}
+	return true, nil
 }
 
 // indiceCubierto devuelve cuántos mensajes ya abarca un resumen cuyo último
@@ -239,12 +242,24 @@ func preferenciasSeguras() tui.Preferencias {
 	return prefs
 }
 
+// reservaResumenTokens es el margen que se deja al presupuesto para el resumen
+// inyectado: el tramo reciente literal no lo ocupa todo, de modo que resumen y
+// recientes juntos no superan el presupuesto ([[specs/SPEC-HISTORIAL-CONVERSACION]]).
+const reservaResumenTokens = 2048
+
 // recenciaDeCompactacion acota el tramo reciente literal al presupuesto: la
-// preferencia de compactación, sin superar lo que cabe.
+// preferencia de compactación, sin superar lo que cabe una vez reservado el hueco
+// del resumen.
 func recenciaDeCompactacion(prefs tui.Preferencias, presupuesto int) int {
 	recencia := prefs.Compactacion.ConservarEfectivo()
-	if presupuesto > 0 && recencia > presupuesto {
-		recencia = presupuesto
+	if presupuesto > 0 {
+		tope := presupuesto - reservaResumenTokens
+		if tope < 1 {
+			tope = presupuesto
+		}
+		if recencia > tope {
+			recencia = tope
+		}
 	}
 	if recencia < 0 {
 		recencia = 0

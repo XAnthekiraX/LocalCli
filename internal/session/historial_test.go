@@ -177,8 +177,12 @@ func TestCompactarManualPersisteYSeReutiliza(t *testing.T) {
 	sembrarMensajes(t, o, sesionID, 10)
 	ctx := context.Background()
 
-	if err := o.Compactar(ctx, sesionID); err != nil {
+	compactado, err := o.Compactar(ctx, sesionID)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !compactado {
+		t.Fatal("Compactar debería haber persistido un resumen")
 	}
 	if _, ok, err := store.ObtenerResumenHistorial(o.db, o.projectID, sesionID); err != nil || !ok {
 		t.Fatalf("el resumen no se persistió: ok=%v err=%v", ok, err)
@@ -193,6 +197,69 @@ func TestCompactarManualPersisteYSeReutiliza(t *testing.T) {
 	}
 	if n := atomic.LoadInt32(&llamadas); n != 1 {
 		t.Fatalf("el resumen se reutilizó mal: %d llamadas, quiero 1", n)
+	}
+}
+
+// TestCompactarSinTramoAntiguoNoHaceNada: con todo el historial dentro del tramo
+// reciente, `/compactar` no inventa un resumen —no llama al modelo, no persiste
+// nada y lo reporta como `false`—. Es la regresión de la puerta que hacía un
+// no-op silencioso y aun así informaba «contexto compactado».
+func TestCompactarSinTramoAntiguoNoHaceNada(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	// Presupuesto holgado: la recencia (conservar por defecto, 15000) cubre todo.
+	t.Setenv("LOCALCLI_CONTEXT_LIMIT", "100000")
+	var llamadas int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&llamadas, 1)
+		escribirSSE(w, "RESUMEN")
+	}))
+	t.Cleanup(srv.Close)
+	o, sesionID := sesionDePrueba(t, srv.URL)
+	sembrarMensajes(t, o, sesionID, 4)
+	ctx := context.Background()
+
+	compactado, err := o.Compactar(ctx, sesionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compactado {
+		t.Fatal("sin tramo antiguo, Compactar no debería persistir un resumen")
+	}
+	if _, ok, err := store.ObtenerResumenHistorial(o.db, o.projectID, sesionID); err != nil || ok {
+		t.Fatalf("no debería persistirse resumen: ok=%v err=%v", ok, err)
+	}
+	if n := atomic.LoadInt32(&llamadas); n != 0 {
+		t.Fatalf("no debería llamarse al modelo: %d llamadas", n)
+	}
+}
+
+// El historial entregado no supera el presupuesto aunque el resumen se sume al
+// tramo reciente: la recencia reserva un hueco para él ([[specs/SPEC-HISTORIAL-CONVERSACION]]).
+func TestLaEntregaNoSuperaElPresupuesto(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("LOCALCLI_CONTEXT_LIMIT", "3000")
+	// `conservar_tokens` por defecto (15000) supera el presupuesto: sin la
+	// reserva, el resumen se añadiría por encima del tramo reciente.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		escribirSSE(w, strings.Repeat("y", 8000))
+	}))
+	t.Cleanup(srv.Close)
+	o, sesionID := sesionDePrueba(t, srv.URL)
+	sembrarMensajes(t, o, sesionID, 300)
+
+	msgs, err := o.historialPara(context.Background(), sesionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) == 0 || msgs[0].Rol != "system" {
+		t.Fatalf("esperaba un resumen al frente del historial: %+v", msgs)
+	}
+	entregado := 0
+	for _, m := range msgs {
+		entregado += estimarTokens(m.Contenido) + 4
+	}
+	if entregado > 3000 {
+		t.Fatalf("el historial entregado (%d tokens) supera el presupuesto (3000)", entregado)
 	}
 }
 

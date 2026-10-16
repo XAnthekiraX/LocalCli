@@ -32,7 +32,8 @@ localcli/                       → proyecto Go (binario único)
 ```
 
 Fuera del proyecto, en `~/.config/localcli/`, vive la raíz de la máquina: `config.json`
-y `keys.json` (preferencias y teclas), `motores.json` (registro de motores), `state.db`
+y `keys.json` (preferencias y teclas), `styles.json` (paleta visual: colores de
+texto y fondos), `motores.json` (registro de motores), `state.db`
 (base de datos única, con las sesiones separadas por `project_id`), y `agents/` y
 `flows/` (agentes base y flujos oficiales, sembrados desde el binario en el primer
 arranque). El proyecto solo **añade** agentes y flujos propios en `.localcli/`, de
@@ -40,6 +41,20 @@ forma aditiva.
 
 La estructura interna de cada capa se define en su propio `FRONTEND.md`,
 `BACKEND.md` o `DATABASE.md`; aquí solo figura el nivel raíz.
+
+## Compilación
+
+El binario se compila siempre a `~/.config/localcli/bin/localcli` (el directorio ya
+existe). Comando canónico:
+
+```
+go build -ldflags "-X main.version=<version>" -o ~/.config/localcli/bin/localcli ./cmd/localcli
+```
+
+- `main.version` es la variable de versión en `cmd/localcli/main.go`; sin el flag
+  conserva el valor por defecto.
+- El proyecto no usa cgo (SQLite es Go puro), así que puede compilarse con
+  `CGO_ENABLED=0` para un binario portable.
 
 ## Project Layers
 

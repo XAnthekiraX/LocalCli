@@ -102,7 +102,7 @@ Acelera `idx_change_history_file`. Devuelve cambios de sesiones distintas, y est
 
 | Patrón | Tabla | Quién |
 |---|---|---|
-| Leer por sesión | `messages`, `reasoning` | La TUI al abrir una sesión |
+| Leer por sesión | `messages`, `reasoning`, `chat_evento` | La TUI al abrir una sesión |
 | Contar pendientes | `approvals` | El panel y el contador, en cada redibujado |
 | Escribir estado | `sessions` | El orquestador de flujos, en cada transición |
 | Escribir streaming | `reasoning` | El modelo, token a token |

@@ -52,8 +52,9 @@ func TestElLogotipoEsElArteCanonico(t *testing.T) {
 }
 
 // El logotipo compacto es el arte que la bienvenida pinta en terminales
-// estrechas: tres filas de bloques, sin espacios finales, embebido byte a byte
-// desde `testdata/logo-compacto.txt`.
+// estrechas: seis filas, el mismo juego de bloques y las mismas reglas que el
+// completo, pero más estrecho (deletrea `L.CLI`), embebido byte a byte desde
+// `testdata/logo-compacto.txt`.
 func TestElLogotipoCompactoEsSuArteCanonico(t *testing.T) {
 	bruto, err := os.ReadFile(filepath.Join("testdata", "logo-compacto.txt"))
 	if err != nil {
@@ -66,8 +67,8 @@ func TestElLogotipoCompactoEsSuArteCanonico(t *testing.T) {
 	if ultima := len(lineas) - 1; ultima >= 0 && lineas[ultima] == "" {
 		lineas = lineas[:ultima]
 	}
-	if len(lineas) != 3 {
-		t.Fatalf("el logotipo compacto tiene %d filas, quiero 3", len(lineas))
+	if len(lineas) != 6 {
+		t.Fatalf("el logotipo compacto tiene %d filas, quiero 6", len(lineas))
 	}
 	for i, linea := range lineas {
 		if strings.TrimRight(linea, " ") != linea {
@@ -80,8 +81,8 @@ func TestElLogotipoCompactoEsSuArteCanonico(t *testing.T) {
 			t.Errorf("la fila %d mide %d columnas y no cabe en una terminal estrecha", i, ancho)
 		}
 		for _, r := range linea {
-			if r != '█' && r != ' ' {
-				t.Errorf("la fila %d usa un carácter fuera del arte compacto: %q", i, r)
+			if !strings.ContainsRune(caracteresDelArte, r) {
+				t.Errorf("la fila %d usa un carácter fuera del arte canónico: %q", i, r)
 			}
 		}
 	}

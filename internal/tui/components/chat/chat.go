@@ -27,6 +27,10 @@ const (
 // posterior no se funden— y cada uno conserva el razonamiento que lo acompañó;
 // el turno en vivo crece dentro del segmento abierto.
 type Segmento struct {
+	// ID es el identificador del mensaje en la base, cuando el segmento viene del
+	// historial guardado. Vacío en un segmento del turno en vivo, que todavía no
+	// tiene fila propia. Es lo que permite revertir o bifurcar sobre un globo.
+	ID       string
 	Hablante Hablante
 	Texto    string
 	// Razonamiento es el texto crudo del modelo para este segmento. No se vuelca
@@ -107,8 +111,19 @@ type Model struct {
 	// hiloLineas son las líneas del hilo de la última pintura: las coordenadas de
 	// contenido de la selección del chat. `arrastrando` suspende el seguimiento
 	// del final mientras dura el arrastre.
-	hiloLineas  []string
+	hiloLineas []string
+	// lineasPieza ata cada línea del hilo con la pieza cerrada que la pintó, por
+	// índice en `piezas`; -1 en las líneas de separación y en el turno en vivo,
+	// que no son globos. Lo usa el menú del globo para saber sobre qué segmento
+	// cayó un clic. Tiene la misma longitud que hiloLineas.
+	lineasPieza []int
 	arrastrando bool
+
+	// botones son los botones de copiar de los bloques de código de la última
+	// pintura, en coordenadas del hilo (línea de contenido y columnas de la zona
+	// del chat). Se recalculan en cada Hilo, porque el Markdown se interpreta al
+	// pintar: un botón vale para la línea que está bajo el ratón ahora.
+	botones []BotonCopia
 }
 
 // Nuevo deja un hilo vacío.
@@ -138,15 +153,11 @@ func (m *Model) AñadirLinea(l Linea) {
 func (m *Model) Vaciar() { *m = Model{MostrarRazonamiento: m.MostrarRazonamiento} }
 
 // ReemplazarHistorial cambia las piezas cerradas del hilo por las de una sesión
-// retomada, conservando el turno en vivo —su respuesta parcial y su contador— y la
-// revelación del razonamiento: cargar el historial no debe cortar lo que se está
-// generando ni el `Ctrl+R`.
-func (m *Model) ReemplazarHistorial(segmentos []Segmento) {
-	piezas := make([]Pieza, 0, len(segmentos))
-	for i := range segmentos {
-		s := segmentos[i]
-		piezas = append(piezas, &s)
-	}
+// retomada —sus turnos y sus líneas del sistema, ya intercalados—, conservando el
+// turno en vivo —su respuesta parcial y su contador— y la revelación del
+// razonamiento: cargar el historial no debe cortar lo que se está generando ni el
+// `Ctrl+R`.
+func (m *Model) ReemplazarHistorial(piezas []Pieza) {
 	m.piezas = piezas
 }
 

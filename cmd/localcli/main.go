@@ -27,6 +27,10 @@ import (
 	"localcli/internal/tui"
 )
 
+// version es la versión del binario. Se puede inyectar en compilación con
+// -ldflags "-X main.version=<version>"; sin flags conserva el valor por defecto.
+var version = "0.1.0"
+
 func main() {
 	if len(os.Args) < 2 {
 		if err := correr(); err != nil {
@@ -38,7 +42,7 @@ func main() {
 
 	switch cmd := os.Args[1]; cmd {
 	case "-v":
-		fmt.Println("localcli version 0.1.0")
+		fmt.Println("localcli version " + version)
 	case "-h":
 		fmt.Println("comandos disponibles:")
 		fmt.Println("  localcli        arranca la interfaz")
@@ -108,6 +112,13 @@ func correr() error {
 	catalogo, err := gestor.Cargar()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+	}
+	if catalogo != nil {
+		for _, m := range catalogo.Modelos {
+			if m.Usable() && m.ContextoReal() <= 0 {
+				fmt.Fprintln(os.Stderr, "modelo "+m.ID+": sin contexto declarado (ventana 0); se usará el defecto del harness")
+			}
+		}
 	}
 	activo, hayActivo := catalogo.Activo()
 
@@ -214,7 +225,7 @@ func contextoDeArranque(activo models.Entrada, hay bool) int {
 	if hay && activo.Usable() {
 		contextoModelo = activo.ContextoReal()
 	}
-	return llm.VentanaEfectiva(arranque.LimiteContextoOverride(), contextoModelo, arranque.LimiteContextoPorDefecto)
+	return llm.VentanaDeArranque(arranque.LimiteContextoOverride(), contextoModelo, arranque.LimiteContextoPorDefecto)
 }
 
 // ventanaEfectiva resuelve la ventana que el turno debe respetar: la que de

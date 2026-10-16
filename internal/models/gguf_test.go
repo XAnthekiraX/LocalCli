@@ -84,7 +84,7 @@ func valorCadena(s string) []byte {
 }
 
 func TestContextoDeGGUFLeeUint32(t *testing.T) {
-	ruta := escribirGGUF(t, parKV{claveContexto, tipoUint32, valorU32(32768)})
+	ruta := escribirGGUF(t, parKV{"general.context_length", tipoUint32, valorU32(32768)})
 	ctx, err := ContextoDeGGUF(ruta)
 	if err != nil {
 		t.Fatalf("error inesperado: %v", err)
@@ -95,7 +95,7 @@ func TestContextoDeGGUFLeeUint32(t *testing.T) {
 }
 
 func TestContextoDeGGUFLeeUint64(t *testing.T) {
-	ruta := escribirGGUF(t, parKV{claveContexto, tipoUint64, valorU64(131072)})
+	ruta := escribirGGUF(t, parKV{"general.context_length", tipoUint64, valorU64(131072)})
 	ctx, err := ContextoDeGGUF(ruta)
 	if err != nil {
 		t.Fatalf("error inesperado: %v", err)
@@ -110,7 +110,7 @@ func TestContextoDeGGUFSaltaClavesPrevias(t *testing.T) {
 		parKV{"general.architecture", tipoString, valorCadena("llama")},
 		parKV{"tokenizer.ggml.merges", tipoArray, valorArray(tipoUint32, 1, 2, 3)},
 		parKV{"llama.block_count", tipoUint32, valorU32(32)},
-		parKV{claveContexto, tipoUint32, valorU32(8192)},
+		parKV{"general.context_length", tipoUint32, valorU32(8192)},
 	)
 	ctx, err := ContextoDeGGUF(ruta)
 	if err != nil {
@@ -152,5 +152,19 @@ func TestContextoDeGGUFTruncado(t *testing.T) {
 	}
 	if _, err := ContextoDeGGUF(ruta); err == nil {
 		t.Fatal("un GGUF truncado debería fallar")
+	}
+}
+
+func TestContextoDeGGUFClavePrefijadaPorArquitectura(t *testing.T) {
+	ruta := escribirGGUF(t,
+		parKV{"general.architecture", tipoString, valorCadena("qwen35")},
+		parKV{"qwen35.context_length", tipoUint32, valorU32(262144)},
+	)
+	ctx, err := ContextoDeGGUF(ruta)
+	if err != nil {
+		t.Fatalf("error inesperado: %v", err)
+	}
+	if ctx != 262144 {
+		t.Fatalf("contexto = %d, quiero 262144", ctx)
 	}
 }

@@ -219,3 +219,19 @@ func TestLosAtajosCoincidenConSuDorada(t *testing.T) {
 	app.atajos.Abrir(FilasDeAtajos(app.teclaRes.Kmap.Entradas(), app.teclaRes.Kmap.Lider()))
 	dorada(t, "atajos.golden", app.atajos.Render(100, 40))
 }
+
+// La vista principal interpreta el Markdown de la respuesta —título, negrita,
+// código inline y lista— y pinta cada bloque de código con su cabecera, su
+// superficie y su botón de copiar (SPEC-VISTA-CODIGO).
+func TestLaVistaDeCodigoCoincideConSuDorada(t *testing.T) {
+	app := appDorada(100, 24, VistaPrincipal)
+	app.panel.Datos = datosDeDorada()
+	app.chat.AñadirSegmento(chat.Segmento{Hablante: chat.Usuario, Texto: "¿cómo compilo?"})
+	app.chat.AñadirSegmento(chat.Segmento{
+		Hablante: chat.Agente,
+		Texto: "## Compilar\n\nUsa **go build** y después `make test`:\n\n" +
+			"```bash\ngo build -o bin/app ./cmd/app\nmake test\n```\n\n- primer paso\n- segundo paso\n",
+		Duracion: 1200 * time.Millisecond,
+	})
+	dorada(t, "codigo.golden", app.View())
+}

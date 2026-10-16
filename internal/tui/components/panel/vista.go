@@ -39,7 +39,7 @@ func (m Model) Render(ancho, alto int) string {
 	// filas si no cabe, para no perder ningún tramo.
 	pie := []string{filaDeDato("Git", m.textoGit(), ancho)}
 	for _, l := range envolverPorRuta("["+rutaBreve(valorODefecto(m.Ruta))+"]", ancho) {
-		pie = append(pie, render.EstiloSutil.Render(l))
+		pie = append(pie, render.EstiloRuta.Render(l))
 	}
 	pie = append(pie, render.EstiloEtiqueta.Render(truncar(m.firmaHarness(), ancho)))
 	// `disponible` son las filas que quedan por encima del pie, descontando el

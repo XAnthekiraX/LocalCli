@@ -7,9 +7,12 @@ import (
 	"os"
 )
 
-// claveContexto es la clave del metadato GGUF que declara el contexto de
-// entrenamiento del modelo (`general.context_length`).
-const claveContexto = "general.context_length"
+// clavesContexto son las claves a las que buscar el contexto del modelo, en orden
+// de preferencia. Los GGUF modernos usan la clave prefijada por arquitectura
+// (p. ej. `qwen35.context_length`, `qwen3.context_length`, `qwen2.context_length`).
+var clavesContexto = []string{
+	"general.context_length",
+}
 
 // tamanoMaximoCadena acota una cadena de metadatos para no reservar de más ante
 // un archivo corrupto.
@@ -63,6 +66,8 @@ func leerContextoGGUF(r io.Reader) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	var arch string
+	var ctx int
 	for i := uint64(0); i < kv; i++ {
 		clave, err := leerCadena(r)
 		if err != nil {
@@ -72,14 +77,61 @@ func leerContextoGGUF(r io.Reader) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		if clave == claveContexto {
-			return leerContexto(r, tipo)
+		found := false
+		if clave == "general.architecture" && tipo == tipoString {
+			val, err := leerCadenaValor(r)
+			if err != nil {
+				return 0, err
+			}
+			arch = val
+			found = true
 		}
-		if err := saltarValor(r, tipo); err != nil {
-			return 0, err
+		if !found && ctx == 0 && esClaveContexto(clave, arch) {
+			c, err := leerContexto(r, tipo)
+			if err != nil {
+				return 0, err
+			}
+			ctx = c
+			found = true
+		}
+		if !found {
+			if err := saltarValor(r, tipo); err != nil {
+				return 0, err
+			}
 		}
 	}
-	return 0, nil
+	return ctx, nil
+}
+
+func esClaveContexto(clave, arch string) bool {
+	for _, c := range clavesContexto {
+		if clave == c {
+			return true
+		}
+	}
+	if arch != "" && clave == arch+".context_length" {
+		return true
+	}
+	if len(clave) > 15 && clave[len(clave)-15:] == ".context_length" {
+		return true
+	}
+	return false
+}
+
+func leerCadenaValor(r io.Reader) (string, error) {
+	// tipo ya leído; leer el valor string (con su longitud + contenido)
+	n, err := leerU64(r)
+	if err != nil {
+		return "", err
+	}
+	if n > tamanoMaximoCadena {
+		return "", errorf("cadena de metadatos GGUF demasiado larga: %d", n)
+	}
+	b := make([]byte, n)
+	if _, err := io.ReadFull(r, b); err != nil {
+		return "", truncado(err)
+	}
+	return string(b), nil
 }
 
 // leerContexto lee el valor de la clave de contexto; se aceptan las variantes
