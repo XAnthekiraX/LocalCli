@@ -93,12 +93,17 @@ type MensajeHistorial struct {
 func (*MensajeHistorial) esPiezaHistorial() {}
 
 // LineaHistorial es una línea del sistema guardada del hilo: una herramienta o una
-// etapa de un flujo. `Texto` llega ya compuesto, tal como se vio en vivo.
+// etapa de un flujo. `Texto` llega ya compuesto, tal como se vio en vivo. `Bloque`
+// es el diagrama renderizado de una herramienta `diagram`, ya en líneas Unicode
+// de ancho calculado: la TUI no lo interpreta, solo lo coloca bajo la línea
+// (INTERFACES §1.1, EVENTS §3). Vacío para el resto de herramientas.
 type LineaHistorial struct {
 	// Tipo es el tipo de línea guardada: "herramienta" o "proceso", como en la base.
 	Tipo string
 	// Texto es la línea tal como se pintó.
 	Texto string
+	// Bloque es el diagrama renderizado, si la línea es de `diagram`.
+	Bloque string
 }
 
 func (*LineaHistorial) esPiezaHistorial() {}

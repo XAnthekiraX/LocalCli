@@ -23,8 +23,9 @@ func (m *Model) AnotarInvocacion(nombre, verbo, tema string) {
 // resultado, el aviso de recorte, el motivo del fallo y el tiempo que tardó la
 // ejecución: una sola línea cerrada, sin volcar la salida cruda. Sin invocación
 // pendiente —un resultado suelto— deja una línea nueva con el nombre de la
-// herramienta.
-func (m *Model) CerrarHerramienta(nombre string, ok, truncado bool, medida, motivo string, duracion time.Duration) {
+// herramienta. `bloque` es el diagrama renderizado de `diagram`, que se coloca
+// bajo la línea como bloque adicional; vacío para el resto de herramientas.
+func (m *Model) CerrarHerramienta(nombre string, ok, truncado bool, medida, motivo string, duracion time.Duration, bloque string) {
 	m.herramienta = ""
 	idx := m.siguientePendiente()
 	base := nombre
@@ -34,9 +35,10 @@ func (m *Model) CerrarHerramienta(nombre string, ok, truncado bool, medida, moti
 	texto := LineaHerramientaCerrada(base, ok, truncado, medida, motivo, duracion)
 	if l := m.lineaEn(idx); l != nil {
 		l.Texto = texto
+		l.Bloque = bloque
 		return
 	}
-	m.AñadirLinea(Linea{Tipo: LineaHerramienta, Texto: texto})
+	m.AñadirLinea(Linea{Tipo: LineaHerramienta, Texto: texto, Bloque: bloque})
 }
 
 // AnotarEtapa deja la línea `[Sub Proceso] <nombre>` de la etapa que empieza. El

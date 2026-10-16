@@ -11,6 +11,7 @@ relacionado:
     - "[[specs/SPEC-TOOLS]]"
     - "[[specs/SPEC-MODELOS-LLAMACPP]]"
     - "[[specs/SPEC-VISTA-CODIGO]]"
+    - "[[specs/SPEC-DIAGRAMA]]"
     - "[[database/03-operations/QUERIES]]"
 ---
 
@@ -28,7 +29,7 @@ De [[backend/04-infrastructure/EVENTS]] llega cada evento y así reacciona la pa
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `token`                                     | Añade el fragmento al bloque de razonamiento o a la respuesta, en vivo                                                                                                                  |
 | `herramienta_invocada`                      | Abre la línea de herramienta en el chat con su verbo y su tema (la ruta, el patrón o el comando)                                                                                        |
-| `herramienta_resultado`                     | Completa esa misma línea: la marca, la medida del resultado, si se recortó y cuánto tardó la ejecución                                                                                    |
+| `herramienta_resultado`                     | Completa esa misma línea: la marca, la medida del resultado, si se recortó y cuánto tardó la ejecución. Si trae `bloque` (solo `diagram`), pinta debajo el diagrama renderizado                                                                    |
 | `estado_sesion`                             | Actualiza el estado en el selector y en el panel                                                                                                                                        |
 | `titulo_sesion`                             | Renombra la sesión en el panel (si es la activa) y en su fila del modal de sesiones                                                                                                     |
 | `notificacion`                              | Marca el aviso de esa sesión aunque no sea la activa                                                                                                                                    |
@@ -79,6 +80,8 @@ El agente que la pidió no se pinta en la línea (sigue en el evento, para la au
 **El orden del hilo.** La línea de herramienta se inserta en su sitio cronológico, no en bloque al final del turno: el texto que el modelo escribió antes queda en un globo arriba de ella y el que escribe después abre un globo nuevo. Cada vez que una línea se interpone en el hilo —una herramienta, una notificación, una etapa de flujo, un cambio aplicado—, el segmento de texto en curso se cierra antes de escribirla, con su razonamiento. Así el chat no funde en un solo globo el texto anterior y el posterior a la herramienta.
 
 Una herramienta que necesita aprobación **no** muestra nada extra: la línea de la herramienta aparece, y debajo la línea de aprobación que ya existía. El usuario ve que el agente está actuando y que se le está pidiendo permiso por ello.
+
+**El bloque de diagrama.** `diagram` es la única herramienta cuyo resultado se ve, y lo hace como **bloque adicional**, no en lugar de la línea: la línea sigue el patrón de siempre (`DIAGRAMAR [code] · medida · tiempo`) y justo debajo se dibuja el diagrama ya renderizado, separado del texto del asistente. El bloque llega en el campo `bloque` de `herramienta_resultado` ([[backend/04-infrastructure/EVENTS]] §3), ya en líneas Unicode de ancho calculado: la TUI no interpreta Mermaid ni hace layout, solo lo coloca en el hilo; esa frontera es lo que mantiene el render aislado del estado de la interfaz ([[specs/SPEC-DIAGRAMA]]). Es la excepción a «la salida, nunca»: la regla sigue valiendo para todo lo demás, y aquí el bloque es un dato de pantalla —el modelo recibe su texto por el protocolo de herramientas—, así que también se persiste con la línea y se recupera al volver a la sesión. Un diagrama que no cabe o no parsea no llega aquí: vuelve al modelo como error corregible.
 
 ## 1.2 La línea de sub-proceso
 
@@ -208,6 +211,7 @@ Reglas, según [[specs/SPEC-INTERFAZ-ATAJOS]] y [[specs/SPEC-KEYBINDS]]:
 - [[frontend/FRONTEND]] — mapa de la capa.
 - [[backend/04-infrastructure/EVENTS]] — productores y payloads, incluidos los de herramienta.
 - [[backend/02-interfaces/TOOLS]] — la capa universal que emite esos eventos.
+- [[specs/SPEC-DIAGRAMA]] — el bloque de diagrama que se pinta bajo la línea de herramienta.
 - [[database/03-operations/QUERIES]] — las consultas de lectura que puede ejecutar.
 - [[specs/SPEC-INTERFAZ-ATAJOS]] — reglas funcionales de los atajos.
 - [[specs/SPEC-TOOLS]] — el catálogo, y qué se pinta de una ejecución.

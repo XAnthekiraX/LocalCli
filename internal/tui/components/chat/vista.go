@@ -226,16 +226,31 @@ func sinPaddingFinal(linea string) string {
 // lineaSuelta pinta una línea del sistema: va suelta, sin bloque ni banda, en el
 // mismo tono atenuado con el que se lee el tiempo de una respuesta. Se recorta al
 // ancho para no romper el marco. En una línea de herramienta, el objetivo —la ruta
-// entre corchetes— se pinta en el color de ruta.
+// entre corchetes— se pinta en el color de ruta. Si la línea lleva un bloque de
+// diagrama, este se pinta debajo, separado por una fila en blanco: el bloque es
+// adicional, no sustituye a la línea (INTERFACES §1.1).
 func lineaSuelta(l Linea, ancho int) string {
-	if strings.TrimSpace(l.Texto) == "" {
+	if strings.TrimSpace(l.Texto) == "" && strings.TrimSpace(l.Bloque) == "" {
 		return ""
 	}
-	texto := render.RecortarColumnas("  "+l.Texto, ancho)
-	if l.Tipo == LineaHerramienta {
-		return pintarLineaHerramienta(texto)
+	var partes []string
+	if strings.TrimSpace(l.Texto) != "" {
+		texto := render.RecortarColumnas("  "+l.Texto, ancho)
+		if l.Tipo == LineaHerramienta {
+			partes = append(partes, pintarLineaHerramienta(texto))
+		} else {
+			partes = append(partes, render.EstiloSutil.Render(texto))
+		}
 	}
-	return render.EstiloSutil.Render(texto)
+	if strings.TrimSpace(l.Bloque) != "" {
+		if len(partes) > 0 {
+			partes = append(partes, "")
+		}
+		for _, bl := range strings.Split(l.Bloque, "\n") {
+			partes = append(partes, render.EstiloSutil.Render("  "+bl))
+		}
+	}
+	return strings.Join(partes, "\n")
 }
 
 // pintarLineaHerramienta pinta una línea de herramienta con su ruta destacada: el

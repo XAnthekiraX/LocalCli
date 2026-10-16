@@ -143,9 +143,9 @@ func hiloDeDorada(app *App) {
 	})
 	app.chat.AnotarEtapa("Diagnosticar")
 	app.chat.AnotarInvocacion("leer", "LEER", "internal/tui/app.go")
-	app.chat.CerrarHerramienta("leer", true, false, "70 líneas", "", 400*time.Millisecond)
+	app.chat.CerrarHerramienta("leer", true, false, "70 líneas", "", 400*time.Millisecond, "")
 	app.chat.AnotarInvocacion("ejec", "EJEC", "go test ./...")
-	app.chat.CerrarHerramienta("ejec", false, true, "42 líneas", "el comando falló", 1200*time.Millisecond)
+	app.chat.CerrarHerramienta("ejec", false, true, "42 líneas", "el comando falló", 1200*time.Millisecond, "")
 	app.chat.AnotarAviso("cambio aplicado en internal/tui/app.go")
 }
 

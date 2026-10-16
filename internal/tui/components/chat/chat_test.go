@@ -192,7 +192,7 @@ func TestLaLineaDeHerramientaSeCompletaEnSuSitio(t *testing.T) {
 	m := Nuevo()
 	m.AnotarInvocacion("leer", "LEER", "a.go")
 	m.AnotarInvocacion("leer", "LEER", "b.go")
-	m.CerrarHerramienta("leer", true, false, "10 líneas", "", 400*time.Millisecond)
+	m.CerrarHerramienta("leer", true, false, "10 líneas", "", 400*time.Millisecond, "")
 
 	piezas := m.Piezas()
 	if len(piezas) != 2 {
@@ -229,5 +229,79 @@ func TestCancelarTurnoConservaLoEntregado(t *testing.T) {
 	}
 	if m.HayTurno() {
 		t.Fatal("el turno debería quedar cerrado tras cancelar")
+	}
+}
+
+// El bloque de diagrama es adicional, no sustitutivo: la línea de la herramienta
+// conserva su verbo, su tema, la medida y el tiempo, y el bloque se pinta debajo.
+func TestElBloqueDeDiagramaNoSustituyeLaLinea(t *testing.T) {
+	m := Nuevo()
+	bloque := "┌───┐\n│ A │\n└───┘"
+	m.AnotarInvocacion("diagram", "DIAGRAMAR", "code")
+	m.CerrarHerramienta("diagram", true, false, "3 líneas", "", 400*time.Millisecond, bloque)
+
+	piezas := m.Piezas()
+	if len(piezas) != 1 {
+		t.Fatalf("el bloque no debe añadir piezas: %d", len(piezas))
+	}
+	linea, ok := piezas[0].(*Linea)
+	if !ok {
+		t.Fatalf("la pieza no es una línea: %+v", piezas[0])
+	}
+	if !strings.HasPrefix(linea.Texto, "✓ DIAGRAMAR [code]") {
+		t.Fatalf("la línea no conserva verbo y tema: %q", linea.Texto)
+	}
+	if !strings.Contains(linea.Texto, "3 líneas") {
+		t.Fatalf("la línea no conserva la medida: %q", linea.Texto)
+	}
+	if linea.Bloque != bloque {
+		t.Fatalf("el bloque no se guardó en la línea: %q", linea.Bloque)
+	}
+
+	hilo := render.SinANSI(m.Hilo(80))
+	if !strings.Contains(hilo, "DIAGRAMAR") || !strings.Contains(hilo, "3 líneas") {
+		t.Fatalf("el hilo no muestra la línea completa:\n%s", hilo)
+	}
+	if !strings.Contains(hilo, "┌───┐") || !strings.Contains(hilo, "│ A │") {
+		t.Fatalf("el bloque no aparece debajo de la línea:\n%s", hilo)
+	}
+	// El bloque va debajo de la línea, no encima ni en su lugar.
+	idxLinea := strings.Index(hilo, "DIAGRAMAR")
+	idxBloque := strings.Index(hilo, "┌───┐")
+	if idxBloque < idxLinea {
+		t.Fatalf("el bloque debería pintarse después de la línea:\n%s", hilo)
+	}
+}
+
+// Una herramienta sin bloque no deja nada residual en la línea.
+func TestLaLineaSinBloqueNoPintaBloque(t *testing.T) {
+	m := Nuevo()
+	m.AnotarInvocacion("leer", "LEER", "a.go")
+	m.CerrarHerramienta("leer", true, false, "10 líneas", "", 400*time.Millisecond, "")
+
+	linea := m.Piezas()[0].(*Linea)
+	if linea.Bloque != "" {
+		t.Fatalf("una herramienta normal no debe llevar bloque: %q", linea.Bloque)
+	}
+	hilo := render.SinANSI(m.Hilo(80))
+	if strings.Contains(hilo, "┌") {
+		t.Fatalf("no debería haber bloque pintado:\n%s", hilo)
+	}
+}
+
+// El bloque de una sesión recuperada (LineaHistorial con Bloque) se pinta bajo la
+// línea igual que en vivo.
+func TestElBloqueRecuperadoSePintaAlRetomar(t *testing.T) {
+	m := Nuevo()
+	m.ReemplazarHistorial([]Pieza{
+		&Linea{Tipo: LineaHerramienta, Texto: "✓ DIAGRAMAR [code] · 3 líneas · 0.4 s", Bloque: "┌─┐\n│A│\n└─┘"},
+	})
+
+	hilo := render.SinANSI(m.Hilo(80))
+	if !strings.Contains(hilo, "DIAGRAMAR") {
+		t.Fatalf("la línea recuperada no se pintó:\n%s", hilo)
+	}
+	if !strings.Contains(hilo, "┌─┐") {
+		t.Fatalf("el bloque recuperado no se pintó bajo la línea:\n%s", hilo)
 	}
 }
