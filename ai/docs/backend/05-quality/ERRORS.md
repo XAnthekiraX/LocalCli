@@ -61,9 +61,8 @@ Los que el usuario puede encontrarse y merece la pena distinguir:
 | `E_PATH_OUTSIDE` | Ruta fuera de la carpeta del proyecto, sin permiso y explicación |
 | `E_PATH_EXISTS` | `crear_archivo` o `crear_carpeta` sobre algo que ya existe |
 | `E_NEEDS_CONFIRM` | Borrado sin confirmación explícita |
-| `E_NEEDS_APPROVAL` | Escritura sin aprobación |
+| `E_NEEDS_APPROVAL` | Operación que necesita aprobación (ruta de fuera o borrado) sin forma de pedirla |
 | `E_APPROVAL_DECLINED` | El usuario declinó la operación |
-| `E_CMD_NOT_WHITELISTED` | Comando fuera de la lista blanca |
 | `E_CMD_TIMEOUT` | El comando no terminó a tiempo; se cortó |
 | `E_CMD_OUTPUT_TRUNCATED` | La salida superó el límite; se cortó y se avisa |
 | `E_DOC_NOT_FOUND` | El modelo pidió un documento que no existe |
@@ -96,9 +95,9 @@ Go no tiene excepciones, así que el "manejo" es explícito en cada punto donde 
 
 ## 5. Errores por operación
 
-- **Escritura de archivo:** `E_PATH_OUTSIDE`, `E_PATH_EXISTS`, `E_NEEDS_APPROVAL`, `E_APPROVAL_DECLINED`, `E_NEEDS_CONFIRM` (al borrar), `E_BAD_ARGS`. Al aplicar, si falla la base, el archivo puede quedar sin registrar; se deja constancia. Ver [[database/02-rules/DATA_FLOW]].
+- **Escritura de archivo:** `E_PATH_OUTSIDE` (fuera de la carpeta sin motivo o sin aprobación), `E_PATH_EXISTS`, `E_NEEDS_APPROVAL` (cuando no hay forma de pedir la aprobación), `E_APPROVAL_DECLINED`, `E_NEEDS_CONFIRM` (al borrar), `E_BAD_ARGS`. Al aplicar, si falla la base, el archivo puede quedar sin registrar; se deja constancia. Ver [[database/02-rules/DATA_FLOW]].
 - **Lectura de archivo:** `E_PATH_OUTSIDE` (fuera de la carpeta sin permiso), `E_BAD_ARGS` (parámetros o rangos inválidos: `inicio_linea`/`fin_linea` no enteros, menores que 1, o `inicio_linea` mayor que `fin_linea`; también una ruta que empieza por `~` o contiene `$HOME`, para que el modelo corrija y use la forma relativa en vez de chocar contra un «archivo no encontrado»), y errores de negocio corregibles que el modelo ve y puede arreglar: el archivo no existe, la ruta es un directorio, no hay permisos de lectura o el archivo no es legible como texto. Que una lectura supere el máximo por respuesta **no** es un error: devuelve lo que cabe, con `truncado` y `siguiente_linea`.
-- **Comando de terminal:** `E_CMD_NOT_WHITELISTED`, `E_NEEDS_APPROVAL`, `E_CMD_TIMEOUT`, `E_CMD_OUTPUT_TRUNCATED`. Un comando que sale con error no es un `E_`: es un resultado con la salida de error, y el agente sigue.
+- **Comando de terminal:** un comando destructivo o con una ruta absoluta fuera de la raíz pide aprobación; si no hay forma de darla es `E_NEEDS_APPROVAL` y si se declina `E_APPROVAL_DECLINED`. También `E_CMD_TIMEOUT` y `E_CMD_OUTPUT_TRUNCATED`. Un comando que sale con error no es un `E_`: es un resultado con la salida de error, y el agente sigue.
 - **Lista de pasos de la sesión (`crear_todo` y `actualizar_todo`):** `E_BAD_ARGS` si el contenido está vacío, el estado no está en `pendiente`/`en_progreso`/`completada`/`cancelada`, o la prioridad no está en `alta`/`media`/`baja`. `crear_todo` produce además un `E_BAD_ARGS` corregible si intenta añadir un segundo paso `en_progreso`: el mensaje nombra `actualizar_todo` como la vía para cambiar cuál está en curso. Un fallo de la base al guardar no es `E_BAD_ARGS`: es de otra capa.
 - **Internet:** `E_BAD_ARGS` si la consulta o la dirección no valen. Lo que vuelve es contenido sin confianza, no un error.
 - **Contexto:** `E_DOC_NOT_FOUND`, `E_CONTEXT_TOO_BIG`, `E_DOC_PARSE`.

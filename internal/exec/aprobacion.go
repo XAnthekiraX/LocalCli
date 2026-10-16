@@ -6,11 +6,12 @@ import (
 	"localcli/internal/tools"
 )
 
-// aprobar pide permiso para un comando que no está en la lista blanca. Nunca se
-// ejecuta sin aprobación: si no hay mecanismo, o el usuario declina, se corta.
+// aprobar pide permiso para un comando destructivo o que toca rutas fuera de la
+// carpeta. Nunca se ejecuta sin aprobación: si no hay mecanismo, o el usuario
+// declina, se corta.
 func aprobar(ctx context.Context, c tools.Contexto, s tools.Solicitud) error {
 	if c.Ask == nil {
-		return nuevaError(tools.CodCmdNotWhitelisted, "el comando no está en la lista blanca y no hay forma de aprobarlo")
+		return nuevaError(tools.CodNeedsApproval, "el comando requiere aprobación y no hay forma de darla")
 	}
 	decision, err := c.Ask(ctx, s)
 	if err != nil {

@@ -140,19 +140,24 @@ func (o *Operaciones) eliminarCarpeta(ctx context.Context, args any, c tools.Con
 	return okEscritura("carpeta borrada: " + Canonica(o.Raiz, abs)), nil
 }
 
-// preparar resuelve la ruta, valida la frontera y pide aprobación. Devuelve la
-// ruta absoluta, o un resultado ya compuesto si hay que cortar.
+// preparar resuelve la ruta, valida la frontera y pide confirmación solo cuando
+// hace falta: operación destructiva, o ruta fuera de la carpeta —que ya es
+// ValidarAcceso quien pide. Devuelve la ruta absoluta, o un resultado ya
+// compuesto si hay que cortar.
 func (o *Operaciones) preparar(ctx context.Context, ruta, motivo string, c tools.Contexto, accion string, peligrosa bool) (string, *tools.Resultado, error) {
 	abs, codigo := Resolver(o.Raiz, ruta)
 	if codigo != "" {
 		return "", &tools.Resultado{Error: codigo}, nil
 	}
+	dentro := Dentro(o.Raiz, abs)
 	if err := ValidarAcceso(ctx, o.Raiz, abs, motivo, c); err != nil {
 		return "", nil, err
 	}
-	solicitud := tools.Solicitud{Titulo: accion, Descripcion: Canonica(o.Raiz, abs), Motivo: motivo, Peligrosa: peligrosa}
-	if err := pedirPermiso(ctx, c, solicitud); err != nil {
-		return "", nil, err
+	if peligrosa && dentro {
+		solicitud := tools.Solicitud{Titulo: accion, Descripcion: Canonica(o.Raiz, abs), Motivo: motivo, Peligrosa: true}
+		if err := pedirPermiso(ctx, c, solicitud); err != nil {
+			return "", nil, err
+		}
 	}
 	return abs, nil, nil
 }

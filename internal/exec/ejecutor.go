@@ -23,21 +23,26 @@ type Solicitud struct {
 	Carpeta string
 }
 
-// Ejecutar parte el comando, consigue aprobación si no está en la lista blanca y
-// lo corre. Un comando que sale con error no es un fallo: devuelve su salida.
+// Ejecutar parte el comando, pide confirmación si es destructivo o toca rutas
+// fuera de la carpeta y lo corre. Un comando que sale con error no es un fallo:
+// devuelve su salida.
 func (e *Ejecutor) Ejecutar(ctx context.Context, s Solicitud, c tools.Contexto) (Salida, error) {
 	argv, err := PartirComando(s.Comando)
 	if err != nil {
 		return Salida{}, err
 	}
-	if !EnListaBlanca(argv) {
-		if err := aprobar(ctx, c, tools.Solicitud{Titulo: "Ejecutar comando", Descripcion: s.Comando}); err != nil {
-			return Salida{}, err
-		}
-	}
 	carpeta := s.Carpeta
 	if carpeta == "" {
 		carpeta = e.Proyecto
+	}
+	if PideConfirmacion(e.Proyecto, argv) {
+		titulo := "Ejecutar comando destructivo"
+		if !Peligroso(argv) {
+			titulo = "Ejecutar comando con rutas fuera de la carpeta"
+		}
+		if err := aprobar(ctx, c, tools.Solicitud{Titulo: titulo, Descripcion: s.Comando}); err != nil {
+			return Salida{}, err
+		}
 	}
 	prog, err := exec.LookPath(argv[0])
 	if err != nil {
@@ -91,14 +96,17 @@ func (e *Ejecutor) EjecutarEquipo(ctx context.Context, equipo []string, entrada,
 	if len(equipo) == 0 {
 		return Salida{}, nuevaError(tools.CodBadArgs, "el `equipo` está vacío")
 	}
-	if err := aprobar(ctx, c, tools.Solicitud{
-		Titulo:      "Ejecutar herramienta del usuario",
-		Descripcion: equipo[0],
-	}); err != nil {
-		return Salida{}, err
-	}
 	if carpeta == "" {
 		carpeta = e.Proyecto
+	}
+	if PideConfirmacion(e.Proyecto, equipo) {
+		titulo := "Ejecutar herramienta del usuario destructiva"
+		if !Peligroso(equipo) {
+			titulo = "Ejecutar herramienta del usuario con rutas fuera de la carpeta"
+		}
+		if err := aprobar(ctx, c, tools.Solicitud{Titulo: titulo, Descripcion: equipo[0]}); err != nil {
+			return Salida{}, err
+		}
 	}
 	if limite <= 0 {
 		limite = TiempoLimite

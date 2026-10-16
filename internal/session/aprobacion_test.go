@@ -51,10 +51,10 @@ func escribirAgente(t *testing.T, base, nombre, permisos string) {
 	}
 }
 
-// servidorEscritura pide `escribir_archivo` en el primer turno y responde en
-// texto tras recibir el resultado de la herramienta. Las peticiones de título
-// reciben un título.
-func servidorEscritura(t *testing.T, ruta, contenido string) *httptest.Server {
+// servidorTool pide la herramienta `nombre` con `args` en el primer turno y
+// responde en texto tras recibir el resultado. Las peticiones de título reciben
+// un título.
+func servidorTool(t *testing.T, nombre string, args map[string]string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cuerpo, _ := io.ReadAll(r.Body)
@@ -73,10 +73,10 @@ func servidorEscritura(t *testing.T, ruta, contenido string) *httptest.Server {
 		case bytes.Contains(cuerpo, []byte(`"role":"tool"`)):
 			emite(map[string]any{"choices": []any{map[string]any{"delta": map[string]any{"content": "listo"}}}})
 		default:
-			args, _ := json.Marshal(map[string]string{"ruta": ruta, "contenido": contenido})
+			argumentos, _ := json.Marshal(args)
 			emite(map[string]any{"choices": []any{map[string]any{"delta": map[string]any{"tool_calls": []any{
 				map[string]any{"index": 0, "id": "call_1", "type": "function",
-					"function": map[string]any{"name": "escribir_archivo", "arguments": string(args)}},
+					"function": map[string]any{"name": nombre, "arguments": string(argumentos)}},
 			}}}}})
 		}
 		emite(map[string]any{"choices": []any{}, "usage": map[string]any{"prompt_tokens": 4, "completion_tokens": 2}})
@@ -99,19 +99,23 @@ func catalogoDelRegistro(registro *tools.Registro) []agent.Herramienta {
 	return salida
 }
 
-// TestElTurnoPideAprobacionYLaEscrituraSeAplica: la capa universal bloquea la
-// escritura hasta que el usuario decide; aprobada, el archivo queda escrito.
-func TestElTurnoPideAprobacionYLaEscrituraSeAplica(t *testing.T) {
-	srv := servidorEscritura(t, "nota.txt", "hola")
+// TestElTurnoPideAprobacionYElBorradoSeAplica: lo destructivo pausa el turno
+// hasta que el usuario decide; aprobado, el archivo queda borrado.
+func TestElTurnoPideAprobacionYElBorradoSeAplica(t *testing.T) {
+	srv := servidorTool(t, "eliminar_archivo", map[string]string{"ruta": "nota.txt"})
 	db, limpiar, _ := store.CrearDBTemporal()
 	defer limpiar()
 	cwd := t.TempDir()
 	projectID, _ := store.ResolucionProyecto(db, cwd)
+	nota := filepath.Join(cwd, "nota.txt")
+	if err := os.WriteFile(nota, []byte("hola"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	o := Nuevo(db, projectID, cwd, agentesConBuild(t), openai.NuevoCliente(srv.URL), "m", 8192, nil, nil)
 	registro := tools.NuevoRegistro(tools.Catalogo())
 	ops := &fileops.Operaciones{Raiz: cwd, DB: db, ProjectID: projectID}
-	registro.Instalar("escribir_archivo", ops.EscribirHandlers()["escribir_archivo"])
+	registro.Instalar("eliminar_archivo", ops.EscribirHandlers()["eliminar_archivo"])
 	o.ConHerramientas(registro, catalogoDelRegistro(registro))
 
 	canal, cerrar := o.Suscribir()
@@ -119,7 +123,7 @@ func TestElTurnoPideAprobacionYLaEscrituraSeAplica(t *testing.T) {
 	sesion, _ := o.Crear()
 
 	resultado := make(chan error, 1)
-	go func() { resultado <- o.Enviar(context.Background(), sesion.ID, "build", "crea nota.txt") }()
+	go func() { resultado <- o.Enviar(context.Background(), sesion.ID, "build", "borra nota.txt") }()
 
 	id := esperarPeticionAprobacion(t, canal)
 	if estadoDeSesion(t, db, projectID, sesion.ID) != EstadoEsperandoPermiso {
@@ -138,16 +142,57 @@ func TestElTurnoPideAprobacionYLaEscrituraSeAplica(t *testing.T) {
 		t.Fatal("el turno no terminó tras aprobar")
 	}
 
-	datos, err := os.ReadFile(filepath.Join(cwd, "nota.txt"))
-	if err != nil || string(datos) != "hola" {
-		t.Fatalf("el archivo no se escribió: %q (%v)", datos, err)
+	if _, err := os.Stat(nota); !os.IsNotExist(err) {
+		t.Fatalf("el archivo no se borró: %v", err)
 	}
 }
 
-// TestDeclinarLaAprobacionImpideLaEscritura: declinada, el archivo no se crea y
-// el turno sigue su curso (el error vuelve al modelo como resultado corregible).
-func TestDeclinarLaAprobacionImpideLaEscritura(t *testing.T) {
-	srv := servidorEscritura(t, "nota.txt", "hola")
+// TestDeclinarLaAprobacionImpideElBorrado: declinada, el archivo sigue ahí y el
+// turno sigue su curso (el error vuelve al modelo como resultado corregible).
+func TestDeclinarLaAprobacionImpideElBorrado(t *testing.T) {
+	srv := servidorTool(t, "eliminar_archivo", map[string]string{"ruta": "nota.txt"})
+	db, limpiar, _ := store.CrearDBTemporal()
+	defer limpiar()
+	cwd := t.TempDir()
+	projectID, _ := store.ResolucionProyecto(db, cwd)
+	nota := filepath.Join(cwd, "nota.txt")
+	if err := os.WriteFile(nota, []byte("hola"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	o := Nuevo(db, projectID, cwd, agentesConBuild(t), openai.NuevoCliente(srv.URL), "m", 8192, nil, nil)
+	registro := tools.NuevoRegistro(tools.Catalogo())
+	ops := &fileops.Operaciones{Raiz: cwd, DB: db, ProjectID: projectID}
+	registro.Instalar("eliminar_archivo", ops.EscribirHandlers()["eliminar_archivo"])
+	o.ConHerramientas(registro, catalogoDelRegistro(registro))
+
+	canal, cerrar := o.Suscribir()
+	defer cerrar()
+	sesion, _ := o.Crear()
+
+	resultado := make(chan error, 1)
+	go func() { resultado <- o.Enviar(context.Background(), sesion.ID, "build", "borra nota.txt") }()
+
+	id := esperarPeticionAprobacion(t, canal)
+	if err := o.ResponderAprobacion(sesion.ID, id, false); err != nil {
+		t.Fatalf("responder: %v", err)
+	}
+
+	select {
+	case <-resultado:
+	case <-time.After(3 * time.Second):
+		t.Fatal("el turno no terminó tras declinar")
+	}
+
+	if _, err := os.Stat(nota); err != nil {
+		t.Fatalf("declinada, el archivo no debería haberse borrado: %v", err)
+	}
+}
+
+// TestUnaEscrituraDentroNoPideAprobacion: crear dentro de la carpeta corre sin
+// ninguna pausa; no se emite ninguna petición de aprobación.
+func TestUnaEscrituraDentroNoPideAprobacion(t *testing.T) {
+	srv := servidorTool(t, "escribir_archivo", map[string]string{"ruta": "nota.txt", "contenido": "hola"})
 	db, limpiar, _ := store.CrearDBTemporal()
 	defer limpiar()
 	cwd := t.TempDir()
@@ -166,19 +211,42 @@ func TestDeclinarLaAprobacionImpideLaEscritura(t *testing.T) {
 	resultado := make(chan error, 1)
 	go func() { resultado <- o.Enviar(context.Background(), sesion.ID, "build", "crea nota.txt") }()
 
-	id := esperarPeticionAprobacion(t, canal)
-	if err := o.ResponderAprobacion(sesion.ID, id, false); err != nil {
-		t.Fatalf("responder: %v", err)
+	vistos, err := eventosHastaElFinal(t, canal, resultado)
+	if err != nil {
+		t.Fatalf("turno: %v", err)
 	}
-
-	select {
-	case <-resultado:
-	case <-time.After(3 * time.Second):
-		t.Fatal("el turno no terminó tras declinar")
+	for _, e := range vistos {
+		if e.Tipo == tui.EventoPeticionAprobacion {
+			t.Fatal("una escritura dentro de la carpeta no debería pedir aprobación")
+		}
 	}
+	datos, err := os.ReadFile(filepath.Join(cwd, "nota.txt"))
+	if err != nil || string(datos) != "hola" {
+		t.Fatalf("el archivo no se escribió: %q (%v)", datos, err)
+	}
+}
 
-	if _, err := os.Stat(filepath.Join(cwd, "nota.txt")); !os.IsNotExist(err) {
-		t.Fatalf("declinada, el archivo no debería existir: %v", err)
+// eventosHastaElFinal devuelve los eventos vistos mientras el turno no termina.
+func eventosHastaElFinal(t *testing.T, canal <-chan tui.Evento, resultado chan error) ([]tui.Evento, error) {
+	t.Helper()
+	var vistos []tui.Evento
+	for {
+		select {
+		case e := <-canal:
+			vistos = append(vistos, e)
+		case err := <-resultado:
+			for {
+				select {
+				case e := <-canal:
+					vistos = append(vistos, e)
+				default:
+					return vistos, err
+				}
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("el turno no terminó")
+			return vistos, nil
+		}
 	}
 }
 

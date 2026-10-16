@@ -111,7 +111,7 @@ Cada herramienta expone su esquema a partir de sus propios tipos de petición, c
 
 El resultado de una ejecución vuelve al modelo como un mensaje propio de herramienta, asociado al nombre con el que la pidió. Se hacen **varias pasadas**: el modelo pide, ve el resultado, y vuelve a pedir si le hace falta. Hay un máximo de pasadas por turno para que un bucle no se alargue sin fin. Al agotarlo, el turno pide una redacción final y **avisa**: si el modelo tampoco entrega nada, el turno falla con el motivo a la vista. Nunca termina en silencio. Ver [[specs/SPEC-AGENTE-BASE]] §El ciclo de un turno.
 
-Las ejecuciones son **secuenciales**. Una tras otra, en el orden en que el modelo las pidió. No en paralelo: el orden importa —una carpeta tiene que existir antes de escribir dentro— y la aprobación de cada escritura es una interrupción que el usuario tiene que ver en orden.
+Las ejecuciones son **secuenciales**. Una tras otra, en el orden en que el modelo las pidió. No en paralelo: el orden importa —una carpeta tiene que existir antes de escribir dentro— y una espera de confirmación es una interrupción que el usuario tiene que ver en orden.
 
 ## La capa universal
 
@@ -216,7 +216,7 @@ plan lee  →  plan propone  →  tú apruebas  →  cambias a build  →  build
 
 ## Herramientas de archivo
 
-Siguen las reglas de [[specs/SPEC-ARCHIVOS]]: dentro de la carpeta del proyecto son accesibles, fuera se pide permiso y el agente explica por qué, y **toda escritura pasa por aprobación**.
+Siguen las reglas de [[specs/SPEC-ARCHIVOS]]: dentro de la carpeta del proyecto son accesibles y se aplican sin interrumpir; fuera se pide permiso y el agente explica por qué. **La confirmación solo la piden dos cosas: lo que queda fuera de la carpeta y lo destructivo —los borrados—**.
 
 Una diferencia importante: `crear_archivo` falla si el archivo ya existe, y `escribir_archivo` lo sobrescribe. Están separadas a propósito. Así el agente no destruye algo por accidente cuando pretendía crear.
 
@@ -265,18 +265,16 @@ Para reducir el hábito del modelo de pegar la ruta completa (`leer [/home/usuar
 
 ## Herramientas de terminal
 
-Tiene **dos controles independientes**: una lista blanca que decide qué comandos existen, y un bloqueo que garantiza que no puede tocar tus archivos.
+Tiene **dos controles independientes**: una regla de confirmación que decide cuándo te interrumpe, y un bloqueo que garantiza que no puede tocar tus archivos.
 
-### Control 1 — lista blanca
+### Control 1 — solo lo destructivo o lo de fuera pregunta
 
-Estos comandos se ejecutan sin preguntar, porque son los que se repiten en cada iteración:
+La confirmación solo la piden dos casos, y todo lo demás corre sin preguntar:
 
-- Compilar el proyecto.
-- Correr las pruebas.
-- Revisar estilo y tipos.
-- Ver el estado y las diferencias del repositorio: estado, diferencias, historial.
+- **Comandos destructivos:** los que borran, machacan o apagan —`rm`, `rmdir`, `mv`, `dd`, `truncate`, `kill`, `shutdown`, `mkfs*`— y los subcomandos de git que descartan trabajo o lo suben a la fuerza (`reset`, `clean`, `checkout`, `restore`, `branch -D`, `push --force`).
+- **Rutas fuera de la carpeta del proyecto:** un argumento absoluto que queda fuera de la raíz.
 
-Cualquier otro comando pide aprobación antes de ejecutarse.
+Lo que se repite en cada iteración —compilar, correr las pruebas, revisar estilo, ver estado y diferencias— y cualquier otro comando inocuo se ejecutan directo. La regla es la misma que la de los archivos: dentro y sin destruir, adelante; destructivo o fuera, preguntas.
 
 ### Control 2 — no toca tus archivos
 
@@ -287,11 +285,11 @@ Un filtro de texto no sirve: `find -delete`, `tee`, una tubería hacia un archiv
 Lo que sí puede hacer:
 
 - Usar su propio espacio: caché de compilación, temporales y una carpeta de trabajo por sesión.
-- Correr los comandos de la lista blanca.
+- Correr los comandos que no son destructivos ni tocan rutas fuera de la carpeta.
 
 Lo que no puede hacer, aunque se le pida:
 
-- Crear, editar o borrar archivos del proyecto. Para eso están las herramientas de escritura, que solo tiene `build` y que sí pasan por aprobación.
+- Crear, editar o borrar archivos del proyecto. Para eso están las herramientas de escritura, que solo tiene `build` y donde los borrados sí piden confirmación.
 - Descartar cambios del repositorio.
 - Hacer commits, subir cambios o publicar.
 
@@ -301,6 +299,7 @@ Lo que no puede hacer, aunque se le pida:
 - La salida está limitada. Un comando que no termina o que genera salida sin fin no puede colgar el harness ni llenar el contexto. Si se corta, se avisa de que se cortó.
 - El resultado indica si el comando terminó bien o mal, con la salida de error cuando la hay.
 - Un comando que falla no detiene el trabajo: el agente ve el error y sigue.
+- Las herramientas del usuario se rigen por la misma regla de confirmación que `ejecutar_comando`: destructivo o fuera de la carpeta, preguntas; lo demás, no.
 
 ## Herramientas de internet
 
@@ -366,6 +365,7 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - Un estado o una prioridad fuera del vocabulario de la lista vuelve al modelo como error corregible.
 - El relevo de `plan` a `build` es explícito: propuesta, aprobación, cambio de agente, aplicación.
 - Una aprobación vale para el cambio propuesto. No habilita nada más.
+- **Solo pide confirmación lo que queda fuera de la carpeta del proyecto o lo destructivo:** borrar archivos y carpetas, comandos destructivos y comandos con rutas absolutas de fuera. Todo lo demás, dentro de la carpeta, se ejecuta sin interrumpir, también dentro de un flujo en curso.
 - Las herramientas de terminal nunca se saltan las reglas de permiso.
 - La terminal no puede modificar nada del proyecto, y esa garantía no depende de revisar el comando.
 - Por internet, solo sale la consulta, nunca nada del proyecto.
@@ -400,8 +400,11 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - [ ] Una subtarea no tiene hijas: la jerarquía se queda en un solo nivel.
 - [ ] El panel anida las subtareas bajo su tarea principal.
 - [ ] Un estado o una prioridad fuera del vocabulario devuelve al modelo un error corregible y no guarda nada.
-- [ ] Nada se escribe sin que `plan` lo haya propuesto y tú lo hayas aprobado.
+- [ ] Nada se escribe sin que `plan` lo haya propuesto y tú cambies a `build`: solo `build` tiene herramientas de escritura.
 - [ ] Una aprobación no habilita cambios distintos de los propuestos.
+- [ ] Crear, sobrescribir o editar dentro de la carpeta del proyecto se aplica sin interrumpir al usuario.
+- [ ] Borrar un archivo o una carpeta pide confirmación explícita.
+- [ ] Una operación que toca una ruta fuera de la carpeta pide confirmación (y explicación) aunque no sea un borrado.
 - [ ] `crear_archivo` falla si el archivo ya existe; `escribir_archivo` lo sobrescribe.
 - [ ] Un archivo que no supera el límite de lectura completa se devuelve entero, sin aviso de truncado.
 - [ ] Un archivo que supera el límite de lectura completa se devuelve como fragmento inicial, marcado como truncado, con la línea desde la que continuar.
@@ -413,8 +416,9 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - [ ] Una ruta que empieza por `~` o contiene `$HOME` se rechaza con `E_BAD_ARGS` y un aviso que recuerda usar rutas relativas, no con «archivo no encontrado».
 - [ ] La respuesta de `leer_archivo` devuelve `ruta` relativa al directorio de trabajo cuando el archivo está dentro de él, y absoluta cuando está fuera.
 - [ ] Una ruta que resuelve fuera de la carpeta sigue exigiendo permiso y explicación, sin que la normalización lo evite.
-- [ ] Los comandos de la lista blanca se ejecutan sin pedir permiso.
-- [ ] Un comando fuera de la lista blanca pide permiso antes de ejecutarse.
+- [ ] Un comando inocuo, dentro de la carpeta y sin tocar rutas de fuera, se ejecuta sin pedir permiso.
+- [ ] Un comando destructivo —borrado, machaque o los subcomandos git que descartan trabajo— pide permiso antes de ejecutarse.
+- [ ] Un comando con una ruta absoluta fuera de la carpeta del proyecto pide permiso antes de ejecutarse.
 - [ ] La terminal no puede crear, editar ni borrar archivos del proyecto, ni con comandos indirectos.
 - [ ] La terminal sí puede compilar, correr pruebas y revisar estilo y tipos.
 - [ ] No puede descartar cambios del repositorio ni hacer commits.

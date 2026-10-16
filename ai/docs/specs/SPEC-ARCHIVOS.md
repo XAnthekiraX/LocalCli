@@ -32,7 +32,7 @@ No incluye la forma de mostrar el panel de aprobaciones, que está en [[specs/SP
 
 1. El agente pide una operación con la ruta y el contenido.
 2. El sistema comprueba si la ruta está dentro de la carpeta abierta.
-3. Dentro de la carpeta: se prepara el cambio y se pide aprobación.
+3. Dentro de la carpeta: se prepara el cambio y se aplica sin preguntar, salvo que sea un borrado.
 4. Fuera de la carpeta: se pide aprobación y además el agente explica por qué busca eso.
 5. El usuario aprueba o declina.
 6. Aprobado: se aplica y se devuelve el resultado al agente.
@@ -49,8 +49,8 @@ No incluye la forma de mostrar el panel de aprobaciones, que está en [[specs/SP
 
 - Dentro de la carpeta abierta, todos los archivos y carpetas son accesibles sin preguntar.
 - Fuera de la carpeta, hace falta permiso **y** la explicación del agente sobre por qué busca eso.
-- Toda escritura requiere aprobación, también dentro de la carpeta y también dentro de un flujo en curso.
-- Borrar siempre requiere confirmación explícita.
+- **Solo piden confirmación dos cosas: lo que queda fuera de la carpeta y lo que es destructivo.** Crear, sobrescribir o editar dentro de la carpeta no interrumpe al usuario, también dentro de un flujo en curso.
+- Borrar siempre requiere confirmación explícita, aunque la ruta esté dentro de la carpeta.
 - Editar es por sustitución parcial: cada fragmento debe coincidir **exactamente una vez**; si no está o es ambiguo, no se escribe nada y el agente recibe el motivo. La comparación tolera finales de línea CRLF, BOM, Unicode tipográfico (comillas, guiones, elipsis, NBSP) y espacios finales o de sangría, y el resultado conserva el estilo del archivo.
 - Una ruta relativa se resuelve desde el directorio de trabajo del harness; `..` y las rutas absolutas son válidas. No se expande `~` ni `$HOME` y no se busca en otras ubicaciones. La normalización no elude las restricciones: una ruta que resuelve fuera de la carpeta cuenta como «fuera».
 - Cada cambio aplicado queda registrado con lo que había antes y lo que quedó.
@@ -62,11 +62,11 @@ No incluye la forma de mostrar el panel de aprobaciones, que está en [[specs/SP
 
 - [ ] El agente puede crear, leer, editar y borrar archivos y carpetas dentro del proyecto.
 - [ ] Funciona con cualquier archivo de texto, sin importar la extensión.
-- [ ] Un cambio dentro de la carpeta no se aplica hasta que el usuario lo aprueba.
+- [ ] Un cambio dentro de la carpeta que no es un borrado se aplica sin interrumpir al usuario.
 - [ ] Un cambio fuera de la carpeta no se aplica sin aprobación y sin la explicación del agente.
 - [ ] El usuario puede declinar y el agente recibe el rechazo.
 - [ ] Todo cambio aplicado queda registrado con el antes y el después.
-- [ ] Borrar un archivo exige confirmación explícita.
+- [ ] Borrar un archivo exige confirmación explícita, esté donde esté.
 - [ ] Editar un archivo con un fragmento ambiguo o ausente no modifica nada y el agente recibe un error corregible.
 - [ ] Editar funciona en archivos CRLF, con BOM y con texto Unicode tipográfico sin que el agente tenga que compensarlo.
 - [ ] Si el agente busca fuera de la carpeta, la explicación queda visible para el usuario.
@@ -75,7 +75,8 @@ No incluye la forma de mostrar el panel de aprobaciones, que está en [[specs/SP
 
 ## Requisitos no funcionales
 
-- Ninguna escritura se aplica sin aprobación, sin excepción.
+- Ninguna escritura destructiva se aplica sin aprobación, sin excepción.
+- Ninguna operación fuera de la carpeta se aplica sin aprobación.
 - El registro de cambios no se modifica ni se borra una vez escrito.
 
 ## Dependencias funcionales

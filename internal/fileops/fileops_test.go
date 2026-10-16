@@ -91,18 +91,71 @@ func TestCrearArchivoNoSobrescribe(t *testing.T) {
 	}
 }
 
-func TestTodaEscrituraPideAprobacion(t *testing.T) {
+// Escribir dentro de la carpeta ya no pide confirmación: solo la piden el
+// borrado y todo lo que queda fuera de la carpeta.
+func TestEscrituraDentroNoPideConfirmacion(t *testing.T) {
 	raiz := t.TempDir()
 	o := &Operaciones{Raiz: raiz}
-	declinador := tools.Contexto{Ask: func(context.Context, tools.Solicitud) (tools.Decision, error) {
+	preguntas := 0
+	quePregunta := tools.Contexto{Ask: func(context.Context, tools.Solicitud) (tools.Decision, error) {
+		preguntas++
 		return tools.Declinar, nil
 	}}
-	res, _ := o.crearArchivo(context.Background(), tools.PeticionCrearArchivo{Ruta: "nuevo.txt", Contenido: "y"}, declinador)
-	if !strings.HasPrefix(res.Error, tools.CodApprovalDeclined) {
-		t.Fatalf("una escritura declinada debería dar E_APPROVAL_DECLINED: %q", res.Error)
+	res, _ := o.crearArchivo(context.Background(), tools.PeticionCrearArchivo{Ruta: "nuevo.txt", Contenido: "y"}, quePregunta)
+	if res.Error != "" {
+		t.Fatalf("crear dentro de la carpeta no debería fallar: %q", res.Error)
 	}
-	if _, err := os.Stat(filepath.Join(raiz, "nuevo.txt")); err == nil {
-		t.Fatal("no debería haberse creado el archivo")
+	if preguntas != 0 {
+		t.Fatalf("una escritura dentro no debería preguntar; preguntó %d veces", preguntas)
+	}
+	if _, err := os.Stat(filepath.Join(raiz, "nuevo.txt")); err != nil {
+		t.Fatalf("el archivo no se creó: %v", err)
+	}
+}
+
+func TestBorradoPideConfirmacion(t *testing.T) {
+	raiz := t.TempDir()
+	archivo := filepath.Join(raiz, "a.txt")
+	if err := os.WriteFile(archivo, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o := &Operaciones{Raiz: raiz}
+	res, _ := o.eliminarArchivo(context.Background(), tools.PeticionEliminarArchivo{Ruta: "a.txt"}, declinador())
+	if !strings.HasPrefix(res.Error, tools.CodApprovalDeclined) {
+		t.Fatalf("un borrado declinado debería dar E_APPROVAL_DECLINED: %q", res.Error)
+	}
+	if _, err := os.Stat(archivo); err != nil {
+		t.Fatal("no debería haberse borrado el archivo")
+	}
+}
+
+// Toda operación fuera de la carpeta sigue pidiendo permiso, también las que no
+// son de borrado.
+func TestBorradoFueraDeLaCarpetaPideConfirmacion(t *testing.T) {
+	raiz := t.TempDir()
+	fuera := filepath.Join(t.TempDir(), "x.txt")
+	if err := os.WriteFile(fuera, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o := &Operaciones{Raiz: raiz}
+	res, _ := o.eliminarArchivo(context.Background(),
+		tools.PeticionEliminarArchivo{Ruta: fuera, Motivo: "lo necesito fuera del proyecto"}, declinador())
+	if !strings.HasPrefix(res.Error, tools.CodApprovalDeclined) {
+		t.Fatalf("un borrado fuera declinado debería dar E_APPROVAL_DECLINED: %q", res.Error)
+	}
+	if _, err := os.Stat(fuera); err != nil {
+		t.Fatal("no debería haberse borrado el archivo")
+	}
+}
+
+// Una ruta fuera sin `motivo` se rechaza sin llegar a pedir nada.
+func TestFueraSinMotivoSeRechaza(t *testing.T) {
+	raiz := t.TempDir()
+	fuera := filepath.Join(t.TempDir(), "x.txt")
+	o := &Operaciones{Raiz: raiz}
+	res, _ := o.eliminarArchivo(context.Background(), tools.PeticionEliminarArchivo{Ruta: fuera}, declinador())
+	if !strings.HasPrefix(res.Error, tools.CodPathOutside) {
+		t.Fatalf("fuera sin motivo debería dar E_PATH_OUTSIDE: %q", res.Error)
 	}
 }
 
@@ -129,5 +182,11 @@ func TestEscrituraAprobadaRegistraEnHistorial(t *testing.T) {
 func aprobadorFileops() tools.Contexto {
 	return tools.Contexto{Ask: func(context.Context, tools.Solicitud) (tools.Decision, error) {
 		return tools.Aprobar, nil
+	}}
+}
+
+func declinador() tools.Contexto {
+	return tools.Contexto{Ask: func(context.Context, tools.Solicitud) (tools.Decision, error) {
+		return tools.Declinar, nil
 	}}
 }

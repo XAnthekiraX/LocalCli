@@ -10,7 +10,6 @@ const (
 	CodNeedsConfirm       = "E_NEEDS_CONFIRM"
 	CodNeedsApproval      = "E_NEEDS_APPROVAL"
 	CodApprovalDeclined   = "E_APPROVAL_DECLINED"
-	CodCmdNotWhitelisted  = "E_CMD_NOT_WHITELISTED"
 	CodCmdTimeout         = "E_CMD_TIMEOUT"
 	CodCmdOutputTruncated = "E_CMD_OUTPUT_TRUNCATED"
 	CodNoLandlock         = "E_NO_LANDLOCK"

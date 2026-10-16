@@ -32,7 +32,7 @@ No hay roles de usuario. La autorización se resuelve en tres capas, y por eso e
 |---|---|---|
 | Qué puede pedir el agente | `agent` | Qué herramientas tiene `plan` (las del permiso `read`) y `build` (los tres permisos) |
 | Si la petición está permitida | `tools` | Que la herramienta exista y que el agente la tenga |
-| Si el efecto se aplica | `fileops`, `exec` | La aprobación concreta, la frontera de rutas, la lista blanca y Landlock |
+| Si el efecto se aplica | `fileops`, `exec` | La confirmación selectiva (destructivo o fuera de la carpeta), la frontera de rutas y Landlock |
 
 El paso 2 ocurre en **la capa universal de `tools`**, antes de que se ejecute nada y antes de que se toque el disco. Es el mismo punto para las dieciséis herramientas incluidas: no hay un camino alternativo que se salte la comprobación. `ejecutar_flujo` no rompe la garantía: su permiso es **derivado** del flujo que se pide (todas sus etapas `plan` exigen `read`, y `read`/`edit` si alguna es `build`), se resuelve en el mismo punto de la capa universal y, si el agente no lo tiene, la herramienta no llega a su esquema. Ver [[backend/02-interfaces/TOOLS]].
 
@@ -46,24 +46,24 @@ La garantía central: **`plan` no tiene herramientas que escriban en el proyecto
 
 No hay endpoints. Lo que hay son operaciones, y cada una tiene su regla.
 
-### Toda escritura pasa por aprobación
+### Solo lo destructivo o lo de fuera pide aprobación
 
-Sin excepción: ni dentro de la carpeta del proyecto, ni fuera, ni dentro de un flujo en curso. Ver [[specs/SPEC-ARCHIVOS]].
+La interrupción está acotada a dos casos: **borrar** (archivos y carpetas) y **tocar una ruta fuera de la carpeta del proyecto**, en las herramientas de archivo; y en la terminal, **un comando destructivo** o **un argumento con ruta absoluta de fuera**. Todo lo demás —crear, sobrescribir, editar dentro de la carpeta, y cualquier comando inocuo— se aplica sin preguntar, también dentro de un flujo en curso. Ver [[specs/SPEC-ARCHIVOS]] y [[specs/SPEC-TOOLS]] §Control 1.
 
 ### Frontera de rutas
 
 - Toda ruta relativa es relativa a la carpeta abierta del proyecto; una absoluta se respeta y, si no cuelga de él, cuenta como «fuera».
-- Dentro de la carpeta: accesible, pero escribir sigue pidiendo aprobación.
+- Dentro de la carpeta: accesible y se aplica sin interrumpir; solo los borrados piden confirmación.
 - Fuera de la carpeta: hace falta permiso **y** la explicación del agente sobre por qué busca eso. La explicación queda visible para ti.
 
-### Terminal bloqueada estructuralmente
+### Terminal: confirmación selectiva y bloqueo estructural
 
 La terminal tiene dos controles independientes:
 
-1. **Lista blanca:** solo compilar, probar, revisar estilo y tipos, y ver estado/diferencias/historial de git corren sin preguntar. Cualquier otro comando pide aprobación.
+1. **Confirmación selectiva:** solo piden permiso los comandos destructivos —una lista cerrada de programas que borran, machacan o apagan, más los subcomandos de git que descartan trabajo o suben a la fuerza— y los que llevan una ruta absoluta fuera de la raíz. Un comando inocuo corre sin preguntar, como los que se repiten en cada iteración: compilar, probar, revisar estilo y tipos, ver estado/diferencias/historial de git.
 2. **Bloqueo de escritura:** la terminal no puede crear, editar ni borrar archivos del proyecto, y la garantía es del kernel (Landlock), no del texto del comando. Por eso `find -delete`, `tee`, una tubería hacia un archivo, `python3 -c` o `sh -c` con redirección no la esquivan.
 
-Lo único con escritura concedida es el espacio propio del comando —temporales, caché de compilación y carpeta de trabajo por sesión— y los **dispositivos nulos** (`/dev/null`, `/dev/zero`, `/dev/full`): programas de la lista blanca como `git` abren `/dev/null` con `O_RDWR` aunque no guarden nada, y sin ese permiso `git status`, `git diff` y `git log` fallaban. La regla de Landlock se ancla en cada dispositivo, no en `/dev`, así que el resto del sistema sigue denegado.
+Lo único con escritura concedida es el espacio propio del comando —temporales, caché de compilación y carpeta de trabajo por sesión— y los **dispositivos nulos** (`/dev/null`, `/dev/zero`, `/dev/full`): programas como `git` abren `/dev/null` con `O_RDWR` aunque no guarden nada, y sin ese permiso `git status`, `git diff` y `git log` fallaban. La regla de Landlock se ancla en cada dispositivo, no en `/dev`, así que el resto del sistema sigue denegado.
 
 La terminal tampoco puede descartar cambios del repositorio, hacer commits ni subir cambios.
 
@@ -71,7 +71,7 @@ La terminal tampoco puede descartar cambios del repositorio, hacer commits ni su
 
 El harness trata al motor como una caja de la que solo consume inferencia; el estado del servidor —qué modelos tiene, con qué ventana— es de quien lo levanta. Eso fija dos requisitos:
 
-- **`llama-server` tiene que levantarse sin las banderas que sirven el sistema de archivos por HTTP.** Con `--tools`, `--agent` o `--mcp-servers-json` activos, el servidor expone lectura o escritura de archivos por su propia API, al margen de la frontera de rutas y de la aprobación del harness. Un servidor así **no es un motor admisible**: la garantía de que nada toca el proyecto sin aprobación no se sostiene. Se documenta la instrucción de levantarlo sin esas banderas. Ver [[backend/04-infrastructure/INTEGRATIONS]].
+- **`llama-server` tiene que levantarse sin las banderas que sirven el sistema de archivos por HTTP.** Con `--tools`, `--agent` o `--mcp-servers-json` activos, el servidor expone lectura o escritura de archivos por su propia API, al margen de la frontera de rutas y de la confirmación del harness. Un servidor así **no es un motor admisible**: la garantía de que nada toca el proyecto sin pasar por el harness no se sostiene. Se documenta la instrucción de levantarlo sin esas banderas. Ver [[backend/04-infrastructure/INTEGRATIONS]].
 - **No hay descarga automática de modelos.** El harness no llama a `POST /models` (descarga), ni a `POST /models/load` (carga), ni a `POST /props` (cambiar la ventana): no pide pesos a la red ni muta el servidor. Si el modelo no está, lo dice; no lo trae.
 - **Declarar un motor no lo ejecuta.** Añadir un motor al registro es escribir su tipo, su nombre y su URL; nada se lanza ni se contacta hasta que una sesión lo usa. Una URL equivocada se manifiesta al usarlo, y el registro no la valida por adelantado.
 

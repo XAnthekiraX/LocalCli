@@ -31,7 +31,7 @@ func Catalogo() []Herramienta {
 		archivo("eliminar_carpeta", "Borra una carpeta; pide confirmación explícita.",
 			PermisoWrite, "RMDIR", "ruta", "", PeticionEliminarCarpeta{}),
 		{
-			Nombre: "ejecutar_comando", Descripcion: "Ejecuta un comando de terminal en el proyecto; solo los de la lista blanca corren sin preguntar.",
+			Nombre: "ejecutar_comando", Descripcion: "Ejecuta un comando de terminal en el proyecto; solo los destructivos o los que tocan rutas fuera de la carpeta piden confirmación.",
 			Categoria: CategoriaTerminal, Permiso: PermisoRead, Modo: ModoLee,
 			Verbo: "EJEC", Tema: "comando", Unidad: UnidadLinea, TipoPeticion: reflect.TypeOf(PeticionEjecutarComando{}),
 		},

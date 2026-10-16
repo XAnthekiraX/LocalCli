@@ -8,12 +8,13 @@ import (
 	"localcli/internal/tools"
 )
 
+// Una herramienta del usuario inocua corre sin preguntar; solo la destructiva
+// o la que toca rutas fuera de la carpeta pide confirmación.
 func TestHerramientaDeUsuarioSinShellYConAprobacion(t *testing.T) {
-	u := tools.HerramientaUsuario{Nombre: "saluda", Descripcion: "saluda", Equipo: []string{"echo", "a;b"}}
 	e := &Ejecutor{Proyecto: t.TempDir()}
-	handler := e.HandlerUsuario(u)
 
-	salida, err := handler(context.Background(), map[string]any{"x": 1}, aprobador())
+	saluda := tools.HerramientaUsuario{Nombre: "saluda", Descripcion: "saluda", Equipo: []string{"echo", "a;b"}}
+	salida, err := e.HandlerUsuario(saluda)(context.Background(), map[string]any{"x": 1}, tools.Contexto{})
 	if err != nil {
 		t.Fatalf("no debería fallar: %v", err)
 	}
@@ -21,14 +22,28 @@ func TestHerramientaDeUsuarioSinShellYConAprobacion(t *testing.T) {
 		t.Fatalf("un argumento con `;` es un argumento literal: %q", salida.Salida)
 	}
 
+	borra := tools.HerramientaUsuario{Nombre: "borra", Descripcion: "borra", Equipo: []string{"rm", "f.txt"}}
 	declinador := tools.Contexto{Ask: func(context.Context, tools.Solicitud) (tools.Decision, error) {
 		return tools.Declinar, nil
 	}}
-	res, err := handler(context.Background(), map[string]any{}, declinador)
+	res, err := e.HandlerUsuario(borra)(context.Background(), map[string]any{}, declinador)
 	if err != nil {
 		t.Fatalf("declinar no es error de Go: %v", err)
 	}
 	if !strings.Contains(res.Error, tools.CodApprovalDeclined) {
-		t.Fatalf("una herramienta del usuario siempre pide aprobación: %q", res.Error)
+		t.Fatalf("una herramienta destructiva declinada debería dar E_APPROVAL_DECLINED: %q", res.Error)
+	}
+}
+
+// Sin mecanismo de aprobación, una herramienta destructiva no corre.
+func TestHerramientaDeUsuarioPeligrosaSinAprobadorNoCorre(t *testing.T) {
+	e := &Ejecutor{Proyecto: t.TempDir()}
+	borra := tools.HerramientaUsuario{Nombre: "borra", Descripcion: "borra", Equipo: []string{"rm", "f.txt"}}
+	res, err := e.HandlerUsuario(borra)(context.Background(), map[string]any{}, tools.Contexto{})
+	if err != nil {
+		t.Fatalf("sin mecanismo no es error de Go: %v", err)
+	}
+	if !strings.Contains(res.Error, tools.CodNeedsApproval) {
+		t.Fatalf("debería dar E_NEEDS_APPROVAL: %q", res.Error)
 	}
 }

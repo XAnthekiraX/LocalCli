@@ -159,11 +159,11 @@ plan lee  →  plan propone  →  tú apruebas  →  cambias a build  →  build
 4. Cambias a `build`.
 5. `build` aplica exactamente lo aprobado.
 
-**La aprobación vale para el cambio propuesto, no para lo que siga.** Si tras el relevo `build` necesita hacer algo que `plan` no propuso, vuelve a preguntar. Una aprobación no es un permiso general.
+**La aprobación vale para el cambio propuesto, no para lo que siga.** Si tras el relevo `build` necesita algo que `plan` no propuso —un borrado o una ruta fuera de la carpeta—, vuelve a preguntar. Una aprobación no es un permiso general.
 
 ## 4. Herramientas de archivo
 
-Siguen [[specs/SPEC-ARCHIVOS]]: dentro de la carpeta del proyecto son accesibles, fuera se pide permiso y el agente explica por qué, y **toda escritura pasa por aprobación**, incluso dentro de un flujo en curso. El borrado exige confirmación explícita, no solo aprobación genérica. Las rutas se resuelven desde el directorio de trabajo (las absolutas son válidas para archivos de fuera) y la respuesta de `leer_archivo` devuelve la forma canónica relativa. Ver [[backend/02-interfaces/dto/TOOLS-DTO]] para las reglas de validación de rutas.
+Siguen [[specs/SPEC-ARCHIVOS]]: dentro de la carpeta del proyecto son accesibles y se aplican sin interrumpir; fuera se pide permiso y el agente explica por qué. **La confirmación solo la piden dos cosas: lo que queda fuera de la carpeta y lo destructivo —los borrados—**, también dentro de un flujo en curso. Las rutas se resuelven desde el directorio de trabajo (las absolutas son válidas para archivos de fuera) y la respuesta de `leer_archivo` devuelve la forma canónica relativa. Ver [[backend/02-interfaces/dto/TOOLS-DTO]] para las reglas de validación de rutas.
 
 Las búsquedas (`buscar_archivos` y `buscar_en_archivos`) recorren también las carpetas ocultas de contenido —`.agents`, `.localcli`, `.github`— porque ahí vive parte del proyecto; solo se saltan los sistemas de control de versiones (`.git`, `.hg`, `.svn`) y las dependencias (`node_modules`).
 
@@ -177,26 +177,24 @@ Compartida con `listar_carpeta`: las rutas relativas se resuelven desde el direc
 
 ## 5. Herramientas de terminal
 
-Dos controles independientes.
+Dos controles independientes: cuándo te interrumpe y qué no puede tocar.
 
-### Control 1 — lista blanca
+### Control 1 — solo lo destructivo o lo de fuera pregunta
 
-Se ejecutan sin preguntar, porque son los que se repiten en cada iteración:
+La confirmación solo la piden dos casos; todo lo demás corre sin preguntar:
 
-- Compilar el proyecto.
-- Correr las pruebas.
-- Revisar estilo y tipos.
-- Ver el estado y las diferencias del repositorio: estado, diferencias, historial.
+- **Comandos destructivos** (`internal/exec/riesgo.go`, lista cerrada): los que borran, machacan o apagan —`rm`, `rmdir`, `mv`, `dd`, `truncate`, `kill`, `shutdown`, `mkfs*`— y los subcomandos de git que descartan trabajo o lo suben a la fuerza (`reset`, `clean`, `checkout`, `restore`, `branch -D`, `push --force`).
+- **Rutas fuera de la carpeta del proyecto:** un argumento con ruta absoluta que queda fuera de la raíz.
 
-Cualquier otro comando pide aprobación antes de ejecutarse.
+Lo que se repite en cada iteración —compilar, correr pruebas, revisar estilo, ver estado y diferencias— y cualquier otro comando inocuo se ejecuta directo. `EjecutarEquipo` (herramientas del usuario) aplica exactamente la misma regla.
 
 ### Control 2 — no toca tus archivos
 
 El bloqueo **no depende de revisar el texto del comando**. La terminal no puede crear, editar ni borrar ningún archivo del usuario, por más indirecto que sea: `find -delete`, `tee`, una tubería hacia un archivo, `python3 -c` o un `sh -c` con redirección se colarían por un filtro de texto, y por eso el bloqueo es estructural, con Landlock.
 
-Lo que sí puede hacer: usar su propio espacio (caché de compilación, temporales, carpeta de trabajo por sesión) y los dispositivos nulos (`/dev/null`, `/dev/zero`, `/dev/full`), y correr los comandos de la lista blanca.
+Lo que sí puede hacer: usar su propio espacio (caché de compilación, temporales, carpeta de trabajo por sesión) y los dispositivos nulos (`/dev/null`, `/dev/zero`, `/dev/full`), y correr los comandos que no son destructivos ni tocan rutas de fuera.
 
-Lo que no puede hacer, aunque se le pida: crear, editar o borrar archivos del proyecto (para eso están las herramientas de escritura, que solo tiene `build` y que pasan por aprobación), descartar cambios del repositorio, hacer commits o subir cambios.
+Lo que no puede hacer, aunque se le pida: crear, editar o borrar archivos del proyecto (para eso están las herramientas de escritura, que solo tiene `build` y donde los borrados sí piden confirmación), descartar cambios del repositorio, hacer commits o subir cambios.
 
 ### Otras reglas de la terminal
 
@@ -204,6 +202,7 @@ Lo que no puede hacer, aunque se le pida: crear, editar o borrar archivos del pr
 - La salida está limitada: un comando que no termina o genera salida sin fin se corta y se avisa, sin colgar el harness ni llenar el contexto.
 - El resultado indica si el comando terminó bien o mal, con la salida de error cuando la hay.
 - Un comando que falla no detiene el trabajo: el agente ve el error y sigue.
+- Un comando declinado no llega a ejecutarse, y el modelo ve el rechazo.
 
 ## 6. Herramientas de internet
 

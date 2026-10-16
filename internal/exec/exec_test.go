@@ -11,32 +11,61 @@ import (
 	"localcli/internal/tools"
 )
 
-func TestListaBlanca(t *testing.T) {
-	blancos := [][]string{
+func TestPeligroso(t *testing.T) {
+	destructivos := [][]string{
+		{"rm", "f.txt"},
+		{"rm", "-rf", "build"},
+		{"rmdir", "x"},
+		{"mv", "a.txt", "b.txt"},
+		{"dd", "if=/dev/zero", "of=disk"},
+		{"mkfs.ext4", "/dev/sda1"},
+		{"truncate", "-s", "0", "f.txt"},
+		{"kill", "-9", "1"},
+		{"shutdown", "-h", "now"},
+		{"git", "reset", "--hard"},
+		{"git", "clean", "-fd"},
+		{"git", "checkout", "--", "f.go"},
+		{"git", "push", "--force"},
+		{"git", "branch", "-D", "temp"},
+	}
+	for _, argv := range destructivos {
+		if !Peligroso(argv) {
+			t.Errorf("`%s` debería pedir confirmación", strings.Join(argv, " "))
+		}
+	}
+	inocuos := [][]string{
 		{"go", "build", "./..."},
 		{"go", "test", "./..."},
 		{"go", "vet", "./..."},
+		{"gofmt", "-l", "."},
 		{"git", "status"},
 		{"git", "diff"},
 		{"git", "log", "-5"},
-		{"gofmt", "-l", "."},
-	}
-	for _, argv := range blancos {
-		if !EnListaBlanca(argv) {
-			t.Errorf("`%s` debería correr sin preguntar", strings.Join(argv, " "))
-		}
-	}
-	noBlancos := [][]string{
-		{"go", "run", "./..."},
-		{"git", "push"},
-		{"git", "commit", "-m", "x"},
-		{"gofmt", "-w", "."},
+		{"git", "push", "origin", "main"},
+		{"git", "branch", "-d", "temp"},
 		{"echo", "hola"},
+		{"ls", "-la"},
+		{"cat", "grande.txt"},
 	}
-	for _, argv := range noBlancos {
-		if EnListaBlanca(argv) {
-			t.Errorf("`%s` no debería estar en la lista blanca", strings.Join(argv, " "))
+	for _, argv := range inocuos {
+		if Peligroso(argv) {
+			t.Errorf("`%s` no debería pedir confirmación", strings.Join(argv, " "))
 		}
+	}
+}
+
+// TestFueraDelProyectoPideConfirmacion: un argumento absoluto fuera de la
+// carpeta del proyecto sí pide confirmación; una ruta interna, no.
+func TestFueraDelProyectoPideConfirmacion(t *testing.T) {
+	raiz := t.TempDir()
+	if FueraDelProyecto(raiz, []string{"cat", "/etc/hostname"}) != true {
+		t.Fatal("una ruta absoluta fuera del proyecto debería pedir confirmación")
+	}
+	if FueraDelProyecto(raiz, []string{"cat", filepath.Join(raiz, "a.txt")}) {
+		t.Fatal("una ruta dentro del proyecto no debería pedir confirmación")
+	}
+	if FueraDelProyecto(raiz, []string{"cat", "relativa.txt"}) {
+		t.Fatal("una ruta relativa no debería pedir confirmación")
 	}
 }
 
@@ -51,34 +80,53 @@ func TestPartirComandoRechazaShell(t *testing.T) {
 	}
 }
 
-func TestComandoDeclinadoNoSeEjecuta(t *testing.T) {
+func TestComandoDestructivoDeclinadoNoSeEjecuta(t *testing.T) {
 	e := &Ejecutor{Proyecto: t.TempDir()}
 	c := tools.Contexto{Ask: func(context.Context, tools.Solicitud) (tools.Decision, error) {
 		return tools.Declinar, nil
 	}}
-	_, err := e.Ejecutar(context.Background(), Solicitud{Comando: "echo hola"}, c)
+	_, err := e.Ejecutar(context.Background(), Solicitud{Comando: "rm nuevo.txt"}, c)
 	var te *Error
 	if err == nil || !asTE(err, &te) || te.Codigo != tools.CodApprovalDeclined {
-		t.Fatalf("un comando no blanco declinado debería dar E_APPROVAL_DECLINED: %v", err)
+		t.Fatalf("un comando destructivo declinado debería dar E_APPROVAL_DECLINED: %v", err)
 	}
 }
 
-func TestLaListaBlancaNoPregunta(t *testing.T) {
+func TestComandoInocuoNoPregunta(t *testing.T) {
 	e := &Ejecutor{Proyecto: t.TempDir()}
 	preguntado := false
 	c := tools.Contexto{Ask: func(context.Context, tools.Solicitud) (tools.Decision, error) {
 		preguntado = true
 		return tools.Declinar, nil
 	}}
-	salida, err := e.Ejecutar(context.Background(), Solicitud{Comando: "git status"}, c)
+	salida, err := e.Ejecutar(context.Background(), Solicitud{Comando: "echo hola"}, c)
 	if err != nil {
-		t.Fatalf("git status no debería pedir aprobación ni fallar: %v", err)
+		t.Fatalf("un comando inocuo no debería ni preguntar ni fallar: %v", err)
 	}
 	if preguntado {
-		t.Fatal("la lista blanca no debería preguntar")
+		t.Fatal("un comando que no es destructivo ni toca rutas de fuera no debería preguntar")
 	}
 	if !salida.Termino {
-		t.Fatal("git status debería terminar")
+		t.Fatal("echo debería terminar")
+	}
+}
+
+// TestComandoConRutaFueraPregunta: tocar una ruta absoluta fuera del proyecto
+// sí exige confirmación, aunque el programa no sea destructivo.
+func TestComandoConRutaFueraPregunta(t *testing.T) {
+	e := &Ejecutor{Proyecto: t.TempDir()}
+	preguntado := false
+	c := tools.Contexto{Ask: func(context.Context, tools.Solicitud) (tools.Decision, error) {
+		preguntado = true
+		return tools.Declinar, nil
+	}}
+	_, err := e.Ejecutar(context.Background(), Solicitud{Comando: "cat /etc/hostname"}, c)
+	if !preguntado {
+		t.Fatal("una ruta fuera de la carpeta debería pedir confirmación")
+	}
+	var te *Error
+	if err == nil || !asTE(err, &te) || te.Codigo != tools.CodApprovalDeclined {
+		t.Fatalf("declinar debería dar E_APPROVAL_DECLINED: %v", err)
 	}
 }
 
