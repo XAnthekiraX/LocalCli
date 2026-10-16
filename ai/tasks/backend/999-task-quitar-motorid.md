@@ -23,11 +23,11 @@ Esto implica: migración para eliminar `motor_id` (con su tipo/constraints), act
 
 | ID           | Acción     | Tarea                                                                 | Estado    | Archivos                                                 | Verificación                                             |
 | ------------ | ---------- | --------------------------------------------------------------------- | --------- | -------------------------------------------------------- | -------------------------------------------------------- |
-| T-B0XX-01    | actualizar | Revisar impacto: listar todas las lecturas/escrituras de `motor_id`    | pendiente | `internal/store/*.go`, `internal/store/migraciones.go`, `internal/store/schema.go` | Lista completa de usos                                  |
-| T-B0XX-02    | actualizar | Migración: eliminar columna `motor_id` de `sessions` (v8 o siguiente)  | pendiente | `internal/store/migraciones.go`, `internal/store/schema.go` | user_version actualizado                                 |
-| T-B0XX-03    | actualizar | `sesiones.go`: dejar de leer/escribir `motor_id`; limpiar `MotorID`    | pendiente | `internal/store/sesiones.go`                             | Compila y pasa tests                                    |
-| T-B0XX-04    | actualizar | Pruebas relacionadas con `sessions`                                    | pendiente | `internal/store/sesiones_test.go`                        | Tests pasan                                              |
-| T-B0XX-05    | actualizar | Docs BD: TABLES.md, CONSTRAINTS.md, SCHEMA.md                          | pendiente | `ai/docs/database/01-schema/{TABLES,CONSTRAINTS,SCHEMA}.md` | Docs coherentes con objetivo (solo modelo)               |
+| T-B0XX-01    | actualizar | Revisar impacto: listar todas las lecturas/escrituras de `motor_id`    | completada | `internal/store/*.go`, `internal/store/migraciones.go`, `internal/store/schema.go` | Lista completa de usos                                  |
+| T-B0XX-02    | actualizar | Migración: eliminar columna `motor_id` de `sessions` (v8 o siguiente)  | completada | `internal/store/migraciones.go`, `internal/store/schema.go` | user_version actualizado                                 |
+| T-B0XX-03    | actualizar | `sesiones.go`: dejar de leer/escribir `motor_id`; limpiar `MotorID`    | completada | `internal/store/sesiones.go`                             | Compila y pasa tests                                    |
+| T-B0XX-04    | actualizar | Pruebas relacionadas con `sessions`                                    | completada | `internal/store/sesiones_test.go`                        | Tests pasan                                              |
+| T-B0XX-05    | actualizar | Docs BD: TABLES.md, CONSTRAINTS.md, SCHEMA.md                          | completada | `ai/docs/database/01-schema/{TABLES,CONSTRAINTS,SCHEMA}.md` | Docs coherentes con objetivo (solo modelo)               |
 
 **Dependencias:** ninguna (actualización de esquema/doc).
 

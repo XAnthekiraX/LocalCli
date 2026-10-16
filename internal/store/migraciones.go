@@ -8,14 +8,14 @@ import (
 )
 
 // versionEsquema es la versión actual del esquema ([[database/03-operations/MIGRATIONS]]).
-const versionEsquema = 8
+const versionEsquema = 9
 
 // Migrar lleva la base a la versión objetivo aplicando, en orden y una a una, las
 // migraciones que falten ([[database/03-operations/MIGRATIONS]] §1 y §2).
 //
 // Un archivo recién creado (user_version = 0, sin esquema) nace ya en la versión
 // actual: se crea el esquema completo de una vez en lugar de encadenar las
-// migraciones 001..008, que dejarían el archivo a medias si algo se interrumpe.
+// migraciones 001..009, que dejarían el archivo a medias si algo se interrumpe.
 // El 001 no puede distinguir «archivo vacío» de «v1» por el número solo, así que
 // el 0 se resuelve como «sin esquema» y se crea todo.
 func Migrar(db *sql.DB, versionObjetivo int) error {
@@ -76,6 +76,8 @@ func aplicarMigracion(db *sql.DB, desde int) error {
 		migrar = migracion006
 	case 7:
 		migrar = migracion008
+	case 8:
+		migrar = migracion009
 	default:
 		return fmt.Errorf("store: migración desde versión %d no soportada", desde)
 	}
@@ -284,5 +286,14 @@ func migracion008(tx *sql.Tx) error {
 		return err
 	}
 	_, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN summary_upto TEXT;`)
+	return err
+}
+
+// migracion009 (`009-quitar-motor-id`) elimina la columna vestigial
+// `sessions.motor_id`: con un único proveedor (llama.cpp) el motor no se elige
+// por sesión, la columna siempre estaba en NULL y el modelo ya vive en
+// `sessions.modelo`. Solo dropea la columna; no toca filas.
+func migracion009(tx *sql.Tx) error {
+	_, err := tx.Exec(`ALTER TABLE sessions DROP COLUMN motor_id;`)
 	return err
 }

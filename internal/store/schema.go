@@ -2,7 +2,7 @@ package store
 
 import "database/sql"
 
-// initSchema inicializa el esquema v8 de la base de datos global.
+// initSchema inicializa el esquema v9 de la base de datos global.
 func initSchema(db *sql.DB) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -10,7 +10,7 @@ func initSchema(db *sql.DB) error {
 	}
 	defer tx.Rollback()
 
-	// Schema v8
+	// Schema v9
 	_, err = tx.Exec(`
 CREATE TABLE projects (
     id         TEXT PRIMARY KEY NOT NULL,
@@ -34,7 +34,6 @@ CREATE TABLE sessions (
                                   'terminada', 'error')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    motor_id   TEXT,
     modelo     TEXT,
     summary      TEXT,
     summary_upto TEXT
@@ -231,8 +230,8 @@ CREATE TABLE chat_evento (
 		return err
 	}
 
-	// user_version = 8
-	_, err = tx.Exec("PRAGMA user_version = 8;")
+	// user_version = 9
+	_, err = tx.Exec("PRAGMA user_version = 9;")
 	if err != nil {
 		return err
 	}

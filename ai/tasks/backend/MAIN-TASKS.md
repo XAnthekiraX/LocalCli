@@ -47,6 +47,7 @@ Descomposición de la capa backend, **en el orden de construcción acordado**. C
 | T-B015 | crear  | Terminal (`exec`): lista blanca y bloqueo estructural con Landlock | T-B012 | completada | `015-task-terminal.md`              |
 | T-B014 | crear  | Acceso a archivos (`fileops`) y aprobaciones                       | T-B012 | completada | `014-task-fileops.md`               |
 | T-B016 | crear  | Lista de pasos de la sesión (`crear_todo` / `actualizar_todo`)     | T-B012 | completada | `016-task-lista-pasos.md`           |
+| T-B025 | crear  | Herramienta `diagram`: parser, IR, layout, render, handler, integración al catálogo y emisión del bloque en `herramienta_resultado` | T-B012 | pendiente  | `025-task-diagrama.md`              |
 | T-B022 | actualizar | Jerarquía de un nivel en la lista de pasos: tarea principal con subtareas (`titulo`/`subtareas`, `todos.parent_position`) | T-B016 | pendiente | `022-task-todo-subtareas.md` |
 
 ## Bloque 5 — Flujos
@@ -61,7 +62,7 @@ Descomposición de la capa backend, **en el orden de construcción acordado**. C
 
 | ID      | Acción     | Tarea                                                              | Dep    | Estado    | Detalle                      |
 | ------- | ---------- | ------------------------------------------------------------------ | ------ | --------- | ---------------------------- |
-| T-B019b | actualizar | Eliminar columna vestigial `sessions.motor_id` (migración + store) | T-B006 | pendiente | `999-task-quitar-motorid.md` |
+| T-B019b | actualizar | Eliminar columna vestigial `sessions.motor_id` (migración + store) | T-B006 | completada | `999-task-quitar-motorid.md` |
 | T-B020  | crear      | Documentación (`docs`) y grafo de frontmatter                      | T-B009 | completada | `020-task-docs-grafo.md`     |
 | T-B021  | crear      | Lo que quede pendiente (panel de contexto, atajos, skills)         | T-B020 | pendiente | por descomponer              |
 

@@ -78,7 +78,6 @@ Resumen estructural. Los valores permitidos, los `NULL` y los valores por defect
 | `status` | TEXT | | Ver [[database/01-schema/ENUMS]] |
 | `created_at` | TEXT | | ISO 8601 UTC |
 | `updated_at` | TEXT | | ISO 8601 UTC |
-| `motor_id` | TEXT | | `id` del motor en `motores.json`. `NULL` si no está asignado. Sin FK: el registro es un archivo global |
 | `modelo` | TEXT | | Nombre del modelo tal cual lo declara el motor. `NULL` si no está asignado |
 | `summary` | TEXT | | Resumen compactado del historial. `NULL` si la sesión no se ha compactado |
 | `summary_upto` | TEXT | | `id` del último mensaje que el resumen abarca. `NULL` junto con `summary` |

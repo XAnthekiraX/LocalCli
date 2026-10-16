@@ -17,7 +17,6 @@ type Sesion struct {
 	Status    string
 	CreatedAt string
 	UpdatedAt string
-	MotorID   *string
 	Modelo    *string
 }
 
@@ -28,8 +27,8 @@ func CrearSesion(db *sql.DB, projectID, name string, layer *string) (*Sesion, er
 	status := "inactiva"
 
 	_, err := db.Exec(
-		"INSERT INTO sessions (id, project_id, name, layer, status, created_at, updated_at, motor_id, modelo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		id, projectID, name, layer, status, now, now, nil, nil,
+		"INSERT INTO sessions (id, project_id, name, layer, status, created_at, updated_at, modelo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		id, projectID, name, layer, status, now, now, nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: no se pudo crear sesión: %w", err)
@@ -43,7 +42,6 @@ func CrearSesion(db *sql.DB, projectID, name string, layer *string) (*Sesion, er
 		Status:    status,
 		CreatedAt: now,
 		UpdatedAt: now,
-		MotorID:   nil,
 		Modelo:    nil,
 	}, nil
 }
@@ -51,7 +49,7 @@ func CrearSesion(db *sql.DB, projectID, name string, layer *string) (*Sesion, er
 // ListarSesiones lista todas las sesiones de un proyecto, ordenadas por updated_at desc.
 func ListarSesiones(db *sql.DB, projectID string) ([]Sesion, error) {
 	rows, err := db.Query(
-		"SELECT id, project_id, name, layer, status, created_at, updated_at, motor_id, modelo FROM sessions WHERE project_id = ? ORDER BY updated_at DESC",
+		"SELECT id, project_id, name, layer, status, created_at, updated_at, modelo FROM sessions WHERE project_id = ? ORDER BY updated_at DESC",
 		projectID,
 	)
 	if err != nil {
@@ -62,15 +60,12 @@ func ListarSesiones(db *sql.DB, projectID string) ([]Sesion, error) {
 	var sesiones []Sesion
 	for rows.Next() {
 		var s Sesion
-		var layer, motorID, modelo sql.NullString
-		if err := rows.Scan(&s.ID, &s.ProjectID, &s.Name, &layer, &s.Status, &s.CreatedAt, &s.UpdatedAt, &motorID, &modelo); err != nil {
+		var layer, modelo sql.NullString
+		if err := rows.Scan(&s.ID, &s.ProjectID, &s.Name, &layer, &s.Status, &s.CreatedAt, &s.UpdatedAt, &modelo); err != nil {
 			return nil, err
 		}
 		if layer.Valid {
 			s.Layer = &layer.String
-		}
-		if motorID.Valid {
-			s.MotorID = &motorID.String
 		}
 		if modelo.Valid {
 			s.Modelo = &modelo.String
@@ -86,11 +81,11 @@ func ListarSesiones(db *sql.DB, projectID string) ([]Sesion, error) {
 // ObtenerSesion obtiene una sesión específica del proyecto.
 func ObtenerSesion(db *sql.DB, projectID, sessionID string) (*Sesion, error) {
 	var s Sesion
-	var layer, motorID, modelo sql.NullString
+	var layer, modelo sql.NullString
 	err := db.QueryRow(
-		"SELECT id, project_id, name, layer, status, created_at, updated_at, motor_id, modelo FROM sessions WHERE id = ? AND project_id = ?",
+		"SELECT id, project_id, name, layer, status, created_at, updated_at, modelo FROM sessions WHERE id = ? AND project_id = ?",
 		sessionID, projectID,
-	).Scan(&s.ID, &s.ProjectID, &s.Name, &layer, &s.Status, &s.CreatedAt, &s.UpdatedAt, &motorID, &modelo)
+	).Scan(&s.ID, &s.ProjectID, &s.Name, &layer, &s.Status, &s.CreatedAt, &s.UpdatedAt, &modelo)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("store: sesión no encontrada: %w", err)
@@ -99,9 +94,6 @@ func ObtenerSesion(db *sql.DB, projectID, sessionID string) (*Sesion, error) {
 	}
 	if layer.Valid {
 		s.Layer = &layer.String
-	}
-	if motorID.Valid {
-		s.MotorID = &motorID.String
 	}
 	if modelo.Valid {
 		s.Modelo = &modelo.String

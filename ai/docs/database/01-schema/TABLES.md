@@ -25,7 +25,7 @@ Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TE
 ## 2. Propósito de cada tabla
 
 - **`projects`** — Un proyecto: la carpeta desde la que se abrió LocalCli. Es la raíz lógica del árbol de la base, porque el archivo es único y global y las sesiones de todos los directorios comparten estructura: toda sesión cuelga de su proyecto por `project_id`. Su `path` es único, así que abrir la misma carpeta dos veces reutiliza la fila. Ver [[specs/SPEC-SESIONES]].
-- **`sessions`** — Una sesión de trabajo. Es la unidad de la que cuelgan la conversación, las aprobaciones y la auditoría. Su campo `status` es lo que la interfaz muestra cuando cambias de sesión. Guarda además el par `motor_id`/`modelo` con el que trabaja: son recursos de la sesión, no parte de su identidad, así que cambiar uno no la renombra ni le toca el historial.
+- **`sessions`** — Una sesión de trabajo. Es la unidad de la que cuelgan la conversación, las aprobaciones y la auditoría. Su campo `status` es lo que la interfaz muestra cuando cambias de sesión. Guarda además el `modelo` con el que trabaja: es un recurso de la sesión, no parte de su identidad, así que cambiarlo no la renombra ni le toca el historial.
 - **`messages`** — Los turnos de la conversación. Guarda lo que escribió el usuario y lo que respondió el agente, más los tokens de cada turno y su duración. Un turno puede incluir llamadas a herramientas, pero **esas no se guardan en `messages`**: el detalle de la ejecución vive mientras dura el turno y se descarta; lo que queda es el mensaje final del agente y, aparte, su línea en `chat_evento`. Ver [[database/02-rules/DATA_FLOW]].
 - **`reasoning`** — El razonamiento del modelo de un mensaje concreto. Va en tabla aparte porque llega token a token mientras se genera y porque se consulta y se mide por separado del texto final. El diseño está en [[specs/SPEC-AGENTE-BASE]].
 - **`approvals`** — Lo que una sesión necesita que decidas antes de seguir. El panel de aprobaciones las lee todas, de cualquier sesión. Ver [[specs/SPEC-INTERFAZ-ATAJOS]].
@@ -59,20 +59,18 @@ Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TE
 | `status` | Estado de la sesión | Ver [[database/01-schema/ENUMS]] | No | `inactiva` |
 | `created_at` | Cuándo se creó | ISO 8601 UTC | No | — |
 | `updated_at` | Última actividad | ISO 8601 UTC | No | — |
-| `motor_id` | Motor de inferencia que usa la sesión | `id` de una entrada de `motores.json` | Sí | `NULL` |
 | `modelo` | Modelo que usa la sesión | Nombre tal cual lo declara el motor | Sí | `NULL` |
 | `summary` | Resumen compactado del historial, ya optimizado por el modelo | Texto libre | Sí | `NULL` |
 | `summary_upto` | `id` del último mensaje que el resumen abarca | UUID v4 de `messages.id` | Sí | `NULL` |
 
 `layer` es `NULL` para una sesión general, por ejemplo cuando solo conversas o revisas contexto sin ejecutar tareas de una capa concreta.
 
-`motor_id` y `modelo` son **el par motor/modelo de la sesión**, y son su única huella de ejecución: son lo que se lee al retomar y lo que se actualiza al cambiar de motor o de modelo. Ver [[specs/SPEC-SESIONES]] y [[specs/SPEC-MODELOS-LLAMACPP]].
+`modelo` es la **huella de ejecución de la sesión**: es lo que se lee al retomar y lo que se actualiza al cambiar de modelo. El motor no se elige por sesión —el proveedor es único (llama.cpp)—, así que la columna `motor_id` que existió en versiones anteriores se eliminó (migración `009-quitar-motor-id`). Ver [[specs/SPEC-SESIONES]] y [[specs/SPEC-MODELOS-LLAMACPP]].
 
 `summary` y `summary_upto` son **el resumen persistido del historial**. Viven en la sesión y no en una tabla aparte porque son un único valor derivado por sesión: el resumen compactado y hasta qué mensaje llega dan lo necesario para reutilizarlo entre turnos y ampliarlo de forma incremental sin resumir dos veces. Van nullable: una sesión sin compactar tiene las dos en `NULL` —no hay resumen ni, por tanto, un punto de corte—. Guardarlo aquí no sustituye a los mensajes, que siguen completos; es una caché del tramo antiguo ya resumido. Una sesión deshecha hasta un punto anterior al corte deja el resumen obsoleto y se limpia. Ver [[specs/SPEC-HISTORIAL-CONVERSACION]].
 
-Dos detalles que no son obvios:
+Un detalle que no es obvio:
 
-- **`motor_id` no es clave foránea.** El registro de motores es un archivo global de la máquina, no una tabla de este proyecto. Guardar el `id` sin integridad referencial es deliberado: si el motor se elimina o se desactiva, la fila sigue siendo válida y la sesión sobrevive con su historial, avisando de que necesita otro motor. Una clave foránea obligaría a decidir en la base qué hacer con la sesión, y esa decisión es de interfaz.
 - **`modelo` no se valida contra el motor.** El mismo nombre puede no existir en otro runtime. La comprobación —«¿este motor tiene este modelo?»— es del momento en que se usa, no de la escritura.
 
 ### `messages`
