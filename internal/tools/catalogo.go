@@ -20,7 +20,7 @@ func Catalogo() []Herramienta {
 		archivo("escribir_archivo", "Sobrescribe un archivo con el contenido dado.",
 			PermisoWrite, "ESCRIBIR", "ruta", "", PeticionEscribirArchivo{}),
 		{ // editar_archivo es la única de edición parcial: permiso `edit`.
-			Nombre: "editar_archivo", Descripcion: "Aplica sustituciones parciales a un archivo existente.",
+			Nombre: "editar_archivo", Descripcion: "Aplica sustituciones parciales a un archivo existente; cada buscar debe coincidir exactamente una vez (se toleran finales de línea, sangría y Unicode tipográfico).",
 			Categoria: CategoriaArchivos, Permiso: PermisoEdit, Modo: ModoEscribe,
 			Verbo: "EDITAR", Tema: "ruta", TipoPeticion: reflect.TypeOf(PeticionEditarArchivo{}),
 		},

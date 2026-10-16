@@ -102,7 +102,9 @@ Todas las herramientas de archivos admiten además `motivo` (string, **opcional*
 | `escribir_archivo` | `ruta` | string | Sí | Ruta del archivo a sobrescribir |
 | `escribir_archivo` | `contenido` | string | Sí | Texto que reemplaza el contenido entero |
 | `editar_archivo` | `ruta` | string | Sí | Ruta del archivo a modificar |
-| `editar_archivo` | `cambio` | string | Sí | La edición a aplicar |
+| `editar_archivo` | `reemplazos` | array de `Cambio` | Sí | Lista no vacía de sustituciones aplicadas en orden; cada buscar debe coincidir exactamente una vez |
+| `editar_archivo` · `reemplazos[]` | `buscar` | string | Sí | Fragmento copiado textualmente del archivo (misma sangría y espacios); debe aparecer una sola vez |
+| `editar_archivo` · `reemplazos[]` | `reemplazo` | string | Sí | Texto que reemplaza al fragmento; usa finales de línea LF |
 | `eliminar_archivo` | `ruta` | string | Sí | Ruta del archivo a borrar; pide confirmación explícita |
 | `crear_carpeta` | `ruta` | string | Sí | Ruta de la carpeta; falla si ya existe |
 | `eliminar_carpeta` | `ruta` | string | Sí | Ruta de la carpeta; pide confirmación explícita |
@@ -154,6 +156,14 @@ Todas las herramientas de archivos admiten además `motivo` (string, **opcional*
 | `ejecutar_flujo` | `peticion` | string | Sí | El objetivo del flujo, con tus palabras; es lo que viaja en la ventana como petición original |
 
 El argumento `flujo` es un **enum en el esquema, no un nombre en el handler**: el catálogo de flujos se resuelve contra los cargados (oficiales y propios) y contra el permiso derivado de sus etapas —todas `plan` → `read`; alguna `build` → `write`/`edit`—. Fuera del enum, la llamada no se ejecuta: la herramienta no existe para ese agente. Ver [[specs/SPEC-ORQUESTADOR-FLUJOS]] §Invocación del flujo.
+
+### Diagramas
+
+| Herramienta | Campo | Tipo | Obligatorio | `desc` |
+|---|---|---|---|---|
+| `diagram` | `code` | string | Sí | Código Mermaid de un flowchart (`flowchart TD` o `LR`); nodos con ID y texto, formas `[rect]` `{decisión}` `((elipse))` y conexiones `A --> B` con etiqueta `-->|texto|` |
+
+`diagram` tiene **un solo argumento**: no recibe título, orientación ni metadatos. La orientación sale de la cabecera del propio código (`TD` por defecto, `LR` horizontal) y el título, si se deriva, sale de la definición. El `desc` del campo acota la sintaxis admitida —el subconjunto documentado en [[specs/SPEC-DIAGRAMA]]— para que un modelo local pequeño no invente construcciones fuera de alcance.
 
 ## 4. Response Schemas
 
@@ -238,11 +248,22 @@ El modelo ve la lista resultante en el propio resultado, así que no necesita un
 
 La duración que reporta la línea de chat es la de toda la ejecución del flujo —el `duracion` de `herramienta_resultado`—, no la de un handler corto.
 
+### Diagramas
+
+| Herramienta | Devuelve | Tipo |
+|---|---|---|
+| `diagram` | El diagrama renderizado, en texto | string |
+
+`diagram` devuelve la **representación en texto del diagrama** —el mismo bloque Unicode que la TUI pinta en el hilo—, para que el modelo lo lea y pueda citarlo o corregirlo. Los nodos y las conexiones, con su ancho ya calculado, son lo único que vuelve: ni la `code` de entrada ni metadatos de layout viajan de vuelta. Un diagrama que no cabe en los límites de la spec, o que no parsea, no entra aquí: vuelve como error corregible con línea y ejemplo, igual que cualquier `E_BAD_ARGS`. Ver [[specs/SPEC-DIAGRAMA]].
+
+La presentación como bloque visual es de la TUI, no del payload: el handler entrega texto y la interfaz lo dibuja ([[frontend/02-interfaces/INTERFACES]] §1.1).
+
 ## Referencias
 
 - [[backend/02-interfaces/TOOLS]] — el catálogo, la capa universal y su comportamiento.
 - [[backend/05-quality/VALIDATION]] — qué campos son obligatorios y cómo se validan.
 - [[specs/SPEC-TOOLS]] — la especificación funcional del catálogo.
+- [[specs/SPEC-DIAGRAMA]] — la especificación funcional de la herramienta de diagramas.
 - [[specs/SPEC-MODELOS-LLAMACPP]] — el canal por el que viajan los esquemas.
 - [[database/01-schema/TABLES]] — dónde queda lo que las herramientas de escritura registran.
 

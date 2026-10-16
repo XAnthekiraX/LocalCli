@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"localcli/internal/store"
 	"localcli/internal/tools"
@@ -72,15 +71,12 @@ func (o *Operaciones) editarArchivo(ctx context.Context, args any, c tools.Conte
 		return corregible("no se pudo leer el archivo: " + Canonica(o.Raiz, abs))
 	}
 	antes := string(datos)
-	despues := antes
-	for _, cambio := range p.Reemplazos {
-		if cambio.Buscar == "" {
-			return corregible(tools.CodBadArgs + ": un `buscar` vacío no es una edición válida")
-		}
-		if !strings.Contains(despues, cambio.Buscar) {
-			return corregible("no se encontró el fragmento a reemplazar en " + Canonica(o.Raiz, abs))
-		}
-		despues = strings.ReplaceAll(despues, cambio.Buscar, cambio.Reemplazo)
+	despues, err := aplicarReemplazos(antes, p.Reemplazos)
+	if err != nil {
+		return corregible(err.Error() + " [" + Canonica(o.Raiz, abs) + "]")
+	}
+	if despues == antes {
+		return corregible("los reemplazos no cambiaron el archivo: " + Canonica(o.Raiz, abs))
 	}
 	if err := os.WriteFile(abs, []byte(despues), 0o644); err != nil {
 		return corregible("no se pudo editar el archivo: " + Canonica(o.Raiz, abs))

@@ -12,6 +12,7 @@ relacionado:
   - "[[specs/SPEC-AGENTE-BASE]]"
   - "[[specs/SPEC-ORQUESTADOR-FLUJOS]]"
   - "[[specs/SPEC-RESOLVER]]"
+  - "[[specs/SPEC-DIAGRAMA]]"
 ---
 # SPEC — Catálogo de herramientas
 
@@ -24,7 +25,7 @@ Definir qué herramientas tiene el agente para trabajar, cuáles puede usar para
 ## Alcance
 
 Incluye el catálogo incluido, el reparto por agente, las reglas de la terminal y de internet, la capa universal que envuelve toda ejecución y la degradación cuando el modelo no sabe usarlas.
-No incluye las reglas de permiso sobre archivos, que están en [[specs/SPEC-ARCHIVOS]], ni la selección de contexto, que está en [[specs/SPEC-NODO-CONTEXTO]], ni la conexión con el motor de inferencia, que está en [[specs/SPEC-MODELOS-LLAMACPP]].
+No incluye las reglas de permiso sobre archivos, que están en [[specs/SPEC-ARCHIVOS]], ni la selección de contexto, que está en [[specs/SPEC-NODO-CONTEXTO]], ni la conexión con el motor de inferencia, que está en [[specs/SPEC-MODELOS-LLAMACPP]]. La herramienta `diagram` figura en el catálogo, pero su contrato funcional —sintaxis, layout y render— vive en [[specs/SPEC-DIAGRAMA]].
 
 ## Actores
 
@@ -62,6 +63,14 @@ No incluye las reglas de permiso sobre archivos, que están en [[specs/SPEC-ARCH
 |---|---|---|
 | `buscar_en_internet` | Lee | Ambos |
 | `abrir_pagina` | Lee | Ambos |
+
+### Diagramas
+
+| Herramienta | Lee o escribe | Permiso | Agente |
+|---|---|---|---|
+| `diagram` | Lee | `read` | Ambos |
+
+`diagram` convierte código Mermaid de un flowchart en un diagrama Unicode que se muestra como bloque en el hilo del chat. No toca el proyecto ni la red —solo interpreta su argumento—, así que va en `read` y la tienen los dos agentes. Su contrato funcional completo está en [[specs/SPEC-DIAGRAMA]]; aquí solo figura su lugar en el catálogo.
 
 ### Sesión
 
@@ -124,7 +133,7 @@ Un error de validación **no termina el turno**: vuelve al modelo como un result
 
 ```
 falta el campo obligatorio "ruta"
-"editar_archivo" espera: ruta (obligatorio), contenido (obligatorio), reemplazos (opcional)
+"editar_archivo" espera: ruta (obligatorio), reemplazos (obligatorio)
 ```
 
 Esto vale también para un error de negocio —una ruta que no existe, un archivo que ya está— siempre que el mensaje sea entendible por el modelo y no exponga rutas absolutas del usuario.
@@ -338,7 +347,7 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - `leer_archivo` no modifica ni elimina archivos y no ejecuta su contenido.
 - Las ejecuciones son secuenciales, en el orden pedido.
 - Un turno tiene un máximo de pasadas; al agotarlo, termina con lo conseguido.
-- El catálogo incluido son dieciséis herramientas y **no se amplía desde fuera**: el catálogo está embebido en el código.
+- El catálogo incluido son diecisiete herramientas y **no se amplía desde fuera**: el catálogo está embebido en el código.
 - `ejecutar_flujo` es una sola herramienta: `flujo` elige el comando y `peticion` el objetivo; su permiso se deriva del flujo, su esquema se arma por turno y solo lista los flujos que el agente activo puede lanzar.
 - `ejecutar_flujo` corre el flujo como sub-proceso, conservando sus pausas de `continuacion` y `aprobacion`, y devuelve la entrega más el bloque resumido. El interior del flujo no cruza.
 - `ejecutar_flujo` no está en el catálogo dentro de una etapa de flujo: un flujo no invoca a otro.
@@ -374,6 +383,7 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - [ ] Un turno se detiene al llegar al máximo de pasadas, y avisa de que se agotaron.
 - [ ] La línea de cada herramienta dice cuánto tardó su ejecución, y ese tiempo no viaja al modelo.
 - [ ] `plan` puede leer, listar, buscar, ejecutar comandos de consulta, buscar en internet y mantener su lista de pasos.
+- [ ] `diagram` figura en el catálogo bajo `read` y lo pueden usar los dos agentes; su contrato se valida contra [[specs/SPEC-DIAGRAMA]].
 - [ ] `plan` no tiene ninguna herramienta que cree, modifique o borre.
 - [ ] `build` tiene el catálogo completo.
 - [ ] `plan` y `build` mantienen la lista de pasos de la sesión, y la lista se ve en el panel.
@@ -445,3 +455,4 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 ## Referencias
 
 - [[IDEA]]
+- [[specs/SPEC-DIAGRAMA]] — el contrato de la herramienta `diagram`, incluida en el catálogo.

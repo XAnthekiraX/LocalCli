@@ -5,6 +5,7 @@ depende_de:
   - "[[specs/SPEC-TOOLS]]"
   - "[[backend/DECISIONS]]"
 relacionado:
+  - "[[specs/SPEC-DIAGRAMA]]"
   - "[[backend/02-interfaces/dto/TOOLS-DTO]]"
   - "[[backend/01-domain/DOMAIN]]"
   - "[[backend/02-interfaces/INTERFACES-GENERAL]]"
@@ -17,7 +18,7 @@ relacionado:
 ---
 # TOOLS — Catálogo de herramientas
 
-Las dieciséis herramientas incluidas, su reparto y sus controles, y la capa universal que envuelve toda ejecución. La especificación funcional está en [[specs/SPEC-TOOLS]]; aquí está el contrato para quien implemente. Los payloads están en [[backend/02-interfaces/dto/TOOLS-DTO]].
+Las diecisiete herramientas incluidas, su reparto y sus controles, y la capa universal que envuelve toda ejecución. La especificación funcional está en [[specs/SPEC-TOOLS]] y la de la herramienta de diagramas en [[specs/SPEC-DIAGRAMA]]; aquí está el contrato para quien implemente. Los payloads están en [[backend/02-interfaces/dto/TOOLS-DTO]].
 
 ## 1. El catálogo incluido
 
@@ -33,12 +34,25 @@ Cerrado. El agente no puede inventar herramientas fuera de esta lista.
 | `buscar_en_archivos` | Lee | `read` | Ambos | Patrón; devuelve las coincidencias con archivo y línea |
 | `crear_archivo` | Escribe | `write` | Solo `build` | Ruta y contenido; falla si el archivo ya existe |
 | `escribir_archivo` | Escribe | `write` | Solo `build` | Ruta y contenido; sobrescribe |
-| `editar_archivo` | Escribe | `edit` | Solo `build` | Ruta y el cambio; aplica una edición parcial |
+| `editar_archivo` | Escribe | `edit` | Solo `build` | Ruta y una lista no vacía de reemplazos; cada `buscar` debe coincidir exactamente una vez |
 | `eliminar_archivo` | Escribe | `write` | Solo `build` | Ruta; pide confirmación explícita |
 | `crear_carpeta` | Escribe | `write` | Solo `build` | Ruta; falla si ya existe |
 | `eliminar_carpeta` | Escribe | `write` | Solo `build` | Ruta; pide confirmación explícita |
 
 `editar_archivo` es la única herramienta de edición parcial, así que es la única que cae en `edit`; el resto de las de escritura van en `write`. Los tres permisos son independientes: un agente con `write: deny` y `edit: allow` puede parchear archivos pero no crearlos, sobrescribirlos ni borrarlos.
+
+### Semántica de la edición parcial
+
+`editar_archivo` aplica una lista de sustituciones sobre el texto del archivo, en orden. Cada sustitución exige **coincidencia única**: si el fragmento no está o aparece más de una vez, la herramienta falla con un error corregible —qué fragmento, cuántas ocurrencias, en qué línea— y **no escribe nada**; nunca reemplaza en bloque silenciosamente.
+
+Para que el modelo no falle por diferencias de formato al copiar texto, la comparación es tolerante, en este orden:
+
+1. **Subcadena exacta** — admite ediciones a media línea.
+2. **Finales de línea** — el modelo escribe LF; un archivo con CRLF o CR sueltos matchea igual, y el resultado conserva el estilo original.
+3. **Unicode tipográfico** — comillas curvas, guiones largos, la elipsis y los espacios sin separación (NBSP) se comparan contra su forma ASCII; el `…` del archivo matchea los `...` del modelo.
+4. **Bloques de línea** — con tolerancia creciente a espacios finales, sangría (tab vs espacios) y, otra vez, Unicode.
+
+El BOM UTF-8 se preserva al escribir. El `reemplazo` se entrega en LF y se convierte al estilo del archivo. Un `reemplazos` vacío, un `buscar` vacío o un reemplazo idéntico al fragmento son `E_BAD_ARGS`. La implementación vive en `internal/fileops/reemplazo.go`.
 
 ### Terminal
 
@@ -52,6 +66,14 @@ Cerrado. El agente no puede inventar herramientas fuera de esta lista.
 |---|---|---|---|---|
 | `buscar_en_internet` | Lee | `read` | Ambos | Consulta; devuelve título, dirección y fragmento de cada resultado |
 | `abrir_pagina` | Lee | `read` | Ambos | Dirección; devuelve el contenido de la página |
+
+### Diagramas
+
+| Herramienta | Lee o escribe | Permiso | Agente | Contrato |
+|---|---|---|---|---|
+| `diagram` | Lee | `read` | Ambos | `code` (código Mermaid flowchart); devuelve el diagrama renderizado como bloque Unicode en la TUI y su representación en texto para el modelo |
+
+`diagram` solo interpreta el subconjunto de Mermaid documentado en [[specs/SPEC-DIAGRAMA]] (flowchart `TD`/`LR`, formas básicas, conexiones etiquetadas). El código de entrada es dato no confiable: no se ejecuta, no toca archivos ni red, y un error de sintaxis o de límites vuelve al modelo como error corregible, con línea y ejemplo de sintaxis válida. El parser, el layout y el renderizador son partes separadas y testeables por separado; la presentación del bloque en el hilo es de la TUI, no del handler (ver [[frontend/02-interfaces/INTERFACES]] §1.1).
 
 ### Sesión
 
@@ -110,12 +132,13 @@ Cada herramienta declara, además de su contrato, tres datos de presentación qu
 | `crear_todo` | `TODO` | `titulo` o `contenido` | paso |
 | `actualizar_todo` | `TODO` | — | paso |
 | `ejecutar_flujo` | `FLUJO` | `flujo` | etapa |
+| `diagram` | `DIAGRAMAR` | `code` (primera línea) | diagrama |
 
 Solo se muestra el **tema**: el resto de argumentos —el contenido de un archivo, un cambio— no se expone, porque la línea va a pantalla y a auditoría. En `leer_archivo` el tema es la ruta cuando se leyó el archivo entero y `ruta:inicio-fin`, con el rango real devuelto, cuando la lectura fue parcial —el modelo pidió un rango o el límite truncó el resultado—.
 
 ## 2. El reparto: `plan` mira, `build` escribe
 
-El reparto sale de los `permissions` del agente ([[specs/SPEC-AGENTE-BASE]]), no de una lista de herramientas declarada. Cada herramienta pertenece a un **permiso** fijo, el de la columna de las tablas de §1, y no hay forma de declararlo de otro modo: `leer_archivo`, `listar_carpeta`, `buscar_archivos`, `buscar_en_archivos`, `ejecutar_comando`, `buscar_en_internet`, `abrir_pagina`, `crear_todo` y `actualizar_todo` son `read`; `crear_archivo`, `escribir_archivo`, `eliminar_archivo`, `crear_carpeta` y `eliminar_carpeta` son `write`; `editar_archivo` es `edit`.
+El reparto sale de los `permissions` del agente ([[specs/SPEC-AGENTE-BASE]]), no de una lista de herramientas declarada. Cada herramienta pertenece a un **permiso** fijo, el de la columna de las tablas de §1, y no hay forma de declararlo de otro modo: `leer_archivo`, `listar_carpeta`, `buscar_archivos`, `buscar_en_archivos`, `ejecutar_comando`, `buscar_en_internet`, `abrir_pagina`, `crear_todo`, `actualizar_todo` y `diagram` son `read`; `crear_archivo`, `escribir_archivo`, `eliminar_archivo`, `crear_carpeta` y `eliminar_carpeta` son `write`; `editar_archivo` es `edit`.
 
 La única herramienta sin permiso fijo es `ejecutar_flujo`: **lo hereda del flujo** que vaya a lanzar —todas sus etapas `plan` → `read`; alguna `build` → `write`/`edit`—, y su esquema se arma por turno con solo los flujos que ese permiso deja. Sigue siendo el reparto quien decide, no una lista suelta. Ver §1 «Los flujos como herramienta».
 
@@ -239,8 +262,8 @@ Tres cosas de este contrato que no existían antes:
 
 ```go
 type PeticionEditarArchivo struct {
-    Ruta        string  `json:"ruta"        desc:"Ruta relativa al directorio de trabajo; conserva las subcarpetas (docs/specs/X.md), no la ruta absoluta completa"`
-    Reemplazos  []Cambio `json:"reemplazos" desc:"Cambios a aplicar, en orden"`
+    Ruta        string   `json:"ruta"        desc:"Archivo a modificar"`
+    Reemplazos  []Cambio `json:"reemplazos"  desc:"Lista no vacía de sustituciones aplicadas en orden; cada buscar debe coincidir exactamente una vez"`
 }
 ```
 
@@ -338,6 +361,7 @@ El formato exacto del núcleo común y de la extensión está en [[specs/SPEC-MO
 ## Referencias
 
 - [[specs/SPEC-TOOLS]] — la especificación funcional y los criterios de aceptación.
+- [[specs/SPEC-DIAGRAMA]] — la herramienta `diagram` y su subconjunto de Mermaid.
 - [[specs/SPEC-ARCHIVOS]] — reglas de permiso sobre archivos.
 - [[specs/SPEC-MODELOS-LLAMACPP]] — el canal de herramientas y la capacidad del modelo.
 - [[backend/02-interfaces/INTERFACES-GENERAL]] — las superficies.

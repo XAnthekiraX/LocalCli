@@ -37,13 +37,13 @@ type PeticionEscribirArchivo struct {
 
 // Cambio es una sustitución de editar_archivo.
 type Cambio struct {
-	Buscar    string `json:"buscar"    desc:"Fragmento existente que se sustituye"`
-	Reemplazo string `json:"reemplazo" desc:"Texto que reemplaza al fragmento encontrado"`
+	Buscar    string `json:"buscar"    desc:"Fragmento existente copiado textualmente del archivo (misma sangría y espacios); debe aparecer una sola vez"`
+	Reemplazo string `json:"reemplazo" desc:"Texto que reemplaza al fragmento; usa finales de línea LF"`
 }
 
 type PeticionEditarArchivo struct {
 	Ruta       string   `json:"ruta"       desc:"Archivo a modificar"`
-	Reemplazos []Cambio `json:"reemplazos" desc:"Cambios a aplicar, en orden; cada uno sustituye un fragmento existente"`
+	Reemplazos []Cambio `json:"reemplazos" desc:"Lista no vacía de sustituciones aplicadas en orden; cada buscar debe coincidir exactamente una vez"`
 }
 
 type PeticionEliminarArchivo struct {

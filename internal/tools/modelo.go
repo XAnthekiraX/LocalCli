@@ -12,12 +12,13 @@ import (
 type Categoria string
 
 const (
-	CategoriaArchivos Categoria = "archivos"
-	CategoriaTerminal Categoria = "terminal"
-	CategoriaInternet Categoria = "internet"
-	CategoriaTareas   Categoria = "tareas"
-	CategoriaFlujos   Categoria = "flujos"
-	CategoriaUsuario  Categoria = "usuario"
+	CategoriaArchivos  Categoria = "archivos"
+	CategoriaTerminal  Categoria = "terminal"
+	CategoriaInternet  Categoria = "internet"
+	CategoriaTareas    Categoria = "tareas"
+	CategoriaFlujos    Categoria = "flujos"
+	CategoriaUsuario   Categoria = "usuario"
+	CategoriaDiagramas Categoria = "diagramas"
 )
 
 // Permiso es lo que hay que conceder para usar una herramienta.

@@ -82,7 +82,7 @@ Un campo obligatorio que falta, un nombre de ruta que no existe, un archivo que 
 
 ```
 falta el campo obligatorio "ruta"
-"editar_archivo" espera: ruta (obligatorio), cambio (obligatorio)
+"editar_archivo" espera: ruta (obligatorio), reemplazos (obligatorio)
 ```
 
 Un fallo que el modelo no puede arreglar —se le denegó el permiso, el sistema no responde, se canceló— **sí corta el turno**. Se le dice, pero no se le reintenta.
@@ -97,7 +97,7 @@ El mensaje que vuelve al modelo tiene dos requisitos: **nombrar qué falta** y *
 |---|---|---|
 | Herramientas de lectura de archivo | Ruta | `inicio_linea` y `fin_linea` (rango), `motivo` (fuera de la carpeta) |
 | `crear_archivo` / `escribir_archivo` | Ruta y contenido | — |
-| `editar_archivo` | Ruta y el cambio a aplicar | — |
+| `editar_archivo` | Ruta y la lista de reemplazos | — |
 | `eliminar_archivo` / `eliminar_carpeta` | Ruta, más confirmación explícita | — |
 | `crear_carpeta` | Ruta | — |
 | `ejecutar_comando` | Comando | Carpeta de trabajo (por defecto, la del proyecto) |
