@@ -126,12 +126,11 @@ type ModeloLocal struct {
 }
 
 // FlujoVista es un flujo que la paleta de la entrada ofrece: el identificador
-// que va tras `flow:` (el comando del flujo sin la barra) y su descripción. La
-// vista no conoce el catálogo de flujos: lo sirve el orquestador.
+// que va tras `flow:` (el comando del flujo sin la barra). La vista no conoce el
+// catálogo de flujos: lo sirve el orquestador.
 type FlujoVista struct {
 	// Comando es lo que sigue a `flow:` en la invocación, p. ej. "planificar".
-	Comando     string
-	Descripcion string
+	Comando string
 }
 
 // Git es el estado del repositorio del proyecto, leído una sola vez al arrancar

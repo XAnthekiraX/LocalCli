@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 
+	"localcli/internal/agent"
 	"localcli/internal/flow"
 	"localcli/internal/queue"
 	"localcli/internal/task"
@@ -75,14 +76,14 @@ func (o *Orquestador) emitirCola(c *queue.Cola) {
 // arrancarLaCola es la entrada de `/ejecutar`: elige la capa cuya cola se
 // arranca y la recorre. Sin cola derivada no hay nada que arrancar, y eso se
 // avisa en vez de fallar en silencio.
-func (o *Orquestador) arrancarLaCola(ctx context.Context, sesionID string, f flow.Flujo) error {
+func (o *Orquestador) arrancarLaCola(ctx context.Context, sesionID string, agenteActivo agent.Agente, f flow.Flujo) error {
 	capa, ok := o.capaConCola()
 	if !ok {
 		o.avisar(sesionID, "no hay ninguna cola derivada que arrancar",
 			"revisa ai/tasks/ de la capa y vuelve a lanzar /ejecutar")
 		return nil
 	}
-	return o.arrancarCola(ctx, sesionID, f, capa)
+	return o.arrancarCola(ctx, sesionID, agenteActivo, f, capa)
 }
 
 // capaConCola devuelve la capa cuya cola arranca `/ejecutar`: la única derivada
@@ -105,7 +106,7 @@ func (o *Orquestador) capaConCola() (task.Capa, bool) {
 // marca completado. La cola avanza solo cuando la arranca el usuario: esto se
 // llama desde `/ejecutar` o desde la confirmación de una propuesta, nunca desde
 // un texto por su cuenta.
-func (o *Orquestador) arrancarCola(ctx context.Context, sesionID string, f flow.Flujo, capa task.Capa) error {
+func (o *Orquestador) arrancarCola(ctx context.Context, sesionID string, agenteActivo agent.Agente, f flow.Flujo, capa task.Capa) error {
 	c, ok := o.Cola(capa)
 	if !ok {
 		o.avisar(sesionID, "no hay cola derivada para la capa "+string(capa),
@@ -135,7 +136,7 @@ func (o *Orquestador) arrancarCola(ctx context.Context, sesionID string, f flow.
 		// Las etapas del flujo son el trabajo de un elemento: contexto,
 		// propuesta, aprobación y verificación. La entrega de la última etapa
 		// es la respuesta del turno.
-		if err := o.turnoDeEtapas(ctx, sesionID, f, queue.Objetivo(*e)); err != nil {
+		if err := o.turnoDeEtapas(ctx, sesionID, agenteActivo, f, queue.Objetivo(*e)); err != nil {
 			// Un elemento que no terminó bien no se marca completado: se
 			// retoma donde estaba la próxima vez.
 			return err

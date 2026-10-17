@@ -421,8 +421,8 @@ func TestElModalDeAtajosNoAplicaNada(t *testing.T) {
 // `tab` autocompleta y un espacio la retira para dejar paso a la petición.
 func TestLaPaletaDeComandosSeDespliegaConLaBarra(t *testing.T) {
 	app := appDePrueba(&puertoFalso{flujos: []FlujoVista{
-		{Comando: "planificar", Descripcion: "planifica el proyecto"},
-		{Comando: "resolver", Descripcion: "resuelve lo roto"},
+		{Comando: "planificar"},
+		{Comando: "resolver"},
 	}})
 
 	pulsar(app, teclaRuna("/"))

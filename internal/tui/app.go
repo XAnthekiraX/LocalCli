@@ -764,7 +764,11 @@ func (a *App) adoptarSesion(s modals.Sesion) tea.Cmd {
 		if a.puerto == nil {
 			return nil
 		}
-		return a.puerto.SincronizarContexto(s.ID)()
+		c := a.puerto.SincronizarContexto(s.ID)
+		if c == nil {
+			return nil
+		}
+		return c()
 	}
 	switch s.Estado {
 	case EstadoTrabajando:

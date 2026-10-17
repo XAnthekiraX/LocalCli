@@ -1,35 +1,24 @@
 {
     "comando": "/investigar",
-    "nombre": "Investigar",
-    "descripcion": "investigar un problema",
-    "peticion": "diagnosticar un problema y entregar un plan de solución",
-    "pregunta": "un diagnóstico del problema y un plan de solución",
-    "reglas": ["Solo investiga la documentacion necesariapara solucionar el problema del usuario"],
+    "reglas": ["Investiga solo la documentación necesaria para solucionar el problema del usuario."],
     "etapas": [
         {
-            "id": "0001",
+            "id": "listar_archivos",
             "nombre": "Listar archivos",
-            "agente": "plan",
-            "pregunta": "¿qué archivos tiene el proyecto?",
-            "instruccion": "Lista los archivos actuales del proyecto usando tools de lectura y retorna el árbol de carpeta y archivos de manera estructurada ",
-            "aprobacion": false
+            "orden": "Lista los archivos actuales del proyecto usando las herramientas de lectura.",
+            "respuesta": "El árbol de carpetas y archivos, estructurado en markdown."
         },
         {
-            "id": "0002",
+            "id": "buscar_documentacion",
             "nombre": "Buscar documentación",
-            "agente": "plan",
-            "pregunta": "¿qué documentación es relevante para el problema?",
-            "instruccion": "con la información del árbol de archivos, busca la documentación necesaria usando tools para solucionar el problema del usuario y retorna un resumen de la documentación encontrada",
-            "aprobacion": false
+            "orden": "Con el árbol de archivos como punto de partida, busca la documentación necesaria —usando las herramientas de lectura— para solucionar el problema del usuario.",
+            "respuesta": "Un resumen en markdown de la documentación encontrada, citando ruta y línea de lo relevante."
         },
         {
-            "id": "0003",
+            "id": "entregar",
             "nombre": "Entregar",
-            "agente": "plan",
-            "pregunta": "¿cuál es el plan de solución?",
-            "instruccion": "Redacta el plan de solución a partir de lo que devolvieron los pasos anteriores.",
-            "entrega": true,
-            "aprobacion": false
+            "orden": "Redacta el plan de solución a partir de lo que devolvieron los pasos anteriores.",
+            "respuesta": "Un plan de solución en markdown: Diagnóstico; Documentación relevante; Plan; Resultado esperado."
         }
     ]
 }

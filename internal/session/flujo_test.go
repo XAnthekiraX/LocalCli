@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -19,12 +20,26 @@ import (
 	"localcli/internal/tui"
 )
 
+// flujoDePrueba es un flujo del esquema nuevo: dos etapas lineales, sin agente
+// propio y sin entrega declarada — la última etapa entrega siempre.
 func flujoDePrueba() flow.Flujo {
 	return flow.Flujo{
-		Nombre: "prueba", Comando: "/prueba", Descripcion: "d", Peticion: "algo por defecto", Pregunta: "¿qué?",
+		Comando: "/prueba",
+		Reglas:  []string{"regla de prueba"},
 		Etapas: []flow.Etapa{
-			{ID: "uno", Nombre: "Uno", Agente: "plan", Pregunta: "primera"},
-			{ID: "fin", Nombre: "Fin", Agente: "plan", Pregunta: "segunda", Entrega: true},
+			{ID: "uno", Nombre: "Uno", Orden: "primera etapa", Respuesta: "aporte de la etapa uno"},
+			{ID: "fin", Nombre: "Fin", Orden: "última etapa", Respuesta: "cierre del flujo"},
+		},
+	}
+}
+
+// flujoEnLoop es el mismo flujo con su primera etapa como bucle.
+func flujoEnLoop() flow.Flujo {
+	return flow.Flujo{
+		Comando: "/vueltas",
+		Etapas: []flow.Etapa{
+			{ID: "vuelta", Nombre: "Vueltas", Orden: "repite hasta que esté resuelto", Type: flow.TipoLoop, MaxIteraciones: 5},
+			{ID: "fin", Nombre: "Fin", Orden: "resume lo conseguido", Respuesta: "resumen final"},
 		},
 	}
 }
@@ -52,16 +67,36 @@ func servidorEtapas(t *testing.T) *httptest.Server {
 	return srv
 }
 
-func orquestadorDeFlujo(t *testing.T) (*Orquestador, string) {
+// servidorLoop responde `false` las primeras `fallos` veces y después `true`.
+func servidorLoop(t *testing.T, fallos int32) *httptest.Server {
 	t.Helper()
-	srv := servidorEtapas(t)
+	var n int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cuerpo, _ := io.ReadAll(r.Body)
+		if bytes.Contains(cuerpo, []byte(marcaTitulo)) {
+			escribirSSE(w, "Titulo")
+			return
+		}
+		intento := atomic.AddInt32(&n, 1)
+		if intento <= fallos {
+			escribirSSE(w, "intento " + fmt.Sprint(intento) + " falló\nfalse")
+			return
+		}
+		escribirSSE(w, "resuelto en el intento " + fmt.Sprint(intento) + "\ntrue")
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func orquestadorConServidor(t *testing.T, srv *httptest.Server, c *flow.Catalogo) (*Orquestador, string) {
+	t.Helper()
 	db, limpiar, _ := store.CrearDBTemporal()
 	t.Cleanup(func() { _ = limpiar() })
 	cwd := t.TempDir()
 	projectID, _ := store.ResolucionProyecto(db, cwd)
 	o := Nuevo(db, projectID, cwd, agentesDePrueba(t), openai.NuevoCliente(srv.URL), "m", 100000, nil, nil)
 	o.ConHerramientas(nil, nil)
-	o.ConFlujos(catalogoConFlujo(flujoDePrueba()))
+	o.ConFlujos(c)
 	sesion, err := o.Crear()
 	if err != nil {
 		t.Fatal(err)
@@ -69,33 +104,56 @@ func orquestadorDeFlujo(t *testing.T) (*Orquestador, string) {
 	return o, sesion.ID
 }
 
+func orquestadorDeFlujo(t *testing.T) (*Orquestador, string) {
+	t.Helper()
+	return orquestadorConServidor(t, servidorEtapas(t), catalogoConFlujo(flujoDePrueba()))
+}
+
 // TestElegirFlujoSoloReconoceFlow: un flujo se reconoce únicamente con el
-// prefijo `/flow:` —el `/comando` crudo queda para los comandos de la
-// interfaz—, y sin objetivo vale la petición por defecto del flujo.
+// prefijo `/flow:` —el `/comando` crudo queda para los comandos de la interfaz—,
+// y la petición es obligatoria: sin ella se avisa en vez de arrancar.
 func TestElegirFlujoSoloReconoceFlow(t *testing.T) {
 	o, _ := orquestadorDeFlujo(t)
 
-	if _, _, ok := o.elegirFlujo("/prueba algo"); ok {
+	if e := o.elegirFlujo("/prueba algo"); e.esFlujo {
 		t.Fatal("un `/comando` crudo no debería arrancar un flujo")
 	}
-	f, objetivo, ok := o.elegirFlujo("/flow:prueba algo")
-	if !ok || f.Comando != "/prueba" || objetivo != "algo" {
-		t.Fatalf("`/flow:prueba` no resolvió: flujo=%+v objetivo=%q ok=%v", f, objetivo, ok)
+	e := o.elegirFlujo("/flow:prueba algo")
+	if !e.esFlujo || e.flujo.Comando != "/prueba" || e.peticion != "algo" || e.sinPeticion {
+		t.Fatalf("`/flow:prueba algo` no resolvió bien: %+v", e)
 	}
-	if _, objetivo, ok := o.elegirFlujo("/flow:prueba"); !ok || objetivo != "algo por defecto" {
-		t.Fatalf("sin objetivo debería valer la petición por defecto: %q (ok=%v)", objetivo, ok)
+	sinPeticion := o.elegirFlujo("/flow:prueba")
+	if !sinPeticion.esFlujo || !sinPeticion.sinPeticion {
+		t.Fatalf("sin petición debería avisarse, no arrancar: %+v", sinPeticion)
 	}
-	if _, _, ok := o.elegirFlujo("/flow:inexistente"); ok {
+	if e := o.elegirFlujo("/flow:inexistente"); e.esFlujo {
 		t.Fatal("un `/flow:` desconocido no debería resolverse")
 	}
-	if _, _, ok := o.elegirFlujo("/flow:"); ok {
+	if e := o.elegirFlujo("/flow:"); e.esFlujo {
 		t.Fatal("`/flow:` sin nombre no debería resolverse")
 	}
 }
 
+// La cola es la excepción a la petición obligatoria: su objetivo lo trae cada
+// elemento de la cola, no la línea.
+func TestLaColaArrancaSinPeticion(t *testing.T) {
+	o, _ := orquestadorDeFlujo(t)
+	c := flow.NuevoCatalogo()
+	c.Agregar(flujoDePrueba())
+	c.Agregar(flow.Flujo{Comando: ComandoEjecutar, Etapas: []flow.Etapa{
+		{ID: "e", Nombre: "Ejecutar", Orden: "recorre la cola", Respuesta: "estado de la cola"},
+	}})
+	o.ConFlujos(c)
+
+	e := o.elegirFlujo("/flow:ejecutar")
+	if !e.esFlujo || e.sinPeticion {
+		t.Fatalf("la cola debería arrancar sin petición: %+v", e)
+	}
+}
+
 // TestUnComandoCorreElFlujoYEntrega: un `/flow:<comando>` no responde como chat,
-// corre las etapas, guarda el bloque y deja la entrega como respuesta del turno.
-// El `/comando` crudo ya no arranca un flujo.
+// corre las etapas, guarda el bloque y deja la entrega —la última etapa— como
+// respuesta del turno.
 func TestUnComandoCorreElFlujoYEntrega(t *testing.T) {
 	o, sesion := orquestadorDeFlujo(t)
 	canal, cerrar := o.Suscribir()
@@ -115,7 +173,7 @@ func TestUnComandoCorreElFlujoYEntrega(t *testing.T) {
 		t.Fatalf("etapas iniciadas = %v", iniciadas)
 	}
 
-	bloque, err := store.ListarFlowContext(o.db, o.projectID, sesion, "prueba")
+	bloque, err := store.ListarFlowContext(o.db, o.projectID, sesion, "/prueba")
 	if err != nil || len(bloque) != 2 {
 		t.Fatalf("el bloque debería tener dos aportes: %+v (%v)", bloque, err)
 	}
@@ -132,12 +190,140 @@ func TestUnComandoCorreElFlujoYEntrega(t *testing.T) {
 	}
 }
 
+// TestUnFlujoSinPeticionNoArranca: se avisa y no se corre ninguna etapa; el
+// mensaje no se manda al modelo.
+func TestUnFlujoSinPeticionNoArranca(t *testing.T) {
+	o, sesion := orquestadorDeFlujo(t)
+	canal, cerrar := o.Suscribir()
+	defer cerrar()
+
+	if err := o.Enviar(context.Background(), sesion, "plan", "/flow:prueba"); err != nil {
+		t.Fatalf("enviar: %v", err)
+	}
+
+	var avisos []string
+	var etapas int
+	for _, e := range drenar(canal) {
+		switch e.Tipo {
+		case tui.EventoNotificacion:
+			avisos = append(avisos, e.Datos["motivo"])
+		case tui.EventoEtapaIniciada:
+			etapas++
+		}
+	}
+	if etapas != 0 {
+		t.Fatalf("no debería haber corrido etapas; inició %d", etapas)
+	}
+	if !contiene(avisos, "necesita una petición") {
+		t.Fatalf("debería avisar que falta la petición: %q", avisos)
+	}
+}
+
+// TestUnFlujoConHistorialSeLeEnvia: el historial de la sesión viaja junto a la
+// petición en todas las etapas, y el propio mensaje `/flow:` no se duplica.
+func TestUnFlujoConHistorialSeLeEnvia(t *testing.T) {
+	var mu sync.Mutex
+	var peticiones []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cuerpo, _ := io.ReadAll(r.Body)
+		if !bytes.Contains(cuerpo, []byte(marcaTitulo)) {
+			mu.Lock()
+			peticiones = append(peticiones, string(cuerpo))
+			mu.Unlock()
+		}
+		escribirSSE(w, "respuesta")
+	}))
+	t.Cleanup(srv.Close)
+	o, sesion := orquestadorConServidor(t, srv, catalogoConFlujo(flujoDePrueba()))
+
+	if err := o.Enviar(context.Background(), sesion, "plan", "hola, esto es una conversación previa"); err != nil {
+		t.Fatalf("enviar: %v", err)
+	}
+	if err := o.Enviar(context.Background(), sesion, "plan", "/flow:prueba algo"); err != nil {
+		t.Fatalf("enviar el flujo: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(peticiones) < 2 {
+		t.Fatalf("las dos etapas deberían haber pedido turno: %d", len(peticiones))
+	}
+	ultima := peticiones[len(peticiones)-1]
+	if !strings.Contains(ultima, "conversación previa") {
+		t.Error("la etapa debería ver el historial de la sesión")
+	}
+	if !strings.Contains(ultima, "Petición original: algo") {
+		t.Error("la etapa debería ver la petición original")
+	}
+	if strings.Contains(ultima, "/flow:prueba") {
+		t.Error("el mensaje `/flow:` no debe duplicarse: la petición ya viaja en la ventana")
+	}
+}
+
+// TestLaEtapaLoopRepiteHastaTrue: la etapa `loop` repite mientras responda
+// `false`, los intentos fallidos no quedan en el bloque y el acierto sí.
+func TestLaEtapaLoopRepiteHastaTrue(t *testing.T) {
+	o, sesion := orquestadorConServidor(t, servidorLoop(t, 2), catalogoConFlujo(flujoEnLoop()))
+
+	if err := o.Enviar(context.Background(), sesion, "plan", "/flow:vueltas deja todo en verde"); err != nil {
+		t.Fatalf("enviar: %v", err)
+	}
+
+	bloque, err := store.ListarFlowContext(o.db, o.projectID, sesion, "/vueltas")
+	if err != nil || len(bloque) != 2 {
+		t.Fatalf("el bloque debería tener dos aportes: %+v (%v)", bloque, err)
+	}
+	if !strings.Contains(bloque[0].Contenido, "resuelto en el intento 3") {
+		t.Fatalf("el aporte del bucle debe ser el intento resuelto: %q", bloque[0].Contenido)
+	}
+}
+
+// TestLaEtapaLoopSeAgota: si nadie responde `true`, la etapa falla con un error
+// que dice cuántos intentos tuvo.
+func TestLaEtapaLoopSeAgota(t *testing.T) {
+	o, sesion := orquestadorConServidor(t, servidorLoop(t, 999), catalogoConFlujo(flujoEnLoop()))
+
+	err := o.Enviar(context.Background(), sesion, "plan", "/flow:vueltas nunca se pone verde")
+	if err == nil {
+		t.Fatal("una etapa que agota sus iteraciones debería fallar")
+	}
+	if !strings.Contains(err.Error(), "true") {
+		t.Fatalf("el error debería decir que no respondió `true`: %v", err)
+	}
+}
+
+func TestPartirVeredicto(t *testing.T) {
+	casos := []struct {
+		nombre     string
+		texto     string
+		resumen   string
+		listo     bool
+		valido    bool
+	}{
+		{"una línea true", "true", "", true, true},
+		{"resumen más veredicto", "todo en verde\ntrue", "todo en verde", true, true},
+		{"resumen más false", "aún no\ntodo falla\nfalse", "aún no\ntodo falla", false, true},
+		{"comillas invertidas", "listo\n`true`", "listo", true, true},
+		{"mayúsculas", "listo\nTrue", "listo", true, true},
+		{"sin veredicto", "todo en verde", "", false, false},
+		{"vacío", "   \n  ", "", false, false},
+	}
+	for _, c := range casos {
+		t.Run(c.nombre, func(t *testing.T) {
+			resumen, listo, ok := partirVeredicto(c.texto)
+			if ok != c.valido || listo != c.listo || resumen != c.resumen {
+				t.Fatalf("partirVeredicto(%q) = (%q, %v, %v)", c.texto, resumen, listo, ok)
+			}
+		})
+	}
+}
+
 // TestEjecutarFlujoDevuelveLaEntregaYElBloque: el handler de la herramienta corre
-// el flujo y devuelve entrega + bloque, y respeta el permiso derivado.
+// el flujo con el agente que la invocó y devuelve entrega + bloque.
 func TestEjecutarFlujoDevuelveLaEntregaYElBloque(t *testing.T) {
 	o, sesion := orquestadorDeFlujo(t)
 
-	res, err := o.ejecutarFlujo(context.Background(), tools.PeticionEjecutarFlujo{Flujo: "/prueba", Peticion: "algo"}, tools.Contexto{SesionID: sesion, Permisos: []string{"read"}})
+	res, err := o.ejecutarFlujo(context.Background(), tools.PeticionEjecutarFlujo{Flujo: "/prueba", Peticion: "algo"}, tools.Contexto{SesionID: sesion, Agente: "plan"})
 	if err != nil || res.Error != "" {
 		t.Fatalf("ejecutar_flujo: %+v %v", res, err)
 	}
@@ -146,25 +332,75 @@ func TestEjecutarFlujoDevuelveLaEntregaYElBloque(t *testing.T) {
 	}
 
 	// Un flujo desconocido se rechaza.
-	res, _ = o.ejecutarFlujo(context.Background(), tools.PeticionEjecutarFlujo{Flujo: "/nada"}, tools.Contexto{SesionID: sesion, Permisos: []string{"read"}})
+	res, _ = o.ejecutarFlujo(context.Background(), tools.PeticionEjecutarFlujo{Flujo: "/nada"}, tools.Contexto{SesionID: sesion, Agente: "plan"})
 	if !strings.HasPrefix(res.Error, tools.CodFlowUnknown) {
 		t.Fatalf("un flujo desconocido debería dar E_FLOW_UNKNOWN: %q", res.Error)
 	}
+
+	// Y un agente que no existe también.
+	res, _ = o.ejecutarFlujo(context.Background(), tools.PeticionEjecutarFlujo{Flujo: "/prueba", Peticion: "algo"}, tools.Contexto{SesionID: sesion, Agente: "nadie"})
+	if !strings.HasPrefix(res.Error, tools.CodFlowUnknown) {
+		t.Fatalf("un agente desconocido debería dar E_FLOW_UNKNOWN: %q", res.Error)
+	}
 }
 
-func TestEjecutarFlujoRechazaPermisoInsuficiente(t *testing.T) {
-	o, sesion := orquestadorDeFlujo(t)
-	f := flujoDePrueba()
-	f.Nombre = "escribe"
-	f.Comando = "/escribe"
-	f.Etapas = append([]flow.Etapa{{ID: "b", Nombre: "Build", Agente: "build", Pregunta: "p"}}, f.Etapas...)
-	c := flow.NuevoCatalogo()
-	c.Agregar(f)
-	o.ConFlujos(c)
+// TestLaEtapaAbortaCuandoFaltaUnPermiso: las etapas corren con el agente activo;
+// si piden una herramienta que ese agente no tiene concedida, la etapa se aborta
+// y lo dice con nombre y herramienta, en vez de seguir a ciegas.
+func TestLaEtapaAbortaCuandoFaltaUnPermiso(t *testing.T) {
+	// El modelo pide crear un archivo, que es de permiso `write`.
+	srv := servidorTool(t, "crear_archivo", map[string]string{"ruta": "x.txt", "contenido": "hola"})
+	db, limpiar, _ := store.CrearDBTemporal()
+	defer limpiar()
+	cwd := t.TempDir()
+	projectID, _ := store.ResolucionProyecto(db, cwd)
+	registro := tools.NuevoRegistro(tools.Catalogo())
+	o := Nuevo(db, projectID, cwd, agentesDePrueba(t), openai.NuevoCliente(srv.URL), "m", 0, nil, nil)
+	o.ConHerramientas(registro, catalogoDelRegistro(registro))
+	o.ConFlujos(catalogoConFlujo(flujoDePrueba()))
+	sesion, err := o.Crear()
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	res, _ := o.ejecutarFlujo(context.Background(), tools.PeticionEjecutarFlujo{Flujo: "/escribe"}, tools.Contexto{SesionID: sesion, Permisos: []string{"read"}})
+	// El agente activo es `plan`, de solo lectura.
+	err = o.Enviar(context.Background(), sesion.ID, "plan", "/flow:prueba crea un archivo")
+	if err == nil {
+		t.Fatal("la etapa debería abortar cuando falta el permiso")
+	}
+	if !strings.Contains(err.Error(), "crear_archivo") || !strings.Contains(err.Error(), "plan") {
+		t.Fatalf("el error debería nombrar la herramienta y el agente: %v", err)
+	}
+
+	// Una etapa abortada no deja aporte a medias en el bloque.
+	bloque, _ := store.ListarFlowContext(o.db, o.projectID, sesion.ID, "/prueba")
+	if len(bloque) != 0 {
+		t.Fatalf("una etapa abortada no debería dejar aporte: %+v", bloque)
+	}
+}
+
+// La misma negación cruzada por la herramienta: el agente invocador no tiene los
+// permisos que la etapa pide.
+func TestEjecutarFlujoInformaLaFaltaDePermiso(t *testing.T) {
+	srv := servidorTool(t, "crear_archivo", map[string]string{"ruta": "x.txt", "contenido": "hola"})
+	db, limpiar, _ := store.CrearDBTemporal()
+	defer limpiar()
+	cwd := t.TempDir()
+	projectID, _ := store.ResolucionProyecto(db, cwd)
+	registro := tools.NuevoRegistro(tools.Catalogo())
+	o := Nuevo(db, projectID, cwd, agentesDePrueba(t), openai.NuevoCliente(srv.URL), "m", 0, nil, nil)
+	o.ConHerramientas(registro, catalogoDelRegistro(registro))
+	o.ConFlujos(catalogoConFlujo(flujoDePrueba()))
+	sesion, err := o.Crear()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, _ := o.ejecutarFlujo(context.Background(),
+		tools.PeticionEjecutarFlujo{Flujo: "/prueba", Peticion: "crea un archivo"},
+		tools.Contexto{SesionID: sesion.ID, Agente: "plan"})
 	if !strings.HasPrefix(res.Error, tools.CodFlowNotAllowed) {
-		t.Fatalf("plan no debería lanzar un flujo que escribe: %q", res.Error)
+		t.Fatalf("una etapa sin permisos debería dar E_FLOW_NOT_ALLOWED: %q", res.Error)
 	}
 }
 

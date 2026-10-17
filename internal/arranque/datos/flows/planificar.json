@@ -1,74 +1,65 @@
 {
     "comando": "/planificar",
-    "nombre": "planificacion",
-    "descripcion": "planificar el proyecto desde cero",
-    "peticion": "planificar el proyecto desde cero",
-    "pregunta": "un plan de proyecto desde cero",
     "etapas": [
         {
             "id": "tipo_proyecto",
             "nombre": "Tipo de proyecto",
-            "agente": "plan",
-            "pregunta": "¿qué tipo de proyecto es?",
-            "aprobacion": false
+            "orden": "Determina qué tipo de proyecto es, a partir de la petición y de lo que ya haya en el proyecto.",
+            "respuesta": "Una línea con el tipo de proyecto y una lista de las señales en las que te basas."
         },
         {
             "id": "vision",
             "nombre": "Visión",
-            "agente": "plan",
-            "pregunta": "¿cuál es la visión del proyecto?",
+            "orden": "Define la visión del proyecto: para quién es y qué problema resuelve.",
+            "respuesta": "Una visión en pocas líneas, más el objetivo general en una frase.",
             "aprobacion": true
         },
         {
             "id": "requisitos",
             "nombre": "Requisitos",
-            "agente": "plan",
-            "pregunta": "¿qué requisitos tiene el proyecto?",
+            "orden": "Enumera los requisitos funcionales del proyecto, numerados y sin ambigüedad.",
+            "respuesta": "Los requisitos en markdown: una lista numerada de requisitos funcionales.",
             "aprobacion": true
         },
         {
             "id": "decision_tecnica",
             "nombre": "Decisión técnica",
-            "agente": "plan",
-            "pregunta": "¿qué decisiones técnicas se toman?",
+            "orden": "Toma las decisiones técnicas de partida: stack, arquitectura y diseño general.",
+            "respuesta": "Las decisiones en markdown: Decisión; Alternativas; Motivo.",
             "aprobacion": true
         },
         {
             "id": "documentacion_capas",
             "nombre": "Documentación por capas",
-            "agente": "plan",
-            "pregunta": "¿qué documentación por capas hace falta?",
+            "orden": "Di qué documentación por capas hace falta y dónde vive, según la estructura del proyecto.",
+            "respuesta": "La lista de documentos en markdown: ruta y qué contiene cada uno.",
             "aprobacion": true
         },
         {
             "id": "estructura_trabajo",
             "nombre": "Estructura de trabajo",
-            "agente": "plan",
-            "pregunta": "¿cómo se estructura el trabajo?",
+            "orden": "Explica cómo se estructura el trabajo: capas, orden y dependencias.",
+            "respuesta": "La estructura en markdown: capas, orden de construcción y dependencias entre tareas.",
             "aprobacion": true
         },
         {
             "id": "validacion",
             "nombre": "Validación",
-            "agente": "plan",
-            "pregunta": "¿qué hay que validar?",
-            "aprobacion": false
+            "orden": "Di qué hay que validar antes de dar el plan por bueno.",
+            "respuesta": "Una lista en markdown de comprobaciones de validación."
         },
         {
             "id": "fases",
             "nombre": "Registrar las fases en la lista de pasos",
-            "agente": "plan",
-            "pregunta": "¿qué fases quedan registradas en la lista de pasos, en orden?",
-            "instruccion": "Registra cada fase de la planificación como un paso de la lista de pasos de la sesión, en orden y una por una con `crear_todo`. La lista de pasos es el TODO del que se deriva la cola de la capa: sin fases no hay nada que ejecutar.",
+            "orden": "Registra cada fase de la planificación como un paso de la lista de pasos de la sesión, en orden y una por una con `crear_todo`. La lista de pasos es el TODO del que se deriva la cola de la capa: sin fases no hay nada que ejecutar.",
+            "respuesta": "La lista de las fases registradas, en orden.",
             "aprobacion": true
         },
         {
             "id": "entrega",
             "nombre": "Entrega",
-            "agente": "plan",
-            "pregunta": "¿cuál es el plan de proyecto entregado?",
-            "entrega": true,
-            "aprobacion": false
+            "orden": "Entrega el plan de proyecto completo, componiendo lo que devolvieron las fases anteriores.",
+            "respuesta": "El plan de proyecto en markdown, con todas sus secciones: visión, requisitos, decisiones, documentación, estructura y fases."
         }
     ]
 }

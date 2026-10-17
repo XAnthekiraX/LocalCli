@@ -178,7 +178,7 @@ func (o *Orquestador) guardarLineaHerramienta(e tools.EventoResultado) {
 func (o *Orquestador) ConFlujos(flows *flow.Catalogo) { o.flows = flows }
 
 // Flujos sirve el catálogo de flujos a la paleta de la vista (tui.Puerto): el
-// comando sin la barra —lo que sigue a `flow:`— y su descripción.
+// comando sin la barra —lo que sigue a `flow:`—.
 func (o *Orquestador) Flujos() []tui.FlujoVista {
 	if o.flows == nil {
 		return nil
@@ -186,10 +186,7 @@ func (o *Orquestador) Flujos() []tui.FlujoVista {
 	flujos := o.flows.Flujos()
 	vistas := make([]tui.FlujoVista, 0, len(flujos))
 	for _, f := range flujos {
-		vistas = append(vistas, tui.FlujoVista{
-			Comando:     strings.TrimPrefix(f.Comando, "/"),
-			Descripcion: f.Descripcion,
-		})
+		vistas = append(vistas, tui.FlujoVista{Comando: strings.TrimPrefix(f.Comando, "/")})
 	}
 	return vistas
 }
@@ -212,16 +209,18 @@ func (o *Orquestador) catalogoDelTurno(agenteActivo agent.Agente) []agent.Herram
 	return efectivo
 }
 
-// comandosLanzables lista los comandos de los flujos que esos permisos admiten.
+// comandosLanzables lista los comandos de los flujos que un agente con esos
+// permisos puede lanzar. Como los flujos ya no declaran agente por etapa, no hay
+// forma de clasificarlos por permisos de antemano: cualquier agente que pueda
+// usar `ejecutar_flujo` ve todos, y los problemas de permiso se resuelven en la
+// etapa que los necesita.
 func (o *Orquestador) comandosLanzables(permisos []string) []string {
-	if o.flows == nil {
+	if o.flows == nil || len(permisos) == 0 {
 		return nil
 	}
 	var comandos []string
 	for _, f := range o.flows.Flujos() {
-		if flow.PuedeLanzar(f, permisos) {
-			comandos = append(comandos, f.Comando)
-		}
+		comandos = append(comandos, f.Comando)
 	}
 	return comandos
 }
@@ -248,12 +247,14 @@ func esquemaConEnum(crudo json.RawMessage, comandos []string) json.RawMessage {
 
 // adaptadorHerramientas conecta la capa universal de tools con el bucle del
 // agente. Se construye por turno con la sesión, los permisos del agente activo y
-// el canal de aprobación.
+// el canal de aprobación. `Observar` —opcional— ve cada resultado tal cual salió
+// del registro, para que un flujo pueda reaccionar a una herramienta denegada.
 type adaptadorHerramientas struct {
 	registro *tools.Registro
 	sesion   string
 	permisos []string
 	Ask      func(context.Context, tools.Solicitud) (tools.Decision, error)
+	Observar func(nombre string, res agent.Resultado)
 }
 
 func (a adaptadorHerramientas) Ejecutar(ctx context.Context, agente string, l agent.Llamada) (agent.Resultado, error) {
@@ -265,7 +266,11 @@ func (a adaptadorHerramientas) Ejecutar(ctx context.Context, agente string, l ag
 		Nombre:     l.Nombre,
 		Argumentos: json.RawMessage(l.Argumentos),
 	})
-	return agent.Resultado{Salida: res.Salida, Error: res.Error}, nil
+	resultado := agent.Resultado{Salida: res.Salida, Error: res.Error}
+	if a.Observar != nil {
+		a.Observar(l.Nombre, resultado)
+	}
+	return resultado, nil
 }
 
 // ResponderAprobacion entrega la decisión del usuario a la sesión que espera esa
@@ -848,8 +853,15 @@ func (o *Orquestador) Enviar(ctx context.Context, sesionID, agenteNombre, texto 
 	o.titular(ctx, sesionID, texto)
 
 	// Un comando de flujo arranca etapas en vez de responder como chat.
-	if f, objetivo, ok := o.elegirFlujo(texto); ok {
-		return o.turnoDeFlujo(ctx, sesionID, f, objetivo)
+	eleccion := o.elegirFlujo(texto)
+	if eleccion.sinPeticion {
+		o.avisar(sesionID, "el flujo "+eleccion.flujo.Comando+" necesita una petición",
+			"escríbelo así: "+prefijoFlujo+strings.TrimPrefix(eleccion.flujo.Comando, "/")+" <qué debe resolver>")
+		o.cerrarTurno(sesionID, false)
+		return nil
+	}
+	if eleccion.esFlujo {
+		return o.turnoDeFlujo(ctx, sesionID, agenteActivo, eleccion.flujo, eleccion.peticion)
 	}
 
 	// Una petición con lista ordenada propone un TODO; no arranca la cola ni

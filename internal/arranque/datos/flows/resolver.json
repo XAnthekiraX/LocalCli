@@ -1,9 +1,5 @@
 {
     "comando": "/resolver",
-    "nombre": "resolver",
-    "descripcion": "resolver un problema",
-    "peticion": "diagnosticar un problema y entregar un plan de solución",
-    "pregunta": "un diagnóstico del problema y un plan de solución",
     "reglas": [
         "AGENTS.md (en la raíz del proyecto, no en ai/docs) es la puerta de entrada: identifica las capas y el flujo aplicable antes de nada.",
         "ai/docs/PROJECT.md es el índice: úsalo para orientarte.",
@@ -16,37 +12,25 @@
     ],
     "etapas": [
         {
-            "id": "Entender la peticion del usuario",
-            "nombre": "Entender la peticion del usuario",
-            "agente": "plan",
-            "pregunta": "¿Que solicito el usuario?",
-            "instruccion": "arma de manera correcta la peticion del usuario, para poder entenderla y poder resolverla.",
-            "continuacion": true,
-            "entrega": false,
-            "respuesta_en_chat": true,
-            "aprobacion": false
+            "id": "entender_peticion",
+            "nombre": "Entender la petición del usuario",
+            "orden": "Reformula la petición del usuario con tus palabras, para poder entenderla y resolverla, y di qué tendría que cumplirse para darla por resuelta.",
+            "respuesta": "La petición reformulada en una línea, más los criterios de éxito.",
+            "respuesta_en_chat": true
         },
         {
-            "id": "Listar archivos raiz",
-            "nombre": "Listar archivos raiz",
-            "agente": "plan",
-            "pregunta": "¿Que archivos hay en la raiz?",
-            "instruccion": "Lista lo archivos que existen en la raíz del proyecto, para tener un primer contexto.",
-            "continuacion": true,
-            "entrega": false,
-            "respuesta_en_chat": true,
-            "aprobacion": false
+            "id": "listar_raiz",
+            "nombre": "Listar archivos raíz",
+            "orden": "Lista los archivos que existen en la raíz del proyecto, para tener un primer contexto.",
+            "respuesta": "El árbol de la raíz en markdown, con una línea por entrada.",
+            "respuesta_en_chat": true
         },
         {
-            "id": "Buscar archivos relevantes",
+            "id": "buscar_relevantes",
             "nombre": "Buscar archivos relevantes",
-            "agente": "plan",
-            "pregunta": "¿qué archivos estan relacionados con la peticion del usuario   ?",
-            "instruccion": "Busca los archivos que están relacionados con la petición del usuario, siguiendo las dependencias declaradas en el frontmatter y la estructura del proyecto.",
-            "continuacion": true,
-            "entrega": true,
-            "respuesta_en_chat": true,
-            "aprobacion": false
+            "orden": "Busca los archivos relacionados con la petición del usuario, siguiendo las dependencias declaradas en el frontmatter y la estructura del proyecto.",
+            "respuesta": "La salida estándar del resolver, en markdown: Diagnóstico; Archivos involucrados (Modificar, Consultar, No modificar); Solución; Plan; Resultado esperado.",
+            "respuesta_en_chat": true
         }
     ]
 }

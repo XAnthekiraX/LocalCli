@@ -1,52 +1,45 @@
 {
     "comando": "/actualizar",
-    "nombre": "trabajo/actualizar",
-    "descripcion": "actualizar una funcionalidad existente",
-    "peticion": "actualizar una funcionalidad existente",
-    "pregunta": "el resultado de actualizar una funcionalidad existente",
     "etapas": [
         {
             "id": "impacto",
             "nombre": "Analizar el impacto",
-            "agente": "plan",
-            "pregunta": "¿qué funcionalidades, entidades y datos se ven afectados?",
-            "aprobacion": false
+            "orden": "Explica qué funcionalidades, entidades y datos se ven afectados por la petición, y qué se reutiliza de lo que ya existe.",
+            "respuesta": "Un informe breve en markdown con las secciones: Funcionalidades afectadas; Entidades; Datos; Reutilización."
         },
         {
             "id": "plan",
             "nombre": "Presentar el plan",
-            "agente": "plan",
-            "pregunta": "¿cuál es el plan de trabajo?",
+            "orden": "Propón el plan de trabajo, paso a paso, para actualizar lo pedido.",
+            "respuesta": "Un plan numerado en markdown: Objetivo; Pasos; Archivos a tocar; Riesgos.",
             "aprobacion": true
         },
         {
             "id": "documentacion",
             "nombre": "Actualizar la documentación",
-            "agente": "plan",
-            "pregunta": "¿qué documentación hay que actualizar?",
+            "orden": "Di qué documentación hay que crear o actualizar y en qué archivos, según la documentación por capas del proyecto.",
+            "respuesta": "Una lista en markdown: cada documento a tocar, con su ruta y qué cambia.",
             "aprobacion": true
         },
         {
             "id": "tarea",
             "nombre": "Crear o actualizar la tarea",
-            "agente": "build",
-            "pregunta": "¿cuál es la tarea, con su acción y su contexto?",
+            "orden": "Da la tarea con su acción, su capa y su contexto, tal como la define el proyecto.",
+            "respuesta": "La tarea en markdown: Acción; Capa; Título; Contexto; Criterios de aceptación.",
             "aprobacion": true
         },
         {
             "id": "ejecutar",
             "nombre": "Ejecutar el elemento",
-            "agente": "build",
-            "pregunta": "¿qué se ejecutó y con qué resultado?",
+            "orden": "Ejecuta el elemento y di qué se hizo y con qué resultado.",
+            "respuesta": "Un informe breve en markdown: Cambios aplicados; Resultado de la verificación.",
             "aprobacion": true
         },
         {
             "id": "entregar",
             "nombre": "Entregar",
-            "agente": "plan",
-            "pregunta": "¿qué se hizo y cómo quedó?",
-            "entrega": true,
-            "aprobacion": false
+            "orden": "Cierra el ciclo: qué se hizo y cómo quedó.",
+            "respuesta": "Un resumen final en markdown: Qué se hizo; Archivos; Cómo verificar."
         }
     ]
 }

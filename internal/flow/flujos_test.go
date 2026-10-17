@@ -7,11 +7,16 @@ import (
 	"testing"
 )
 
-// flujoJSON construye un flujo mínimo válido con ese comando y nombre.
-func flujoJSON(comando, nombre string) string {
-	return `{"comando":"` + comando + `","nombre":"` + nombre + `","descripcion":"d",` +
-		`"peticion":"p","pregunta":"q","etapas":[` +
-		`{"id":"e1","nombre":"n","agente":"plan","pregunta":"¿q?","entrega":true}]}`
+// flujoJSON construye un flujo mínimo válido con ese comando.
+func flujoJSON(comando string) string {
+	return flujoJSONEtiquetado(comando, "n")
+}
+
+// flujoJSONEtiquetado es el mismo flujo, con el nombre de su única etapa a
+// elección: sirve para distinguir dos definiciones del mismo comando.
+func flujoJSONEtiquetado(comando, etiqueta string) string {
+	return `{"comando":"` + comando + `","etapas":[` +
+		`{"id":"e1","nombre":"` + etiqueta + `","orden":"o","respuesta":"r"}]}`
 }
 
 func escribirFlujo(t *testing.T, dir, archivo, contenido string) {
@@ -33,8 +38,8 @@ func contieneAviso(avisos []string, busca string) bool {
 func TestCargaAditivaDeLasDosRaices(t *testing.T) {
 	base := t.TempDir()
 	proyecto := t.TempDir()
-	escribirFlujo(t, base, "crear.json", flujoJSON("/crear", "crear"))
-	escribirFlujo(t, proyecto, "propio.json", flujoJSON("/propio", "propio"))
+	escribirFlujo(t, base, "crear.json", flujoJSON("/crear"))
+	escribirFlujo(t, proyecto, "propio.json", flujoJSON("/propio"))
 
 	c, avisos := CargarAditivo(base, proyecto)
 
@@ -51,7 +56,7 @@ func TestCargaAditivaDeLasDosRaices(t *testing.T) {
 
 func TestSinProyectoSoloOficiales(t *testing.T) {
 	base := t.TempDir()
-	escribirFlujo(t, base, "crear.json", flujoJSON("/crear", "crear"))
+	escribirFlujo(t, base, "crear.json", flujoJSON("/crear"))
 
 	c, avisos := CargarAditivo(base, filepath.Join(t.TempDir(), "no-existe"))
 
@@ -66,7 +71,7 @@ func TestSinProyectoSoloOficiales(t *testing.T) {
 func TestJSONRotoNoTumbaElArranque(t *testing.T) {
 	base := t.TempDir()
 	proyecto := t.TempDir()
-	escribirFlujo(t, base, "crear.json", flujoJSON("/crear", "crear"))
+	escribirFlujo(t, base, "crear.json", flujoJSON("/crear"))
 	escribirFlujo(t, proyecto, "roto.json", "{no es json}")
 
 	c, avisos := CargarAditivo(base, proyecto)
@@ -85,8 +90,8 @@ func TestJSONRotoNoTumbaElArranque(t *testing.T) {
 func TestColisionConservaElOficial(t *testing.T) {
 	base := t.TempDir()
 	proyecto := t.TempDir()
-	escribirFlujo(t, base, "crear.json", flujoJSON("/crear", "crear"))
-	escribirFlujo(t, proyecto, "mio.json", flujoJSON("/crear", "mio"))
+	escribirFlujo(t, base, "crear.json", flujoJSONEtiquetado("/crear", "oficial"))
+	escribirFlujo(t, proyecto, "mio.json", flujoJSONEtiquetado("/crear", "propio"))
 
 	c, avisos := CargarAditivo(base, proyecto)
 
@@ -94,8 +99,8 @@ func TestColisionConservaElOficial(t *testing.T) {
 	if !ok {
 		t.Fatal("`/crear` debería seguir en el catálogo")
 	}
-	if f.Nombre != "crear" {
-		t.Fatalf("debería conservarse el oficial, no el propio: %q", f.Nombre)
+	if len(f.Etapas) != 1 || f.Etapas[0].Nombre != "oficial" {
+		t.Fatalf("debería conservarse el oficial, no el propio: %+v", f.Etapas)
 	}
 	if c.Len() != 1 {
 		t.Fatalf("el catálogo debería tener solo el oficial: %v", c.Comandos())
@@ -108,7 +113,7 @@ func TestColisionConservaElOficial(t *testing.T) {
 func TestCamposDesconocidosSeRechazan(t *testing.T) {
 	base := t.TempDir()
 	escribirFlujo(t, base, "raro.json",
-		`{"comando":"/raro","nombre":"raro","pregunta":"q","etapas":[],"inventado":true}`)
+		`{"comando":"/raro","etapas":[],"inventado":true}`)
 
 	c, avisos := CargarAditivo(base, "")
 
@@ -122,25 +127,80 @@ func TestCamposDesconocidosSeRechazan(t *testing.T) {
 
 func TestFlujoInvalidoSeIgnora(t *testing.T) {
 	base := t.TempDir()
-	escribirFlujo(t, base, "sin_entrega.json",
-		`{"comando":"/x","nombre":"x","pregunta":"q","etapas":[{"id":"e1","agente":"plan","pregunta":"q"}]}`)
+	escribirFlujo(t, base, "sin_orden.json",
+		`{"comando":"/x","etapas":[{"id":"e1","nombre":"n"}]}`)
 
 	c, avisos := CargarAditivo(base, "")
 
 	if c.Len() != 0 {
-		t.Fatalf("un flujo sin entrega no debería cargar: %v", c.Comandos())
+		t.Fatalf("una etapa sin `orden` no debería cargar: %v", c.Comandos())
 	}
-	if !contieneAviso(avisos, "entrega") {
-		t.Fatalf("el aviso debería mencionar la entrega: %v", avisos)
+	if !contieneAviso(avisos, "orden") {
+		t.Fatalf("el aviso debería mencionar el `orden` que falta: %v", avisos)
+	}
+}
+
+// El error de un flujo con campos del esquema antiguo sugiere regenerarlo.
+func TestEsquemaViejoSugiereRegenerar(t *testing.T) {
+	base := t.TempDir()
+	escribirFlujo(t, base, "viejo.json",
+		`{"comando":"/viejo","nombre":"viejo","peticion":"p","etapas":[`+
+			`{"id":"e1","nombre":"n","agente":"plan","pregunta":"q","entrega":true}]}`)
+
+	_, avisos := CargarAditivo(base, "")
+
+	if !contieneAviso(avisos, "esquema anterior") {
+		t.Fatalf("el aviso debería orientar a regenerar el flujo: %v", avisos)
 	}
 }
 
 func TestDecodificarFlujoValido(t *testing.T) {
-	f, err := DecodificarFlujo([]byte(flujoJSON("/crear", "crear")))
+	f, err := DecodificarFlujo([]byte(flujoJSON("/crear")))
 	if err != nil {
 		t.Fatalf("un flujo válido no debería fallar: %v", err)
 	}
-	if f.Comando != "/crear" || f.Nombre != "crear" || len(f.Etapas) != 1 {
+	if f.Comando != "/crear" || len(f.Etapas) != 1 {
 		t.Fatalf("el flujo se decodificó mal: %+v", f)
+	}
+	if f.Etapas[0].Type != TipoLineal {
+		t.Fatalf("una etapa sin `type` es `linear`: %q", f.Etapas[0].Type)
+	}
+}
+
+func TestEtapaLoopTomaLaCotaPorDefecto(t *testing.T) {
+	f, err := DecodificarFlujo([]byte(
+		`{"comando":"/loop","etapas":[{"id":"e1","nombre":"n","orden":"o","type":"loop"}]}`))
+	if err != nil {
+		t.Fatalf("una etapa `loop` sin cota es válida: %v", err)
+	}
+	if !f.Etapas[0].EsLoop() {
+		t.Fatal("la etapa debería ser `loop`")
+	}
+	if f.Etapas[0].MaxIteraciones != IteracionesLoopPorDefecto {
+		t.Fatalf("cota por defecto = %d, quiero %d", f.Etapas[0].MaxIteraciones, IteracionesLoopPorDefecto)
+	}
+}
+
+func TestEtapaLinearNoAdmiteCota(t *testing.T) {
+	_, err := DecodificarFlujo([]byte(
+		`{"comando":"/x","etapas":[{"id":"e1","nombre":"n","orden":"o","respuesta":"r","max_iteraciones":3}]}`))
+	if err == nil {
+		t.Fatal("`max_iteraciones` fuera de un `loop` debería fallar")
+	}
+}
+
+func TestTypeDesconocidoSeRechaza(t *testing.T) {
+	_, err := DecodificarFlujo([]byte(
+		`{"comando":"/x","etapas":[{"id":"e1","nombre":"n","orden":"o","type":"raro"}]}`))
+	if err == nil {
+		t.Fatal("un `type` desconocido debería fallar")
+	}
+}
+
+func TestEtapaLinearExigeRespuesta(t *testing.T) {
+	_, err := DecodificarFlujo([]byte(
+		`{"comando":"/x","etapas":[{"id":"e1","nombre":"n","orden":"o"}]}`))
+	if err == nil {
+		t.Fatal("una etapa `linear` sin `respuesta` debería fallar")
 	}
 }

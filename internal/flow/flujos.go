@@ -27,7 +27,7 @@ func CargarCarpeta(dir string) (flujos []Flujo, avisos []string) {
 		}
 		f, err := DecodificarFlujo(datos)
 		if err != nil {
-			avisos = append(avisos, "flujos: se ignora `"+nombre+"`: "+err.Error())
+			avisos = append(avisos, "flujos: se ignora `"+nombre+"`: "+err.Error()+pistaEsquemaViejo(err))
 			continue
 		}
 		f.Origen = ruta
@@ -45,6 +45,16 @@ func archivosJSON(entradas []os.DirEntry) []string {
 	}
 	sort.Strings(nombres)
 	return nombres
+}
+
+// pistaEsquemaViejo añade a un error de decodificación la salida cuando el
+// archivo viene de un esquema anterior: borrarlo y volver a sembrar regenera la
+// versión oficial con el formato nuevo.
+func pistaEsquemaViejo(err error) string {
+	if strings.Contains(err.Error(), "unknown field") {
+		return " (esquema anterior de flujos: borra el archivo y ejecuta `localcli init` para regenerarlo; ver flows/exampleFlows.md)"
+	}
+	return ""
 }
 
 // CargarAditivo carga los flujos oficiales y los propios. Ante una colisión de
@@ -107,16 +117,6 @@ func (c *Catalogo) Agregar(f Flujo) bool {
 func (c *Catalogo) PorComando(comando string) (Flujo, bool) {
 	f, ok := c.porComando[comando]
 	return f, ok
-}
-
-// PorNombre devuelve el flujo con ese nombre (no con ese comando).
-func (c *Catalogo) PorNombre(nombre string) (Flujo, bool) {
-	for _, comando := range c.orden {
-		if f := c.porComando[comando]; f.Nombre == nombre {
-			return f, true
-		}
-	}
-	return Flujo{}, false
 }
 
 // Flujos devuelve los flujos en orden de carga.

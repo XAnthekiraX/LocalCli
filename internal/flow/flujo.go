@@ -8,59 +8,65 @@ import (
 	"strings"
 )
 
+// Tipos de etapa.
+const (
+	// TipoLineal corre la etapa una sola vez.
+	TipoLineal = "linear"
+	// TipoLoop repite la etapa hasta que el agente responda `true`.
+	TipoLoop = "loop"
+)
+
+// IteracionesLoopPorDefecto es la cota de vueltas de una etapa `loop` que no
+// declara `max_iteraciones`.
+const IteracionesLoopPorDefecto = 5
+
 // definicionFlujo es el contrato JSON de un flujo, tal cual llega del archivo.
 type definicionFlujo struct {
-	Comando     string            `json:"comando"`
-	Nombre      string            `json:"nombre"`
-	Descripcion string            `json:"descripcion"`
-	Peticion    string            `json:"peticion"`
-	Pregunta    string            `json:"pregunta"`
-	Reglas      []string          `json:"reglas"`
-	Etapas      []definicionEtapa `json:"etapas"`
+	Comando string            `json:"comando"`
+	Reglas  []string          `json:"reglas"`
+	Etapas  []definicionEtapa `json:"etapas"`
 }
 
 // definicionEtapa es el contrato JSON de una etapa del flujo.
 type definicionEtapa struct {
 	ID              string `json:"id"`
 	Nombre          string `json:"nombre"`
-	Agente          string `json:"agente"`
-	Pregunta        string `json:"pregunta"`
-	Instruccion     string `json:"instruccion"`
-	Continuacion    bool   `json:"continuacion"`
-	Entrega         bool   `json:"entrega"`
-	RespuestaEnChat bool   `json:"respuesta_en_chat"`
+	Orden           string `json:"orden"`
+	Respuesta       string `json:"respuesta"`
+	Type            string `json:"type"`
 	Aprobacion      bool   `json:"aprobacion"`
+	RespuestaEnChat bool   `json:"respuesta_en_chat"`
+	MaxIteraciones  int    `json:"max_iteraciones"`
 }
 
 // CamposDelFlujo y CamposDeLaEtapa son los campos admitidos en el JSON.
 var (
-	CamposDelFlujo  = []string{"comando", "nombre", "descripcion", "peticion", "pregunta", "reglas", "etapas"}
-	CamposDeLaEtapa = []string{"id", "nombre", "agente", "pregunta", "instruccion", "continuacion", "entrega", "respuesta_en_chat", "aprobacion"}
+	CamposDelFlujo  = []string{"comando", "reglas", "etapas"}
+	CamposDeLaEtapa = []string{"id", "nombre", "orden", "respuesta", "type", "aprobacion", "respuesta_en_chat", "max_iteraciones"}
 )
 
 // Etapa es un paso del flujo.
 type Etapa struct {
 	ID              string
 	Nombre          string
-	Agente          string // agente que la corre (`plan` o `build`)
-	Pregunta        string // lo que la etapa responde; obligatoria
-	Instruccion     string // se une a las Reglas y viaja con el contexto de la etapa
-	Continuacion    bool   // detiene el flujo ANTES de correr la etapa
+	Orden           string // qué debe cumplir la etapa
+	Respuesta       string // estructura de salida que recibe la siguiente etapa
+	Type            string // TipoLineal o TipoLoop
 	Aprobacion      bool   // detiene el flujo DESPUÉS de correr la etapa
-	Entrega         bool   // etapa de cierre; exactamente una, y la última
-	RespuestaEnChat bool   // pinta la respuesta sin meterla al contexto
+	RespuestaEnChat bool   // pinta la respuesta sin que sea la del turno
+	MaxIteraciones  int    // cota de vueltas de una etapa `loop`
 }
 
-// Flujo es una secuencia ordenada de etapas con nombre.
+// EsLoop dice si la etapa repite hasta que el agente responda `true`.
+func (e Etapa) EsLoop() bool { return e.Type == TipoLoop }
+
+// Flujo es una secuencia ordenada de etapas con nombre. Su identidad es el
+// `comando`: es lo que lo invoca y lo que separa su bloque de contexto.
 type Flujo struct {
-	Nombre      string
-	Comando     string // comando que lo arranca, p. ej. "/resolver"
-	Descripcion string
-	Peticion    string // objetivo por defecto cuando el comando va sin texto
-	Pregunta    string // qué entrega el flujo; obligatoria
-	Reglas      []string
-	Etapas      []Etapa
-	Origen      string // ruta del archivo; lo fija la carga
+	Comando string // comando que lo arranca, p. ej. "/resolver"
+	Reglas  []string
+	Etapas  []Etapa
+	Origen  string // ruta del archivo; lo fija la carga
 }
 
 // DecodificarFlujo lee el JSON con campos estrictos y valida el flujo.
@@ -76,26 +82,12 @@ func DecodificarFlujo(datos []byte) (Flujo, error) {
 	}
 
 	f := Flujo{
-		Nombre:      strings.TrimSpace(d.Nombre),
-		Comando:     strings.TrimSpace(d.Comando),
-		Descripcion: strings.TrimSpace(d.Descripcion),
-		Peticion:    strings.TrimSpace(d.Peticion),
-		Pregunta:    strings.TrimSpace(d.Pregunta),
-		Reglas:      limpiarLista(d.Reglas),
-		Etapas:      make([]Etapa, 0, len(d.Etapas)),
+		Comando: strings.TrimSpace(d.Comando),
+		Reglas:  limpiarLista(d.Reglas),
+		Etapas:  make([]Etapa, 0, len(d.Etapas)),
 	}
 	for _, e := range d.Etapas {
-		f.Etapas = append(f.Etapas, Etapa{
-			ID:              strings.TrimSpace(e.ID),
-			Nombre:          strings.TrimSpace(e.Nombre),
-			Agente:          strings.TrimSpace(e.Agente),
-			Pregunta:        strings.TrimSpace(e.Pregunta),
-			Instruccion:     strings.TrimSpace(e.Instruccion),
-			Continuacion:    e.Continuacion,
-			Aprobacion:      e.Aprobacion,
-			Entrega:         e.Entrega,
-			RespuestaEnChat: e.RespuestaEnChat,
-		})
+		f.Etapas = append(f.Etapas, normalizarEtapa(e))
 	}
 	if err := f.Validar(); err != nil {
 		return Flujo{}, err
@@ -103,44 +95,68 @@ func DecodificarFlujo(datos []byte) (Flujo, error) {
 	return f, nil
 }
 
-// Validar comprueba que el flujo es encadenable: comando con `/`, nombre,
-// `pregunta`, al menos una etapa y una sola `entrega`, que es la última.
+// normalizarEtapa aplica los valores por defecto de una etapa: `linear` cuando
+// no declara `type`, y la cota por defecto cuando es `loop` y no la declara.
+func normalizarEtapa(e definicionEtapa) Etapa {
+	tipo := strings.TrimSpace(e.Type)
+	if tipo == "" {
+		tipo = TipoLineal
+	}
+	max := e.MaxIteraciones
+	if tipo == TipoLoop && max == 0 {
+		max = IteracionesLoopPorDefecto
+	}
+	return Etapa{
+		ID:              strings.TrimSpace(e.ID),
+		Nombre:          strings.TrimSpace(e.Nombre),
+		Orden:           strings.TrimSpace(e.Orden),
+		Respuesta:       strings.TrimSpace(e.Respuesta),
+		Type:            tipo,
+		Aprobacion:      e.Aprobacion,
+		RespuestaEnChat: e.RespuestaEnChat,
+		MaxIteraciones:  max,
+	}
+}
+
+// Validar comprueba que el flujo es encadenable: comando con `/`, al menos una
+// etapa y, por etapa, identidad, `orden` y coherencia de `type`/`respuesta`.
 func (f Flujo) Validar() error {
 	if f.Comando == "" {
 		return errorf("falta el campo obligatorio `comando`")
 	}
 	if !strings.HasPrefix(f.Comando, "/") {
-		return errorf("el comando del flujo %s no empieza por / (%q)", f.Nombre, f.Comando)
-	}
-	if f.Nombre == "" {
-		return errorf("falta el campo obligatorio `nombre`")
-	}
-	if strings.TrimSpace(f.Pregunta) == "" {
-		return errorf("el flujo %s no declara `pregunta` (qué entrega)", f.Nombre)
+		return errorf("el comando del flujo %s no empieza por / (%q)", f.Comando, f.Comando)
 	}
 	if len(f.Etapas) == 0 {
-		return errorf("el flujo %s no tiene etapas", f.Nombre)
+		return errorf("el flujo %s no tiene etapas", f.Comando)
 	}
-	entregas := 0
 	for i, e := range f.Etapas {
+		pos := fmt.Sprintf("la etapa %d del flujo %s", i, f.Comando)
 		if e.ID == "" {
-			return errorf("la etapa %d del flujo %s no tiene id", i, f.Nombre)
+			return errorf("%s no tiene id", pos)
 		}
-		if e.Agente == "" {
-			return errorf("la etapa %s no declara agente", e.ID)
+		pos = "la etapa " + e.ID + " del flujo " + f.Comando
+		if e.Nombre == "" {
+			return errorf("%s no tiene nombre", pos)
 		}
-		if e.Pregunta == "" {
-			return errorf("la etapa %s del flujo %s no declara `pregunta`", e.ID, f.Nombre)
+		if e.Orden == "" {
+			return errorf("%s no declara `orden`", pos)
 		}
-		if e.Entrega {
-			entregas++
+		switch e.Type {
+		case TipoLineal:
+			if e.Respuesta == "" {
+				return errorf("%s no declara `respuesta`", pos)
+			}
+			if e.MaxIteraciones != 0 {
+				return errorf("%s declara `max_iteraciones` fuera de una etapa `loop`", pos)
+			}
+		case TipoLoop:
+			if e.MaxIteraciones < 1 {
+				return errorf("%s declara `max_iteraciones` menor que 1", pos)
+			}
+		default:
+			return errorf("%s declara un `type` desconocido: %q", pos, e.Type)
 		}
-	}
-	if entregas != 1 {
-		return errorf("el flujo %s declara %d etapas `entrega`, quiero exactamente una", f.Nombre, entregas)
-	}
-	if !f.Etapas[len(f.Etapas)-1].Entrega {
-		return errorf("en el flujo %s la etapa `entrega` debe ser la última", f.Nombre)
 	}
 	return nil
 }

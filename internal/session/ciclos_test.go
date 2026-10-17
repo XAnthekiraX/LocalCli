@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"localcli/internal/agent"
 	"localcli/internal/flow"
 	"localcli/internal/queue"
 	"localcli/internal/store"
@@ -192,6 +193,17 @@ func contiene(xs []string, sub string) bool {
 	return false
 }
 
+// planActivo es el agente `plan` de la sesión de prueba: las etapas corren con el
+// agente activo de la sesión.
+func planActivo(t *testing.T, o *Orquestador) agent.Agente {
+	t.Helper()
+	plan, ok := o.agentes.Buscar("plan")
+	if !ok {
+		t.Fatal("el catálogo de prueba no tiene `plan`")
+	}
+	return plan
+}
+
 // T-B019-03: la cola se consume un elemento por iteración, y cada elemento solo
 // queda completado cuando su turno terminó bien.
 func TestLaColaConsumeUnElementoPorIteracion(t *testing.T) {
@@ -206,7 +218,7 @@ func TestLaColaConsumeUnElementoPorIteracion(t *testing.T) {
 	canal, cerrar := o.Suscribir()
 	defer cerrar()
 
-	if err := o.arrancarCola(context.Background(), sesion, flujoDePrueba(), task.CapaBackend); err != nil {
+	if err := o.arrancarCola(context.Background(), sesion, planActivo(t, o), flujoDePrueba(), task.CapaBackend); err != nil {
 		t.Fatalf("arrancar la cola: %v", err)
 	}
 
@@ -256,7 +268,7 @@ func TestLaColaVaciaAvisaYTermina(t *testing.T) {
 	canal, cerrar := o.Suscribir()
 	defer cerrar()
 
-	if err := o.arrancarCola(context.Background(), sesion, flujoDePrueba(), task.CapaBackend); err != nil {
+	if err := o.arrancarCola(context.Background(), sesion, planActivo(t, o), flujoDePrueba(), task.CapaBackend); err != nil {
 		t.Fatalf("arrancar la cola: %v", err)
 	}
 
@@ -269,23 +281,24 @@ func TestLaColaVaciaAvisaYTermina(t *testing.T) {
 	}
 }
 
-// T-B019-05: el flujo de planificación registra sus fases en la lista de pasos, y
-// la etapa que las registra es de `plan`: la lista de pasos no toca archivos, así
-// que el flujo sigue siendo lanzable por `plan`.
+// T-B019-05: el flujo de planificación registra sus fases en la lista de pasos.
+// La lista de pasos no toca archivos —la etapa usa `crear_todo`, que es de
+// permiso `read`—, así que el flujo puede correr con un agente de solo lectura.
 func TestElFlujoDePlanificarRegistraLasFases(t *testing.T) {
 	f := leerFlujoOficial(t, "planificar.json")
 	var ids []string
+	var fases flow.Etapa
 	for _, e := range f.Etapas {
 		ids = append(ids, e.ID)
-		if e.Agente != "plan" {
-			t.Errorf("la etapa %s es de %q; el flujo de planificación no debe escribir", e.ID, e.Agente)
+		if e.ID == "fases" {
+			fases = e
 		}
 	}
 	if !contiene(ids, "fases") {
 		t.Fatalf("el flujo debería registrar las fases; etapas = %v", ids)
 	}
-	if !flow.PuedeLanzar(f, []string{"read"}) {
-		t.Error("`plan` debería poder lanzar el flujo de planificación")
+	if !strings.Contains(fases.Orden, "crear_todo") {
+		t.Errorf("la etapa de fases debería usar `crear_todo`: %q", fases.Orden)
 	}
 }
 
@@ -296,7 +309,7 @@ func TestLaPlanificacionCompruebaSusFases(t *testing.T) {
 	canal, cerrar := o.Suscribir()
 	defer cerrar()
 
-	o.cerrarCiclo(sesion, flow.Flujo{Comando: ComandoPlanificar, Nombre: "planificacion"})
+	o.cerrarCiclo(sesion, flow.Flujo{Comando: ComandoPlanificar})
 	motivos := motivosDeAviso(drenar(canal))
 	if !contiene(motivos, "sin dejar fases") {
 		t.Fatalf("una planificación sin fases debería avisar: %q", motivos)
@@ -307,7 +320,7 @@ func TestLaPlanificacionCompruebaSusFases(t *testing.T) {
 			t.Fatalf("registrar la fase: %v", err)
 		}
 	}
-	o.cerrarCiclo(sesion, flow.Flujo{Comando: ComandoPlanificar, Nombre: "planificacion"})
+	o.cerrarCiclo(sesion, flow.Flujo{Comando: ComandoPlanificar})
 	motivos = motivosDeAviso(drenar(canal))
 	if !contiene(motivos, "2 fases") {
 		t.Fatalf("debería decir cuántas fases quedaron: %q", motivos)
@@ -330,7 +343,7 @@ func TestElCicloDeTrabajoMeteLaTareaEnLaCola(t *testing.T) {
 
 	// El ciclo de trabajo aprueba su tarea y la deja escrita en el TODO.
 	escribirTareasDePrueba(t, o.Carpeta(), mainConTareaNueva)
-	o.cerrarCiclo(sesion, flow.Flujo{Comando: "/crear", Nombre: "trabajo/crear"})
+	o.cerrarCiclo(sesion, flow.Flujo{Comando: "/crear"})
 
 	c, ok := o.Cola(task.CapaBackend)
 	if !ok {
@@ -364,7 +377,7 @@ func TestElResolverNoTocaLaCola(t *testing.T) {
 	defer cerrar()
 	drenar(canal)
 
-	o.cerrarCiclo(sesion, flow.Flujo{Comando: ComandoResolver, Nombre: "resolver"})
+	o.cerrarCiclo(sesion, flow.Flujo{Comando: ComandoResolver})
 
 	for _, e := range drenar(canal) {
 		if e.Tipo == tui.EventoColaActualizada {
@@ -373,20 +386,26 @@ func TestElResolverNoTocaLaCola(t *testing.T) {
 	}
 }
 
+// T-B019-07: el resolver entrega el PLAN y no crea tareas ni implementa: sus
+// reglas lo dicen explícitamente, y cierra con la salida estándar. Ya no declara
+// agente por etapa —todas corren con el agente activo—, así que lo que lo hace
+// de solo lectura son sus reglas.
 func TestElFlujoDelResolverEsDeSoloLectura(t *testing.T) {
 	f := leerFlujoOficial(t, "resolver.json")
 	if len(f.Etapas) == 0 {
 		t.Fatal("el flujo del resolver no tiene etapas")
 	}
+	reglas := strings.Join(f.Reglas, "\n")
+	if !strings.Contains(reglas, "NO implementa") {
+		t.Error("las reglas del resolver deberían prohibir implementar")
+	}
+	ultima := f.Etapas[len(f.Etapas)-1]
+	if !strings.Contains(ultima.Respuesta, "Diagnóstico") {
+		t.Errorf("el resolver debería cerrar con la salida estándar; su última etapa dice %q", ultima.Respuesta)
+	}
 	for _, e := range f.Etapas {
-		if e.Agente != "plan" {
-			t.Errorf("la etapa %s es de %q; el resolver no implementa nada", e.ID, e.Agente)
+		if e.EsLoop() {
+			t.Errorf("la etapa %s es un bucle; el resolver no debe repetirse", e.ID)
 		}
-	}
-	if !f.Etapas[len(f.Etapas)-1].Entrega {
-		t.Error("el resolver debería cerrar con su etapa de entrega")
-	}
-	if !flow.PuedeLanzar(f, []string{"read"}) {
-		t.Error("`plan` debería poder lanzar el resolver")
 	}
 }

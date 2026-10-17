@@ -419,7 +419,7 @@ func ComandosDeLaEntrada(p Puerto) []Comando {
 			if f.Comando == "" {
 				continue
 			}
-			cmds = append(cmds, Comando{Nombre: "flow:" + f.Comando, Descripcion: f.Descripcion})
+			cmds = append(cmds, Comando{Nombre: "flow:" + f.Comando})
 		}
 	}
 	return append(cmds,

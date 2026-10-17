@@ -1,9 +1,5 @@
 {
     "comando": "/ejecutar",
-    "nombre": "trabajo/ejecutar",
-    "descripcion": "arrancar la cola y ejecutar el siguiente elemento",
-    "peticion": "arrancar la cola y ejecutar el siguiente elemento",
-    "pregunta": "el resultado de ejecutar el siguiente elemento de la cola",
     "reglas": [
         "Se ejecuta un elemento del TODO por iteración, nunca varios a la vez.",
         "Un elemento solo se marca completado cuando se terminó, con su verificación hecha.",
@@ -14,45 +10,41 @@
         {
             "id": "siguiente",
             "nombre": "Tomar el siguiente elemento",
-            "agente": "plan",
-            "pregunta": "¿cuál es el siguiente elemento disponible de la cola y qué le falta?",
-            "aprobacion": false
+            "orden": "Di cuál es el siguiente elemento disponible de la cola y qué le falta, si algo le falta.",
+            "respuesta": "El elemento en markdown: Id; Título; Estado; Qué le falta."
         },
         {
             "id": "contexto",
             "nombre": "Pedir el contexto del elemento",
-            "agente": "plan",
-            "pregunta": "¿qué contexto necesita el elemento para ejecutarse?",
-            "aprobacion": false
+            "orden": "Di qué contexto necesita el elemento para ejecutarse y reúnelo.",
+            "respuesta": "El contexto en markdown: archivos, documentos y reglas que aplican al elemento."
         },
         {
             "id": "propuesta",
             "nombre": "Proponer el cambio",
-            "agente": "build",
-            "pregunta": "¿qué cambio hay que aplicar para completar el elemento?",
+            "orden": "Propón el cambio concreto que hay que aplicar para completar el elemento.",
+            "respuesta": "El cambio propuesto en markdown: archivo; qué cambia; por qué.",
             "aprobacion": true
         },
         {
             "id": "aplicar",
             "nombre": "Aplicar el cambio",
-            "agente": "build",
-            "pregunta": "¿qué se aplicó y con qué resultado?",
+            "orden": "Aplica el cambio aprobado y di qué se aplicó y con qué resultado.",
+            "respuesta": "Un informe breve: Cambios aplicados; Resultado.",
             "aprobacion": true
         },
         {
             "id": "verificar",
             "nombre": "Verificar el elemento",
-            "agente": "build",
-            "pregunta": "¿se verificó el elemento y quedó completado?",
+            "orden": "Verifica que el elemento quedó completado y di si se puede marcar como tal.",
+            "respuesta": "La verificación en markdown: Comprobación; Resultado; Conclusión.",
             "aprobacion": true
         },
         {
             "id": "entregar",
             "nombre": "Entregar",
-            "agente": "plan",
-            "pregunta": "¿en qué estado quedó la cola después del elemento?",
-            "entrega": true,
-            "aprobacion": false
+            "orden": "Di en qué estado quedó la cola después del elemento.",
+            "respuesta": "El estado de la cola en markdown: elemento cerrado; pendientes; bloqueados."
         }
     ]
 }
