@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Eventos que consume la vista (INTERFACES §1, EVENTS §1).
@@ -203,6 +205,9 @@ type Puerto interface {
 	// retomarla. Solo los de esa sesión: el contexto de una nunca se mezcla con el
 	// de otra (SPEC-SESIONES).
 	Historial(sesionID string) ([]PiezaHistorial, error)
+	// SincronizarContexto calcula y emite el estado de tokens del contexto efectivo
+	// de una sesión (resumen + tramo reciente) para sincronizar el panel al retomarla.
+	SincronizarContexto(sesionID string) tea.Cmd
 	// Deshacer deshace el último turno de la conversación de una sesión y
 	// Rehacer lo vuelve a poner en pie; ninguno toca los archivos. Devuelven
 	// cuántos mensajes cambiaron de estado: 0 es «no había nada que

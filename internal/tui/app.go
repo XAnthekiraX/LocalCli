@@ -303,6 +303,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.Aviso != "" {
 				a.chat.AnotarAviso(m.Aviso)
 			}
+			if a.puerto != nil {
+				return a, tea.Batch(escuchar(a.eventos), a.puerto.SincronizarContexto(m.ID))
+			}
 		}
 		return a, nil
 	case avisoTurnoMsg:
@@ -757,14 +760,20 @@ func (a *App) adoptarSesion(s modals.Sesion) tea.Cmd {
 	a.vista = VistaPrincipal
 	a.notificacionBajoInput = ""
 	cargar := cargarHistorial(a.puerto, s.ID)
+	syncCtx := func() tea.Msg {
+		if a.puerto == nil {
+			return nil
+		}
+		return a.puerto.SincronizarContexto(s.ID)()
+	}
 	switch s.Estado {
 	case EstadoTrabajando:
 		a.chat.ReanudarTurno()
-		return tea.Batch(cargar, a.arrancarLatido())
+		return tea.Batch(cargar, syncCtx, a.arrancarLatido())
 	case EstadoEsperandoPermiso:
-		return tea.Batch(cargar, a.arrancarLatido())
+		return tea.Batch(cargar, syncCtx, a.arrancarLatido())
 	}
-	return cargar
+	return tea.Batch(cargar, syncCtx)
 }
 
 // nuevaSesion crea una sesión y la deja activa sin detener las demás

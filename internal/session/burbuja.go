@@ -1,6 +1,10 @@
 package session
 
 import (
+	"strconv"
+
+	tea "github.com/charmbracelet/bubbletea"
+
 	"localcli/internal/store"
 	"localcli/internal/tui"
 )
@@ -29,4 +33,45 @@ func (o *Orquestador) Bifurcar(sesionID, mensajeID string) (*tui.Sesion, error) 
 	}
 	vista := DeStore(nueva).AVista()
 	return &vista, nil
+}
+
+// SincronizarContexto calcula y emite el estado de tokens del contexto efectivo
+// de una sesión (resumen + tramo reciente) para sincronizar el panel al retomarla.
+func (o *Orquestador) SincronizarContexto(sesionID string) tea.Cmd {
+	return func() tea.Msg {
+		filas, err := store.ListarMensajes(o.db, o.projectID, sesionID)
+		if err != nil {
+			return nil
+		}
+		conv := conversacionDe(filas)
+		if len(conv) == 0 {
+			o.emitir(tui.Evento{Sesion: sesionID, Tipo: tui.EventoTokensTurno, Datos: map[string]string{
+				"contexto":       "0",
+				"limite":         strconv.Itoa(o.ventanaActual()),
+				"limite_harness": "false",
+			}})
+			return nil
+		}
+		sum, hay := o.resumenPersistido(sesionID)
+		cubierto := indiceCubierto(conv, sum.HastaID)
+		if hay && cubierto == 0 {
+			_ = store.LimpiarResumenHistorial(o.db, o.projectID, sesionID)
+			hay = false
+		}
+		var total int
+		if hay {
+			total = estimarTokens(sum.Texto) + tokensDe(conv[cubierto:])
+		} else {
+			total = tokensDe(conv)
+		}
+		if total < 0 {
+			total = 0
+		}
+		o.emitir(tui.Evento{Sesion: sesionID, Tipo: tui.EventoTokensTurno, Datos: map[string]string{
+			"contexto":       strconv.Itoa(total),
+			"limite":         strconv.Itoa(o.ventanaActual()),
+			"limite_harness": "false",
+		}})
+		return nil
+	}
 }

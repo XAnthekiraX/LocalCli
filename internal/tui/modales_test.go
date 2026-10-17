@@ -118,6 +118,10 @@ func (p *puertoFalso) Bifurcar(sesionID, mensajeID string) (*Sesion, error) {
 	return &Sesion{ID: "fork", Nombre: "FORK:primera", Estado: EstadoInactiva}, nil
 }
 
+func (p *puertoFalso) SincronizarContexto(sesionID string) tea.Cmd {
+	return nil
+}
+
 func (p *puertoFalso) Compactar(_ context.Context, sesionID string) (bool, error) {
 	p.compactadas = append(p.compactadas, sesionID)
 	return true, nil
