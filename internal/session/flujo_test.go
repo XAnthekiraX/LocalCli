@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"localcli/internal/agent"
 	"localcli/internal/flow"
@@ -517,5 +518,133 @@ func TestLaUltimaEtapaSePintaCuandoNoHayAvanceEnVivo(t *testing.T) {
 	}
 	if strings.Join(respuestas, "|") != "respuesta-1|respuesta-2" {
 		t.Fatalf("respuestas pintadas en el hilo = %v, quiero las dos etapas", respuestas)
+	}
+}
+
+// flujoProtegido deja su primera etapa con `aprobacion`: la pausa se pide antes
+// de correrla (SPEC-ORQUESTADOR-FLUJOS §Flujo principal).
+func flujoProtegido() flow.Flujo {
+	return flow.Flujo{
+		Comando: "/protegido",
+		Etapas: []flow.Etapa{
+			{ID: "uno", Nombre: "Uno", Orden: "etapa protegida", Respuesta: "aporte de la etapa uno", Aprobacion: true},
+			{ID: "fin", Nombre: "Fin", Orden: "última etapa", Respuesta: "cierre del flujo"},
+		},
+	}
+}
+
+// servidorContado es como servidorEtapas, pero avisa por `llamado` cada turno
+// de modelo que recibe —sin contar las peticiones de título— para poder comprobar
+// si la etapa llegó a pedir turno.
+func servidorContado(t *testing.T, llamado chan<- string) *httptest.Server {
+	t.Helper()
+	var n int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cuerpo, _ := io.ReadAll(r.Body)
+		if bytes.Contains(cuerpo, []byte(marcaTitulo)) {
+			escribirSSE(w, "Titulo")
+			return
+		}
+		respuesta := fmt.Sprintf("respuesta-%d", atomic.AddInt32(&n, 1))
+		llamado <- respuesta
+		escribirSSE(w, respuesta)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// esperarAprobacionSinEtapas espera la petición de aprobación y devuelve su id,
+// fallando si antes se anunció el inicio de alguna etapa.
+func esperarAprobacionSinEtapas(t *testing.T, canal <-chan tui.Evento) string {
+	t.Helper()
+	for {
+		select {
+		case e := <-canal:
+			if e.Tipo == tui.EventoEtapaIniciada {
+				t.Fatalf("la etapa %q se inició antes de pedir la aprobación", e.Datos["nombre"])
+			}
+			if e.Tipo == tui.EventoPeticionAprobacion {
+				return e.Datos["aprobacion"]
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("no llegó la petición de aprobación")
+			return ""
+		}
+	}
+}
+
+// TestLaAprobacionDeUnaEtapaSePideAntesDeCorrerla: `aprobacion` pausa el flujo
+// antes de ejecutar la etapa —la petición llega al panel sin que el modelo haya
+// recibido ninguna llamada— y, al aprobar, la etapa corre y alimenta el bloque.
+func TestLaAprobacionDeUnaEtapaSePideAntesDeCorrerla(t *testing.T) {
+	llamado := make(chan string, 8)
+	o, sesion := orquestadorConServidor(t, servidorContado(t, llamado), catalogoConFlujo(flujoProtegido()))
+	canal, cerrar := o.Suscribir()
+	defer cerrar()
+
+	resultado := make(chan error, 1)
+	go func() { resultado <- o.Enviar(context.Background(), sesion, "plan", "/flow:protegido algo") }()
+
+	id := esperarAprobacionSinEtapas(t, canal)
+	select {
+	case llamada := <-llamado:
+		t.Fatalf("la etapa pidió turno (%q) antes de la aprobación", llamada)
+	default:
+	}
+
+	if err := o.ResponderAprobacion(sesion, id, true); err != nil {
+		t.Fatalf("responder: %v", err)
+	}
+	if err := <-resultado; err != nil {
+		t.Fatalf("el flujo no debería fallar tras aprobar: %v", err)
+	}
+
+	bloque, err := store.ListarFlowContext(o.db, o.projectID, sesion, "/protegido")
+	if err != nil || len(bloque) != 2 {
+		t.Fatalf("aprobada, las dos etapas deberían haber corrido: %+v (%v)", bloque, err)
+	}
+}
+
+// TestDeclinarLaAprobacionCancelaElFlujoSinCorrerLaEtapa: declinada la pausa de
+// una etapa, el flujo se cancela sin pedir turno al modelo y sin dejar ni aporte
+// ni respuesta del turno.
+func TestDeclinarLaAprobacionCancelaElFlujoSinCorrerLaEtapa(t *testing.T) {
+	llamado := make(chan string, 8)
+	o, sesion := orquestadorConServidor(t, servidorContado(t, llamado), catalogoConFlujo(flujoProtegido()))
+	canal, cerrar := o.Suscribir()
+	defer cerrar()
+
+	resultado := make(chan error, 1)
+	go func() { resultado <- o.Enviar(context.Background(), sesion, "plan", "/flow:protegido algo") }()
+
+	id := esperarAprobacionSinEtapas(t, canal)
+	if err := o.ResponderAprobacion(sesion, id, false); err != nil {
+		t.Fatalf("responder: %v", err)
+	}
+	if err := <-resultado; err != nil {
+		t.Fatalf("declinar cancela el flujo sin error: %v", err)
+	}
+
+	select {
+	case llamada := <-llamado:
+		t.Fatalf("una etapa declinada no debería haber pedido turno: %q", llamada)
+	default:
+	}
+	bloque, _ := store.ListarFlowContext(o.db, o.projectID, sesion, "/protegido")
+	if len(bloque) != 0 {
+		t.Fatalf("una etapa declinada no debería dejar aporte: %+v", bloque)
+	}
+	mensajes, _ := store.ListarMensajes(o.db, o.projectID, sesion)
+	if len(mensajes) != 1 {
+		t.Fatalf("solo debería quedar el mensaje `/flow:` del usuario: %+v", mensajes)
+	}
+	var cancelado bool
+	for _, e := range drenar(canal) {
+		if e.Tipo == tui.EventoFlujoCancelado {
+			cancelado = true
+		}
+	}
+	if !cancelado {
+		t.Fatal("el flujo debería avisar de que se canceló")
 	}
 }

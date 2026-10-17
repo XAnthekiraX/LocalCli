@@ -103,7 +103,7 @@ Ninguna de las dos recibe un identificador de paso: el orden es la posición y u
 Tres cosas hacen de `ejecutar_flujo` una herramienta distinta del resto:
 
 1. **Su permiso no es fijo: se deriva del flujo.** Si todas las etapas corren con `plan`, el flujo solo lee y lo lanza cualquier agente con `read`; si alguna corre con `build`, exige `write`/`edit`. El esquema se arma **por turno con el agente activo** y solo lista los flujos que puede lanzar, así que `plan` no ve a la vista un flujo que va a escribir. Es la excepción a «cada herramienta pertenece a un permiso fijo» de §2, y la única.
-2. **Es de ejecución larga e interactiva.** El turno **espera** mientras el flujo corre sus etapas, conservando sus pausas de `continuacion` y `aprobacion`. Cuando la etapa `entrega` redacta, la ejecución cierra y el resultado vuelve al agente: la entrega más el **bloque de contexto resumido**. El interior del flujo no cruza: ni etapas, ni herramientas internas, ni ventana. Ver [[specs/SPEC-ORQUESTADOR-FLUJOS]] §Invocación del flujo.
+2. **Es de ejecución larga e interactiva.** El turno **espera** mientras el flujo corre sus etapas, conservando su pausa de `aprobacion`. Cuando la etapa `entrega` redacta, la ejecución cierra y el resultado vuelve al agente: la entrega más el **bloque de contexto resumido**. El interior del flujo no cruza: ni etapas, ni herramientas internas, ni ventana. Ver [[specs/SPEC-ORQUESTADOR-FLUJOS]] §Invocación del flujo.
 3. **Tiene profundidad uno.** `ejecutar_flujo` no está disponible dentro de una etapa de flujo: un flujo no invoca a otro.
 
 En pantalla se anuncia su verbo y su tema —`FLUJO [investigar] · <peticion>`— y las líneas de sub-proceso de las etapas entran después, como en un flujo lanzado por comando.

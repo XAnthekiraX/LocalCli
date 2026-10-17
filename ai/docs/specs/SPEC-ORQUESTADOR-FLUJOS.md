@@ -62,12 +62,11 @@ Un flujo **no invoca flujos**: `ejecutar_flujo` no está disponible dentro de un
 1. El flujo arranca por una de sus dos entradas: el usuario escribe el comando con su petición, con sus palabras, o el agente pide `ejecutar_flujo` con el flujo elegido y la petición.
 2. Cada etapa pide su contexto al nodo, **excluyendo lo que las etapas anteriores ya recibieron** (§Nodo de contexto en [[specs/SPEC-NODO-CONTEXTO]]). Es lo que hace auditable qué recibió cada una: `context_audit` guarda una fila por documento y etapa.
 3. El orquestador corre las etapas en orden. En cada una:
-   1. Si la etapa tiene `continuacion`, el flujo **se detiene y pregunta** `continuamos con la etapa <nombre>?`. El usuario contesta sí o no, y puede cambiar de modelo mientras la decisión está en pantalla: al continuar, la etapa corre con el modelo que esté elegido, y las siguientes también, porque el modelo es de la sesión y se relee en cada etapa.
+   1. Si la etapa tiene `aprobacion`, el flujo **se detiene y pregunta** `aprobar la etapa <nombre>` **antes de correrla**: hasta que el usuario no aprueba, la etapa no se ejecuta; si declina, el flujo se cancela sin haberla corrido.
    2. La etapa recibe la ventana (§Ventana de contexto del flujo) más su propio contexto.
    3. Corre con herramientas, salvo que tenga `entrega`: esa corre **sin herramientas**, porque solo redacta.
    4. Su respuesta se optimiza —una generación corta que la condensa sin inventar—, se guarda en el bloque de contexto y se suma a la ventana.
-   5. Si la etapa tiene `aprobacion`, el flujo se detiene y pregunta `aprobar la etapa <nombre>`, igual que hasta ahora.
-   6. Si la etapa tiene `respuesta_en_chat`, su respuesta se pinta en la pantalla y se guarda (§Visibilidad de una respuesta).
+   5. Si la etapa tiene `respuesta_en_chat`, su respuesta se pinta en la pantalla y se guarda (§Visibilidad de una respuesta).
 4. El flujo termina con la respuesta de la etapa `entrega`, que es lo único que el chat muestra como conversación.
 
 ## Ventana de contexto del flujo
@@ -114,8 +113,8 @@ El nivel de entrega es el único que corre sin herramientas. Lo declara la etapa
 ## Flujos alternativos
 
 - Una etapa falla: el flujo se detiene y el usuario decide.
-- El usuario contesta que no a una `continuacion`: el flujo se detiene.
-- Una etapa con `aprobacion` espera: el flujo queda pausado.
+- El usuario declina la aprobación de una etapa: el flujo se cancela sin ejecutarla.
+- Una etapa con `aprobacion` espera: el flujo queda pausado antes de la etapa.
 - El usuario cancela: se detiene en la etapa actual.
 - Una etapa no puede continuar por falta de contexto: avisa y se detiene.
 - El usuario vuelve más tarde: el flujo pausado se retoma donde estaba, leyendo el bloque.
@@ -125,7 +124,7 @@ El nivel de entrega es el único que corre sin herramientas. Lo declara la etapa
 - Las etapas se ejecutan en orden y cada una arranca cuando la anterior terminó.
 - La `pregunta` del flujo y la `pregunta` de cada etapa son obligatorias. Sin ellas el flujo no carga, y se informa de cuál falta.
 - Un flujo declara exactamente una etapa `entrega`, y es la última.
-- `continuacion` se pregunta **antes** de correr la etapa; `aprobacion`, **después**. Una etapa puede tener las dos: primero se decide si se sigue, y después se aprueba el resultado.
+- `aprobacion` se pregunta **antes** de correr la etapa: hasta que el usuario no aprueba, la etapa no se ejecuta, y declinar cancela el flujo.
 - El modelo es el de la sesión, y se relee en cada etapa. Un flujo no declara modelo: quien lo elige es el usuario, también a mitad de un flujo.
 - Un documento se entrega **una sola vez** por ejecución: las etapas siguientes ya no lo ven, porque la respuesta de quien lo recibió lo resume.
 - Cada etapa corre sin el historial del chat y recibe de las anteriores la ventana, no su salida entera.
@@ -157,7 +156,7 @@ El nivel de entrega es el único que corre sin herramientas. Lo declara la etapa
 - [ ] `plan` no puede lanzar un flujo con alguna etapa `build`; `build` sí, con `write`/`edit`.
 - [ ] Lo que vuelve al agente que invocó el flujo es la entrega más el bloque resumido, y nada del interior.
 - [ ] `ejecutar_flujo` no está disponible dentro de una etapa: un flujo no invoca a otro.
-- [ ] Un flujo lanzado por el agente conserva sus pausas de `continuacion` y `aprobacion`.
+- [ ] Un flujo lanzado por el agente conserva su pausa de `aprobacion`.
 - [ ] La cola avanza cuando el usuario escribe `/ejecutar`.
 - [ ] Una petición sin comando se responde en el chat y no arranca etapas.
 - [ ] Una tarea con dependencias sin cumplir no arranca.
@@ -167,9 +166,8 @@ El nivel de entrega es el único que corre sin herramientas. Lo declara la etapa
 - [ ] Un documento recibido por una etapa no se vuelve a entregar a las siguientes.
 - [ ] La ventana se acota al presupuesto que deja la ventana real del modelo con la etapa que va a correr.
 - [ ] Cuando la ventana no cabe, se caen sus entradas más antiguas y la etapa lo sabe por el aviso.
-- [ ] Una etapa con `continuacion` detiene el flujo antes de correr, y el usuario puede cambiar de modelo antes de continuar.
-- [ ] Cambiar el modelo durante una `continuacion` hace que la etapa y las siguientes corran con ese modelo.
-- [ ] Una etapa con `aprobacion` detiene el flujo después de correr, y el usuario aprueba su resultado.
+- [ ] Una etapa con `aprobacion` detiene el flujo antes de correr, y no se ejecuta hasta que el usuario aprueba.
+- [ ] Declinar la aprobación de una etapa cancela el flujo sin haberla corrido.
 - [ ] La etapa `entrega` corre sin herramientas; una etapa que escribe código, con ellas.
 - [ ] Una etapa con `respuesta_en_chat` se ve en la pantalla y se guarda, y su texto no aparece en el contexto que recibe el modelo.
 - [ ] La pregunta de una etapa viaja en el brief del agente y la ventana empareja pregunta y respuesta de cada etapa anterior.

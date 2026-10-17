@@ -52,7 +52,7 @@ type Etapa struct {
 	Orden           string // qué debe cumplir la etapa
 	Respuesta       string // estructura de salida que recibe la siguiente etapa
 	Type            string // TipoLineal o TipoLoop
-	Aprobacion      bool   // detiene el flujo DESPUÉS de correr la etapa
+	Aprobacion      bool   // detiene el flujo ANTES de correr la etapa
 	RespuestaEnChat bool   // pinta la respuesta sin que sea la del turno
 	MaxIteraciones  int    // cota de vueltas de una etapa `loop`
 }

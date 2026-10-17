@@ -144,7 +144,7 @@ Una redacción no es un cierre, y puede fallar de dos maneras. Si el modelo vuel
 
 Las herramientas se ejecutan **una detrás de otra**, en el orden pedido. No en paralelo: el orden importa y las aprobaciones tienen que llegar al usuario en orden.
 
-**Una herramienta puede no cerrar en la pasada en que se pide.** `ejecutar_flujo` lanza un flujo y el turno **espera** mientras corre sus etapas, conservando sus pausas de `continuacion` y `aprobacion`: el modelo que la pidió ve el resultado cuando la etapa `entrega` termina. Para el agente activo es una herramienta más; lo único distinto es que su ejecución es larga e interactiva. Ver [[specs/SPEC-TOOLS]] §Los flujos como herramienta.
+**Una herramienta puede no cerrar en la pasada en que se pide.** `ejecutar_flujo` lanza un flujo y el turno **espera** mientras corre sus etapas, conservando su pausa de `aprobacion`: el modelo que la pidió ve el resultado cuando la etapa `entrega` termina. Para el agente activo es una herramienta más; lo único distinto es que su ejecución es larga e interactiva. Ver [[specs/SPEC-TOOLS]] §Los flujos como herramienta.
 
 ## Un agente sin herramientas
 
@@ -302,7 +302,7 @@ Por eso `plan` no escribe: nada cambia en el proyecto sin que antes alguien lo p
 - [ ] Las herramientas de un turno se ejecutan en el orden en que las pidió el modelo.
 - [ ] Un modelo sin capacidad de herramientas hace que el agente responda en modo conversación, y la interfaz lo avisa.
 - [ ] Un agente con `read` puede lanzar los flujos cuyas etapas corren todas con `plan`, y `build` también los que escriben.
-- [ ] El turno espera mientras `ejecutar_flujo` corre, y las pausas de `continuacion` y `aprobacion` se conservan.
+- [ ] El turno espera mientras `ejecutar_flujo` corre, y la pausa de `aprobacion` se conserva.
 - [ ] El agente que invocó `ejecutar_flujo` recibe solo la entrega y el bloque resumido, no las etapas ni las herramientas internas.
 - [ ] Dentro de una etapa de flujo, `ejecutar_flujo` no está en el catálogo.
 

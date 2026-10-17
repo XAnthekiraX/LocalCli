@@ -69,7 +69,7 @@ No incluye los flujos oficiales, que están en [[specs/SPEC-ORQUESTADOR-FLUJOS]]
 
 ## Supuestos
 
-- El formato de definición está fijado: un JSON por flujo en `~/.config/localcli/flows/` los oficiales y en `<proyecto>/.localcli/flows/` los propios, con `comando`, `nombre`, `descripcion`, `peticion`, `pregunta`, `reglas` y `etapas`. Cada etapa lleva `id`, `nombre`, `agente` (`plan` o `build`), `instruccion` y `pregunta`, más los modificadores `continuacion`, `entrega` y `respuesta_en_chat`, y `aprobacion`.
+- El formato de definición está fijado: un JSON por flujo en `~/.config/localcli/flows/` los oficiales y en `<proyecto>/.localcli/flows/` los propios, con `comando`, `nombre`, `descripcion`, `peticion`, `pregunta`, `reglas` y `etapas`. Cada etapa lleva `id`, `nombre`, `agente` (`plan` o `build`), `instruccion` y `pregunta`, más los modificadores `entrega` y `respuesta_en_chat`, y `aprobacion`.
 - `pregunta` es obligatoria en el flujo y en cada etapa —dice qué entrega el flujo y qué responde cada etapa—; un flujo declara exactamente una etapa `entrega`, y es la última ([[specs/SPEC-ORQUESTADOR-FLUJOS]]).
 - Los flujos son los archivos JSON de esos dos directorios: no hay flujos cableados. Los oficiales vienen sembrados en `~/.config/localcli/flows/`; un proyecto solo añade (`<proyecto>/.localcli/flows/`) y no sobrescribe un oficial con el mismo `comando`. Un `comando` sin archivo no existe y no se lista.
 - Las `reglas` del flujo y la `instruccion` de cada etapa viajan con el contexto de la etapa: es donde se declara, por ejemplo, cómo descubrir la documentación.

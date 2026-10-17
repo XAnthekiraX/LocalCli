@@ -32,7 +32,7 @@ repiten el comando de un oficial, se conserva el oficial.
 | `orden`            | sí          | La orden de la etapa: qué debe cumplir. Es su instrucción.                                                  |
 | `respuesta`        | en `linear` | La estructura de salida que la etapa debe producir y que recibe la etapa siguiente.                        |
 | `type`             | no          | `linear` (una vez, por defecto) o `loop` (repite hasta que la etapa responda `true`).                       |
-| `aprobacion`       | no          | `true` pausa el flujo **después** de la etapa para que el usuario apruebe y continúe.                       |
+| `aprobacion`       | no          | `true` pausa el flujo **antes** de la etapa: no corre hasta que el usuario la aprueba, y declinar cancela el flujo. |
 | `respuesta_en_chat`| no          | `true` pinta la respuesta de la etapa en el chat sin que sea la respuesta del turno.                        |
 | `max_iteraciones`  | en `loop`   | Cota de vueltas de una etapa `loop`. Por defecto 5.                                                         |
 

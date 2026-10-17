@@ -181,7 +181,7 @@ Ninguna de las dos herramientas necesita preguntar por el estado actual de la li
 De ahí salen tres diferencias con el resto de herramientas:
 
 1. **Su permiso no es fijo: se deriva del flujo.** Si todas las etapas corren con `plan`, el flujo solo lee y lo lanza cualquier agente con `read`; si alguna etapa corre con `build`, el flujo escribe y exige `write`/`edit`. El esquema se arma **por turno con el agente activo**: solo lista los flujos que ese agente puede lanzar. Así `plan` no recibe a la vista un flujo que va a escribir, y la garantía «`plan` mira, `build` escribe» no depende de la disciplina del modelo.
-2. **Es de ejecución larga e interactiva.** El flujo no termina en la pasada en que se pide: corre sus etapas, conservando sus pausas de `continuacion` y `aprobacion`, y el turno **espera** respuesta inline. Cuando la etapa `entrega` redacta, la ejecución cierra y el resultado vuelve al agente: la entrega más el **bloque de contexto resumido** —una aportación por etapa, condensada—. Lo que no cruza es el interior del flujo: ni etapas, ni herramientas internas, ni ventana. El agente sabe qué flujo lanzó y qué entregó, no lo que pasó dentro.
+2. **Es de ejecución larga e interactiva.** El flujo no termina en la pasada en que se pide: corre sus etapas, conservando su pausa de `aprobacion`, y el turno **espera** respuesta inline. Cuando la etapa `entrega` redacta, la ejecución cierra y el resultado vuelve al agente: la entrega más el **bloque de contexto resumido** —una aportación por etapa, condensada—. Lo que no cruza es el interior del flujo: ni etapas, ni herramientas internas, ni ventana. El agente sabe qué flujo lanzó y qué entregó, no lo que pasó dentro.
 3. **Tiene profundidad uno.** `ejecutar_flujo` no está disponible dentro de una etapa de flujo: un flujo no invoca a otro.
 
 La frontera de salida es deliberada: la sesión principal no debe heredar ruido del interior del flujo. Es la misma «frontera de sesión» que describe [[specs/SPEC-ORQUESTADOR-FLUJOS]] §Invocación del flujo.
@@ -350,7 +350,7 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - Un turno tiene un máximo de pasadas; al agotarlo, termina con lo conseguido.
 - El catálogo incluido son diecisiete herramientas y **no se amplía desde fuera**: el catálogo está embebido en el código.
 - `ejecutar_flujo` es una sola herramienta: `flujo` elige el comando y `peticion` el objetivo; su permiso se deriva del flujo, su esquema se arma por turno y solo lista los flujos que el agente activo puede lanzar.
-- `ejecutar_flujo` corre el flujo como sub-proceso, conservando sus pausas de `continuacion` y `aprobacion`, y devuelve la entrega más el bloque resumido. El interior del flujo no cruza.
+- `ejecutar_flujo` corre el flujo como sub-proceso, conservando su pausa de `aprobacion`, y devuelve la entrega más el bloque resumido. El interior del flujo no cruza.
 - `ejecutar_flujo` no está en el catálogo dentro de una etapa de flujo: un flujo no invoca a otro.
 - El reparto sale de permisos (`read`, `write`, `edit`) declarados como `allow`/`deny`, con `default: deny`; el catálogo efectivo se deriva de ellos.
 - Un `permissions` con `default: allow` no carga: el default solo admite `deny`.
@@ -434,7 +434,7 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - [ ] El reparto sale de `read`, `write` y `edit`: `editar_archivo` va a `edit`, y crear, escribir, eliminar y las carpetas van a `write`.
 - [ ] `ejecutar_flujo` se pide por el canal nativo, con `flujo` y `peticion`, y su esquema se arma por turno con los flujos que el agente activo puede lanzar.
 - [ ] Con `read`, el agente lanza los flujos cuyas etapas corren todas con `plan`; un flujo con alguna etapa `build` solo se lista para quien tiene `write`/`edit`.
-- [ ] Al lanzar `ejecutar_flujo`, el turno espera mientras el flujo corre; las pausas de `continuacion` y `aprobacion` se conservan.
+- [ ] Al lanzar `ejecutar_flujo`, el turno espera mientras el flujo corre; la pausa de `aprobacion` se conserva.
 - [ ] El resultado de `ejecutar_flujo` es la entrega más el bloque resumido; ninguna etapa ni herramienta interna del flujo aparece en el contexto del agente que lo invocó.
 - [ ] Dentro de una etapa de flujo, `ejecutar_flujo` no está en el catálogo: un flujo no invoca a otro.
 - [ ] En pantalla, el lanzamiento se anuncia como `FLUJO [<comando>] · <peticion>` y después entran las líneas de sub-proceso de las etapas.

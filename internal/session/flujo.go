@@ -63,11 +63,11 @@ func (o *Orquestador) elegirFlujo(linea string) eleccionFlujo {
 }
 
 // correrFlujo ejecuta todas las etapas de un flujo como sub-proceso del turno:
-// compone la ventana de cada etapa, corre su agente, respeta la aprobación y
-// publica los eventos. Todas las etapas corren con el agente activo de la sesión
-// y ven el historial con el que se invocó el flujo, junto a la petición. Devuelve
-// la entrega —lo que deja la última etapa— y el bloque resumido, que es lo único
-// que cruza hacia quien lo invocó.
+// compone la ventana de cada etapa, pide su aprobación antes de correrla, corre
+// su agente y publica los eventos. Todas las etapas corren con el agente activo
+// de la sesión y ven el historial con el que se invocó el flujo, junto a la
+// petición. Devuelve la entrega —lo que deja la última etapa— y el bloque
+// resumido, que es lo único que cruza hacia quien lo invocó.
 func (o *Orquestador) correrFlujo(ctx context.Context, sesionID string, agenteActivo agent.Agente, f flow.Flujo, peticion string, historial []agent.Mensaje, alDelta func(agent.Delta) error) (string, string, error) {
 	if err := store.VaciarFlowContext(o.db, o.projectID, sesionID, f.Comando); err != nil {
 		return "", "", err
@@ -75,12 +75,25 @@ func (o *Orquestador) correrFlujo(ctx context.Context, sesionID string, agenteAc
 
 	entrega := ""
 	for i, etapa := range f.Etapas {
+		ultima := i == len(f.Etapas)-1
+		if etapa.Aprobacion {
+			// La aprobación se pide ANTES de correr la etapa
+			// (SPEC-ORQUESTADOR-FLUJOS §Flujo principal): hasta que el
+			// usuario no aprueba, la etapa no llega a ejecutarse.
+			ok, err := o.pausarEtapa(ctx, sesionID, "aprobar la etapa "+etapa.Nombre)
+			if err != nil {
+				return "", "", err
+			}
+			if !ok {
+				o.emitir(tui.Evento{Sesion: sesionID, Tipo: tui.EventoFlujoCancelado})
+				return "", "", nil
+			}
+		}
 		o.emitir(tui.Evento{Sesion: sesionID, Tipo: tui.EventoEtapaIniciada, Datos: map[string]string{
 			"etapa": etapa.ID, "nombre": etapa.Nombre,
 		}})
 		o.guardarEventoChat(sesionID, store.ChatEventoProceso, linea.Proceso(etapa.Nombre), nil)
 
-		ultima := i == len(f.Etapas)-1
 		texto, err := o.correrEtapa(ctx, sesionID, agenteActivo, f, etapa, peticion, historial, ultima, alDelta)
 		if err != nil {
 			o.emitir(tui.Evento{Sesion: sesionID, Tipo: tui.EventoEtapaFallida, Datos: map[string]string{
@@ -105,17 +118,6 @@ func (o *Orquestador) correrFlujo(ctx context.Context, sesionID string, agenteAc
 			// (SPEC-ORQUESTADOR-FLUJOS §Visibilidad de una respuesta).
 			o.pintarRespuestaEtapa(sesionID, texto)
 		}
-		if etapa.Aprobacion {
-			ok, err := o.pausarEtapa(ctx, sesionID, "aprobar la etapa "+etapa.Nombre)
-			if err != nil {
-				return "", "", err
-			}
-			if !ok {
-				o.emitir(tui.Evento{Sesion: sesionID, Tipo: tui.EventoFlujoCancelado})
-				return "", "", nil
-			}
-		}
-
 		o.emitir(tui.Evento{Sesion: sesionID, Tipo: tui.EventoEtapaTerminada, Datos: map[string]string{
 			"etapa": etapa.ID, "nombre": etapa.Nombre, "resumen": resumenCorto(texto),
 		}})
