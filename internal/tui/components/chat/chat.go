@@ -144,6 +144,27 @@ func (m Model) Vacio() bool {
 // AñadirSegmento cuelga un segmento de texto del final del hilo.
 func (m *Model) AñadirSegmento(s Segmento) { m.piezas = append(m.piezas, &s) }
 
+// FijarIDUsuarioPendiente cierra el id de la base sobre el primer segmento del
+// usuario todavía sin id: la burbuja viva que la vista pintó al enviar nace sin
+// id porque el mensaje aún no existía en la base, y el menú del globo lo exige
+// para revertir o bifurcar. El emparejamiento es FIFO —los ids llegan en el
+// orden en que se persistió y las burbujas se pintaron en el orden de envío—.
+// Si no queda ninguna burbuja del usuario sin id —p. ej. el hilo se recargó ya
+// desde el historial, que trae los suyos—, no hace nada.
+func (m *Model) FijarIDUsuarioPendiente(id string) {
+	if id == "" {
+		return
+	}
+	for _, pieza := range m.piezas {
+		seg, ok := pieza.(*Segmento)
+		if !ok || seg.Hablante != Usuario || seg.ID != "" {
+			continue
+		}
+		seg.ID = id
+		return
+	}
+}
+
 // AñadirLinea cuelga una línea del sistema del final del hilo. Antes cierra el
 // texto en curso: la línea se interpone en su sitio cronológico, no al final del
 // turno (INTERFACES §1.1).

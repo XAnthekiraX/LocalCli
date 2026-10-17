@@ -30,6 +30,11 @@ const (
 	EventoTodoActualizada      = "todo_actualizada"
 	EventoCambioAplicado       = "cambio_aplicado"
 	EventoContextoAuditado     = "contexto_auditado"
+	// EventoMensajePersistido publica el id del mensaje del usuario recién
+	// guardado en la base. La vista se lo cierre a la burbuja viva que pintó al
+	// enviar, que nace sin id: sin él el menú del globo no podría revertir ni
+	// bifurcar sobre ella.
+	EventoMensajePersistido = "mensaje_persistido"
 	// EventoCapacidadesModelo publica el estado de las capacidades del modelo
 	// activo cuando el motor las resuelve (al cambiar de modelo).
 	EventoCapacidadesModelo = "capacidades_modelo"

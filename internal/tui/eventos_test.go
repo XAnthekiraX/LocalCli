@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"localcli/internal/tui/components/chat"
 	"localcli/internal/tui/render"
 )
 
@@ -61,6 +62,36 @@ func TestLosEventosDeOtraSesionNoEntranAlChat(t *testing.T) {
 	}
 	if hilo := render.SinANSI(app.chat.Hilo(80)); !strings.Contains(hilo, "mío") {
 		t.Fatalf("el token no llegó al hilo:\n%s", hilo)
+	}
+}
+
+// El id del mensaje recién guardado cierra la burbuja viva del usuario de la
+// sesión activa: el menú del globo solo se abre sobre un mensaje con
+// identidad en la base, y esa burbuja nació sin ella. Lo de otras sesiones y
+// los roles ajenos al usuario no la tocan.
+func TestElMensajePersistidoCierraLaBurbujaViva(t *testing.T) {
+	app := appConSesion()
+	app.chat.AñadirUsuario("hola")
+
+	app.aplicarEvento(eventoDe("s1", EventoMensajePersistido, map[string]string{
+		"mensaje": "m-1", "rol": "user",
+	}))
+	piezas := app.chat.Piezas()
+	seg, ok := piezas[0].(*chat.Segmento)
+	if !ok || seg.ID != "m-1" {
+		t.Fatalf("la burbuja viva no adoptó el id: %+v", piezas[0])
+	}
+
+	app.chat.AñadirUsuario("otra")
+	app.aplicarEvento(eventoDe("s2", EventoMensajePersistido, map[string]string{
+		"mensaje": "m-2", "rol": "user",
+	}))
+	app.aplicarEvento(eventoDe("s1", EventoMensajePersistido, map[string]string{
+		"mensaje": "m-agente", "rol": "agent",
+	}))
+	ultima, ok := app.chat.Piezas()[1].(*chat.Segmento)
+	if !ok || ultima.ID != "" {
+		t.Fatalf("ni otra sesión ni un rol ajeno deberían fijar el id: %+v", app.chat.Piezas()[1])
 	}
 }
 

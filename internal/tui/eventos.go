@@ -114,6 +114,13 @@ func (a *App) aplicarEvento(evento Evento) tea.Cmd {
 			return nil
 		}
 		a.chat.Fragmento(texto)
+	case EventoMensajePersistido:
+		// El id del mensaje recién guardado cierra la burbuja viva del usuario
+		// que la vista pintó al enviar: el menú del globo solo se abre sobre un
+		// mensaje con identidad en la base, y esa burbuja nació sin ella.
+		if evento.Datos["rol"] == "user" {
+			a.chat.FijarIDUsuarioPendiente(evento.Datos["mensaje"])
+		}
 	case EventoHerramientaInvocada:
 		// La herramienta se interpone en el turno: lo dicho hasta aquí se cierra
 		// como un segmento (lo hace el propio chat) y la línea queda debajo, en el

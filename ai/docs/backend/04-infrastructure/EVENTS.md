@@ -44,6 +44,7 @@ No hay webhooks ni cola de mensajes externa. Los "eventos" aquí son notificacio
 | `cambio_aplicado` | `fileops` | Un cambio se aplicó y quedó registrado en `change_history` |
 | `contexto_auditado` | `context` | Una etapa terminó de armar su contexto; se registró la auditoría |
 | `capacidades_modelo` | `session` | El motor resolvió las capacidades del modelo activo tras un cambio de modelo; la vista actualiza el chip de visión |
+| `mensaje_persistido` | `session` | El mensaje del usuario se guardó en la base; la vista cierra ese id a la burbuja viva del chat para que su menú pueda revertir o bifurcar sobre ella |
 
 Los estados de sesión y sus transiciones están en [[database/01-schema/ENUMS]].
 
@@ -76,6 +77,7 @@ Por eso los emite `tools` y no `agent`: la capa universal ya está en ese punto 
 | `cambio_aplicado` | `tui` | `store` ya lo tiene en `change_history` |
 | `contexto_auditado` | `tui` | El usuario lo consulta |
 | `capacidades_modelo` | `tui` | Actualiza el chip de visión del pie de la caja tras reiniciar el servidor con otro modelo |
+| `mensaje_persistido` | `tui` | Fija el id del mensaje a la burbuja viva del usuario de la sesión activa; solo aplica a la sesión que trabajando la pintó |
 
 `tui` recibe estos eventos por el bus. No importa `tools`: la prohibición de imports entre módulos ([[backend/01-domain/DOMAIN]]) lo impide, y además no lo necesita —pinta lo que le llega.
 
@@ -102,6 +104,7 @@ Los payloads llevan lo mínimo para que el consumidor pueda pintar o decidir. No
   La única excepción es **`bloque`**, un campo opcional que solo usa `diagram`: cuando la herramienta produjo un bloque visual, el texto ya renderizado viaja aquí para que la TUI lo pinte bajo la línea del hilo ([[specs/SPEC-DIAGRAMA]] §Presentación). Es una extensión mínima del payload existente, no un evento nuevo, y no altera el formato de los demás mensajes: el resto de herramientas no lo emiten. Como el bloque no entra al contexto del modelo —su resultado en texto sigue yendo por el protocolo de herramientas— y sí forma parte del hilo, se persiste junto a la línea, igual que la duración.
 - **`tokens_turno`:** los tokens de entrada y de salida del turno, más el total del contexto del chat (`contexto`) y su límite (`limite`). Mientras el turno corre, la TUI aproxima el consumo del turno contando los fragmentos de `token`; al llegar este evento, el valor exacto lo corrige. `contexto` es la estimación del chat que forma el contexto de la sesión (mensajes de usuario y agente; las líneas de procesamiento no cuentan) y `limite`, la ventana del modelo: juntos alimentan la fila CONTEXTO del panel. Cuando el motor no declara su ventana, `limite` lleva el tope del harness, que es lo que de verdad se respetó en el recorte, y `limite_harness` lo dice (`"true"`/`"false"`) para que el panel lo marque como tal en vez de hacerlo pasar por la ventana del modelo. Ver [[specs/SPEC-PANEL-CONTEXTO]] y [[specs/SPEC-MODELOS-LLAMACPP]].
 - **`capacidades_modelo`:** el estado de visión del modelo activo (`"soportada"`, `"no_soportada"` o `"desconocida"`), sin sesión: es un dato del motor, no de una conversación. Se emite una sola vez al terminar el reinicio del servidor con otro modelo. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
+- **`mensaje_persistido`:** el identificador del mensaje recién guardado (`mensaje`) y su rol (`rol`, hoy solo `"user"`: es el único mensaje que la vista pinta en vivo antes de conocer su id). La vista se lo cierre a la burbuja viva del usuario correspondiente, emparejadas en orden de envío: el menú del globo —revertir, copiar, bifurcar— solo opera sobre mensajes con identidad en la base, y la burbuja nacida al enviar todavía no la tiene. Se emite justo después de persistir, con lo que se cumple la regla de §4: el cambio ya está escrito cuando llega.
 
 **Las capacidades del modelo son una consulta al puerto, no un aviso.** Se piden cuando se necesita —al montar las herramientas de un agente, al ofrecer visión, al decidir el `think`— y llegan con su estado de tres valores; por eso no viajan como evento para mantenerlas al día, que sería emitirlas continuamente para algo que se consulta pocas veces.
 

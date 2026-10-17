@@ -845,11 +845,19 @@ func (o *Orquestador) Enviar(ctx context.Context, sesionID, agenteNombre, texto 
 		return fmt.Errorf("session: agente desconocido %q", agenteNombre)
 	}
 
-	if _, err := store.CrearMensaje(o.db, o.projectID, sesionID, "user", texto, nil, nil, nil); err != nil {
+	mensaje, err := store.CrearMensaje(o.db, o.projectID, sesionID, "user", texto, nil, nil, nil)
+	if err != nil {
 		o.avisar(sesionID, "no se pudo guardar el mensaje: "+err.Error(), "")
 		o.cerrarTurno(sesionID, true)
 		return err
 	}
+	// El id recién guardado viaja a la vista para que la burbuja viva del
+	// usuario lo adopte: el menú del globo (revertir/copiar/bifurcar) solo se
+	// abre sobre un mensaje con identidad en la base.
+	o.emitir(tui.Evento{Sesion: sesionID, Tipo: tui.EventoMensajePersistido, Datos: map[string]string{
+		"mensaje": mensaje.ID,
+		"rol":     "user",
+	}})
 	o.titular(ctx, sesionID, texto)
 
 	// Un comando de flujo arranca etapas en vez de responder como chat.

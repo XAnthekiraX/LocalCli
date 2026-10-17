@@ -82,6 +82,39 @@ func TestCerrarTurnoGuardaTextoRazonamientoYTiempo(t *testing.T) {
 	}
 }
 
+// El id que la base guarda para el mensaje del usuario se cierra sobre la
+// burbuja viva correspondiente, en orden de envío: es lo que permite abrir el
+// menú del globo (revertir/copiar/bifurcar) sin recargar el hilo entero.
+func TestFijarIDUsuarioPendienteEmparejaEnOrden(t *testing.T) {
+	m := Nuevo()
+	m.AñadirUsuario("primera")
+	m.Fragmento("respuesta")
+	m.CerrarTurno()
+	m.AñadirUsuario("segunda")
+
+	m.FijarIDUsuarioPendiente("id-primera")
+	primera, ok := m.Piezas()[0].(*Segmento)
+	if !ok || primera.ID != "id-primera" {
+		t.Fatalf("la primera burbuja no adoptó su id: %+v", m.Piezas()[0])
+	}
+	segunda, ok := m.Piezas()[2].(*Segmento)
+	if !ok || segunda.ID != "" {
+		t.Fatalf("la segunda burbuja no debería tocarse todavía: %+v", m.Piezas()[2])
+	}
+
+	m.FijarIDUsuarioPendiente("id-segunda")
+	if segunda.ID != "id-segunda" {
+		t.Fatalf("la segunda burbuja no adoptó su id: %+v", segunda)
+	}
+
+	// Un id sobrante —o uno vacío— no reasigna burbujas ya identificadas.
+	m.FijarIDUsuarioPendiente("id-extra")
+	m.FijarIDUsuarioPendiente("")
+	if primera.ID != "id-primera" || segunda.ID != "id-segunda" {
+		t.Fatal("un id sobrante o vacío no debería tocar burbujas ya identificadas")
+	}
+}
+
 // El indicador en vivo dice qué está pasando y solo existe mientras hay turno.
 func TestLaActividadDiceQueEstaPasando(t *testing.T) {
 	m := Nuevo()

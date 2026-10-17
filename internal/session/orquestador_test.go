@@ -177,6 +177,7 @@ func TestTurnoPersisteYEmite(t *testing.T) {
 	var textos []string
 	estados := map[string]bool{}
 	titulo := ""
+	idMensaje := ""
 	for _, e := range eventos {
 		switch e.Tipo {
 		case tui.EventoToken:
@@ -185,6 +186,10 @@ func TestTurnoPersisteYEmite(t *testing.T) {
 			estados[e.Datos["estado"]] = true
 		case tui.EventoTituloSesion:
 			titulo = e.Datos["titulo"]
+		case tui.EventoMensajePersistido:
+			if e.Datos["rol"] == "user" {
+				idMensaje = e.Datos["mensaje"]
+			}
 		}
 	}
 	if len(textos) != 1 || textos[0] != "hola" {
@@ -203,6 +208,9 @@ func TestTurnoPersisteYEmite(t *testing.T) {
 	}
 	if len(mensajes) != 2 || mensajes[0].Role != "user" || mensajes[1].Role != "agent" || mensajes[1].Content != "hola" {
 		t.Fatalf("mensajes = %+v", mensajes)
+	}
+	if idMensaje != mensajes[0].ID {
+		t.Fatalf("mensaje_persistido = %q, quiero el id guardado %q", idMensaje, mensajes[0].ID)
 	}
 }
 
