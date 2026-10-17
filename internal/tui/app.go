@@ -836,6 +836,18 @@ func (a *App) pintarHistorial(piezas []PiezaHistorial) {
 				Duracion:        m.Duracion,
 			})
 		case *LineaHistorial:
+			// La respuesta de una etapa con `respuesta_en_chat` se guardó como
+			// pieza de pantalla, pero se pinta como bloque del agente —igual que
+			// en vivo— y no como línea suelta del sistema
+			// (SPEC-ORQUESTADOR-FLUJOS §Visibilidad de una respuesta).
+			if m.Tipo == "respuesta" {
+				hilo = append(hilo, &chat.Segmento{
+					Hablante:        chat.Agente,
+					Texto:           m.Texto,
+					SinRazonamiento: true,
+				})
+				continue
+			}
 			hilo = append(hilo, &chat.Linea{Tipo: tipoDeLinea(m.Tipo), Texto: m.Texto, Bloque: m.Bloque})
 		}
 	}

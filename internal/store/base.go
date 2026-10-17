@@ -35,7 +35,7 @@ func RutaGlobal() (string, error) {
 	return filepath.Join(configDir, "localcli", "state.db"), nil
 }
 
-// CrearDB crea una nueva base de datos global con el esquema v8.
+// CrearDB crea una nueva base de datos global con el esquema actual.
 func CrearDB(ruta string) (*sql.DB, error) {
 	dir := filepath.Dir(ruta)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

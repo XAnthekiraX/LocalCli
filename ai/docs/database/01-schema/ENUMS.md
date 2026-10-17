@@ -21,7 +21,7 @@ La base de datos tiene cinco columnas con un conjunto cerrado de valores. Cada u
 |---|---|---|
 | Estado de sesión | `sessions.status` | `inactiva`, `trabajando`, `esperando_permiso`, `terminada`, `error` |
 | Rol de mensaje | `messages.role` | `user`, `agent` |
-| Tipo de línea de chat | `chat_evento.tipo` | `proceso`, `herramienta` |
+| Tipo de línea de chat | `chat_evento.tipo` | `proceso`, `herramienta`, `respuesta` |
 | Estado de aprobación | `approvals.status` | `pendiente`, `aprobada`, `declinada`, `obsoleta` |
 | Operación de archivo | `change_history.operation` | `crear_archivo`, `escribir_archivo`, `editar_archivo`, `eliminar_archivo`, `crear_carpeta`, `eliminar_carpeta` |
 
@@ -58,6 +58,7 @@ Lo que sí se guarda del turno es el mensaje `agent` final, que ya dice en su te
 |---|---|
 | `proceso` | El sub-proceso de una etapa de un flujo: «[Sub Proceso] Entender el problema» |
 | `herramienta` | La línea de una herramienta, ya cerrada: «✓ LEER [AGENTS.md] · 93 líneas» o, si la lectura fue por rango, «✓ LEER [AGENTS.md:10-50] · 41 líneas» |
+| `respuesta` | La respuesta completa de una etapa de un flujo con `respuesta_en_chat`, tal como se pidió verse en el hilo. Se pinta como bloque del agente, no como línea suelta |
 
 Son líneas del hilo que se muestran al usuario, no turnos de conversación: al modelo no se le entregan. Viven en su propia tabla, `chat_evento`, para que esa frontera —se muestra / se envía al modelo— sea la frontera de la tabla y no un filtro que alguien pueda olvidar. Ver [[database/01-schema/TABLES]].
 

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -130,5 +131,134 @@ func crearBaseV6(t *testing.T, ruta string) {
 		if _, err := db.Exec(paso); err != nil {
 			t.Fatalf("preparar base v6 (%q): %v", paso, err)
 		}
+	}
+}
+
+// proyectoYSesionDeLaBaseV9 lee el proyecto y la sesión a los que apuntan las
+// líneas del hilo de la base fabricada, que es con lo que hay que leerlas.
+func proyectoYSesionDeLaBaseV9(db *sql.DB) (string, string, error) {
+	var projectID, sesionID string
+	err := db.QueryRow(
+		`SELECT s.project_id, e.session_id FROM chat_evento e JOIN sessions s ON s.id = e.session_id LIMIT 1`,
+	).Scan(&projectID, &sesionID)
+	if err != nil {
+		return "", "", err
+	}
+	return projectID, sesionID, nil
+}
+
+// TestMigrarDesdeV9ConservaLasLineasDelHilo: la 010 reconstruye `chat_evento` para
+// admitir el tipo `respuesta`. Las líneas ya guardadas —`proceso` y `herramienta`—
+// se conservan enteras, con su duración, y su índice sigue ahí.
+func TestMigrarDesdeV9ConservaLasLineasDelHilo(t *testing.T) {
+	ruta := filepath.Join(t.TempDir(), "state.db")
+	crearBaseV9(t, ruta)
+
+	db, err := AbrirDBDesde(ruta)
+	if err != nil {
+		t.Fatalf("migrar v9 a v10: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	var version int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != versionEsquema {
+		t.Fatalf("user_version = %d, quiero %d", version, versionEsquema)
+	}
+
+	// La base fabricada deja el proyecto y la sesión a los que apuntan sus líneas.
+	projectID, sesionID, err := proyectoYSesionDeLaBaseV9(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	eventos, err := ListarChatEventos(db, projectID, sesionID)
+	if err != nil {
+		t.Fatalf("las líneas del hilo no se pudieron leer tras migrar: %v", err)
+	}
+	if len(eventos) != 2 {
+		t.Fatalf("líneas conservadas = %d, quiero 2", len(eventos))
+	}
+	if eventos[0].Tipo != ChatEventoProceso || eventos[0].Content != "[Sub Proceso] Diagnosticar" {
+		t.Fatalf("la línea de etapa cambió: %+v", eventos[0])
+	}
+	if eventos[1].Tipo != ChatEventoHerramienta || eventos[1].DurationMs == nil || *eventos[1].DurationMs != 400 {
+		t.Fatalf("la línea de herramienta perdió su duración: %+v", eventos[1])
+	}
+
+	var indice int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_chat_evento_session_created'`,
+	).Scan(&indice); err != nil || indice != 1 {
+		t.Fatalf("el índice del hilo no sobrevivió a la reconstrucción: %d (%v)", indice, err)
+	}
+
+	// El tipo nuevo ya cabe en el CHECK de la tabla migrada.
+	if _, err := CrearChatEvento(db, projectID, sesionID, ChatEventoRespuesta, "la respuesta de la etapa", nil); err != nil {
+		t.Fatalf("tras migrar debería admitirse el tipo `respuesta`: %v", err)
+	}
+	var clavesRotas int
+	if err := db.QueryRow("SELECT COUNT(*) FROM pragma_foreign_key_check").Scan(&clavesRotas); err != nil {
+		t.Fatal(err)
+	}
+	if clavesRotas != 0 {
+		t.Fatal("la migración dejó claves foráneas rotas")
+	}
+}
+
+// crearBaseV9 fabrica una base con el esquema v9 —la misma tabla `chat_evento`,
+// pero con su `CHECK` limitado a `proceso` y `herramienta`— más una sesión y dos
+// líneas del hilo, para probar la migración 010.
+func crearBaseV9(t *testing.T, ruta string) {
+	t.Helper()
+	db, err := CrearDB(ruta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	// Una única conexión: las claves foráneas son por conexión.
+	db.SetMaxOpenConns(1)
+
+	pasos := []string{
+		`DROP TABLE chat_evento;`,
+		`CREATE TABLE chat_evento (
+			id         TEXT PRIMARY KEY NOT NULL,
+			session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE ON UPDATE CASCADE,
+			tipo       TEXT NOT NULL CHECK (tipo IN ('proceso', 'herramienta')),
+			content    TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			duration_ms INTEGER
+		);`,
+		`CREATE INDEX idx_chat_evento_session_created ON chat_evento (session_id, created_at);`,
+		`PRAGMA user_version = 9;`,
+	}
+	for _, paso := range pasos {
+		if _, err := db.Exec(paso); err != nil {
+			t.Fatalf("preparar base v9 (%q): %v", paso, err)
+		}
+	}
+
+	projectID, err := ResolucionProyecto(db, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projectID == "" {
+		t.Fatal("la base de prueba quedó sin proyecto")
+	}
+	sesion, err := CrearSesion(db, projectID, "vieja", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sesion.ID == "" {
+		t.Fatal("la base de prueba quedó sin sesión")
+	}
+	if _, err := CrearChatEvento(db, projectID, sesion.ID, ChatEventoProceso, "[Sub Proceso] Diagnosticar", nil); err != nil {
+		t.Fatal(err)
+	}
+	ms := 400
+	if _, err := CrearChatEvento(db, projectID, sesion.ID, ChatEventoHerramienta, "✓ LEER [AGENTS.md] · 93 líneas", &ms); err != nil {
+		t.Fatal(err)
 	}
 }

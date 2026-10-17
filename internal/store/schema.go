@@ -2,7 +2,7 @@ package store
 
 import "database/sql"
 
-// initSchema inicializa el esquema v9 de la base de datos global.
+// initSchema inicializa el esquema v10 de la base de datos global.
 func initSchema(db *sql.DB) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -10,7 +10,7 @@ func initSchema(db *sql.DB) error {
 	}
 	defer tx.Rollback()
 
-	// Schema v9
+	// Schema v10
 	_, err = tx.Exec(`
 CREATE TABLE projects (
     id         TEXT PRIMARY KEY NOT NULL,
@@ -166,7 +166,7 @@ CREATE TABLE flow_context (
 CREATE TABLE chat_evento (
     id         TEXT PRIMARY KEY NOT NULL,
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE ON UPDATE CASCADE,
-    tipo       TEXT NOT NULL CHECK (tipo IN ('proceso', 'herramienta')),
+    tipo       TEXT NOT NULL CHECK (tipo IN ('proceso', 'herramienta', 'respuesta')),
     content    TEXT NOT NULL,
     created_at TEXT NOT NULL,
     duration_ms INTEGER
@@ -230,8 +230,8 @@ CREATE TABLE chat_evento (
 		return err
 	}
 
-	// user_version = 9
-	_, err = tx.Exec("PRAGMA user_version = 9;")
+	// user_version = 10
+	_, err = tx.Exec("PRAGMA user_version = 10;")
 	if err != nil {
 		return err
 	}

@@ -144,6 +144,21 @@ func (m Model) Vacio() bool {
 // AñadirSegmento cuelga un segmento de texto del final del hilo.
 func (m *Model) AñadirSegmento(s Segmento) { m.piezas = append(m.piezas, &s) }
 
+// AñadirRespuestaEtapa deja la respuesta completa de una etapa de un flujo en el
+// hilo, como bloque del agente: antes se cierra lo que se estuviera generando, para
+// que la respuesta quede en su sitio cronológico y lo que venga después —el aviso
+// de etapa terminada, la línea de la siguiente— abra un bloque nuevo. Es pintura
+// del hilo, no conversación del turno: no lleva id de mensaje, no arranca ni cierra
+// turno y su texto no viaja al modelo (SPEC-ORQUESTADOR-FLUJOS §Visibilidad de una
+// respuesta).
+func (m *Model) AñadirRespuestaEtapa(texto string) {
+	if strings.TrimSpace(texto) == "" {
+		return
+	}
+	m.cerrarSegmento()
+	m.AñadirSegmento(Segmento{Hablante: Agente, Texto: texto, SinRazonamiento: true})
+}
+
 // FijarIDUsuarioPendiente cierra el id de la base sobre el primer segmento del
 // usuario todavía sin id: la burbuja viva que la vista pintó al enviar nace sin
 // id porque el mensaje aún no existía en la base, y el menú del globo lo exige

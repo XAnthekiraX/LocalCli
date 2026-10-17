@@ -437,3 +437,85 @@ func tieneHerramienta(lista []agent.Herramienta, nombre string) bool {
 	}
 	return false
 }
+
+// flujoVisible es un flujo cuyas dos etapas piden verse en el chat
+// (`respuesta_en_chat`).
+func flujoVisible() flow.Flujo {
+	return flow.Flujo{
+		Comando: "/visible",
+		Etapas: []flow.Etapa{
+			{ID: "uno", Nombre: "Uno", Orden: "primera etapa", Respuesta: "aporte de la etapa uno", RespuestaEnChat: true},
+			{ID: "fin", Nombre: "Fin", Orden: "última etapa", Respuesta: "cierre del flujo", RespuestaEnChat: true},
+		},
+	}
+}
+
+// TestLaRespuestaEnChatSePintaYSeGuarda: una etapa con `respuesta_en_chat` deja su
+// respuesta completa en el hilo —el evento que la vista pinta como bloque— y una
+// fila en `chat_evento` con su tipo propio; ya no sale como aviso bajo el input
+// (SPEC-ORQUESTADOR-FLUJOS §Visibilidad de una respuesta). La etapa cuyo texto ya
+// viaja token a token al turno no se pinta dos veces.
+func TestLaRespuestaEnChatSePintaYSeGuarda(t *testing.T) {
+	o, sesion := orquestadorConServidor(t, servidorEtapas(t), catalogoConFlujo(flujoVisible()))
+	canal, cerrar := o.Suscribir()
+	defer cerrar()
+
+	if err := o.Enviar(context.Background(), sesion, "plan", "/flow:visible algo"); err != nil {
+		t.Fatalf("enviar: %v", err)
+	}
+
+	var respuestas, avisos []string
+	for _, e := range drenar(canal) {
+		switch e.Tipo {
+		case tui.EventoEtapaRespuesta:
+			respuestas = append(respuestas, e.Datos["texto"])
+		case tui.EventoNotificacion:
+			avisos = append(avisos, e.Datos["motivo"])
+		}
+	}
+	if strings.Join(respuestas, "|") != "respuesta-1" {
+		t.Fatalf("respuestas pintadas en el hilo = %v, quiero solo la de la primera etapa", respuestas)
+	}
+	if contiene(avisos, "respuesta-1") {
+		t.Fatalf("la respuesta ya no debería salir como aviso bajo el input: %v", avisos)
+	}
+
+	eventos, err := store.ListarChatEventos(o.db, o.projectID, sesion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var guardadas []string
+	for _, ev := range eventos {
+		if ev.Tipo == store.ChatEventoRespuesta {
+			guardadas = append(guardadas, ev.Content)
+		}
+	}
+	if strings.Join(guardadas, "|") != "respuesta-1" {
+		t.Fatalf("respuestas guardadas en chat_evento = %v", guardadas)
+	}
+}
+
+// TestLaUltimaEtapaSePintaCuandoNoHayAvanceEnVivo: el flujo que lanza el agente con
+// `ejecutar_flujo` no transmite token a token, así que también se pinta la
+// respuesta de su última etapa, que si no quedaría invisible.
+func TestLaUltimaEtapaSePintaCuandoNoHayAvanceEnVivo(t *testing.T) {
+	o, sesion := orquestadorConServidor(t, servidorEtapas(t), catalogoConFlujo(flujoVisible()))
+	canal, cerrar := o.Suscribir()
+	defer cerrar()
+
+	if _, err := o.ejecutarFlujo(context.Background(),
+		tools.PeticionEjecutarFlujo{Flujo: "/visible", Peticion: "algo"},
+		tools.Contexto{SesionID: sesion, Agente: "plan"}); err != nil {
+		t.Fatalf("ejecutar el flujo: %v", err)
+	}
+
+	var respuestas []string
+	for _, e := range drenar(canal) {
+		if e.Tipo == tui.EventoEtapaRespuesta {
+			respuestas = append(respuestas, e.Datos["texto"])
+		}
+	}
+	if strings.Join(respuestas, "|") != "respuesta-1|respuesta-2" {
+		t.Fatalf("respuestas pintadas en el hilo = %v, quiero las dos etapas", respuestas)
+	}
+}

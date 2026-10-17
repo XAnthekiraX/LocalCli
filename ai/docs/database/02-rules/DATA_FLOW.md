@@ -69,7 +69,7 @@ Los dos se editan a mano y se versionan. Nada de esto se duplica en SQLite: si l
 | `reasoning` | El modelo, token a token | Mostrar y auditar el razonamiento |
 | `approvals` | El agente, al pedir permiso | Saber qué espera tu decisión |
 | `context_audit` | El nodo de contexto | Saber qué documentación entró y qué se descartó |
-| `chat_evento` | El adaptador, al correr una etapa o una herramienta | Recordar el hilo de procesamiento que se pinta (sub-procesos y herramientas) |
+| `chat_evento` | El adaptador, al correr una etapa o una herramienta | Recordar el hilo de procesamiento que se pinta (sub-procesos, herramientas y respuestas de etapas con `respuesta_en_chat`) |
 | `change_history` | Las herramientas de archivo | Poder revertir y auditar cambios |
 
 Nada de esto es fuente de verdad. Es estado que se puede perder y reconstruir, salvo `change_history`, que es permanente por decisión de diseño.
@@ -82,7 +82,7 @@ Un turno con el canal nativo de herramientas produce, por dentro, una secuencia 
 |---|---|
 | Lo que escribió el usuario | Sí, en `messages` con `role = user` |
 | La petición de una herramienta y su resultado (crudos) | No |
-| La línea de pantalla de una herramienta y el sub-proceso de una etapa | Sí, en `chat_evento`: se muestra, nunca entra al contexto |
+| La línea de pantalla de una herramienta, el sub-proceso de una etapa y la respuesta de una etapa con `respuesta_en_chat` | Sí, en `chat_evento`: se muestra, nunca entra al contexto |
 | La respuesta final del agente | Sí, en `messages` con `role = agent` |
 | El razonamiento del turno | Sí, en `reasoning` |
 
@@ -96,7 +96,7 @@ Lo que se pierde es la posibilidad de reconstruir una ejecución concreta —qu�
 
 Un turno con herramientas tiene más pasos por dentro, pero **`messages` solo recibe el primer y el último mensaje**. El bucle pide al modelo, ejecuta lo que le pidió y vuelve a pedir, todo en memoria. Lo que queda del medio, en la base, es su línea de pantalla en `chat_evento` (ver abajo). Ver [[database/01-schema/ENUMS]].
 
-**Crear una línea de procesamiento.** Cada vez que una etapa de un flujo arranca se inserta en `chat_evento` una fila con `tipo = proceso` y la línea «[Sub Proceso] <nombre>». Cuando termina una herramienta se inserta una fila con `tipo = herramienta` y la línea cerrada —«✓ LEER [ruta] · 70 líneas»— junto con `duration_ms`, la duración de esa ejecución. Son datos de pantalla: se recuperan al abrir la sesión y **nunca** se le entregan al modelo. La línea de la herramienta se guarda al cerrarse, porque es inmutable una vez completa, y se guarda **con su duración**, que es lo mismo que se guarda con la respuesta del turno: el hilo que se recupera después lleva los mismos tiempos que se vieron en vivo. Las líneas de sub-proceso no llevan duración: van en `NULL`. Ver [[database/01-schema/TABLES]] §`chat_evento`.
+**Crear una pieza de procesamiento.** Cada vez que una etapa de un flujo arranca se inserta en `chat_evento` una fila con `tipo = proceso` y la línea «[Sub Proceso] <nombre>». Cuando termina una herramienta se inserta una fila con `tipo = herramienta` y la línea cerrada —«✓ LEER [ruta] · 70 líneas»— junto con `duration_ms`, la duración de esa ejecución. Cuando una etapa declara `respuesta_en_chat`, su respuesta completa se inserta con `tipo = respuesta` y el texto tal como se pidió verse en el hilo, sin duración. Son datos de pantalla: se recuperan al abrir la sesión y **nunca** se le entregan al modelo. La línea de la herramienta se guarda al cerrarse, porque es inmutable una vez completa, y se guarda **con su duración**, que es lo mismo que se guarda con la respuesta del turno: el hilo que se recupera después lleva los mismos tiempos que se vieron en vivo. Las sub-procesos y las respuestas de etapa no llevan duración: van en `NULL`. Ver [[database/01-schema/TABLES]] §`chat_evento`.
 
 **Crear una aprobación.** Cuando el agente pide permiso, se inserta una fila en `approvals` con `status = pendiente` y `resolved_at` en `NULL`, y la sesión pasa a `esperando_permiso`. Es un flujo que puede quedar a medias, así que ambas escrituras van en la misma transacción.
 
@@ -145,7 +145,7 @@ El paso 7 nunca ocurre sin el 3 y el 4. La base no lo impide, pero la capa unive
 
 Los pasos 3 y 5 pueden repetirse hasta un máximo de rondas. Al agotarlo, **no se cierra el turno con lo conseguido**: se pide una redacción sin herramientas, y solo si el modelo tampoco entrega texto ahí el turno falla con el motivo. El límite es duro, no un detalle, porque un modelo puede pedir herramientas en bucle, pero hacer un límite al trabajo es poder escribir la entrega: una pasada de redacción, un reintento como mucho, y ningún turno se guarda mudo. Ver [[specs/SPEC-AGENTE-BASE]] §El ciclo de un turno.
 
-**Lo que se escribe en la base en este ciclo es solo:** la auditoría de contexto, el mensaje del usuario, las líneas de procesamiento (`chat_evento`), las aprobaciones que se abren y se resuelven, y el mensaje final del agente con sus tokens y su duración. El bucle de herramientas en sí no escribe en `messages`.
+**Lo que se escribe en la base en este ciclo es solo:** la auditoría de contexto, el mensaje del usuario, las piezas de procesamiento (`chat_evento`), las aprobaciones que se abren y se resuelven, y el mensaje final del agente con sus tokens y su duración. El bucle de herramientas en sí no escribe en `messages`.
 
 ## Referencias
 

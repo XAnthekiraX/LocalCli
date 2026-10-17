@@ -99,8 +99,11 @@ func (o *Orquestador) correrFlujo(ctx context.Context, sesionID string, agenteAc
 		if err := store.GuardarFlowContext(o.db, o.projectID, sesionID, f.Comando, etapa.ID, etapa.Nombre, i, texto); err != nil {
 			return "", "", err
 		}
-		if etapa.RespuestaEnChat {
-			o.avisar(sesionID, texto, "")
+		if etapa.RespuestaEnChat && !yaViajaAlTurno(ultima, alDelta) {
+			// La respuesta se pinta como bloque del hilo y se guarda en
+			// `chat_evento`, nunca en el contexto del modelo
+			// (SPEC-ORQUESTADOR-FLUJOS §Visibilidad de una respuesta).
+			o.pintarRespuestaEtapa(sesionID, texto)
 		}
 		if etapa.Aprobacion {
 			ok, err := o.pausarEtapa(ctx, sesionID, "aprobar la etapa "+etapa.Nombre)
@@ -129,6 +132,14 @@ func (o *Orquestador) correrFlujo(ctx context.Context, sesionID string, agenteAc
 	return entrega, bloque, nil
 }
 
+// yaViajaAlTurno dice si la salida de una etapa se transmite token a token al
+// chat: es la última etapa del flujo y quien la corrió pidió avance en vivo. En
+// ese caso la respuesta ya aparece en el hilo como la respuesta del turno, así
+// que no se vuelve a pintar ni a guardar como bloque.
+func yaViajaAlTurno(ultima bool, alDelta func(agent.Delta) error) bool {
+	return ultima && alDelta != nil
+}
+
 // correrEtapa corre una etapa: una vez si es `linear`, o en bucle hasta que
 // responda `true` si es `loop`. Solo la última etapa del flujo —la entrega—
 // transmite su salida token a token al chat.
@@ -138,7 +149,7 @@ func (o *Orquestador) correrEtapa(ctx context.Context, sesionID string, agenteAc
 	}
 
 	delta := func(agent.Delta) error { return nil }
-	if ultima && alDelta != nil {
+	if yaViajaAlTurno(ultima, alDelta) {
 		delta = alDelta
 	}
 	ventana, err := o.ventanaDeEtapa(sesionID, f, etapa, peticion, historial, nil)

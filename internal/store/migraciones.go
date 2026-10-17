@@ -8,14 +8,14 @@ import (
 )
 
 // versionEsquema es la versión actual del esquema ([[database/03-operations/MIGRATIONS]]).
-const versionEsquema = 9
+const versionEsquema = 10
 
 // Migrar lleva la base a la versión objetivo aplicando, en orden y una a una, las
 // migraciones que falten ([[database/03-operations/MIGRATIONS]] §1 y §2).
 //
 // Un archivo recién creado (user_version = 0, sin esquema) nace ya en la versión
 // actual: se crea el esquema completo de una vez en lugar de encadenar las
-// migraciones 001..009, que dejarían el archivo a medias si algo se interrumpe.
+// migraciones 001..010, que dejarían el archivo a medias si algo se interrumpe.
 // El 001 no puede distinguir «archivo vacío» de «v1» por el número solo, así que
 // el 0 se resuelve como «sin esquema» y se crea todo.
 func Migrar(db *sql.DB, versionObjetivo int) error {
@@ -78,6 +78,8 @@ func aplicarMigracion(db *sql.DB, desde int) error {
 		migrar = migracion008
 	case 8:
 		migrar = migracion009
+	case 9:
+		migrar = migracion010
 	default:
 		return fmt.Errorf("store: migración desde versión %d no soportada", desde)
 	}
@@ -295,5 +297,42 @@ func migracion008(tx *sql.Tx) error {
 // `sessions.modelo`. Solo dropea la columna; no toca filas.
 func migracion009(tx *sql.Tx) error {
 	_, err := tx.Exec(`ALTER TABLE sessions DROP COLUMN motor_id;`)
+	return err
+}
+
+// migracion010 (`010-respuesta-etapa`) amplía el `CHECK` de `chat_evento.tipo`
+// para admitir `respuesta`, el tipo de la respuesta completa de una etapa de
+// flujo con `respuesta_en_chat` (SPEC-ORQUESTADOR-FLUJOS §Visibilidad de una
+// respuesta). SQLite no permite cambiar un `CHECK` con `ALTER TABLE`, así que la
+// tabla se reconstruye: se renombra la vieja, se crea la nueva con el mismo
+// esquema y sus claves, se copian las filas y se dropea la vieja junto a su
+// índice, que se vuelve a crear sobre la tabla nueva. Las filas existentes —
+// `proceso` y `herramienta`— siguen siendo válidas: no se pierde nada.
+func migracion010(tx *sql.Tx) error {
+	if _, err := tx.Exec(`ALTER TABLE chat_evento RENAME TO chat_evento_vieja;`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`
+CREATE TABLE chat_evento (
+    id         TEXT PRIMARY KEY NOT NULL,
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    tipo       TEXT NOT NULL CHECK (tipo IN ('proceso', 'herramienta', 'respuesta')),
+    content    TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    duration_ms INTEGER
+);
+`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`
+INSERT INTO chat_evento (id, session_id, tipo, content, created_at, duration_ms)
+SELECT id, session_id, tipo, content, created_at, duration_ms FROM chat_evento_vieja;
+`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DROP TABLE chat_evento_vieja;`); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`CREATE INDEX idx_chat_evento_session_created ON chat_evento (session_id, created_at);`)
 	return err
 }

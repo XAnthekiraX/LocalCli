@@ -7,11 +7,16 @@ import (
 	"github.com/google/uuid"
 )
 
-// Tipos de línea guardada del hilo (chat_evento.tipo): una etapa de un flujo o el
-// cierre de una herramienta.
+// Tipos de línea guardada del hilo (chat_evento.tipo): una etapa de un flujo, el
+// cierre de una herramienta o la respuesta de una etapa con `respuesta_en_chat`.
 const (
 	ChatEventoProceso     = "proceso"
 	ChatEventoHerramienta = "herramienta"
+	// ChatEventoRespuesta es la respuesta completa de una etapa de flujo que
+	// pidió verse en el chat: se pinta como bloque y se guarda para que el hilo
+	// se recupere igual al retomar la sesión. Nunca viaja al modelo
+	// (SPEC-ORQUESTADOR-FLUJOS §Visibilidad de una respuesta).
+	ChatEventoRespuesta = "respuesta"
 )
 
 // ChatEvento es una línea de pantalla guardada de una sesión: una herramienta o
@@ -20,7 +25,7 @@ const (
 type ChatEvento struct {
 	ID        string
 	SessionID string
-	// Tipo es `proceso` o `herramienta`.
+	// Tipo es `proceso`, `herramienta` o `respuesta`.
 	Tipo string
 	// Content es la línea ya compuesta, tal como se vio en pantalla.
 	Content string
@@ -35,7 +40,7 @@ type ChatEvento struct {
 // de herramienta se guarda ya cerrada, con su duración; la de un flujo no lleva
 // duración. Es best-effort para quien la llama: un fallo no debe tumbar el turno.
 func CrearChatEvento(db *sql.DB, projectID, sessionID, tipo, content string, durationMs *int) (*ChatEvento, error) {
-	if tipo != ChatEventoProceso && tipo != ChatEventoHerramienta {
+	if tipo != ChatEventoProceso && tipo != ChatEventoHerramienta && tipo != ChatEventoRespuesta {
 		return nil, fmt.Errorf("store: tipo de evento de chat inválido: %q", tipo)
 	}
 	if err := sesionEnProyecto(db, projectID, sessionID); err != nil {

@@ -283,3 +283,49 @@ func TestSinSesionActivaLosEventosNoRompenNada(t *testing.T) {
 		t.Fatalf("el chat no debería tener piezas: %+v", app.chat.Piezas())
 	}
 }
+
+// El evento `etapa_respuesta` deja la respuesta de una etapa de flujo como bloque
+// de chat en el hilo, en su sitio cronológico —después de lo que la etapa ya dejó y
+// antes del aviso de etapa terminada—, y no como aviso bajo el input
+// (INTERFACES §1.1, SPEC-ORQUESTADOR-FLUJOS §Visibilidad de una respuesta).
+func TestLaRespuestaDeUnaEtapaSePintaComoBloqueDelHilo(t *testing.T) {
+	app := appConSesion()
+
+	app.aplicarEvento(eventoDe("s1", EventoEtapaRespuesta, map[string]string{"texto": "## Diagnóstico\nla respuesta entera de la etapa"}))
+	app.aplicarEvento(eventoDe("s1", EventoEtapaTerminada, map[string]string{"nombre": "Diagnóstico"}))
+
+	if app.notificacionBajoInput != "" {
+		t.Fatalf("la respuesta no debería salir como aviso bajo el input: %q", app.notificacionBajoInput)
+	}
+	hilo := render.SinANSI(app.chat.Hilo(80))
+	bloque, aviso := strings.Index(hilo, "la respuesta entera de la etapa"), strings.Index(hilo, "etapa terminada")
+	if bloque < 0 {
+		t.Fatalf("la respuesta no llegó al hilo:\n%s", hilo)
+	}
+	if aviso < 0 || bloque > aviso {
+		t.Fatalf("la respuesta debería ir antes del aviso de etapa terminada:\n%s", hilo)
+	}
+
+	piezas := app.chat.Piezas()
+	seg, ok := piezas[len(piezas)-2].(*chat.Segmento)
+	if !ok || seg.Hablante != chat.Agente || seg.Texto != "## Diagnóstico\nla respuesta entera de la etapa" {
+		t.Fatalf("la respuesta debería quedar como bloque del agente, no como línea suelta: %#v", piezas[len(piezas)-2])
+	}
+
+	// La respuesta de otra sesión no toca la vista activa.
+	app.aplicarEvento(eventoDe("s2", EventoEtapaRespuesta, map[string]string{"texto": "ajena"}))
+	if strings.Contains(render.SinANSI(app.chat.Hilo(80)), "ajena") {
+		t.Fatal("la respuesta de otra sesión no debería pintarse")
+	}
+}
+
+// Una respuesta vacía no deja pieza alguna en el hilo.
+func TestLaRespuestaVaciaNoDejaBloque(t *testing.T) {
+	app := appConSesion()
+
+	app.aplicarEvento(eventoDe("s1", EventoEtapaRespuesta, map[string]string{"texto": "   "}))
+
+	if !app.chat.Vacio() {
+		t.Fatal("una respuesta vacía no debería dejar nada en el hilo")
+	}
+}

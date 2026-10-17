@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"localcli/internal/tui/components/chat"
 	"localcli/internal/tui/render"
 )
 
@@ -540,5 +541,38 @@ func TestLaPaletaMuestraComoMaximoCincoElementos(t *testing.T) {
 	}
 	if visibles != 5 {
 		t.Fatalf("la paleta muestra %d elementos, quiero 5:\n%s", visibles, pantalla)
+	}
+}
+
+// La respuesta de una etapa con `respuesta_en_chat` se guarda como pieza de
+// pantalla, pero al retomar la sesión se levanta a bloque de chat —igual que se
+// vio en vivo— y no a línea suelta del sistema
+// (SPEC-ORQUESTADOR-FLUJOS §Visibilidad de una respuesta).
+func TestRetomarUnaSesionRepintaLaRespuestaDeUnaEtapa(t *testing.T) {
+	p := &puertoFalso{
+		sesiones: []Sesion{{ID: "s2", Nombre: "segunda", Estado: EstadoInactiva}},
+		historial: []PiezaHistorial{
+			&MensajeHistorial{Rol: "user", Texto: "hazlo"},
+			&LineaHistorial{Tipo: "proceso", Texto: "[Sub Proceso] Diagnosticar"},
+			&LineaHistorial{Tipo: "respuesta", Texto: "## Diagnóstico\nla respuesta entera de la etapa"},
+		},
+	}
+	app := appDePrueba(p)
+
+	abrirAtajo(app, "l")
+	pulsar(app, tea.KeyMsg{Type: tea.KeyEnter})
+
+	hilo := render.SinANSI(app.chat.Hilo(80))
+	if !strings.Contains(hilo, "la respuesta entera de la etapa") {
+		t.Fatalf("la respuesta de la etapa no se repintó: %q", hilo)
+	}
+	if subproceso, respuesta := strings.Index(hilo, "[Sub Proceso]"), strings.Index(hilo, "la respuesta entera"); subproceso > respuesta {
+		t.Fatalf("la respuesta debería ir después de la línea del sub-proceso:\n%s", hilo)
+	}
+
+	ultima := app.chat.Piezas()[len(app.chat.Piezas())-1]
+	seg, ok := ultima.(*chat.Segmento)
+	if !ok || seg.Hablante != chat.Agente || seg.Texto != "## Diagnóstico\nla respuesta entera de la etapa" {
+		t.Fatalf("la respuesta recuperada debería ser bloque del agente: %#v", ultima)
 	}
 }

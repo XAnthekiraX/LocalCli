@@ -151,8 +151,9 @@ func (o *Orquestador) ConHerramientas(registro *tools.Registro, catalogo []agent
 	registro.Instalar("ejecutar_flujo", o.ejecutarFlujo)
 }
 
-// guardarEventoChat guarda una línea de pantalla de la sesión —una herramienta o
-// una etapa de un flujo— para que el hilo se recargue igual al retomarla. El hilo
+// guardarEventoChat guarda una pieza de pantalla de la sesión —una herramienta,
+// una etapa de un flujo o la respuesta de una etapa que pidió verse en el chat—
+// para que el hilo se recargue igual al retomarla. El hilo
 // en vivo no depende de que se guarde, así que el fallo se avisa y el turno sigue
 // (DATA_FLOW §Creación: «Crear una línea de procesamiento»).
 func (o *Orquestador) guardarEventoChat(sesionID, tipo, contenido string, durationMs *int) {
@@ -172,6 +173,17 @@ func (o *Orquestador) guardarLineaHerramienta(e tools.EventoResultado) {
 		ms = &n
 	}
 	o.guardarEventoChat(e.Sesion, store.ChatEventoHerramienta, texto, ms)
+}
+
+// pintarRespuestaEtapa deja la respuesta completa de una etapa de un flujo en el
+// hilo de la sesión: la guarda en `chat_evento` con su tipo propio —para que el
+// hilo se recupere igual al retomarlo— y publica el evento que la vista pinta
+// como bloque de chat, después de lo que la etapa ya dejó en el hilo y antes del
+// aviso de etapa terminada. No es conversación: su texto nunca entra al contexto
+// del modelo (SPEC-ORQUESTADOR-FLUJOS §Visibilidad de una respuesta).
+func (o *Orquestador) pintarRespuestaEtapa(sesionID, texto string) {
+	o.guardarEventoChat(sesionID, store.ChatEventoRespuesta, texto, nil)
+	o.emitir(tui.Evento{Sesion: sesionID, Tipo: tui.EventoEtapaRespuesta, Datos: map[string]string{"texto": texto}})
 }
 
 // ConFlujos inyecta el catálogo de flujos cargado del disco.

@@ -141,6 +141,12 @@ func (a *App) aplicarEvento(evento Evento) tea.Cmd {
 	case EventoEtapaIniciada:
 		// Cada etapa que empieza deja una sola línea con su nombre.
 		a.chat.AnotarEtapa(nombreDeEtapa(evento.Datos))
+	case EventoEtapaRespuesta:
+		// La respuesta completa de una etapa con `respuesta_en_chat` se pinta
+		// como bloque del hilo, en su sitio cronológico: después de lo que la
+		// etapa ya dejó y antes del aviso de etapa terminada. No es la respuesta
+		// del turno (INTERFACES §1.1).
+		a.chat.AñadirRespuestaEtapa(evento.Datos["texto"])
 	case EventoEtapaTerminada:
 		// La etapa cierra su línea; el resumen, si lo trae, se anota aparte.
 		a.chat.AnotarAviso("etapa terminada: " + nombreDeEtapa(evento.Datos))

@@ -60,7 +60,7 @@ Reglas:
 
 ## Nota sobre el esquema actual
 
-La base se crea ya en su versión actual (v9): la tabla `projects`, las seis tablas de [[database/01-schema/SCHEMA]] más `todos`, la lista de pasos de la sesión, `flow_context`, el bloque de contexto de un flujo, y `chat_evento`, las líneas de procesamiento del chat, además de las columnas `sessions.project_id`, `messages.duration_ms`, `chat_evento.duration_ms`, `sessions.modelo` y el par `sessions.summary` / `sessions.summary_upto` (el resumen compactado del historial y el último mensaje que abarca). La creación del archivo, su esquema inicial y las migraciones `002-crear-todo`, `003-crear-flow-context`, `004-crear-chat-evento`, `005-duracion-linea-herramienta`, `006-motor-y-modelo-de-sesion`, `007-crear-proyectos`, `008-resumen-sesion` y `009-quitar-motor-id` ocurren en el mismo paso de apertura, así que `user_version` arranca en 9. Los índices de [[database/01-schema/INDEXES]] se aplican junto con la creación, no después.
+La base se crea ya en su versión actual (v10): la tabla `projects`, las seis tablas de [[database/01-schema/SCHEMA]] más `todos`, la lista de pasos de la sesión, `flow_context`, el bloque de contexto de un flujo, y `chat_evento`, las piezas de procesamiento del chat, además de las columnas `sessions.project_id`, `messages.duration_ms`, `chat_evento.duration_ms`, `sessions.modelo` y el par `sessions.summary` / `sessions.summary_upto` (el resumen compactado del historial y el último mensaje que abarca). La creación del archivo, su esquema inicial y las migraciones `002-crear-todo`, `003-crear-flow-context`, `004-crear-chat-evento`, `005-duracion-linea-herramienta`, `006-motor-y-modelo-de-sesion`, `007-crear-proyectos`, `008-resumen-sesion`, `009-quitar-motor-id` y `010-respuesta-etapa` ocurren en el mismo paso de apertura, así que `user_version` arranca en 10. Los índices de [[database/01-schema/INDEXES]] se aplican junto con la creación, no después.
 
 La migración `002-crear-todo` es aditiva: añade la tabla `todos` y su clave primaria `(session_id, position)`, sin tocar ninguna fila existente. Una base en `user_version = 1` la recibe al abrirse y pasa a la 2 sin perder nada.
 
@@ -82,7 +82,9 @@ La migración `008-resumen-sesion` es aditiva y solo añade dos columnas a `sess
 
 La migración `009-quitar-motor-id` elimina la columna vestigial `sessions.motor_id`. Con un único proveedor (llama.cpp) el motor no se elige por sesión (DECISIONS 86-88): la columna se añadió en la 006 pero nunca se rellenó, siempre estuvo en `NULL`. Solo dropea la columna, sin tocar filas —no hay dato que perder porque siempre fue `NULL`—, no crea tabla ni índice. Una base en `user_version = 8` la recibe al abrirse y pasa a la 9 sin perder nada. Ver [[specs/SPEC-MODELOS-LLAMACPP]] y [[specs/SPEC-SESIONES]].
 
-La migración `010-todo-jerarquia` (pendiente, tarea T-B022) es aditiva: añade la columna `todos.parent_position` (nullable, sin valor por defecto) y el índice `idx_todos_padre` `(session_id, parent_position)`. No crea tabla ni actualiza filas: las existentes quedan con `NULL`, que es «paso raíz», así que una base v9 se lee como una lista plana sin ningún cambio de comportamiento. Guarda la jerarquía de un nivel —una tarea principal agrupa sus subtareas— que las herramientas de la sesión escriben y que valida la capa de datos, porque SQLite no permite añadir por `ALTER TABLE` una clave foránea autorreferencial compuesta ni un `CHECK` que mire otras filas. Ver [[specs/SPEC-TOOLS]], [[database/01-schema/TABLES]] §`todos` y [[database/01-schema/INDEXES]].
+La migración `010-respuesta-etapa` amplía el `CHECK` de `chat_evento.tipo` para admitir `respuesta`, el tipo de la respuesta completa de una etapa de un flujo con `respuesta_en_chat` (SPEC-ORQUESTADOR-FLUJOS §Visibilidad de una respuesta). SQLite no permite cambiar un `CHECK` con `ALTER TABLE`, así que la migración **reconstruye la tabla** dentro de su transacción: renombra la vieja, crea la nueva con el mismo esquema y sus claves, copia las filas, dropea la vieja y recrea su índice. No se pierde nada: las filas existentes —`proceso` y `herramienta`— siguen siendo válidas en el `CHECK` nuevo y el `INSERT … SELECT` las copia tal cual, con sus `duration_ms`. Una base en `user_version = 9` la recibe al abrirse y pasa a la 10 sin perder nada. Ver [[specs/SPEC-ORQUESTADOR-FLUJOS]] y [[database/01-schema/ENUMS]].
+
+La migración `011-todo-jerarquia` (pendiente, tarea T-B022) es aditiva: añade la columna `todos.parent_position` (nullable, sin valor por defecto) y el índice `idx_todos_padre` `(session_id, parent_position)`. No crea tabla ni actualiza filas: las existentes quedan con `NULL`, que es «paso raíz», así que una base v10 se lee como una lista plana sin ningún cambio de comportamiento. Guarda la jerarquía de un nivel —una tarea principal agrupa sus subtareas— que las herramientas de la sesión escriben y que valida la capa de datos, porque SQLite no permite añadir por `ALTER TABLE` una clave foránea autorreferencial compuesta ni un `CHECK` que mire otras filas. Ver [[specs/SPEC-TOOLS]], [[database/01-schema/TABLES]] §`todos` y [[database/01-schema/INDEXES]].
 
 ### Un `user_version` correcto no basta para saber que el esquema es el de la versión
 
@@ -125,9 +127,11 @@ herramientas no se guarda como conversación.
 
 Lo que sí añadió la `004-crear-chat-evento` es una tabla para las **líneas de
 pantalla** de ese canal: el sub-proceso de cada etapa (`chat_evento.tipo =
-proceso`) y la línea de cada herramienta (`tipo = herramienta`). Son lo que el
-chat muestra y lo que se recupera al volver a una sesión, pero **no son
-contexto**: al modelo solo se le entregan los turnos de `messages`.
+proceso`), la línea de cada herramienta (`tipo = herramienta`) y la respuesta
+completa de una etapa con `respuesta_en_chat` (`tipo = respuesta`, añadido por la
+`010-respuesta-etapa`). Son lo que el chat muestra y lo que se recupera al volver
+a una sesión, pero **no son contexto**: al modelo solo se le entregan los turnos
+de `messages`.
 
 Se eligió una tabla nueva en vez de crecer `messages.role` por dos razones:
 

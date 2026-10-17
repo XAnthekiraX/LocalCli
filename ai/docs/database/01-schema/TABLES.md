@@ -33,7 +33,7 @@ Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TE
 - **`change_history`** — Cada cambio aplicado a un archivo del proyecto, con lo que había antes y lo que quedó. Nunca se borra. Ver [[database/02-rules/BUSINESS_RULES]].
 - **`todos`** — La lista de pasos de una sesión: el plan que el agente mantiene con `crear_todo` y `actualizar_todo`. Es estado de ejecución de la sesión, no un documento del proyecto: `actualizar_todo` la reescribe entera y `crear_todo` le añade al final un paso o una tarea principal con sus subtareas. Cae con su sesión. Ver [[specs/SPEC-TOOLS]].
 - **`flow_context`** — El bloque de contexto de un flujo con `bloque_contexto`: una aportación por etapa, ya optimizada por el modelo. Es lo que permite que la composición final arme la entrega a partir de todo el trabajo de las etapas. Es estado de ejecución de la sesión: se reemplaza en cada ejecución del flujo y cae con su sesión. Ver [[specs/SPEC-ORQUESTADOR-FLUJOS]].
-- **`chat_evento`** — Las líneas de procesamiento del chat: el sub-proceso de cada etapa de un flujo y la línea de cada herramienta. Son parte del hilo que se muestra y se recuerdan al volver a una sesión, pero **no son contexto**: al modelo solo se le entregan los turnos de `messages`. Cae en cascada con su sesión. Ver [[database/02-rules/DATA_FLOW]].
+- **`chat_evento`** — Las piezas de pantalla del chat que no son conversación: el sub-proceso de cada etapa de un flujo, la línea de cada herramienta y la respuesta de una etapa que pidió verse en el hilo. Se muestran al usuario y se recuerdan al volver a una sesión, pero **no son contexto**: al modelo solo se le entregan los turnos de `messages`. Cae en cascada con su sesión. Ver [[database/02-rules/DATA_FLOW]].
 
 ## 3. Columnas
 
@@ -187,14 +187,14 @@ Hay una aportación por etapa y flujo dentro de la sesión: el índice único `(
 |---|---|---|---|---|
 | `id` | Identificador de la línea | UUID v4 | No | — |
 | `session_id` | Sesión a la que pertenece el hilo | UUID v4 de `sessions.id` | No | — |
-| `tipo` | Qué clase de línea es | `proceso`, `herramienta` | No | — |
+| `tipo` | Qué clase de pieza es | `proceso`, `herramienta`, `respuesta` | No | — |
 | `content` | La línea tal como se pinta | Texto libre | No | — |
 | `duration_ms` | Cuánto tardó lo que la línea describe, en milisegundos | Entero ≥ 0 | Sí | `NULL` |
 | `created_at` | Cuándo se añadió al hilo | ISO 8601 UTC | No | — |
 
-`tipo` distingue el sub-proceso de una etapa (`proceso`) de la línea de una herramienta (`herramienta`). `content` guarda el texto ya compuesto —«[Sub Proceso] Entender el problema» o «✓ LEER [AGENTS.md] · 93 líneas»—, para que al recargar la sesión el hilo se pinte igual que en vivo. En una lectura por rango el tema incluye el rango real leído (por ejemplo `AGENTS.md:10-50`). Las líneas son inmutables una vez completas, como los mensajes: la línea de una herramienta se guarda cerrada, con su marca, su medida y su tiempo. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su hilo.
+`tipo` distingue el sub-proceso de una etapa (`proceso`) de la línea de una herramienta (`herramienta`) y de la respuesta completa de una etapa con `respuesta_en_chat` (`respuesta`). `content` guarda el texto ya compuesto —«[Sub Proceso] Entender el problema», «✓ LEER [AGENTS.md] · 93 líneas» o la respuesta entera de la etapa—, para que al recargar la sesión el hilo se pinte igual que en vivo. En una lectura por rango el tema incluye el rango real leído (por ejemplo `AGENTS.md:10-50`). Las piezas son inmutables una vez completas, como los mensajes: la línea de una herramienta se guarda cerrada, con su marca, su medida y su tiempo; la respuesta de una etapa se guarda completa. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su hilo.
 
-`duration_ms` es el tiempo de **lo que esa línea describe**, no el del turno: en una línea de herramienta es el de su ejecución, y en una de sub-proceso no se mide y queda `NULL`. Sigue la misma convención que `messages.duration_ms` —`NULL` es «no se midió», no «tardó cero»—, y como la línea ya guarda su texto compuesto, el tiempo está ahí dos veces: como número, para poder consultarlo, y dentro de `content`, para que pintar el hilo no dependa de recomponerlo. Ver [[database/02-rules/DATA_FLOW]] y [[database/03-operations/MIGRATIONS]] §Nota sobre el esquema actual.
+`duration_ms` es el tiempo de **lo que esa pieza describe**, no el del turno: en una línea de herramienta es el de su ejecución, y en las demás no se mide y queda `NULL`. Sigue la misma convención que `messages.duration_ms` —`NULL` es «no se midió», no «tardó cero»—, y como cada pieza ya guarda su texto compuesto, el tiempo está ahí dos veces: como número, para poder consultarlo, y dentro de `content`, para que pintar el hilo no dependa de recomponerlo. Ver [[database/02-rules/DATA_FLOW]] y [[database/03-operations/MIGRATIONS]] §Nota sobre el esquema actual.
 
 ## 4. Relaciones
 

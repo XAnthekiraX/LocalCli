@@ -21,15 +21,21 @@ const (
 	EventoEtapaIniciada        = "etapa_iniciada"
 	EventoEtapaTerminada       = "etapa_terminada"
 	EventoEtapaFallida         = "etapa_fallida"
-	EventoFlujoPausado         = "flujo_pausado"
-	EventoFlujoReanudado       = "flujo_reanudado"
-	EventoFlujoCancelado       = "flujo_cancelado"
-	EventoPropuestaTodo        = "propuesta_todo"
-	EventoColaActualizada      = "cola_actualizada"
-	EventoElementoBloqueado    = "elemento_bloqueado"
-	EventoTodoActualizada      = "todo_actualizada"
-	EventoCambioAplicado       = "cambio_aplicado"
-	EventoContextoAuditado     = "contexto_auditado"
+	// EventoEtapaRespuesta publica la respuesta completa de una etapa de flujo
+	// con `respuesta_en_chat`. La vista la pinta como bloque de chat en su sitio
+	// cronológico: después de lo que la etapa ya dejó en el hilo y antes del
+	// aviso de etapa terminada. Se guarda aparte, en `chat_evento`, y no es
+	// conversación: no entra al contexto del modelo.
+	EventoEtapaRespuesta    = "etapa_respuesta"
+	EventoFlujoPausado      = "flujo_pausado"
+	EventoFlujoReanudado    = "flujo_reanudado"
+	EventoFlujoCancelado    = "flujo_cancelado"
+	EventoPropuestaTodo     = "propuesta_todo"
+	EventoColaActualizada   = "cola_actualizada"
+	EventoElementoBloqueado = "elemento_bloqueado"
+	EventoTodoActualizada   = "todo_actualizada"
+	EventoCambioAplicado    = "cambio_aplicado"
+	EventoContextoAuditado  = "contexto_auditado"
 	// EventoMensajePersistido publica el id del mensaje del usuario recién
 	// guardado en la base. La vista se lo cierre a la burbuja viva que pintó al
 	// enviar, que nace sin id: sin él el menú del globo no podría revertir ni
@@ -99,13 +105,16 @@ type MensajeHistorial struct {
 
 func (*MensajeHistorial) esPiezaHistorial() {}
 
-// LineaHistorial es una línea del sistema guardada del hilo: una herramienta o una
-// etapa de un flujo. `Texto` llega ya compuesto, tal como se vio en vivo. `Bloque`
+// LineaHistorial es una línea del sistema guardada del hilo: una herramienta, una
+// etapa de un flujo o la respuesta de una etapa con `respuesta_en_chat`. `Texto`
+// llega ya compuesto, tal como se vio en vivo. `Bloque`
 // es el diagrama renderizado de una herramienta `diagram`, ya en líneas Unicode
 // de ancho calculado: la TUI no lo interpreta, solo lo coloca bajo la línea
 // (INTERFACES §1.1, EVENTS §3). Vacío para el resto de herramientas.
 type LineaHistorial struct {
-	// Tipo es el tipo de línea guardada: "herramienta" o "proceso", como en la base.
+	// Tipo es el tipo de línea guardada: "herramienta", "proceso" o "respuesta",
+	// como en la base. "respuesta" no se pinta como línea suelta: la vista la
+	// levanta a bloque del agente.
 	Tipo string
 	// Texto es la línea tal como se pintó.
 	Texto string

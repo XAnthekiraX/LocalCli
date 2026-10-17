@@ -104,10 +104,10 @@ Una respuesta de etapa tiene tres niveles, y el nivel no lo decide el orquestado
 | Nivel | Cuándo | Dónde queda | ¿Llega al modelo? | Herramientas |
 |---|---|---|---|---|
 | Silenciosa | la etapa no pide nada de esto | en la ventana y el bloque | no | sí |
-| `respuesta_en_chat: true` | el usuario quiere ver lo que encontró | en la pantalla y en `chat_evento` | **no** | sí |
+| `respuesta_en_chat: true` | el usuario quiere ver lo que encontró | en la pantalla, como bloque del hilo, y en `chat_evento` con tipo `respuesta` | **no** | sí |
 | `entrega: true` | el flujo ya tiene todo y hay que redactar | en la pantalla y en `messages` | sí | **no** |
 
-El nivel intermedio no es contexto por construcción: lo que se pinta pero no es conversación se guarda en `chat_evento`, y el contexto que se le entrega al modelo se arma solo con `messages`. No hay un filtro que se pueda olvidar.
+El nivel intermedio no es contexto por construcción: lo que se pinta pero no es conversación se guarda en `chat_evento`, y el contexto que se le entrega al modelo se arma solo con `messages`. No hay un filtro que se pueda olvidar. La respuesta se pinta en su sitio cronológico —después de lo que la etapa ya dejó en el hilo y antes del aviso de etapa terminada— y se recupera igual al volver a la sesión. La única excepción es la etapa cuyo texto ya viaja token a token al turno: esa no se pinta dos veces.
 
 El nivel de entrega es el único que corre sin herramientas. Lo declara la etapa, y no se deduce de que sea la última: un flujo puede terminar escribiendo código, y en ese caso su última etapa necesita herramientas.
 

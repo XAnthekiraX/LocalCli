@@ -36,6 +36,7 @@ De [[backend/04-infrastructure/EVENTS]] llega cada evento y así reacciona la pa
 | `peticion_aprobacion`                       | Añade la línea al panel de aprobaciones y actualiza el contador                                                                                                                         |
 | `aprobacion_resuelta`                       | Retira o marca la línea y actualiza el contador                                                                                                                                         |
 | `etapa_iniciada`                            | Pinta en el chat la línea `[Sub Proceso] <nombre>` de la etapa que empieza                                                                                                              |
+| `etapa_respuesta`                           | Pinta la respuesta de una etapa con `respuesta_en_chat` como bloque del agente en el hilo, en su sitio cronológico —después de lo que la etapa dejó y antes de `etapa terminada`—. No es aviso bajo el input |
 | `etapa_terminada` / `etapa_fallida`         | Sin línea propia: la entrega final del flujo la escribe su último paso; `fallida` deja aviso                                                                                            |
 | `flujo_pausado` / `reanudado` / `cancelado` | Refleja el estado del flujo                                                                                                                                                             |
 | `propuesta_todo`                            | Muestra el TODO propuesto con sus pasos y cómo arrancarlo (confirmar o `/ejecutar`); no lo ejecuta  |
@@ -77,7 +78,7 @@ La línea se pinta en vivo y se **recarga con su tiempo**: al volver a la sesió
 
 El agente que la pidió no se pinta en la línea (sigue en el evento, para la auditoría).
 
-**El orden del hilo.** La línea de herramienta se inserta en su sitio cronológico, no en bloque al final del turno: el texto que el modelo escribió antes queda en un globo arriba de ella y el que escribe después abre un globo nuevo. Cada vez que una línea se interpone en el hilo —una herramienta, una notificación, una etapa de flujo, un cambio aplicado—, el segmento de texto en curso se cierra antes de escribirla, con su razonamiento. Así el chat no funde en un solo globo el texto anterior y el posterior a la herramienta.
+**El orden del hilo.** La línea de herramienta se inserta en su sitio cronológico, no en bloque al final del turno: el texto que el modelo escribió antes queda en un globo arriba de ella y el que escribe después abre un globo nuevo. Cada vez que una pieza se interpone en el hilo —una herramienta, una notificación, una etapa de flujo, la respuesta de una etapa, un cambio aplicado—, el segmento de texto en curso se cierra antes de escribirla, con su razonamiento. Así el chat no funde en un solo globo el texto anterior y el posterior a la pieza.
 
 Una herramienta que necesita aprobación **no** muestra nada extra: la línea de la herramienta aparece, y debajo la línea de aprobación que ya existía. El usuario ve que el agente está actuando y que se le está pidiendo permiso por ello.
 
