@@ -74,16 +74,31 @@ type PeticionAbrirPagina struct {
 	Direccion string `json:"direccion" desc:"Dirección de la página a abrir"`
 }
 
+// PeticionCrearTodo acepta una de las dos formas, excluyentes: un paso suelto
+// (`contenido`) o una tarea principal con sus subtareas (`titulo` + `subtareas`).
+// Los campos van opcionales en el esquema porque la exclusión se comprueba en el
+// handler; un campo obligatorio en el esquema impediría la otra forma.
 type PeticionCrearTodo struct {
+	Contenido string     `json:"contenido,omitempty" desc:"Qué hay que hacer; una acción concreta. Úsalo solo para un paso suelto, en vez de 'titulo'/'subtareas'"`
+	Estado    string     `json:"estado,omitempty"    desc:"pendiente | en_progreso | completada | cancelada; obligatorio con 'contenido'" enum:"pendiente,en_progreso,completada,cancelada"`
+	Prioridad string     `json:"prioridad,omitempty" desc:"alta | media | baja (opcional; por defecto media)" enum:"alta,media,baja"`
+	Titulo    string     `json:"titulo,omitempty"    desc:"Título de la tarea principal. Úsalo con 'subtareas' en vez de 'contenido'"`
+	Subtareas []Subtarea `json:"subtareas,omitempty" desc:"Fases que cuelgan de la tarea principal, en orden; un solo nivel"`
+}
+
+// Subtarea es un paso que cuelga de una tarea principal. No tiene `subtareas`:
+// la jerarquía de la lista es de un solo nivel.
+type Subtarea struct {
 	Contenido string `json:"contenido"          desc:"Qué hay que hacer; una acción concreta"`
-	Estado    string `json:"estado"             desc:"pendiente | en_progreso | completada | cancelada"`
-	Prioridad string `json:"prioridad,omitempty" desc:"alta | media | baja (opcional; por defecto media)"`
+	Estado    string `json:"estado"             desc:"pendiente | en_progreso | completada | cancelada" enum:"pendiente,en_progreso,completada,cancelada"`
+	Prioridad string `json:"prioridad,omitempty" desc:"alta | media | baja (opcional; por defecto media)" enum:"alta,media,baja"`
 }
 
 type ElementoTodo struct {
-	Contenido string `json:"contenido"          desc:"Qué hay que hacer; una acción concreta"`
-	Estado    string `json:"estado"             desc:"pendiente | en_progreso | completada | cancelada"`
-	Prioridad string `json:"prioridad,omitempty" desc:"alta | media | baja (opcional; por defecto media)"`
+	Contenido string     `json:"contenido"          desc:"Qué hay que hacer; una acción concreta"`
+	Estado    string     `json:"estado"             desc:"pendiente | en_progreso | completada | cancelada" enum:"pendiente,en_progreso,completada,cancelada"`
+	Prioridad string     `json:"prioridad,omitempty" desc:"alta | media | baja (opcional; por defecto media)" enum:"alta,media,baja"`
+	Subtareas []Subtarea `json:"subtareas,omitempty" desc:"Subtareas del elemento; un solo nivel"`
 }
 
 type PeticionActualizarTodo struct {

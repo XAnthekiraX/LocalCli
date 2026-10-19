@@ -8,14 +8,14 @@ import (
 )
 
 // versionEsquema es la versión actual del esquema ([[database/03-operations/MIGRATIONS]]).
-const versionEsquema = 10
+const versionEsquema = 11
 
 // Migrar lleva la base a la versión objetivo aplicando, en orden y una a una, las
 // migraciones que falten ([[database/03-operations/MIGRATIONS]] §1 y §2).
 //
 // Un archivo recién creado (user_version = 0, sin esquema) nace ya en la versión
 // actual: se crea el esquema completo de una vez en lugar de encadenar las
-// migraciones 001..010, que dejarían el archivo a medias si algo se interrumpe.
+// migraciones 001..011, que dejarían el archivo a medias si algo se interrumpe.
 // El 001 no puede distinguir «archivo vacío» de «v1» por el número solo, así que
 // el 0 se resuelve como «sin esquema» y se crea todo.
 func Migrar(db *sql.DB, versionObjetivo int) error {
@@ -80,6 +80,8 @@ func aplicarMigracion(db *sql.DB, desde int) error {
 		migrar = migracion009
 	case 9:
 		migrar = migracion010
+	case 10:
+		migrar = migracion011
 	default:
 		return fmt.Errorf("store: migración desde versión %d no soportada", desde)
 	}
@@ -334,5 +336,20 @@ SELECT id, session_id, tipo, content, created_at, duration_ms FROM chat_evento_v
 		return err
 	}
 	_, err := tx.Exec(`CREATE INDEX idx_chat_evento_session_created ON chat_evento (session_id, created_at);`)
+	return err
+}
+
+// migracion011 (`011-todo-jerarquia`) es aditiva: añade `todos.parent_position`
+// (nullable, sin valor por defecto) y el índice `idx_todos_padre`. Las filas
+// existentes quedan con NULL, que significa «paso raíz», así que una base v10 se
+// lee como una lista plana sin cambiar de comportamiento. La jerarquía es de un
+// solo nivel y su referencia la valida la capa de datos al escribir, porque
+// SQLite no permite añadir por `ALTER TABLE` una clave foránea autorreferencial
+// ni un `CHECK` que mire otras filas. Ver [[database/03-operations/MIGRATIONS]].
+func migracion011(tx *sql.Tx) error {
+	if _, err := tx.Exec(`ALTER TABLE todos ADD COLUMN parent_position INTEGER;`); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`CREATE INDEX idx_todos_padre ON todos (session_id, parent_position);`)
 	return err
 }

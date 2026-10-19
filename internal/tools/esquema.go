@@ -6,8 +6,9 @@ import (
 )
 
 // Esquema es el JSON Schema que ve el modelo. Se deriva por reflexión del tipo de
-// la petición: el nombre del campo es el tag `json`, la descripción el `desc`, y
-// `omitempty` marca el campo como opcional.
+// la petición: el nombre del campo es el tag `json`, la descripción el `desc`,
+// `enum` declara el vocabulario cerrado y `omitempty` marca el campo como
+// opcional.
 type Esquema struct {
 	Tipo        string               `json:"type"`
 	Propiedades map[string]Propiedad `json:"properties,omitempty"`
@@ -48,7 +49,11 @@ func propiedadesDe(t reflect.Type) (map[string]Propiedad, []string) {
 		if nombre == "" {
 			continue
 		}
-		propiedades[nombre] = propiedadDe(campo.Type, campo.Tag.Get("desc"))
+		propiedad := propiedadDe(campo.Type, campo.Tag.Get("desc"))
+		if valores := enumeracionDe(campo); len(valores) > 0 {
+			propiedad.Enum = valores
+		}
+		propiedades[nombre] = propiedad
 		if !opcional {
 			requeridos = append(requeridos, nombre)
 		}
@@ -73,6 +78,23 @@ func nombreDeCampo(campo reflect.StructField) (string, bool) {
 		}
 	}
 	return nombre, opcional
+}
+
+// enumeracionDe lee el vocabulario cerrado declarado en la etiqueta `enum`:
+// `enum:"pendiente,en_progreso,..."`.
+func enumeracionDe(campo reflect.StructField) []string {
+	etiqueta := strings.TrimSpace(campo.Tag.Get("enum"))
+	if etiqueta == "" {
+		return nil
+	}
+	partes := strings.Split(etiqueta, ",")
+	valores := make([]string, 0, len(partes))
+	for _, p := range partes {
+		if valor := strings.TrimSpace(p); valor != "" {
+			valores = append(valores, valor)
+		}
+	}
+	return valores
 }
 
 func propiedadDe(t reflect.Type, descripcion string) Propiedad {

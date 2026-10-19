@@ -46,12 +46,12 @@ func Catalogo() []Herramienta {
 			Verbo: "ABRIR", Tema: "direccion", Unidad: UnidadLinea, TipoPeticion: reflect.TypeOf(PeticionAbrirPagina{}),
 		},
 		{
-			Nombre: "crear_todo", Descripcion: "Añade un paso al final de la lista de pasos de la sesión y devuelve la lista resultante.",
+			Nombre: "crear_todo", Descripcion: "Añade al final de la lista de pasos un paso suelto (`contenido`) o una tarea principal con sus subtareas (`titulo` + `subtareas`), y devuelve la lista resultante.",
 			Categoria: CategoriaTareas, Permiso: PermisoRead, Modo: ModoLee,
 			Verbo: "TODO", Tema: "contenido", Unidad: UnidadPaso, TipoPeticion: reflect.TypeOf(PeticionCrearTodo{}),
 		},
 		{
-			Nombre: "actualizar_todo", Descripcion: "Reemplaza la lista entera de pasos de la sesión y devuelve el checklist.",
+			Nombre: "actualizar_todo", Descripcion: "Reemplaza la lista entera de pasos de la sesión, con las subtareas opcionales de cada paso, y devuelve el checklist.",
 			Categoria: CategoriaTareas, Permiso: PermisoRead, Modo: ModoLee,
 			Verbo: "TODO", Unidad: UnidadPaso, TipoPeticion: reflect.TypeOf(PeticionActualizarTodo{}),
 		},

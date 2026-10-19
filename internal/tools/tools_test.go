@@ -194,3 +194,57 @@ func TestDefinicionesEntregaElEsquema(t *testing.T) {
 		t.Fatalf("permiso = %q", leer.Permiso)
 	}
 }
+
+// El esquema de `crear_todo` expone las dos formas y el vocabulario cerrado de
+// estado y prioridad, también en las subtareas.
+func TestEsquemaDeLaListaDePasos(t *testing.T) {
+	h := Herramienta{TipoPeticion: reflect.TypeOf(PeticionCrearTodo{})}
+	e := h.Esquema()
+	for _, campo := range []string{"contenido", "estado", "prioridad", "titulo", "subtareas"} {
+		if _, ok := e.Propiedades[campo]; !ok {
+			t.Fatalf("`%s` debería estar en properties", campo)
+		}
+	}
+	if len(e.Requeridos) != 0 {
+		t.Fatalf("las dos formas son excluyentes y se validan en el handler: %v", e.Requeridos)
+	}
+	estado := e.Propiedades["estado"]
+	if len(estado.Enum) != 4 || estado.Enum[0] != "pendiente" {
+		t.Fatalf("el enum de estado = %v", estado.Enum)
+	}
+	prioridad := e.Propiedades["prioridad"]
+	if len(prioridad.Enum) != 3 || prioridad.Enum[1] != "media" {
+		t.Fatalf("el enum de prioridad = %v", prioridad.Enum)
+	}
+
+	subtareas := e.Propiedades["subtareas"].Items
+	if subtareas == nil || subtareas.Tipo != "object" {
+		t.Fatalf("subtareas debería ser un arreglo de objetos: %+v", subtareas)
+	}
+	for _, campo := range []string{"contenido", "estado", "prioridad"} {
+		if _, ok := subtareas.Propiedades[campo]; !ok {
+			t.Fatalf("la subtarea debería exponer `%s`", campo)
+		}
+	}
+	if _, anidada := subtareas.Propiedades["subtareas"]; anidada {
+		t.Fatal("una subtarea no puede tener hijas: la jerarquía es de un solo nivel")
+	}
+	if len(subtareas.Requeridos) != 2 {
+		t.Fatalf("contenido y estado deberían ser obligatorios en la subtarea: %v", subtareas.Requeridos)
+	}
+}
+
+// `actualizar_todo` anida el objeto de cada elemento y admite sus subtareas.
+func TestEsquemaDeActualizarTodoAnidaElElemento(t *testing.T) {
+	h := Herramienta{TipoPeticion: reflect.TypeOf(PeticionActualizarTodo{})}
+	items := h.Esquema().Propiedades["elementos"].Items
+	if items == nil || items.Tipo != "object" {
+		t.Fatalf("elementos debería ser un arreglo de objetos: %+v", items)
+	}
+	if _, ok := items.Propiedades["subtareas"]; !ok {
+		t.Fatal("cada elemento debería admitir `subtareas`")
+	}
+	if items.Propiedades["estado"].Enum == nil {
+		t.Fatal("el estado del elemento debería llevar su enum")
+	}
+}

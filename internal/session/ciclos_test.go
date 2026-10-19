@@ -316,7 +316,7 @@ func TestLaPlanificacionCompruebaSusFases(t *testing.T) {
 	}
 
 	for _, fase := range []string{"Fase 1", "Fase 2"} {
-		if _, err := store.CrearTodo(o.db, o.projectID, sesion, fase, "pendiente", "media"); err != nil {
+		if _, err := store.CrearTodo(o.db, o.projectID, sesion, store.Todo{Contenido: fase, Estado: "pendiente", Prioridad: "media"}, nil); err != nil {
 			t.Fatalf("registrar la fase: %v", err)
 		}
 	}

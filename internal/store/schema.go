@@ -139,6 +139,7 @@ CREATE TABLE todos (
                CHECK (priority IN ('alta', 'media', 'baja')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    parent_position INTEGER,
     PRIMARY KEY (session_id, position)
 );
 `)
@@ -229,9 +230,13 @@ CREATE TABLE chat_evento (
 	if err != nil {
 		return err
 	}
+	_, err = tx.Exec(`CREATE INDEX idx_todos_padre ON todos (session_id, parent_position);`)
+	if err != nil {
+		return err
+	}
 
-	// user_version = 10
-	_, err = tx.Exec("PRAGMA user_version = 10;")
+	// user_version = 11
+	_, err = tx.Exec("PRAGMA user_version = 11;")
 	if err != nil {
 		return err
 	}

@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -125,6 +126,8 @@ func crearBaseV6(t *testing.T, ruta string) {
 		`ALTER TABLE sessions_v6 RENAME TO sessions;`,
 		`INSERT INTO messages (id, session_id, role, content, created_at) VALUES ('m-viejo', 's-vieja', 'user', 'hola viejo', '` + ahora + `');`,
 		`DROP TABLE projects;`,
+		`DROP INDEX idx_todos_padre;`,
+		`ALTER TABLE todos DROP COLUMN parent_position;`,
 		`PRAGMA user_version = 6;`,
 	}
 	for _, paso := range pasos {
@@ -232,6 +235,8 @@ func crearBaseV9(t *testing.T, ruta string) {
 			duration_ms INTEGER
 		);`,
 		`CREATE INDEX idx_chat_evento_session_created ON chat_evento (session_id, created_at);`,
+		`DROP INDEX idx_todos_padre;`,
+		`ALTER TABLE todos DROP COLUMN parent_position;`,
 		`PRAGMA user_version = 9;`,
 	}
 	for _, paso := range pasos {
@@ -261,4 +266,139 @@ func crearBaseV9(t *testing.T, ruta string) {
 	if _, err := CrearChatEvento(db, projectID, sesion.ID, ChatEventoHerramienta, "✓ LEER [AGENTS.md] · 93 líneas", &ms); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// TestMigrarDesdeV10AnadeLaJerarquia: la 011 añade `todos.parent_position` y su
+// índice sin tocar las filas existentes. Una base v10 se lee como lista plana.
+func TestMigrarDesdeV10AnadeLaJerarquia(t *testing.T) {
+	ruta := filepath.Join(t.TempDir(), "state.db")
+	crearBaseV10(t, ruta)
+
+	db, err := AbrirDBDesde(ruta)
+	if err != nil {
+		t.Fatalf("migrar v10 a v11: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	var version int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != versionEsquema {
+		t.Fatalf("user_version = %d, quiero %d", version, versionEsquema)
+	}
+
+	var projectID, sesionID string
+	if err := db.QueryRow(`SELECT s.project_id, t.session_id FROM sessions s JOIN todos t ON t.session_id = s.id LIMIT 1`).
+		Scan(&projectID, &sesionID); err != nil {
+		t.Fatal(err)
+	}
+	lista, err := ListarTodos(db, projectID, sesionID)
+	if err != nil {
+		t.Fatalf("la lista no se pudo leer tras migrar: %v", err)
+	}
+	if len(lista) != 1 || lista[0].Contenido != "paso viejo" {
+		t.Fatalf("la fila existente se perdió o cambió: %+v", lista)
+	}
+	if lista[0].PosicionPadre != nil {
+		t.Fatalf("una fila de una base v10 debería leerse como raíz: %+v", lista[0])
+	}
+
+	var indice int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_todos_padre'`,
+	).Scan(&indice); err != nil || indice != 1 {
+		t.Fatalf("falta el índice idx_todos_padre: %d (%v)", indice, err)
+	}
+}
+
+// crearBaseV10 fabrica una base con el esquema v10 —sin `todos.parent_position`—
+// más una sesión con un paso, para probar la migración 011.
+func crearBaseV10(t *testing.T, ruta string) {
+	t.Helper()
+	db, err := CrearDB(ruta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+
+	projectID, err := ResolucionProyecto(db, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sesion, err := CrearSesion(db, projectID, "vieja", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CrearTodo(db, projectID, sesion.ID, Todo{Contenido: "paso viejo", Estado: "pendiente", Prioridad: "media"}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	pasos := []string{
+		`DROP INDEX idx_todos_padre;`,
+		`ALTER TABLE todos DROP COLUMN parent_position;`,
+		`PRAGMA user_version = 10;`,
+	}
+	for _, paso := range pasos {
+		if _, err := db.Exec(paso); err != nil {
+			t.Fatalf("preparar base v10 (%q): %v", paso, err)
+		}
+	}
+}
+
+// La creación nueva y la migración 011 deben dejar el mismo esquema de `todos`:
+// las mismas columnas, en el mismo orden, y el índice del padre.
+func TestElEsquemaDeTodosNuevoYMigradoCoincide(t *testing.T) {
+	nuevo, err := CrearDB(filepath.Join(t.TempDir(), "nuevo.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = nuevo.Close() })
+
+	ruta := filepath.Join(t.TempDir(), "migrado.db")
+	crearBaseV10(t, ruta)
+	migrado, err := AbrirDBDesde(ruta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = migrado.Close() })
+
+	columnasNuevo, err := columnasDeTodos(nuevo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	columnasMigrado, err := columnasDeTodos(migrado)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(columnasNuevo, "|") != strings.Join(columnasMigrado, "|") {
+		t.Fatalf("columnas distintas:\n nuevo:   %v\n migrado: %v", columnasNuevo, columnasMigrado)
+	}
+
+	for nombre, db := range map[string]*sql.DB{"nuevo": nuevo, "migrado": migrado} {
+		var indice int
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_todos_padre'`,
+		).Scan(&indice); err != nil || indice != 1 {
+			t.Fatalf("%s sin idx_todos_padre: %d (%v)", nombre, indice, err)
+		}
+	}
+}
+
+func columnasDeTodos(db *sql.DB) ([]string, error) {
+	rows, err := db.Query(`SELECT name FROM pragma_table_info('todos') ORDER BY cid`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var columnas []string
+	for rows.Next() {
+		var nombre string
+		if err := rows.Scan(&nombre); err != nil {
+			return nil, err
+		}
+		columnas = append(columnas, nombre)
+	}
+	return columnas, rows.Err()
 }
