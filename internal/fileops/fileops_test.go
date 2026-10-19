@@ -91,6 +91,81 @@ func TestCrearArchivoNoSobrescribe(t *testing.T) {
 	}
 }
 
+// `escribir_archivo` no pisa un archivo con contenido: lo rechaza y el archivo
+// queda intacto. Reemplazar lo que ya hay exige `editar_archivo` o borrar y crear.
+func TestEscribirArchivoNoPisaContenidoExistente(t *testing.T) {
+	raiz := t.TempDir()
+	archivo := filepath.Join(raiz, "a.go")
+	if err := os.WriteFile(archivo, []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o := &Operaciones{Raiz: raiz}
+	res, _ := o.escribirArchivo(context.Background(),
+		tools.PeticionEscribirArchivo{Ruta: "a.go", Contenido: "package b\n"}, aprobadorFileops())
+	if !strings.HasPrefix(res.Error, tools.CodFileNotEmpty) {
+		t.Fatalf("escribir_archivo no debería pisar un archivo con contenido: %q", res.Error)
+	}
+	if !strings.Contains(res.Error, "editar_archivo") {
+		t.Fatalf("el error debería nombrar la vía correcta: %q", res.Error)
+	}
+	datos, err := os.ReadFile(archivo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(datos) != "package a\n" {
+		t.Fatalf("el contenido existente cambió: %q", string(datos))
+	}
+}
+
+// Un archivo vacío sí se puede rellenar con `escribir_archivo`.
+func TestEscribirArchivoRellenaUnoVacio(t *testing.T) {
+	raiz := t.TempDir()
+	archivo := filepath.Join(raiz, "vacio.txt")
+	if err := os.WriteFile(archivo, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o := &Operaciones{Raiz: raiz}
+	res, _ := o.escribirArchivo(context.Background(),
+		tools.PeticionEscribirArchivo{Ruta: "vacio.txt", Contenido: "hola"}, aprobadorFileops())
+	if res.Error != "" {
+		t.Fatalf("un archivo vacío debería aceptarse: %q", res.Error)
+	}
+	datos, _ := os.ReadFile(archivo)
+	if string(datos) != "hola" {
+		t.Fatalf("no se escribió el contenido: %q", string(datos))
+	}
+}
+
+// Si el archivo no existe, `escribir_archivo` lo crea.
+func TestEscribirArchivoCreaElQueFalta(t *testing.T) {
+	raiz := t.TempDir()
+	o := &Operaciones{Raiz: raiz}
+	res, _ := o.escribirArchivo(context.Background(),
+		tools.PeticionEscribirArchivo{Ruta: "nuevo.txt", Contenido: "hola"}, aprobadorFileops())
+	if res.Error != "" {
+		t.Fatalf("un archivo que falta debería crearse: %q", res.Error)
+	}
+	datos, _ := os.ReadFile(filepath.Join(raiz, "nuevo.txt"))
+	if string(datos) != "hola" {
+		t.Fatalf("no se creó el archivo: %q", string(datos))
+	}
+}
+
+// Repetir el mismo contenido no es un reemplazo: se acepta sin tocar el archivo.
+func TestEscribirArchivoConElMismoContenidoNoFalla(t *testing.T) {
+	raiz := t.TempDir()
+	archivo := filepath.Join(raiz, "a.txt")
+	if err := os.WriteFile(archivo, []byte("igual"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o := &Operaciones{Raiz: raiz}
+	res, _ := o.escribirArchivo(context.Background(),
+		tools.PeticionEscribirArchivo{Ruta: "a.txt", Contenido: "igual"}, aprobadorFileops())
+	if res.Error != "" {
+		t.Fatalf("el mismo contenido no debería rechazarse: %q", res.Error)
+	}
+}
+
 // Escribir dentro de la carpeta ya no pide confirmación: solo la piden el
 // borrado y todo lo que queda fuera de la carpeta.
 func TestEscrituraDentroNoPideConfirmacion(t *testing.T) {

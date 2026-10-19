@@ -17,7 +17,7 @@ func Catalogo() []Herramienta {
 			PermisoRead, "GREP", "patron", UnidadCoincidencia, PeticionBuscarEnArchivos{}),
 		archivo("crear_archivo", "Crea un archivo nuevo con su contenido; falla si ya existe.",
 			PermisoWrite, "CREAR", "ruta", "", PeticionCrearArchivo{}),
-		archivo("escribir_archivo", "Sobrescribe un archivo con el contenido dado.",
+		archivo("escribir_archivo", "Escribe un archivo vacío o inexistente con el contenido dado; si ya tiene contenido, falla y pide usar `editar_archivo`.",
 			PermisoWrite, "ESCRIBIR", "ruta", "", PeticionEscribirArchivo{}),
 		{ // editar_archivo es la única de edición parcial: permiso `edit`.
 			Nombre: "editar_archivo", Descripcion: "Aplica sustituciones parciales a un archivo existente; cada buscar debe coincidir exactamente una vez (se toleran finales de línea, sangría y Unicode tipográfico).",

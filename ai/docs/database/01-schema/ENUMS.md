@@ -80,13 +80,13 @@ Los seis valores coinciden con las seis herramientas de escritura del catálogo,
 | Valor | Herramienta | Qué registra |
 |---|---|---|
 | `crear_archivo` | `crear_archivo` | Un archivo nuevo. `before_content` es `NULL` |
-| `escribir_archivo` | `escribir_archivo` | Sobrescritura. `before_content` guarda lo anterior |
+| `escribir_archivo` | `escribir_archivo` | Escritura entera de un archivo vacío o inexistente. `before_content` guarda lo anterior (cadena vacía si no existía) |
 | `editar_archivo` | `editar_archivo` | Cambio parcial. `before_content` guarda lo anterior |
 | `eliminar_archivo` | `eliminar_archivo` | Borrado. `after_content` es `NULL` |
 | `crear_carpeta` | `crear_carpeta` | Una carpeta nueva |
 | `eliminar_carpeta` | `eliminar_carpeta` | Una carpeta borrada |
 
-`crear_archivo` y `escribir_archivo` están separados a propósito: el primero falla si el archivo ya existe, el segundo lo sobrescribe. La base refleja esa diferencia.
+`crear_archivo` y `escribir_archivo` están separados a propósito: el primero falla si el archivo ya existe, el segundo solo escribe uno vacío o inexistente y se niega si ya tiene contenido. La base refleja esa diferencia: `escribir_archivo` sigue guardando `before_content` y `after_content`, y cuando el archivo no existía `before_content` queda como cadena vacía.
 
 ## 3. Estados y transiciones
 

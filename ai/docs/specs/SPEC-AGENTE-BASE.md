@@ -100,10 +100,10 @@ Solo hay **tres permisos**, y el catálogo cerrado de herramientas se **deriva**
 | Permiso | Qué abre |
 |---|---|
 | `read` | No cambia el proyecto: mirar y buscar archivos, la terminal de consulta, internet y la lista de pasos de la sesión. |
-| `write` | Crear, sobrescribir o borrar un archivo o una carpeta. |
+| `write` | Crear un archivo o una carpeta, escribir entero uno vacío o inexistente, y borrar. |
 | `edit` | Editar contenido existente, sin reemplazarlo entero. |
 
-Los tres son independientes. `write: deny, edit: allow` es un agente que puede parchear archivos pero no crearlos, sobrescribirlos ni borrarlos.
+Los tres son independientes. `write: deny, edit: allow` es un agente que puede parchear archivos pero no crearlos, escribirlos enteros ni borrarlos.
 
 **`default` solo admite `deny`.** Es opcional y, si falta, equivale a `deny`: lo que no se nombre no se concede. `default: allow` **se rechaza con el motivo**, porque un `allow` escrito donde se quería un `deny` concedería todo en silencio y rompería la garantía de `plan` sin que nadie se entere. Un `deny` explícito es redundante con el default y se admite igual, porque documenta que la denegación es deliberada:
 

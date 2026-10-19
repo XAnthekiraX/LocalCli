@@ -33,13 +33,13 @@ Cerrado. El agente no puede inventar herramientas fuera de esta lista.
 | `buscar_archivos` | Lee | `read` | Ambos | Patrón; devuelve las rutas que coinciden |
 | `buscar_en_archivos` | Lee | `read` | Ambos | Patrón; devuelve las coincidencias con archivo y línea |
 | `crear_archivo` | Escribe | `write` | Solo `build` | Ruta y contenido; falla si el archivo ya existe |
-| `escribir_archivo` | Escribe | `write` | Solo `build` | Ruta y contenido; sobrescribe |
+| `escribir_archivo` | Escribe | `write` | Solo `build` | Ruta y contenido; solo escribe archivos vacíos o inexistentes, y falla si ya tienen contenido |
 | `editar_archivo` | Escribe | `edit` | Solo `build` | Ruta y una lista no vacía de reemplazos; cada `buscar` debe coincidir exactamente una vez |
 | `eliminar_archivo` | Escribe | `write` | Solo `build` | Ruta; pide confirmación explícita |
 | `crear_carpeta` | Escribe | `write` | Solo `build` | Ruta; falla si ya existe |
 | `eliminar_carpeta` | Escribe | `write` | Solo `build` | Ruta; pide confirmación explícita |
 
-`editar_archivo` es la única herramienta de edición parcial, así que es la única que cae en `edit`; el resto de las de escritura van en `write`. Los tres permisos son independientes: un agente con `write: deny` y `edit: allow` puede parchear archivos pero no crearlos, sobrescribirlos ni borrarlos.
+`editar_archivo` es la única herramienta de edición parcial, así que es la única que cae en `edit`; el resto de las de escritura van en `write`. Los tres permisos son independientes: un agente con `write: deny` y `edit: allow` puede parchear archivos pero no crearlos, escribirlos enteros ni borrarlos.
 
 ### Semántica de la edición parcial
 
@@ -108,7 +108,7 @@ Tres cosas hacen de `ejecutar_flujo` una herramienta distinta del resto:
 
 En pantalla se anuncia su verbo y su tema —`FLUJO [investigar] · <peticion>`— y las líneas de sub-proceso de las etapas entran después, como en un flujo lanzado por comando.
 
-`crear_archivo` y `escribir_archivo` están separadas a propósito: el agente no destruye algo por accidente cuando pretendía crear.
+`crear_archivo` y `escribir_archivo` están separadas a propósito: el agente no destruye algo por accidente cuando pretendía crear. `escribir_archivo` tampoco pisa contenido: solo rellena un archivo vacío o crea el que falta; sobre uno con contenido devuelve `E_FILE_NOT_EMPTY` y remite a `editar_archivo` (o a borrar y crear, que pide confirmación).
 
 ### Lo que se ve en la TUI
 

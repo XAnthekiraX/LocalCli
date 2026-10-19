@@ -133,7 +133,8 @@ Las reglas que rigen el orquestador. Las que dependen de cómo se guardan los da
 
 Condiciones que siempre se cumplen, sin excepción:
 
-- **Ninguna operación destructiva ni fuera de la carpeta sin aprobación.** Borrar, o tocar una ruta que no cuelga de la carpeta del proyecto, nunca se aplica sin confirmación, tampoco dentro de un flujo en curso. Lo inocuo dentro de la carpeta —crear, sobrescribir, editar, un comando sin destruir— no interrumpe.
+- **Ninguna operación destructiva ni fuera de la carpeta sin aprobación.** Borrar, o tocar una ruta que no cuelga de la carpeta del proyecto, nunca se aplica sin confirmación, tampoco dentro de un flujo en curso. Lo inocuo dentro de la carpeta —crear, rellenar un archivo vacío, editar, un comando sin destruir— no interrumpe.
+- **Escribir entero no pisa contenido existente.** `escribir_archivo` solo escribe archivos vacíos o inexistentes; sobre uno con contenido no toca nada y devuelve un error corregible que remite a `editar_archivo`. Para reescribir de verdad hay que borrar —con confirmación— y crear.
 - **`plan` nunca escribe.** No es una política que se pueda desactivar: sencillamente no tiene en su catálogo ninguna herramienta de escritura ni de edición.
 - **El modelo nunca ve el proyecto entero.** Ve lo que el nodo de contexto decidió y recortó.
 - **Lo que entra al contexto se leyó antes** y **lo que salió queda registrado**.

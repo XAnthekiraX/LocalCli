@@ -7,6 +7,7 @@ const (
 	CodBadArgs            = "E_BAD_ARGS"
 	CodPathOutside        = "E_PATH_OUTSIDE"
 	CodPathExists         = "E_PATH_EXISTS"
+	CodFileNotEmpty       = "E_FILE_NOT_EMPTY"
 	CodNeedsConfirm       = "E_NEEDS_CONFIRM"
 	CodNeedsApproval      = "E_NEEDS_APPROVAL"
 	CodApprovalDeclined   = "E_APPROVAL_DECLINED"

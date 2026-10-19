@@ -57,7 +57,7 @@ Los detalles de ambas convenciones están en [[database/02-rules/DATA_FLOW]].
 
 ## Políticas que no se negocian
 
-- **Nada destructivo ni de fuera se aplica sin aprobación**, sin excepción, ni dentro de un flujo en curso. Crear, sobrescribir y editar dentro de la carpeta no interrumpen, pero quedan en `change_history`. Ver [[specs/SPEC-ARCHIVOS]].
+- **Nada destructivo ni de fuera se aplica sin aprobación**, sin excepción, ni dentro de un flujo en curso. Crear, escribir entero un archivo vacío y editar dentro de la carpeta no interrumpen, pero quedan en `change_history`. Ver [[specs/SPEC-ARCHIVOS]].
 - **`change_history` nunca se borra.** Es lo que permite revertir y auditar qué se tocó en el proyecto.
 - **El borrado de una sesión es definitivo.** Cuando borras una sesión, sus mensajes y su razonamiento se van con ella. Esto es deliberado y es distinto de `change_history`: la conversación es desechable, el registro de cambios en tus archivos es permanente. Si necesitas la trazabilidad de una sesión, no la has borrado.
 - **El proyecto no se borra al cerrar la carpeta.** Cerrar una carpeta o abrir otra no toca la base: la fila de `projects` y sus sesiones siguen ahí, y volver a abrir la carpeta las recupera. Borrar un proyecto es una acción explícita y arrastra sus sesiones en cascada.

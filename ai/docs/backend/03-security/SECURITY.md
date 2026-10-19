@@ -48,7 +48,7 @@ No hay endpoints. Lo que hay son operaciones, y cada una tiene su regla.
 
 ### Solo lo destructivo, la red o lo de fuera pide aprobación
 
-La interrupción está acotada a tres casos: **borrar** (archivos y carpetas), **tocar una ruta fuera de la carpeta del proyecto** y, en la terminal, **un comando destructivo**, **un programa de egreso** (`curl`, `wget`, `nc`, `telnet`, `ssh`, `scp`, `sftp`, `rsync`) o **un argumento con ruta absoluta de fuera**. Todo lo demás —crear, sobrescribir, editar dentro de la carpeta, y cualquier comando inocuo— se aplica sin preguntar, también dentro de un flujo en curso. Ver [[specs/SPEC-ARCHIVOS]] y [[specs/SPEC-TOOLS]] §Control 1.
+La interrupción está acotada a tres casos: **borrar** (archivos y carpetas), **tocar una ruta fuera de la carpeta del proyecto** y, en la terminal, **un comando destructivo**, **un programa de egreso** (`curl`, `wget`, `nc`, `telnet`, `ssh`, `scp`, `sftp`, `rsync`) o **un argumento con ruta absoluta de fuera**. Todo lo demás —crear, escribir entero un archivo vacío, editar dentro de la carpeta, y cualquier comando inocuo— se aplica sin preguntar, también dentro de un flujo en curso. Ver [[specs/SPEC-ARCHIVOS]] y [[specs/SPEC-TOOLS]] §Control 1.
 
 ### Frontera de rutas
 

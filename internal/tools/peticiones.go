@@ -31,8 +31,8 @@ type PeticionCrearArchivo struct {
 }
 
 type PeticionEscribirArchivo struct {
-	Ruta      string `json:"ruta"      desc:"Archivo a sobrescribir"`
-	Contenido string `json:"contenido" desc:"Texto que reemplaza el contenido entero"`
+	Ruta      string `json:"ruta"      desc:"Archivo a escribir; debe estar vacío o no existir, y si ya tiene contenido usa editar_archivo"`
+	Contenido string `json:"contenido" desc:"Texto completo del archivo"`
 }
 
 // Cambio es una sustitución de editar_archivo.

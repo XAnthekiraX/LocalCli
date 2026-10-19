@@ -49,6 +49,22 @@ func (o *Operaciones) escribirArchivo(ctx context.Context, args any, c tools.Con
 	if err != nil || res != nil {
 		return devolver(res, err)
 	}
+	if info, err := os.Stat(abs); err == nil {
+		if info.IsDir() {
+			return corregible(tools.CodBadArgs + ": la ruta es un directorio: " + Canonica(o.Raiz, abs))
+		}
+		antes := leerExistente(abs)
+		// Reescribir con lo mismo no cambia nada: se acepta sin tocar el archivo.
+		if antes == p.Contenido {
+			return okEscritura("el archivo ya tenía ese contenido: " + Canonica(o.Raiz, abs)), nil
+		}
+		// Un archivo con contenido no se pisa: escribir_archivo solo rellena uno
+		// vacío o crea el que falta. Reemplazar lo que ya hay exige editar_archivo
+		// —cambios parciales— o borrar y crear, que pide confirmación explícita.
+		if info.Size() > 0 {
+			return corregible(tools.CodFileNotEmpty + ": el archivo ya tiene contenido; usa `editar_archivo` con reemplazos parciales, o `eliminar_archivo` y `crear_archivo` si de verdad hay que reescribirlo entero: " + Canonica(o.Raiz, abs))
+		}
+	}
 	antes := leerExistente(abs)
 	if err := os.WriteFile(abs, []byte(p.Contenido), 0o644); err != nil {
 		return corregible("no se pudo escribir el archivo: " + Canonica(o.Raiz, abs))

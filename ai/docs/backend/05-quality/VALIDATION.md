@@ -25,10 +25,10 @@ Qué se valida antes de que algo ocurra: rutas, argumentos de herramientas, peti
 
 - **Resolución (compartida con `listar_carpeta`).** Una ruta relativa se resuelve desde el directorio de trabajo del harness; `..` permite subir de directorio y una ruta absoluta se usa tal cual. No se expande `~` ni `$HOME` —una ruta que empieza por ellos se rechaza con `E_BAD_ARGS` y un recordatorio de usar la forma relativa— y no se busca en otras ubicaciones si el archivo no existe.
 - **La respuesta devuelve `ruta` canónica:** relativa al directorio de trabajo si el archivo está dentro, absoluta si está fuera. El `desc` del parámetro instruye la forma corta. Así el modelo aprende a no pegar el path completo en cada resultado.
-- **Dentro de la carpeta:** accesible. Crear, sobrescribir y editar se aplican sin interrumpir; solo los borrados piden confirmación.
+- **Dentro de la carpeta:** accesible. Crear, rellenar un archivo vacío y editar se aplican sin interrumpir; solo los borrados piden confirmación.
 - **Fuera de la carpeta:** requiere permiso **y** la explicación del agente. Sin las dos, se rechaza (`E_PATH_OUTSIDE`).
 - **`crear_archivo` falla si el archivo ya existe.** No sobrescribe.
-- **`escribir_archivo` sobrescribe**, y como pisa algo, el registro guarda el contenido anterior para poder revertirlo.
+- **`escribir_archivo` solo escribe archivos vacíos o inexistentes.** Sobre un archivo con contenido no toca nada y devuelve `E_FILE_NOT_EMPTY` corregible, que remite a `editar_archivo` o a borrar y crear. Cuando escribe, el registro guarda el contenido anterior (`NULL` si el archivo era nuevo) para poder revertirlo.
 - **Borrar** (`eliminar_archivo`, `eliminar_carpeta`) pide confirmación explícita, no solo aprobación genérica.
 - **`crear_carpeta` falla si ya existe.**
 - Se normaliza la ruta **después** de resolverla, para decidir si quedó dentro o fuera de la carpeta; la normalización no elude las restricciones de acceso. Ver [[backend/03-security/SECURITY]].

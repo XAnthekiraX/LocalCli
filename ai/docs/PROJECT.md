@@ -142,7 +142,7 @@ La cola se deriva de los archivos de tarea y se reconstruye al arrancar en memor
 
 ## Seguridad
 
-- **Confirmación de lo destructivo, lo de red y lo de fuera.** Borrar —un archivo, una carpeta—, sacar información a la red desde la terminal (`curl`, `wget`, `ssh`, `push`...) o tocar una ruta fuera de la carpeta del proyecto pide tu aprobación, también dentro de un flujo en curso. Crear, sobrescribir y editar dentro de la carpeta no interrumpen.
+- **Confirmación de lo destructivo, lo de red y lo de fuera.** Borrar —un archivo, una carpeta—, sacar información a la red desde la terminal (`curl`, `wget`, `ssh`, `push`...) o tocar una ruta fuera de la carpeta del proyecto pide tu aprobación, también dentro de un flujo en curso. Crear, escribir entero un archivo vacío y editar dentro de la carpeta no interrumpen.
 - **Bloqueo estructural de la terminal.** Landlock impide que un proceso hijo escriba en los archivos del proyecto, sin depender de revisar el texto del comando. En sistemas sin Landlock, la garantía es más débil y queda documentada como tal.
 - **Frontera de rutas.** Fuera de la carpeta del proyecto hace falta permiso y además la explicación del agente.
 - **Confirmación de los git destructivos y de la publicación.** `reset`, `clean`, `checkout` y `restore` piden aprobación; los commits los frena Landlock; `push` pide aprobación.

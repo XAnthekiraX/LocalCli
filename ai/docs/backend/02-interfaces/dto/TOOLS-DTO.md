@@ -99,8 +99,8 @@ Todas las herramientas de archivos admiten además `motivo` (string, **opcional*
 |---|---|---|---|---|
 | `crear_archivo` | `ruta` | string | Sí | Ruta del archivo a crear; falla si ya existe |
 | `crear_archivo` | `contenido` | string | Sí | Texto completo del archivo |
-| `escribir_archivo` | `ruta` | string | Sí | Ruta del archivo a sobrescribir |
-| `escribir_archivo` | `contenido` | string | Sí | Texto que reemplaza el contenido entero |
+| `escribir_archivo` | `ruta` | string | Sí | Archivo a escribir; debe estar vacío o no existir, y si ya tiene contenido usa `editar_archivo` |
+| `escribir_archivo` | `contenido` | string | Sí | Texto completo del archivo |
 | `editar_archivo` | `ruta` | string | Sí | Ruta del archivo a modificar |
 | `editar_archivo` | `reemplazos` | array de `Cambio` | Sí | Lista no vacía de sustituciones aplicadas en orden; cada buscar debe coincidir exactamente una vez |
 | `editar_archivo` · `reemplazos[]` | `buscar` | string | Sí | Fragmento copiado textualmente del archivo (misma sangría y espacios); debe aparecer una sola vez |
@@ -196,7 +196,7 @@ La **resolución de rutas** es la misma que para `listar_carpeta`: las relativas
 | Herramienta | Devuelve | Tipo |
 |---|---|---|
 | `crear_archivo` | Confirmación y la ruta | string |
-| `escribir_archivo` | Confirmación y la ruta | string |
+| `escribir_archivo` | Confirmación y la ruta; error corregible si el archivo ya tiene contenido | string |
 | `editar_archivo` | Confirmación y la ruta | string |
 | `eliminar_archivo` | Confirmación | string |
 | `crear_carpeta` | Confirmación y la ruta | string |

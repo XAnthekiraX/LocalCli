@@ -148,7 +148,7 @@ El recorte no es un castigo: la herramienta que lo ha hecho avisa de que lo ha h
 
 ## El reparto: `plan` mira, `build` escribe
 
-El reparto sale de los `permissions` de cada agente, que se declaran **por permiso**, con tres: `read` (mirar el proyecto, la terminal de consulta, internet y la lista de pasos de la sesión), `write` (crear, sobrescribir o borrar archivos y carpetas) y `edit` (parchear contenido existente). El catálogo efectivo de herramientas se deriva de ahí contra el catálogo: no hay una lista de herramientas suelta que pueda contradecir los permisos. El detalle de qué herramienta cae en qué permiso está en «Quién puede usar qué» de [[specs/SPEC-AGENTE-BASE]].
+El reparto sale de los `permissions` de cada agente, que se declaran **por permiso**, con tres: `read` (mirar el proyecto, la terminal de consulta, internet y la lista de pasos de la sesión), `write` (crear, escribir entero un archivo vacío o inexistente, y borrar archivos y carpetas) y `edit` (parchear contenido existente). El catálogo efectivo de herramientas se deriva de ahí contra el catálogo: no hay una lista de herramientas suelta que pueda contradecir los permisos. El detalle de qué herramienta cae en qué permiso está en «Quién puede usar qué» de [[specs/SPEC-AGENTE-BASE]].
 
 `ejecutar_flujo` es la única herramienta sin permiso fijo: **lo hereda del flujo** que vaya a lanzar. Se arma por turno y solo llega al alcance de su permiso derivado, así que sigue siendo el reparto quien decide, no una lista suelta. Ver «Los flujos como herramienta».
 
@@ -218,7 +218,7 @@ plan lee  →  plan propone  →  tú apruebas  →  cambias a build  →  build
 
 Siguen las reglas de [[specs/SPEC-ARCHIVOS]]: dentro de la carpeta del proyecto son accesibles y se aplican sin interrumpir; fuera se pide permiso y el agente explica por qué. **La confirmación solo la piden dos cosas: lo que queda fuera de la carpeta y lo destructivo —los borrados—**.
 
-Una diferencia importante: `crear_archivo` falla si el archivo ya existe, y `escribir_archivo` lo sobrescribe. Están separadas a propósito. Así el agente no destruye algo por accidente cuando pretendía crear.
+Una diferencia importante: `crear_archivo` falla si el archivo ya existe, y `escribir_archivo` **solo rellena un archivo vacío o crea el que falta**. Sobre un archivo con contenido no escribe nada: devuelve un `E_FILE_NOT_EMPTY` corregible que pide usar `editar_archivo` —o borrar y crear, que sí pide confirmación explícita—. Están separadas a propósito: ninguna de las dos puede destruir contenido existente por accidente, ni al crear ni al escribir.
 
 ### `leer_archivo`
 
@@ -404,10 +404,10 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - [ ] Un estado o una prioridad fuera del vocabulario devuelve al modelo un error corregible y no guarda nada.
 - [ ] Nada se escribe sin que `plan` lo haya propuesto y tú cambies a `build`: solo `build` tiene herramientas de escritura.
 - [ ] Una aprobación no habilita cambios distintos de los propuestos.
-- [ ] Crear, sobrescribir o editar dentro de la carpeta del proyecto se aplica sin interrumpir al usuario.
+- [ ] Crear, rellenar un archivo vacío o editar dentro de la carpeta del proyecto se aplica sin interrumpir al usuario.
 - [ ] Borrar un archivo o una carpeta pide confirmación explícita.
 - [ ] Una operación que toca una ruta fuera de la carpeta pide confirmación (y explicación) aunque no sea un borrado.
-- [ ] `crear_archivo` falla si el archivo ya existe; `escribir_archivo` lo sobrescribe.
+- [ ] `crear_archivo` falla si el archivo ya existe; `escribir_archivo` rellena uno vacío o crea el que falta, y sobre uno con contenido falla sin tocarlo y remite a `editar_archivo`.
 - [ ] Un archivo que no supera el límite de lectura completa se devuelve entero, sin aviso de truncado.
 - [ ] Un archivo que supera el límite de lectura completa se devuelve como fragmento inicial, marcado como truncado, con la línea desde la que continuar.
 - [ ] Una lectura por rango devuelve exactamente las líneas solicitadas, numeradas desde 1 y tomadas del archivo original.
