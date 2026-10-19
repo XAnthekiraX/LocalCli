@@ -8,7 +8,7 @@ import (
 )
 
 // versionEsquema es la versión actual del esquema ([[database/03-operations/MIGRATIONS]]).
-const versionEsquema = 11
+const versionEsquema = 12
 
 // Migrar lleva la base a la versión objetivo aplicando, en orden y una a una, las
 // migraciones que falten ([[database/03-operations/MIGRATIONS]] §1 y §2).
@@ -82,6 +82,8 @@ func aplicarMigracion(db *sql.DB, desde int) error {
 		migrar = migracion010
 	case 10:
 		migrar = migracion011
+	case 11:
+		migrar = migracion012
 	default:
 		return fmt.Errorf("store: migración desde versión %d no soportada", desde)
 	}
@@ -352,4 +354,27 @@ func migracion011(tx *sql.Tx) error {
 	}
 	_, err := tx.Exec(`CREATE INDEX idx_todos_padre ON todos (session_id, parent_position);`)
 	return err
+}
+
+// migracion012 (`012-ejecucion-herramienta`) es aditiva: añade a `chat_evento`
+// las columnas que permiten reconstruir la llamada y su resultado para reenviarlos
+// al modelo en turnos posteriores. Las filas existentes quedan con NULL: son
+// líneas antiguas sin ejecución asociada y se siguen pintando igual. Ver
+// [[specs/SPEC-HISTORIAL-CONVERSACION]] y [[database/03-operations/MIGRATIONS]].
+func migracion012(tx *sql.Tx) error {
+	columnas := []string{
+		`ALTER TABLE chat_evento ADD COLUMN call_id TEXT;`,
+		`ALTER TABLE chat_evento ADD COLUMN herramienta TEXT;`,
+		`ALTER TABLE chat_evento ADD COLUMN argumentos TEXT;`,
+		`ALTER TABLE chat_evento ADD COLUMN salida TEXT;`,
+		`ALTER TABLE chat_evento ADD COLUMN error TEXT;`,
+		`ALTER TABLE chat_evento ADD COLUMN ok INTEGER;`,
+		`ALTER TABLE chat_evento ADD COLUMN truncado INTEGER;`,
+	}
+	for _, sqlTexto := range columnas {
+		if _, err := tx.Exec(sqlTexto); err != nil {
+			return err
+		}
+	}
+	return nil
 }

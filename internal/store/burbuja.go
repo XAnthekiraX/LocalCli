@@ -153,11 +153,9 @@ func copiarHistorialHasta(db *sql.DB, origen, destino string, hasta int64, hasta
 		return err
 	}
 	for _, e := range eventos {
-		if _, err := tx.Exec(
-			`INSERT INTO chat_evento (id, session_id, tipo, content, created_at, duration_ms) VALUES (?, ?, ?, ?, ?, ?)`,
-			uuid.New().String(), destino, e.Tipo, e.Content, e.CreatedAt, e.DurationMs,
-		); err != nil {
-			return fmt.Errorf("store: no se pudo copiar una línea del hilo: %w", err)
+		e.ID = uuid.New().String()
+		if err := insertarChatEvento(tx, destino, e); err != nil {
+			return err
 		}
 	}
 	return tx.Commit()
@@ -167,7 +165,9 @@ func copiarHistorialHasta(db *sql.DB, origen, destino string, hasta int64, hasta
 // (incluida), en orden. `hasta` es la marca del mensaje del corte.
 func eventosHasta(q queryer, sessionID, hasta string) ([]ChatEvento, error) {
 	rows, err := q.Query(
-		`SELECT id, session_id, tipo, content, created_at, duration_ms FROM chat_evento
+		`SELECT id, session_id, tipo, content, created_at, duration_ms,
+		        call_id, herramienta, argumentos, salida, error, ok, truncado
+		 FROM chat_evento
 		 WHERE session_id = ? AND created_at <= ?
 		 ORDER BY created_at, rowid`,
 		sessionID, hasta,
@@ -178,12 +178,10 @@ func eventosHasta(q queryer, sessionID, hasta string) ([]ChatEvento, error) {
 	defer rows.Close()
 	var eventos []ChatEvento
 	for rows.Next() {
-		var e ChatEvento
-		var durationMs sql.NullInt64
-		if err := rows.Scan(&e.ID, &e.SessionID, &e.Tipo, &e.Content, &e.CreatedAt, &durationMs); err != nil {
+		e, err := leerChatEvento(rows)
+		if err != nil {
 			return nil, err
 		}
-		e.DurationMs = enteroOpcional(durationMs)
 		eventos = append(eventos, e)
 	}
 	return eventos, rows.Err()

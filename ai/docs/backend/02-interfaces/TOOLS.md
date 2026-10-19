@@ -356,7 +356,7 @@ Se conectan en el cableado. Si no hay ninguno, la capa universal funciona igual:
 
 El catálogo **no** viaja en el mensaje de sistema. `PromptDeSistema` se queda con el prompt del agente.
 
-El formato exacto del núcleo común y de la extensión está en [[specs/SPEC-MODELOS-LLAMACPP]] y en [[backend/04-infrastructure/INTEGRATIONS]]; el de los mensajes de herramienta que no se persisten, en [[database/01-schema/ENUMS]].
+El formato exacto del núcleo común y de la extensión está en [[specs/SPEC-MODELOS-LLAMACPP]] y en [[backend/04-infrastructure/INTEGRATIONS]]; el de los mensajes de herramienta persistidos en `chat_evento`, en [[database/01-schema/ENUMS]].
 
 ## Referencias
 

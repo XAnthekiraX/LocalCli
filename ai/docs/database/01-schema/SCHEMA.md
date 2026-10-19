@@ -50,7 +50,7 @@ La versión del esquema no ocupa tabla: se guarda en el `PRAGMA user_version` de
 | `change_history` | Qué archivo se cambió, qué había antes y qué quedó |
 | `todos` | La lista de pasos de una sesión, mantenida con `crear_todo` y `actualizar_todo`; una tarea principal puede agrupar sus subtareas |
 | `flow_context` | El bloque de contexto de un flujo: una aportación optimizada por etapa |
-| `chat_evento` | Las líneas de procesamiento del chat: sub-procesos y herramientas, que se pintan pero no entran al contexto |
+| `chat_evento` | Las líneas de procesamiento del chat: sub-procesos, herramientas y respuestas de etapa. Las herramientas guardan además la llamada y su resultado, que se reenvían al modelo |
 
 El detalle de cada columna está en [[database/01-schema/TABLES]]. Las relaciones entre ellas, en [[database/01-schema/RELATIONSHIPS]]. Los valores cerrados, en [[database/01-schema/ENUMS]].
 
@@ -180,8 +180,15 @@ La jerarquía es de un nivel y vive en `parent_position`: los pasos raíz la lle
 | `content` | TEXT | | La línea tal como se pinta en el chat |
 | `duration_ms` | INTEGER | | Duración de lo que la línea describe, en ms. `NULL` si no se midió |
 | `created_at` | TEXT | | ISO 8601 UTC |
+| `call_id` | TEXT | | Id de la llamada que pidió la herramienta. `NULL` en las demás líneas |
+| `herramienta` | TEXT | | Nombre de la herramienta ejecutada. `NULL` en las demás líneas |
+| `argumentos` | TEXT | | JSON con los argumentos de la llamada. `NULL` en las demás líneas |
+| `salida` | TEXT | | Lo que devolvió la herramienta. `NULL` en las demás líneas |
+| `error` | TEXT | | Error corregible de la ejecución. `NULL` si no falló |
+| `ok` | INTEGER | | `1` si terminó bien, `0` si falló. `NULL` en las líneas sin ejecución |
+| `truncado` | INTEGER | | `1` si la herramienta recortó su salida. `NULL` en las líneas sin ejecución |
 
-`chat_evento` guarda las piezas de pantalla que el chat muestra además de la conversación. Van en su propia tabla, y no en `messages`, porque son **líneas de pantalla**, no turnos: el contexto que recibe el modelo se arma solo de `messages`, así que una pieza de procesamiento nunca entra al contexto. `duration_ms` es nullable y sin valor por defecto: las filas anteriores a la migración quedan en `NULL`, que es «no se midió». Ver [[database/01-schema/ENUMS]] y [[database/02-rules/DATA_FLOW]].
+`chat_evento` guarda las piezas de pantalla que el chat muestra además de la conversación. Van en su propia tabla, y no en `messages`, porque son **líneas de pantalla**, no turnos. Las filas `tipo = herramienta` del turno principal guardan además la llamada y su resultado (`call_id`, `herramienta`, `argumentos`, `salida`, `error`, `ok`, `truncado`), que la capa de sesión reconstruye como `assistant(tool_calls)` + `tool(resultado)` para el modelo; las herramientas internas de una etapa de flujo solo dejan la línea (`NULL` en esas columnas), porque su resultado lo resume el `ejecutar_flujo`. Los sub-procesos y las respuestas de etapa siguen siendo solo pantalla. `duration_ms` es nullable y sin valor por defecto: las filas anteriores a la migración quedan en `NULL`, que es «no se midió». Ver [[database/01-schema/ENUMS]] y [[database/02-rules/DATA_FLOW]].
 
 ## Referencias
 

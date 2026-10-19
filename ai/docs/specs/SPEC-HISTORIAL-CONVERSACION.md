@@ -38,7 +38,8 @@ No incluye qué documentos entran al contexto, que está en [[specs/SPEC-NODO-CO
 ## Reglas de negocio
 
 - Solo la sesión activa aporta historial: el contexto de una sesión nunca se mezcla con el de otra.
-- El historial se arma solo de los mensajes de usuario y agente. Las **líneas de procesamiento** del hilo (sub-procesos y herramientas) se muestran al usuario y se recuperan al abrir una sesión, pero **no** viajan al modelo: viven en `chat_evento`, aparte de la conversación. Ver [[database/02-rules/DATA_FLOW]].
+- El historial se arma de los mensajes de usuario y agente y de las **herramientas ejecutadas** que dejaron una llamada asociada (`chat_evento.call_id`). Cada ejecución viaja como el par `assistant(tool_calls)` + `tool(resultado)`, intercalada en su sitio cronológico: así el modelo sabe qué leyó, qué creó y qué comandos corrió en turnos anteriores. Los sub-procesos y las respuestas de etapa siguen siendo solo pantalla. Las herramientas internas de una etapa de un flujo tampoco se reenvían por separado: el resultado del `ejecutar_flujo` que las lanzó ya las resume. Ver [[database/02-rules/DATA_FLOW]].
+- Las ejecuciones reenviadas se acotan: la salida de cada herramienta se recorta a un máximo y se marca como recortada, y la compactación descarta las que quedan cubiertas por el resumen. Los fallos viajan compactos —el texto del error— para que el modelo no repita el mismo tropiezo.
 - El historial es la conversación ya cerrada; el mensaje en curso viaja aparte, como contexto del turno, y no se duplica.
 - El historial que se entrega al modelo no supera el presupuesto de tokens configurado.
 - Cuando el historial no cabe, se resume lo antiguo y lo reciente viaja entero y literal.

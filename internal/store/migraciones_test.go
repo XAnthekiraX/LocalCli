@@ -338,6 +338,18 @@ func crearBaseV10(t *testing.T, ruta string) {
 	pasos := []string{
 		`DROP INDEX idx_todos_padre;`,
 		`ALTER TABLE todos DROP COLUMN parent_position;`,
+		// La v10 todavía no tenía las columnas de ejecución de `chat_evento`: se
+		// reconstruye con el esquema de entonces para que la 012 las añada.
+		`DROP TABLE chat_evento;`,
+		`CREATE TABLE chat_evento (
+			id         TEXT PRIMARY KEY NOT NULL,
+			session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE ON UPDATE CASCADE,
+			tipo       TEXT NOT NULL CHECK (tipo IN ('proceso', 'herramienta', 'respuesta')),
+			content    TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			duration_ms INTEGER
+		);`,
+		`CREATE INDEX idx_chat_evento_session_created ON chat_evento (session_id, created_at);`,
 		`PRAGMA user_version = 10;`,
 	}
 	for _, paso := range pasos {

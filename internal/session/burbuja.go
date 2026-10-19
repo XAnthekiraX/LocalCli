@@ -58,11 +58,14 @@ func (o *Orquestador) SincronizarContexto(sesionID string) tea.Cmd {
 			_ = store.LimpiarResumenHistorial(o.db, o.projectID, sesionID)
 			hay = false
 		}
+		// Las ejecuciones exitosas y sus errores compactos también ocupan
+		// contexto: el panel debe reflejar lo que de verdad viaja al modelo.
+		ejecs, _ := o.ejecucionesPara(sesionID)
 		var total int
 		if hay {
-			total = estimarTokens(sum.Texto) + tokensDe(conv[cubierto:])
+			total = estimarTokens(sum.Texto) + tokensDe(conv[cubierto:]) + tokensDeEjecuciones(conv, cubierto, ejecs)
 		} else {
-			total = tokensDe(conv)
+			total = tokensDe(conv) + tokensDeEjecuciones(conv, 0, ejecs)
 		}
 		if total < 0 {
 			total = 0

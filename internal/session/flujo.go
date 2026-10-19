@@ -208,7 +208,7 @@ func (o *Orquestador) correrEtapaLoop(ctx context.Context, sesionID string, agen
 
 // partirVeredicto separa el resumen de trabajo de la última línea, que debe ser
 // `true` (resuelto) o `false` (hay que repetir). Acepta comillas invertidas y
-// mayúsculas: `True`, `````true`````.
+// mayúsculas: `True`, ```“true```“.
 func partirVeredicto(texto string) (resumen string, listo bool, ok bool) {
 	lineas := strings.Split(texto, "\n")
 	i := len(lineas) - 1
@@ -320,6 +320,7 @@ func (o *Orquestador) turnoEtapa(ctx context.Context, sesionID string, agenteAct
 			registro: o.herramientas,
 			sesion:   sesionID,
 			permisos: agenteActivo.Permisos(),
+			enFlujo:  true,
 			Observar: func(nombre string, res agent.Resultado) {
 				if denegada == "" && strings.HasPrefix(res.Error, tools.CodToolNotAllowed) {
 					denegada = nombre

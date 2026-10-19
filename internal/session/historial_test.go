@@ -9,9 +9,11 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"localcli/internal/llm/openai"
 	"localcli/internal/store"
+	"localcli/internal/tools"
 	"localcli/internal/tui"
 )
 
@@ -309,5 +311,152 @@ func TestPresupuestoHistorialCadena(t *testing.T) {
 
 	if p := presupuestoHistorial(32768, tui.Preferencias{HistorialTokens: 1500}); p != 1500 {
 		t.Fatalf("con la preferencia = %d, quiero 1500", p)
+	}
+}
+
+// TestHistorialReenviaHerramientasEjecutadas: una herramienta guardada viaja al
+// modelo en el turno siguiente como el par assistant(tool_calls) + tool(resultado),
+// intercalada entre el mensaje del usuario y la respuesta del agente. Las líneas
+// antiguas sin `call_id` y los sub-procesos siguen siendo solo pantalla.
+func TestHistorialReenviaHerramientasEjecutadas(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("LOCALCLI_CONTEXT_LIMIT", "100000")
+	o, sesionID := sesionDePrueba(t, "http://127.0.0.1:1")
+
+	if _, err := store.CrearMensaje(o.db, o.projectID, sesionID, "user", "revisa el proyecto", nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Línea antigua sin ejecución: no debe viajar.
+	if _, err := store.CrearChatEvento(o.db, o.projectID, sesionID, store.ChatEventoHerramienta, "✓ LEER [viejo.go] · 3 líneas", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CrearChatEventoTool(o.db, o.projectID, sesionID, "✓ LEER [ir.go] · 2 líneas", nil, store.EjecucionHerramienta{
+		CallID: "call-1", Herramienta: "leer_archivo", Argumentos: `{"ruta":"ir.go"}`,
+		Salida: "package diagram\n", OK: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Un fallo viaja compacto para que el modelo no repita el mismo tropiezo.
+	if _, err := store.CrearChatEventoTool(o.db, o.projectID, sesionID, "✗ EJEC [go test] · falló", nil, store.EjecucionHerramienta{
+		CallID: "call-2", Herramienta: "ejecutar_comando", Argumentos: `{"comando":"go test"}`,
+		Error: "el comando falló", OK: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CrearMensaje(o.db, o.projectID, sesionID, "agent", "ya está revisado", nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, err := o.historialPara(context.Background(), sesionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// usuario + (assistant+tool) + (assistant+tool) + agente
+	if len(msgs) != 6 {
+		t.Fatalf("mensajes = %d, quiero 6: %+v", len(msgs), msgs)
+	}
+	if msgs[0].Rol != "user" || msgs[5].Rol != "assistant" {
+		t.Fatalf("el hilo debería abrir con el usuario y cerrar con el agente: %+v", msgs)
+	}
+	if msgs[1].Rol != "assistant" || len(msgs[1].Llamadas) != 1 || msgs[1].Llamadas[0].ID != "call-1" {
+		t.Fatalf("falta la llamada de la herramienta: %+v", msgs[1])
+	}
+	if msgs[2].Rol != "tool" || msgs[2].IDLlamada != "call-1" || msgs[2].Contenido != "package diagram\n" {
+		t.Fatalf("falta el resultado de la herramienta: %+v", msgs[2])
+	}
+	if msgs[3].Rol != "assistant" || msgs[3].Llamadas[0].ID != "call-2" {
+		t.Fatalf("falta la llamada del comando fallido: %+v", msgs[3])
+	}
+	if msgs[4].Rol != "tool" || msgs[4].Contenido != "el comando falló" {
+		t.Fatalf("el fallo debería viajar compacto: %+v", msgs[4])
+	}
+	for _, m := range msgs {
+		if strings.Contains(m.Contenido, "viejo.go") {
+			t.Fatalf("una línea sin ejecución no debería viajar al modelo: %+v", m)
+		}
+	}
+}
+
+// TestHistorialRecortaSalidasLargas: el historial no reenvía una lectura entera;
+// la salida se acota y se marca como recortada.
+func TestHistorialRecortaSalidasLargas(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("LOCALCLI_CONTEXT_LIMIT", "100000")
+	o, sesionID := sesionDePrueba(t, "http://127.0.0.1:1")
+
+	if _, err := store.CrearMensaje(o.db, o.projectID, sesionID, "user", "lee el archivo", nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CrearChatEventoTool(o.db, o.projectID, sesionID, "✓ LEER [grande.go]", nil, store.EjecucionHerramienta{
+		CallID: "call-grande", Herramienta: "leer_archivo", Argumentos: `{"ruta":"grande.go"}`,
+		Salida: strings.Repeat("z", maxSalidaHistorial*2), OK: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, err := o.historialPara(context.Background(), sesionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("mensajes = %d, quiero 3: %+v", len(msgs), msgs)
+	}
+	salida := msgs[2].Contenido
+	if !strings.HasSuffix(salida, marcaSalidaHistorial) {
+		t.Fatalf("la salida recortada debería llevar su marca: %q", salida[len(salida)-40:])
+	}
+	if len([]rune(salida)) != maxSalidaHistorial+len([]rune(marcaSalidaHistorial)) {
+		t.Fatalf("la salida recortada mide %d runas", len([]rune(salida)))
+	}
+}
+
+// TestHerramientaDeFlujoNoSeReenvia: la línea de una herramienta que corre
+// dentro de una etapa se pinta, pero no se persiste como ejecución reenviable:
+// el resultado del `ejecutar_flujo` que la lanzó ya la resume.
+func TestHerramientaDeFlujoNoSeReenvia(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	o, sesionID := sesionDePrueba(t, "http://127.0.0.1:1")
+
+	o.guardarLineaHerramienta(tools.EventoResultado{
+		Sesion: sesionID, IDLlamada: "call-flujo", EnFlujo: true,
+		Nombre: "leer_archivo", Verbo: "LEER", Tema: "interno.go", OK: true,
+		Salida: "contenido interno", Duracion: time.Millisecond,
+	})
+
+	ejecuciones, err := store.ListarEjecucionesHerramienta(o.db, o.projectID, sesionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ejecuciones) != 0 {
+		t.Fatalf("una herramienta de flujo no debería reenviarse: %+v", ejecuciones)
+	}
+	eventos, err := store.ListarChatEventos(o.db, o.projectID, sesionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eventos) != 1 || eventos[0].Ejecucion != nil {
+		t.Fatalf("la línea del flujo debería quedar solo para pintar: %+v", eventos)
+	}
+}
+
+// TestEjecucionesDesdeDescartaLoResumido: una ejecución anterior a la marca del
+// resumen no se reenvía; una posterior sí.
+func TestEjecucionesDesdeDescartaLoResumido(t *testing.T) {
+	conv := []mensajeConv{
+		{id: "m1", createdAt: "2026-01-01T10:00:00.000000100Z"},
+		{id: "m2", createdAt: "2026-01-01T10:00:01.000000000Z"},
+	}
+	ejecs := []ejecucionConv{
+		{callID: "vieja", createdAt: "2026-01-01T10:00:00.500000000Z"},
+		{callID: "nueva", createdAt: "2026-01-01T10:00:01.500000000Z"},
+	}
+	// El corte deja m1 y m2 en el tramo resumido: la ejecución anterior a m2 se
+	// descarta y la posterior se conserva.
+	quedan := ejecucionesDesde(conv, 2, ejecs)
+	if len(quedan) != 1 || quedan[0].callID != "nueva" {
+		t.Fatalf("ejecuciones del tramo reciente = %+v, quiero solo la nueva", quedan)
+	}
+	if todas := ejecucionesDesde(conv, 0, ejecs); len(todas) != 2 {
+		t.Fatalf("sin corte deberían quedar todas: %+v", todas)
 	}
 }

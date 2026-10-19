@@ -86,11 +86,8 @@ func RehacerTurno(db *sql.DB, turno Turno) error {
 		}
 	}
 	for _, e := range turno.Eventos {
-		if _, err := tx.Exec(
-			`INSERT INTO chat_evento (id, session_id, tipo, content, created_at, duration_ms) VALUES (?, ?, ?, ?, ?, ?)`,
-			e.ID, e.SessionID, e.Tipo, e.Content, e.CreatedAt, e.DurationMs,
-		); err != nil {
-			return fmt.Errorf("store: no se pudo rehacer la línea del hilo: %w", err)
+		if err := insertarChatEvento(tx, e.SessionID, e); err != nil {
+			return err
 		}
 	}
 	return tx.Commit()
@@ -129,7 +126,9 @@ func turnoDesde(db *sql.DB, sessionID string, desde int64) (Turno, error) {
 // (incluida), en orden. `desde` es la marca del mensaje que abre el turno.
 func eventosDesde(db *sql.DB, sessionID, desde string) ([]ChatEvento, error) {
 	rows, err := db.Query(
-		`SELECT id, session_id, tipo, content, created_at, duration_ms FROM chat_evento
+		`SELECT id, session_id, tipo, content, created_at, duration_ms,
+		        call_id, herramienta, argumentos, salida, error, ok, truncado
+		 FROM chat_evento
 		 WHERE session_id = ? AND created_at >= ?
 		 ORDER BY created_at, rowid`,
 		sessionID, desde,
@@ -140,12 +139,10 @@ func eventosDesde(db *sql.DB, sessionID, desde string) ([]ChatEvento, error) {
 	defer rows.Close()
 	var eventos []ChatEvento
 	for rows.Next() {
-		var e ChatEvento
-		var durationMs sql.NullInt64
-		if err := rows.Scan(&e.ID, &e.SessionID, &e.Tipo, &e.Content, &e.CreatedAt, &durationMs); err != nil {
+		e, err := leerChatEvento(rows)
+		if err != nil {
 			return nil, err
 		}
-		e.DurationMs = enteroOpcional(durationMs)
 		eventos = append(eventos, e)
 	}
 	return eventos, rows.Err()

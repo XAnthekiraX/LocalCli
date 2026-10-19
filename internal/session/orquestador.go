@@ -163,7 +163,8 @@ func (o *Orquestador) guardarEventoChat(sesionID, tipo, contenido string, durati
 }
 
 // guardarLineaHerramienta guarda la línea cerrada de una herramienta, tal como se
-// pintó, con la duración de su ejecución cuando se midió.
+// pintó, con la duración de su ejecución cuando se midió, y la llamada con su
+// salida para reenviarla al modelo en los próximos turnos.
 func (o *Orquestador) guardarLineaHerramienta(e tools.EventoResultado) {
 	base := linea.HerramientaAbierta(e.Verbo, e.Tema)
 	texto := linea.HerramientaCerrada(base, e.OK, e.Truncado, e.Medida, e.Error, e.Duracion)
@@ -172,7 +173,25 @@ func (o *Orquestador) guardarLineaHerramienta(e tools.EventoResultado) {
 		n := int(e.Duracion.Milliseconds())
 		ms = &n
 	}
-	o.guardarEventoChat(e.Sesion, store.ChatEventoHerramienta, texto, ms)
+	if e.EnFlujo {
+		// La herramienta interna de una etapa se pinta en el sub-proceso, pero
+		// no se reenvía: el resultado del `ejecutar_flujo` ya la resume y su
+		// llamada no pertenece al turno del agente principal.
+		o.guardarEventoChat(e.Sesion, store.ChatEventoHerramienta, texto, ms)
+		return
+	}
+	ejecucion := store.EjecucionHerramienta{
+		CallID:      e.IDLlamada,
+		Herramienta: e.Nombre,
+		Argumentos:  e.Argumentos,
+		Salida:      e.Salida,
+		Error:       e.Error,
+		OK:          e.OK,
+		Truncado:    e.Truncado,
+	}
+	if _, err := store.CrearChatEventoTool(o.db, o.projectID, e.Sesion, texto, ms, ejecucion); err != nil {
+		o.avisar(e.Sesion, "no se pudo guardar una línea del hilo: "+err.Error(), "")
+	}
 }
 
 // pintarRespuestaEtapa deja la respuesta completa de una etapa de un flujo en el
@@ -267,6 +286,9 @@ type adaptadorHerramientas struct {
 	permisos []string
 	Ask      func(context.Context, tools.Solicitud) (tools.Decision, error)
 	Observar func(nombre string, res agent.Resultado)
+	// enFlujo marca las herramientas que corren dentro de una etapa: se pintan,
+	// pero no se persisten como ejecución reenviable.
+	enFlujo bool
 }
 
 func (a adaptadorHerramientas) Ejecutar(ctx context.Context, agente string, l agent.Llamada) (agent.Resultado, error) {
@@ -275,6 +297,8 @@ func (a adaptadorHerramientas) Ejecutar(ctx context.Context, agente string, l ag
 		Agente:     agente,
 		Permisos:   a.permisos,
 		Ask:        a.Ask,
+		IDLlamada:  l.ID,
+		EnFlujo:    a.enFlujo,
 		Nombre:     l.Nombre,
 		Argumentos: json.RawMessage(l.Argumentos),
 	})
@@ -1004,6 +1028,10 @@ func (o *Orquestador) recompactar(ctx context.Context, sesionID string, imagenes
 	if len(conv) == 0 {
 		return nil, false
 	}
+	ejecs, err := o.ejecucionesPara(sesionID)
+	if err != nil {
+		return nil, false
+	}
 	prefs := preferenciasSeguras()
 	recencia := prefs.Compactacion.ConservarEfectivo() / 2
 	if recencia < 1 {
@@ -1013,7 +1041,7 @@ func (o *Orquestador) recompactar(ctx context.Context, sesionID string, imagenes
 	if corte <= 0 {
 		return nil, false
 	}
-	historial := armarHistorial(conv, corte, resumen)
+	historial := armarHistorialConHerramientas(conv, corte, resumen, ejecs)
 	if len(imagenes) > 0 {
 		historial = adjuntarAlUltimoUsuario(historial, imagenes, texto)
 	}

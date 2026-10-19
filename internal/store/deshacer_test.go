@@ -168,6 +168,41 @@ func TestDeshacerYRehacerSinTurnoNoHacenNada(t *testing.T) {
 	}
 }
 
+// TestDeshacerYRehacerConservaLaEjecucion: la ejecución de una herramienta viaja
+// con la línea al deshacer y al rehacer, para que el historial del modelo la siga
+// viendo después de recuperar el turno.
+func TestDeshacerYRehacerConservaLaEjecucion(t *testing.T) {
+	db, proyecto, sesion := sesionDePrueba(t)
+	crear := mensajesDePrueba(t, db, proyecto, sesion)
+	crear("user", "lee y responde")
+	crear("agent", "respuesta")
+
+	if _, err := CrearChatEventoTool(db, proyecto, sesion, "✓ LEER [ir.go] · 2 líneas", nil, EjecucionHerramienta{
+		CallID: "call-1", Herramienta: "leer_archivo", Argumentos: `{"ruta":"ir.go"}`,
+		Salida: "package diagram\n", OK: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	turno, _, err := DeshacerTurno(db, proyecto, sesion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RehacerTurno(db, turno); err != nil {
+		t.Fatal(err)
+	}
+
+	ejecuciones, err := ListarEjecucionesHerramienta(db, proyecto, sesion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ejecuciones) != 1 || ejecuciones[0].Ejecucion == nil ||
+		ejecuciones[0].Ejecucion.CallID != "call-1" ||
+		ejecuciones[0].Ejecucion.Salida != "package diagram\n" {
+		t.Fatalf("la ejecución no volvió con el turno: %+v", ejecuciones)
+	}
+}
+
 // mensajesDePrueba devuelve un creador de mensajes ligado a la sesión.
 func mensajesDePrueba(t *testing.T, db *sql.DB, proyecto, sesion string) func(rol, texto string) {
 	t.Helper()

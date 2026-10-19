@@ -170,7 +170,14 @@ CREATE TABLE chat_evento (
     tipo       TEXT NOT NULL CHECK (tipo IN ('proceso', 'herramienta', 'respuesta')),
     content    TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    duration_ms INTEGER
+    duration_ms INTEGER,
+    call_id    TEXT,
+    herramienta TEXT,
+    argumentos TEXT,
+    salida     TEXT,
+    error      TEXT,
+    ok         INTEGER,
+    truncado   INTEGER
 );
 `)
 	if err != nil {
@@ -235,8 +242,8 @@ CREATE TABLE chat_evento (
 		return err
 	}
 
-	// user_version = 11
-	_, err = tx.Exec("PRAGMA user_version = 11;")
+	// user_version = 12
+	_, err = tx.Exec("PRAGMA user_version = 12;")
 	if err != nil {
 		return err
 	}

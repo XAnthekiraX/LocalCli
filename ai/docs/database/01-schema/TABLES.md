@@ -26,14 +26,14 @@ Convenciones que aplican a todas: `id` es `TEXT` con UUID v4, las fechas son `TE
 
 - **`projects`** — Un proyecto: la carpeta desde la que se abrió LocalCli. Es la raíz lógica del árbol de la base, porque el archivo es único y global y las sesiones de todos los directorios comparten estructura: toda sesión cuelga de su proyecto por `project_id`. Su `path` es único, así que abrir la misma carpeta dos veces reutiliza la fila. Ver [[specs/SPEC-SESIONES]].
 - **`sessions`** — Una sesión de trabajo. Es la unidad de la que cuelgan la conversación, las aprobaciones y la auditoría. Su campo `status` es lo que la interfaz muestra cuando cambias de sesión. Guarda además el `modelo` con el que trabaja: es un recurso de la sesión, no parte de su identidad, así que cambiarlo no la renombra ni le toca el historial.
-- **`messages`** — Los turnos de la conversación. Guarda lo que escribió el usuario y lo que respondió el agente, más los tokens de cada turno y su duración. Un turno puede incluir llamadas a herramientas, pero **esas no se guardan en `messages`**: el detalle de la ejecución vive mientras dura el turno y se descarta; lo que queda es el mensaje final del agente y, aparte, su línea en `chat_evento`. Ver [[database/02-rules/DATA_FLOW]].
+- **`messages`** — Los turnos de la conversación. Guarda lo que escribió el usuario y lo que respondió el agente, más los tokens de cada turno y su duración. Un turno puede incluir llamadas a herramientas, pero **esas no se guardan en `messages`**: su llamada y su resultado viven en `chat_evento`, junto a su línea, y se reenvían al modelo en los turnos siguientes. Ver [[database/02-rules/DATA_FLOW]].
 - **`reasoning`** — El razonamiento del modelo de un mensaje concreto. Va en tabla aparte porque llega token a token mientras se genera y porque se consulta y se mide por separado del texto final. El diseño está en [[specs/SPEC-AGENTE-BASE]].
 - **`approvals`** — Lo que una sesión necesita que decidas antes de seguir. El panel de aprobaciones las lee todas, de cualquier sesión. Ver [[specs/SPEC-INTERFAZ-ATAJOS]].
 - **`context_audit`** — La traza de qué documentación recibió el modelo en cada etapa y qué se descartó, con el motivo. Es lo que hace auditable el nodo de contexto. Ver [[specs/SPEC-NODO-CONTEXTO]].
 - **`change_history`** — Cada cambio aplicado a un archivo del proyecto, con lo que había antes y lo que quedó. Nunca se borra. Ver [[database/02-rules/BUSINESS_RULES]].
 - **`todos`** — La lista de pasos de una sesión: el plan que el agente mantiene con `crear_todo` y `actualizar_todo`. Es estado de ejecución de la sesión, no un documento del proyecto: `actualizar_todo` la reescribe entera y `crear_todo` le añade al final un paso o una tarea principal con sus subtareas. Cae con su sesión. Ver [[specs/SPEC-TOOLS]].
 - **`flow_context`** — El bloque de contexto de un flujo con `bloque_contexto`: una aportación por etapa, ya optimizada por el modelo. Es lo que permite que la composición final arme la entrega a partir de todo el trabajo de las etapas. Es estado de ejecución de la sesión: se reemplaza en cada ejecución del flujo y cae con su sesión. Ver [[specs/SPEC-ORQUESTADOR-FLUJOS]].
-- **`chat_evento`** — Las piezas de pantalla del chat que no son conversación: el sub-proceso de cada etapa de un flujo, la línea de cada herramienta y la respuesta de una etapa que pidió verse en el hilo. Se muestran al usuario y se recuerdan al volver a una sesión, pero **no son contexto**: al modelo solo se le entregan los turnos de `messages`. Cae en cascada con su sesión. Ver [[database/02-rules/DATA_FLOW]].
+- **`chat_evento`** — Las piezas de pantalla del chat que no son conversación: el sub-proceso de cada etapa de un flujo, la línea de cada herramienta y la respuesta de una etapa que pidió verse en el hilo. Se muestran al usuario y se recuerdan al volver a una sesión. Las herramientas guardan además la llamada y su salida (`call_id`, `argumentos`, `salida`, `error`, `ok`, `truncado`) para reenviarlas al modelo como `assistant(tool_calls)` + `tool(resultado)`; los sub-procesos y las respuestas de etapa siguen siendo solo pantalla. Cae en cascada con su sesión. Ver [[database/02-rules/DATA_FLOW]].
 
 ## 3. Columnas
 
@@ -88,7 +88,7 @@ Un detalle que no es obvio:
 
 Los dos campos de tokens son `NULL` cuando el modelo no los reporta. Se distinguen del `0`: `NULL` significa "no lo sé", `0` significa "cero". `duration_ms` sigue la misma convención: `NULL` es "no se midió". El panel de contexto marca la estimación como tal. Ver [[specs/SPEC-PANEL-CONTEXTO]].
 
-**Lo que no hay en esta tabla.** No hay columnas para las peticiones de herramientas ni para sus resultados, y `role` no tiene un valor de herramienta. Es una decisión, no un olvido: el detalle de las ejecuciones pertenece al turno en curso, y lo que el usuario relee al volver es la conclusión del agente, que ya está en `content`. Lo que sí se conserva de una ejecución son sus **líneas de pantalla** —el sub-proceso y la línea de cada herramienta—, y esas viven aparte, en `chat_evento`, nunca en el contexto del modelo. Ver [[database/01-schema/ENUMS]] y [[backend/DECISIONS]].
+**Lo que no hay en esta tabla.** No hay columnas para las peticiones de herramientas ni para sus resultados, y `role` no tiene un valor de herramienta. Es una decisión, no un olvido: la conversación guarda los turnos de usuario y agente, y el detalle de las ejecuciones vive en `chat_evento`, donde además de la línea de pantalla se guardan la llamada y su salida para reenviarlas al modelo. Ver [[database/01-schema/ENUMS]] y [[backend/DECISIONS]].
 
 ### `reasoning`
 
@@ -191,8 +191,17 @@ Hay una aportación por etapa y flujo dentro de la sesión: el índice único `(
 | `content` | La línea tal como se pinta | Texto libre | No | — |
 | `duration_ms` | Cuánto tardó lo que la línea describe, en milisegundos | Entero ≥ 0 | Sí | `NULL` |
 | `created_at` | Cuándo se añadió al hilo | ISO 8601 UTC | No | — |
+| `call_id` | Id de la llamada que pidió la herramienta | Texto libre | Sí | `NULL` |
+| `herramienta` | Nombre de la herramienta ejecutada | Texto libre | Sí | `NULL` |
+| `argumentos` | Argumentos con los que se pidió | JSON | Sí | `NULL` |
+| `salida` | Lo que devolvió la herramienta | Texto libre | Sí | `NULL` |
+| `error` | El error corregible, si falló | Texto libre | Sí | `NULL` |
+| `ok` | Si la ejecución terminó bien | `0` o `1` | Sí | `NULL` |
+| `truncado` | Si la salida se recortó | `0` o `1` | Sí | `NULL` |
 
 `tipo` distingue el sub-proceso de una etapa (`proceso`) de la línea de una herramienta (`herramienta`) y de la respuesta completa de una etapa con `respuesta_en_chat` (`respuesta`). `content` guarda el texto ya compuesto —«[Sub Proceso] Entender el problema», «✓ LEER [AGENTS.md] · 93 líneas» o la respuesta entera de la etapa—, para que al recargar la sesión el hilo se pinte igual que en vivo. En una lectura por rango el tema incluye el rango real leído (por ejemplo `AGENTS.md:10-50`). Las piezas son inmutables una vez completas, como los mensajes: la línea de una herramienta se guarda cerrada, con su marca, su medida y su tiempo; la respuesta de una etapa se guarda completa. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su hilo.
+
+Las columnas `call_id`, `herramienta`, `argumentos`, `salida`, `error`, `ok` y `truncado` se llenan en las filas `tipo = herramienta` que corren en el turno principal: son la llamada y su desenlace, y permiten reconstruir el par `assistant(tool_calls)` + `tool(resultado)` que el modelo ve en los turnos siguientes. Las herramientas que corren dentro de una etapa de un flujo también dejan su línea, pero quedan en `NULL`: su resultado lo resume el `ejecutar_flujo` que las lanzó y no se reenvían por separado. Las filas anteriores a la migración `012-ejecucion-herramienta` quedan en `NULL` y se siguen pintando, pero no se reenvían. Los sub-procesos y las respuestas de etapa no tienen ejecución y también quedan en `NULL`. La salida reenviada se acota en la capa de sesión; `truncado` conserva si la herramienta ya había recortado su propia salida.
 
 `duration_ms` es el tiempo de **lo que esa pieza describe**, no el del turno: en una línea de herramienta es el de su ejecución, y en las demás no se mide y queda `NULL`. Sigue la misma convención que `messages.duration_ms` —`NULL` es «no se midió», no «tardó cero»—, y como cada pieza ya guarda su texto compuesto, el tiempo está ahí dos veces: como número, para poder consultarlo, y dentro de `content`, para que pintar el hilo no dependa de recomponerlo. Ver [[database/02-rules/DATA_FLOW]] y [[database/03-operations/MIGRATIONS]] §Nota sobre el esquema actual.
 

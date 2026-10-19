@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -25,10 +26,12 @@ const longitudMaximaResumen = 8000
 // margen al formato estructurado, que ocupa más que un resumen libre.
 var opcionesResumen = openai.Opciones{MaxTokens: 1024, SinRazonamiento: true}
 
-// mensajeConv es un mensaje cerrado con el id de su fila.
+// mensajeConv es un mensaje cerrado con el id de su fila y su marca de tiempo,
+// que sirve para intercalar las herramientas ejecutadas en el mismo turno.
 type mensajeConv struct {
-	msg agent.Mensaje
-	id  string
+	msg       agent.Mensaje
+	id        string
+	createdAt string
 }
 
 // historialPara arma el historial del modelo: entero si cabe, o resumen + recientes.
@@ -43,6 +46,10 @@ func (o *Orquestador) historialPara(ctx context.Context, sesionID string) ([]age
 	if len(conv) == 0 {
 		return nil, nil
 	}
+	ejecs, err := o.ejecucionesPara(sesionID)
+	if err != nil {
+		return nil, err
+	}
 	prefs := preferenciasSeguras()
 	presupuesto := presupuestoHistorial(o.ventanaActual(), prefs)
 
@@ -54,33 +61,172 @@ func (o *Orquestador) historialPara(ctx context.Context, sesionID string) ([]age
 		_ = store.LimpiarResumenHistorial(o.db, o.projectID, sesionID)
 		hay = false
 	}
-	if hay && tokensDe(conv[cubierto:]) <= presupuesto {
-		return armarHistorial(conv, cubierto, sum.Texto), nil
+	if hay && tokensDe(conv[cubierto:])+tokensDeEjecuciones(conv, cubierto, ejecs) <= presupuesto {
+		return armarHistorialConHerramientas(conv, cubierto, sum.Texto, ejecs), nil
 	}
-	if !hay && tokensDe(conv) <= presupuesto {
-		return mensajesDe(conv), nil
+	if !hay && tokensDe(conv)+tokensDeEjecuciones(conv, 0, ejecs) <= presupuesto {
+		return armarHistorialConHerramientas(conv, 0, "", ejecs), nil
 	}
 
 	corte, resumen := o.compactar(ctx, sesionID, conv, recenciaDeCompactacion(prefs, presupuesto), prefs)
 	if corte <= 0 {
 		if hay {
-			return armarHistorial(conv, cubierto, sum.Texto), nil
+			return armarHistorialConHerramientas(conv, cubierto, sum.Texto, ejecs), nil
 		}
-		return mensajesDe(conv), nil
+		return armarHistorialConHerramientas(conv, 0, "", ejecs), nil
 	}
-	return armarHistorial(conv, corte, resumen), nil
+	return armarHistorialConHerramientas(conv, corte, resumen, ejecs), nil
 }
 
-// armarHistorial compone la entrega al modelo: el resumen como mensaje de sistema
-// seguido del tramo reciente literal. Sin resumen, solo el tramo reciente.
-func armarHistorial(conv []mensajeConv, corte int, resumen string) []agent.Mensaje {
-	recientes := mensajesDe(conv[corte:])
-	if strings.TrimSpace(resumen) == "" {
-		return recientes
+// ejecucionConv es una herramienta ejecutada, ya traducida a lo que el modelo
+// necesita: la llamada que la pidió y su resultado. Las líneas antiguas sin
+// `call_id` no llegan aquí y siguen siendo solo pantalla.
+type ejecucionConv struct {
+	callID      string
+	herramienta string
+	argumentos  string
+	salida      string
+	error       string
+	ok          bool
+	truncado    bool
+	createdAt   string
+}
+
+// maxSalidaHistorial acota lo que se reenvía de una salida de herramienta: el
+// historial no debe llenarse con lecturas viejas. La marca final avisa al modelo
+// de que el contenido está cortado.
+const maxSalidaHistorial = 4000
+
+const marcaSalidaHistorial = "\n… [salida recortada]"
+
+// ejecucionesPara lee las herramientas ejecutadas de la sesión y las traduce a la
+// forma que consume el historial.
+func (o *Orquestador) ejecucionesPara(sesionID string) ([]ejecucionConv, error) {
+	eventos, err := store.ListarEjecucionesHerramienta(o.db, o.projectID, sesionID)
+	if err != nil {
+		return nil, err
 	}
-	salida := make([]agent.Mensaje, 0, len(recientes)+1)
-	salida = append(salida, agent.Mensaje{Rol: agent.RolSistema, Contenido: cabeceraResumen + resumen})
-	return append(salida, recientes...)
+	salida := make([]ejecucionConv, 0, len(eventos))
+	for _, e := range eventos {
+		if e.Ejecucion == nil {
+			continue
+		}
+		salida = append(salida, ejecucionConv{
+			callID:      e.Ejecucion.CallID,
+			herramienta: e.Ejecucion.Herramienta,
+			argumentos:  e.Ejecucion.Argumentos,
+			salida:      e.Ejecucion.Salida,
+			error:       e.Ejecucion.Error,
+			ok:          e.Ejecucion.OK,
+			truncado:    e.Ejecucion.Truncado,
+			createdAt:   e.CreatedAt,
+		})
+	}
+	return salida, nil
+}
+
+// ejecucionesDesde devuelve las ejecuciones posteriores al tramo ya resumido. El
+// corte es sobre mensajes; una ejecución creada después del último mensaje
+// cubierto sigue en el tramo reciente y se reenvía.
+func ejecucionesDesde(conv []mensajeConv, corte int, ejecs []ejecucionConv) []ejecucionConv {
+	if corte <= 0 {
+		return ejecs
+	}
+	limite := conv[corte-1].createdAt
+	salida := make([]ejecucionConv, 0, len(ejecs))
+	for _, e := range ejecs {
+		if e.createdAt > limite {
+			salida = append(salida, e)
+		}
+	}
+	return salida
+}
+
+// tokensDeEjecuciones estima el coste de las ejecuciones que entran al historial.
+func tokensDeEjecuciones(conv []mensajeConv, corte int, ejecs []ejecucionConv) int {
+	total := 0
+	for _, e := range ejecucionesDesde(conv, corte, ejecs) {
+		total += tokensDeMensaje(mensajeAsistenteDe(e)) + tokensDeMensaje(mensajeResultadoDe(e))
+	}
+	return total
+}
+
+// armarHistorialConHerramientas intercala las ejecuciones con los mensajes del
+// tramo reciente, en orden cronológico, y antepone el resumen si lo hay. Cada
+// ejecución viaja como el par que exige el protocolo: el `assistant` que pidió la
+// llamada seguido del `tool` que la responde.
+func armarHistorialConHerramientas(conv []mensajeConv, corte int, resumen string, ejecs []ejecucionConv) []agent.Mensaje {
+	type pieza struct {
+		createdAt string
+		msg       agent.Mensaje
+	}
+	piezas := make([]pieza, 0, len(conv)-corte+len(ejecs)*2)
+	for _, e := range ejecucionesDesde(conv, corte, ejecs) {
+		piezas = append(piezas, pieza{createdAt: e.createdAt, msg: mensajeAsistenteDe(e)})
+		piezas = append(piezas, pieza{createdAt: e.createdAt, msg: mensajeResultadoDe(e)})
+	}
+	for _, c := range conv[corte:] {
+		piezas = append(piezas, pieza{createdAt: c.createdAt, msg: c.msg})
+	}
+	// El orden de inserción desempata: las ejecuciones van antes del mensaje
+	// final del turno cuando comparten marca exacta.
+	sort.SliceStable(piezas, func(i, j int) bool {
+		return piezas[i].createdAt < piezas[j].createdAt
+	})
+
+	salida := make([]agent.Mensaje, 0, len(piezas)+1)
+	if strings.TrimSpace(resumen) != "" {
+		salida = append(salida, agent.Mensaje{Rol: agent.RolSistema, Contenido: cabeceraResumen + resumen})
+	}
+	for _, p := range piezas {
+		salida = append(salida, p.msg)
+	}
+	return salida
+}
+
+// mensajeAsistenteDe reconstruye la llamada que pidió la herramienta.
+func mensajeAsistenteDe(e ejecucionConv) agent.Mensaje {
+	argumentos := e.argumentos
+	if strings.TrimSpace(argumentos) == "" {
+		argumentos = "{}"
+	}
+	return agent.Mensaje{
+		Rol: agent.RolAsistente,
+		Llamadas: []agent.Llamada{{
+			ID:         e.callID,
+			Nombre:     e.herramienta,
+			Argumentos: argumentos,
+		}},
+	}
+}
+
+// mensajeResultadoDe reconstruye lo que la herramienta devolvió. Un fallo viaja
+// compacto —el texto del error— para que el modelo no repita el mismo tropiezo.
+func mensajeResultadoDe(e ejecucionConv) agent.Mensaje {
+	texto := e.salida
+	if !e.ok || e.error != "" {
+		texto = e.error
+		if strings.TrimSpace(texto) == "" {
+			texto = "la herramienta falló"
+		}
+	}
+	if strings.TrimSpace(texto) == "" {
+		texto = "(sin salida)"
+	}
+	return agent.Mensaje{
+		Rol:       agent.RolHerramienta,
+		Contenido: recortarSalidaHistorial(texto),
+		IDLlamada: e.callID,
+	}
+}
+
+// recortarSalidaHistorial acota la salida reenviada y deja la marca de recorte.
+func recortarSalidaHistorial(texto string) string {
+	r := []rune(texto)
+	if len(r) <= maxSalidaHistorial {
+		return texto
+	}
+	return string(r[:maxSalidaHistorial]) + marcaSalidaHistorial
 }
 
 // compactar decide el corte y el resumen. Reutiliza el resumen persistido si ya
@@ -308,18 +454,13 @@ func conversacionDe(filas []store.Mensaje) []mensajeConv {
 		if f.Role == "agent" {
 			rol = agent.RolAsistente
 		}
-		conv = append(conv, mensajeConv{msg: agent.Mensaje{Rol: rol, Contenido: f.Content}, id: f.ID})
+		conv = append(conv, mensajeConv{
+			msg:       agent.Mensaje{Rol: rol, Contenido: f.Content},
+			id:        f.ID,
+			createdAt: f.CreatedAt,
+		})
 	}
 	return conv
-}
-
-// mensajesDe proyecta la conversación a los mensajes que viajan al modelo.
-func mensajesDe(conv []mensajeConv) []agent.Mensaje {
-	salida := make([]agent.Mensaje, len(conv))
-	for i, c := range conv {
-		salida[i] = c.msg
-	}
-	return salida
 }
 
 // transcripcionDe compone el texto que se resume.

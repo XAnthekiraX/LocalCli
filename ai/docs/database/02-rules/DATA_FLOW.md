@@ -69,34 +69,34 @@ Los dos se editan a mano y se versionan. Nada de esto se duplica en SQLite: si l
 | `reasoning` | El modelo, token a token | Mostrar y auditar el razonamiento |
 | `approvals` | El agente, al pedir permiso | Saber qué espera tu decisión |
 | `context_audit` | El nodo de contexto | Saber qué documentación entró y qué se descartó |
-| `chat_evento` | El adaptador, al correr una etapa o una herramienta | Recordar el hilo de procesamiento que se pinta (sub-procesos, herramientas y respuestas de etapas con `respuesta_en_chat`) |
+| `chat_evento` | El adaptador, al correr una etapa o una herramienta | Recordar el hilo de procesamiento que se pinta (sub-procesos, herramientas y respuestas de etapas con `respuesta_en_chat`) y, en las herramientas, guardar la llamada y su salida para reenviarlas al modelo en los turnos siguientes |
 | `change_history` | Las herramientas de archivo | Poder revertir y auditar cambios |
 
 Nada de esto es fuente de verdad. Es estado que se puede perder y reconstruir, salvo `change_history`, que es permanente por decisión de diseño.
 
-### Lo que un turno no deja escrito
+### Lo que un turno deja escrito
 
-Un turno con el canal nativo de herramientas produce, por dentro, una secuencia de mensajes: la petición del modelo, la petición de una herramienta, su resultado, la siguiente petición, y así hasta la respuesta final. **De esa secuencia, en `messages` solo quedan el primer mensaje y el último; el hilo de pantalla de lo que pasó por medio queda en `chat_evento`.**
+Un turno con el canal nativo de herramientas produce, por dentro, una secuencia de mensajes: la petición del modelo, la petición de una herramienta, su resultado, la siguiente petición, y así hasta la respuesta final. **En `messages` quedan el primer mensaje y el último; la llamada de cada herramienta y su resultado quedan en `chat_evento`**, junto a la línea que se pinta, para que el turno siguiente pueda reconstruirlos.
 
 | Mensaje | ¿Se guarda? |
 |---|---|
 | Lo que escribió el usuario | Sí, en `messages` con `role = user` |
-| La petición de una herramienta y su resultado (crudos) | No |
-| La línea de pantalla de una herramienta, el sub-proceso de una etapa y la respuesta de una etapa con `respuesta_en_chat` | Sí, en `chat_evento`: se muestra, nunca entra al contexto |
+| La petición de una herramienta y su resultado (crudos) | Sí, en `chat_evento` (`call_id`, `herramienta`, `argumentos`, `salida`, `error`, `ok`, `truncado`): se reenvía al modelo como `assistant(tool_calls)` + `tool(resultado)` |
+| La línea de pantalla de una herramienta, el sub-proceso de una etapa y la respuesta de una etapa con `respuesta_en_chat` | Sí, en `chat_evento`: la línea se muestra; la ejecución de la herramienta, además, entra al contexto |
 | La respuesta final del agente | Sí, en `messages` con `role = agent` |
 | El razonamiento del turno | Sí, en `reasoning` |
 
-La razón es que el detalle de las ejecuciones pertenece al momento en que ocurren. Al retomar una sesión, lo que interesa es qué se hizo y qué quedó, y eso ya está en el texto del agente: en su respuesta final dice qué archivos leyó, qué comandos corrió y qué cambió. Lo que se conserva además, en `chat_evento`, es la **línea** que se pintó —qué herramienta se usó, sobre qué, con qué medida y cuánto tardó—, no el contenido crudo que fue al modelo.
+La razón para guardar la ejecución es que el modelo necesita recordar qué ya hizo: sin ella vuelve a leer archivos que ya leyó o a crear los que ya creó. Al retomar una sesión, el historial reconstruido intercala el par `assistant(tool_calls)` + `tool(resultado)` en su sitio cronológico. Las líneas de sub-proceso y las respuestas de etapa siguen siendo solo pantalla.
 
-Lo que se pierde es la posibilidad de reconstruir una ejecución concreta —qué argumento exacto se pasó a qué herramienta y qué devolvió—. Para eso están los eventos de la capa universal y, cuando aplica, `change_history`, que sí son permanentes. Ver [[backend/04-infrastructure/EVENTS]] y [[backend/DECISIONS]].
+La salida reenviada se acota y se marca como recortada; la compactación descarta las ejecuciones cubiertas por el resumen, igual que los mensajes antiguos. Los fallos viajan compactos —el texto del error— para que el modelo no repita el mismo tropiezo. Ver [[database/01-schema/TABLES]] §`chat_evento` y [[specs/SPEC-HISTORIAL-CONVERSACION]].
 
 ## 3. Creación
 
 **Crear un mensaje.** El usuario escribe, la TUI lo entrega a la sesión y se inserta una fila en `messages` con `role = user`. Si la respuesta del modelo trae razonamiento, se inserta la fila correspondiente en `reasoning` y se va acumulando mientras llega. Al terminar, se inserta el mensaje del agente, con sus tokens de entrada y salida y la duración del turno. Las inserciones del turno del agente van en la misma transacción que la actualización de `status` de la sesión.
 
-Un turno con herramientas tiene más pasos por dentro, pero **`messages` solo recibe el primer y el último mensaje**. El bucle pide al modelo, ejecuta lo que le pidió y vuelve a pedir, todo en memoria. Lo que queda del medio, en la base, es su línea de pantalla en `chat_evento` (ver abajo). Ver [[database/01-schema/ENUMS]].
+Un turno con herramientas tiene más pasos por dentro, pero **`messages` solo recibe el primer y el último mensaje**. El bucle pide al modelo, ejecuta lo que le pidió y vuelve a pedir, todo en memoria. Lo que queda del medio, en la base, es su línea de pantalla en `chat_evento` junto con la llamada y su resultado, que el turno siguiente reenvía al modelo. Ver [[database/01-schema/ENUMS]].
 
-**Crear una pieza de procesamiento.** Cada vez que una etapa de un flujo arranca se inserta en `chat_evento` una fila con `tipo = proceso` y la línea «[Sub Proceso] <nombre>». Cuando termina una herramienta se inserta una fila con `tipo = herramienta` y la línea cerrada —«✓ LEER [ruta] · 70 líneas»— junto con `duration_ms`, la duración de esa ejecución. Cuando una etapa declara `respuesta_en_chat`, su respuesta completa se inserta con `tipo = respuesta` y el texto tal como se pidió verse en el hilo, sin duración. Son datos de pantalla: se recuperan al abrir la sesión y **nunca** se le entregan al modelo. La línea de la herramienta se guarda al cerrarse, porque es inmutable una vez completa, y se guarda **con su duración**, que es lo mismo que se guarda con la respuesta del turno: el hilo que se recupera después lleva los mismos tiempos que se vieron en vivo. Las sub-procesos y las respuestas de etapa no llevan duración: van en `NULL`. Ver [[database/01-schema/TABLES]] §`chat_evento`.
+**Crear una pieza de procesamiento.** Cada vez que una etapa de un flujo arranca se inserta en `chat_evento` una fila con `tipo = proceso` y la línea «[Sub Proceso] <nombre>». Cuando termina una herramienta se inserta una fila con `tipo = herramienta` y la línea cerrada —«✓ LEER [ruta] · 70 líneas»— junto con `duration_ms`, la duración de esa ejecución, y, si corre en el turno principal, la llamada completa: `call_id`, `herramienta`, `argumentos`, `salida`, `error`, `ok` y `truncado`. Las herramientas internas de una etapa de un flujo solo dejan la línea: su resultado ya lo resume el `ejecutar_flujo` que las lanzó. Cuando una etapa declara `respuesta_en_chat`, su respuesta completa se inserta con `tipo = respuesta` y el texto tal como se pidió verse en el hilo, sin duración. Los sub-procesos y las respuestas de etapa son solo pantalla; la ejecución de una herramienta del turno principal, en cambio, se reenvía al modelo en los turnos siguientes como `assistant(tool_calls)` + `tool(resultado)`. La línea de la herramienta se guarda al cerrarse, porque es inmutable una vez completa, y se guarda **con su duración**, que es lo mismo que se guarda con la respuesta del turno: el hilo que se recupera después lleva los mismos tiempos que se vieron en vivo. Los sub-procesos y las respuestas de etapa no llevan duración: van en `NULL`. Ver [[database/01-schema/TABLES]] §`chat_evento`.
 
 **Crear una aprobación.** Cuando el agente pide permiso, se inserta una fila en `approvals` con `status = pendiente` y `resolved_at` en `NULL`, y la sesión pasa a `esperando_permiso`. Es un flujo que puede quedar a medias, así que ambas escrituras van en la misma transacción.
 

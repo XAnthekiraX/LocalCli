@@ -48,9 +48,9 @@ La base de datos tiene cinco columnas con un conjunto cerrado de valores. Cada u
 
 El razonamiento solo existe en mensajes con `role = agent`.
 
-**No hay un rol `tool` en `messages`, y es deliberado.** Con el canal nativo de herramientas, cada turno puede incluir mensajes de herramienta: la petición del modelo y el resultado de cada ejecución. Esos mensajes existen **solo mientras dura el turno** y no entran a la conversación.
+**No hay un rol `tool` en `messages`, y es deliberado.** Con el canal nativo de herramientas, cada turno puede incluir mensajes de herramienta: la petición del modelo y el resultado de cada ejecución. Esos mensajes no entran a `messages`: su llamada y su resultado se guardan en `chat_evento` (`call_id`, `herramienta`, `argumentos`, `salida`, `error`, `ok`, `truncado`) y la capa de sesión los reconstruye como `assistant(tool_calls)` + `tool(resultado)` en los turnos siguientes.
 
-Lo que sí se guarda del turno es el mensaje `agent` final, que ya dice en su texto qué hizo y con qué resultado —lo que el usuario lee y lo que el modelo recibe como historial—, y, aparte, las **líneas de pantalla** de la ejecución en `chat_evento`. Esa separación es la clave: `messages` es la conversación, que es lo que va al contexto; `chat_evento` es lo que se pinta. Ver «Tipo de línea de chat», [[database/02-rules/DATA_FLOW]] y [[backend/DECISIONS]].
+Lo que guarda `messages` del turno es el mensaje `agent` final, que ya dice en su texto qué hizo y con qué resultado, y en `chat_evento` viven la línea de pantalla de cada ejecución y los datos para reenviarla. Esa separación es la clave: `messages` es la conversación cerrada; `chat_evento` es el hilo de procesamiento, del que solo las herramientas ejecutadas viajan al contexto. Ver «Tipo de línea de chat», [[database/02-rules/DATA_FLOW]] y [[backend/DECISIONS]].
 
 ### Tipo de línea de chat — `chat_evento.tipo`
 
@@ -60,7 +60,7 @@ Lo que sí se guarda del turno es el mensaje `agent` final, que ya dice en su te
 | `herramienta` | La línea de una herramienta, ya cerrada: «✓ LEER [AGENTS.md] · 93 líneas» o, si la lectura fue por rango, «✓ LEER [AGENTS.md:10-50] · 41 líneas» |
 | `respuesta` | La respuesta completa de una etapa de un flujo con `respuesta_en_chat`, tal como se pidió verse en el hilo. Se pinta como bloque del agente, no como línea suelta |
 
-Son líneas del hilo que se muestran al usuario, no turnos de conversación: al modelo no se le entregan. Viven en su propia tabla, `chat_evento`, para que esa frontera —se muestra / se envía al modelo— sea la frontera de la tabla y no un filtro que alguien pueda olvidar. Ver [[database/01-schema/TABLES]].
+Son líneas del hilo que se muestran al usuario, no turnos de conversación. Viven en su propia tabla, `chat_evento`, porque no son `messages`: las filas `herramienta` guardan además la llamada y su resultado, que sí se reenvían al modelo; `proceso` y `respuesta` se quedan en pantalla. Ver [[database/01-schema/TABLES]].
 
 ### Estado de aprobación — `approvals.status`
 

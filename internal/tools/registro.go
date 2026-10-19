@@ -10,11 +10,16 @@ import (
 // Peticion es una ejecución pedida por el agente: qué herramienta, con qué
 // argumentos, y el contexto con el que resolver permiso, aprobación y eventos.
 type Peticion struct {
-	Sesion     string
-	Agente     string
-	Permisos   []string
-	Ask        func(ctx context.Context, s Solicitud) (Decision, error)
-	Meta       func(clave string, valor any)
+	Sesion    string
+	Agente    string
+	Permisos  []string
+	Ask       func(ctx context.Context, s Solicitud) (Decision, error)
+	Meta      func(clave string, valor any)
+	IDLlamada string
+	// EnFlujo marca las herramientas que corren dentro de una etapa de un flujo:
+	// su línea se pinta, pero no se reenvía al modelo porque el resultado del
+	// `ejecutar_flujo` que las lanzó ya lo resume.
+	EnFlujo    bool
 	Nombre     string
 	Argumentos json.RawMessage
 }
@@ -160,11 +165,11 @@ func (r *Registro) Ejecutar(ctx context.Context, p Peticion) Resultado {
 		r.Hooks.DespuesDeEjecutar(h.Nombre, res, err, nil)
 	}
 	r.Eventos.resultado(EventoResultado{
-		Sesion: p.Sesion, Nombre: h.Nombre, Verbo: h.Verbo,
-		Tema:  TemaFinal(h, tema, res.Meta),
-		OK:    err == nil && res.Error == "",
-		Error: res.Error, Medida: medidaDe(h, res),
-		Truncado: res.Truncado, Duracion: duracion,
+		Sesion: p.Sesion, IDLlamada: p.IDLlamada, EnFlujo: p.EnFlujo,
+		Nombre: h.Nombre, Verbo: h.Verbo,
+		Tema: TemaFinal(h, tema, res.Meta), Argumentos: string(p.Argumentos),
+		Salida: res.Salida, OK: err == nil && res.Error == "", Error: res.Error,
+		Medida: medidaDe(h, res), Truncado: res.Truncado, Duracion: duracion,
 	})
 	return res
 }

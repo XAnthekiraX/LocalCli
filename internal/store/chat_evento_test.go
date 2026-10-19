@@ -51,3 +51,50 @@ func TestCrearLineaRechazaTipoDesconocido(t *testing.T) {
 		t.Fatal("un tipo fuera de proceso/herramienta/respuesta debería rechazarse")
 	}
 }
+
+// TestGuardarYListarEjecucionesHerramienta: la línea de una herramienta guarda la
+// llamada y su salida; solo esas filas entran al historial del modelo. Las líneas
+// de proceso y las herramientas antiguas sin `call_id` no se reenvían.
+func TestGuardarYListarEjecucionesHerramienta(t *testing.T) {
+	db := nuevaBase(t)
+	proyecto := proyectoDePrueba(t, db)
+	s, err := CrearSesion(db, proyecto, "s", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := CrearChatEvento(db, proyecto, s.ID, ChatEventoProceso, "[Sub Proceso] X", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CrearChatEvento(db, proyecto, s.ID, ChatEventoHerramienta, "✓ LEER [viejo.go]", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CrearChatEventoTool(db, proyecto, s.ID, "✓ LEER [ir.go] · 2 líneas", nil, EjecucionHerramienta{
+		CallID: "call-1", Herramienta: "leer_archivo", Argumentos: `{"ruta":"ir.go"}`,
+		Salida: "package diagram\n", OK: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ejecuciones, err := ListarEjecucionesHerramienta(db, proyecto, s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ejecuciones) != 1 {
+		t.Fatalf("ejecuciones = %d, quiero 1: %+v", len(ejecuciones), ejecuciones)
+	}
+	e := ejecuciones[0].Ejecucion
+	if e == nil || e.CallID != "call-1" || e.Herramienta != "leer_archivo" ||
+		e.Argumentos != `{"ruta":"ir.go"}` || e.Salida != "package diagram\n" || !e.OK || e.Truncado {
+		t.Fatalf("la ejecución guardada no coincide: %+v", e)
+	}
+
+	// La línea completa también trae la ejecución para pintarla y rehacerla.
+	eventos, err := ListarChatEventos(db, proyecto, s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eventos) != 3 || eventos[2].Ejecucion == nil || eventos[2].Ejecucion.CallID != "call-1" {
+		t.Fatalf("la línea de herramienta perdió su ejecución: %+v", eventos)
+	}
+}

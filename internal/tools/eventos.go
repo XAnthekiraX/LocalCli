@@ -13,17 +13,23 @@ type EventoInvocacion struct {
 }
 
 // EventoResultado es lo que se emite al terminar: el desenlace, la medida, si se
-// recortó y cuánto tardó el handler. No lleva la salida.
+// recortó y cuánto tardó el handler. Lleva la salida y la llamada que la pidió
+// para que la capa de sesión pueda persistirlas y reenviarlas al modelo en los
+// turnos siguientes.
 type EventoResultado struct {
-	Sesion   string
-	Nombre   string
-	Verbo    string
-	Tema     string
-	OK       bool
-	Error    string
-	Medida   string
-	Truncado bool
-	Duracion time.Duration
+	Sesion     string
+	IDLlamada  string
+	EnFlujo    bool
+	Nombre     string
+	Verbo      string
+	Tema       string
+	Argumentos string
+	Salida     string
+	OK         bool
+	Error      string
+	Medida     string
+	Truncado   bool
+	Duracion   time.Duration
 }
 
 // Eventos son los enganches de pantalla y auditoría de la capa universal. Sin
