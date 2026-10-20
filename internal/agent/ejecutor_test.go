@@ -259,3 +259,77 @@ func TestRedaccionQueInsisteEnHerramientasFalla(t *testing.T) {
 		t.Fatal("el fallo debería avisarse")
 	}
 }
+
+func TestUnaLlamadaEscritaComoTextoSeEjecutaYNoSePinta(t *testing.T) {
+	motor := &motorGuion{respuestas: []Respuesta{
+		{Texto: "```json\n{\n  \"name\": \"ejecutar_comando\",\n  \"arguments\": {\n    \"comando\": \"go build ./...\"\n  }\n}\n```"},
+		{Texto: "listo"},
+	}}
+	exec := &ejecutorGuion{}
+	e := &Ejecutor{
+		Agente:       Agente{Nombre: "build", Permissions: map[string]string{"read": EfectoAllow}},
+		Cerrado:      catalogoDePrueba(),
+		Motor:        motor,
+		Herramientas: exec,
+		Capacidad:    llm.Soportada,
+	}
+
+	var vistos []string
+	respuesta, err := e.Turno(context.Background(), nil, func(d Delta) error {
+		if !d.Razonamiento {
+			vistos = append(vistos, d.Texto)
+		}
+		return nil
+	})
+	if err != nil || respuesta.Texto != "listo" {
+		t.Fatalf("turno = %+v, %v", respuesta, err)
+	}
+	if strings.Join(exec.orden, ",") != "ejecutar_comando" {
+		t.Fatalf("la llamada escrita debería ejecutarse: %v", exec.orden)
+	}
+	if texto := strings.Join(vistos, ""); texto != "listo" {
+		t.Fatalf("el JSON de la llamada no debería pintarse: %q", texto)
+	}
+
+	// El mensaje del asistente lleva la llamada reconocida y su id, para que el
+	// modelo vea su propia petición y el resultado en la ronda siguiente.
+	segunda := motor.pedidos[1].Mensajes
+	if len(segunda) < 3 {
+		t.Fatalf("faltan el asistente y el resultado: %+v", segunda)
+	}
+	asistente, resultado := segunda[len(segunda)-2], segunda[len(segunda)-1]
+	if asistente.Rol != RolAsistente || len(asistente.Llamadas) != 1 {
+		t.Fatalf("el asistente debería llevar la llamada: %+v", asistente)
+	}
+	if asistente.Llamadas[0].Nombre != "ejecutar_comando" || asistente.Llamadas[0].ID == "" {
+		t.Fatalf("la llamada debería llevar nombre e id: %+v", asistente.Llamadas[0])
+	}
+	if resultado.Rol != RolHerramienta || resultado.IDLlamada != asistente.Llamadas[0].ID {
+		t.Fatalf("el resultado debería responder a esa llamada: %+v", resultado)
+	}
+}
+
+func TestUnaLlamadaDeTextoAUnaHerramientaNoConcedidaNoSeEjecuta(t *testing.T) {
+	motor := &motorGuion{respuestas: []Respuesta{
+		{Texto: `{"name":"crear_archivo","arguments":{"ruta":"x","contenido":"y"}}`},
+	}}
+	exec := &ejecutorGuion{}
+	e := &Ejecutor{
+		Agente:       Agente{Nombre: "plan", Permissions: map[string]string{"read": EfectoAllow}},
+		Cerrado:      catalogoDePrueba(),
+		Motor:        motor,
+		Herramientas: exec,
+		Capacidad:    llm.Soportada,
+	}
+
+	respuesta, err := e.Turno(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exec.orden) != 0 {
+		t.Fatalf("no debería ejecutarse una herramienta no concedida: %v", exec.orden)
+	}
+	if !strings.Contains(respuesta.Texto, "crear_archivo") {
+		t.Fatalf("el texto debería devolverse tal cual: %q", respuesta.Texto)
+	}
+}

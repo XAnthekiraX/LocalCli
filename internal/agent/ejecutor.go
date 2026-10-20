@@ -85,12 +85,32 @@ func (e *Ejecutor) Turno(ctx context.Context, historial []Mensaje, alDelta func(
 	empujones := 0
 	for ronda := 0; ronda < e.maxRondas(); ronda++ {
 		mensajes = e.ajustarAlContexto(mensajes, herramientas)
-		respuesta, err := e.Motor.Ronda(ctx, ConstruirPeticion(e.Agente, mensajes, herramientas), alDelta)
+		// El texto de la ronda se retiene mientras podría ser una llamada: si
+		// acaba siéndolo, su JSON no se pinta como respuesta.
+		retenido := nuevoRetenedor(alDelta)
+		respuesta, err := e.Motor.Ronda(ctx, ConstruirPeticion(e.Agente, mensajes, herramientas), retenido.Fragmento)
 		if err != nil {
+			_ = retenido.Volcar()
 			return Respuesta{}, err
 		}
 		if conversacion {
+			if err := retenido.Volcar(); err != nil {
+				return Respuesta{}, err
+			}
 			return respuesta, nil
+		}
+		// Un modelo pequeño puede escribir la llamada en vez de pedirla por el
+		// canal nativo: se reconoce como último recurso, nunca en su lugar.
+		if len(respuesta.Llamadas) == 0 {
+			if l, ok := extraerLlamadaDeTexto(respuesta.Texto, herramientas); ok {
+				l.ID = fmt.Sprintf("texto-%d", ronda+1)
+				respuesta.Llamadas = []Llamada{l}
+				respuesta.Texto = ""
+				retenido.Descartar()
+			}
+		}
+		if err := retenido.Volcar(); err != nil {
+			return Respuesta{}, err
 		}
 		if len(respuesta.Llamadas) == 0 {
 			if falloPendiente && empujones < e.maxEmpujones() {

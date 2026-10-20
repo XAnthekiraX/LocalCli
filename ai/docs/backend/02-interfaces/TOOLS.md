@@ -354,6 +354,8 @@ Se conectan en el cableado. Si no hay ninguno, la capa universal funciona igual:
 
 **Qué pasa si el modelo no admite herramientas.** Esa capacidad puede estar en tres estados y solo uno permite este camino: `soportada` usa el esquema estructurado; `no soportada` hace que `agent` caiga a modo conversación, sin herramientas en la petición; `desconocida` —una extensión que no informa, no una capacidad ausente— **también cae a modo conversación**, y no se finge que un canal estructurado que quizá no existe dé resultado. Ver [[specs/SPEC-MODELOS-LLAMACPP]].
 
+**Llamada escrita como texto.** Aun con el canal nativo disponible, un modelo pequeño puede escribir el JSON de la llamada en el contenido en vez de pedirla por el canal. `agent` lo reconoce como último recurso: si la respuesta entera es un objeto con `name` y `arguments` —desnudo, dentro de una cerca de Markdown o de `<tool_call>`—, y el nombre está en el catálogo efectivo del turno, se ejecuta como una llamada más. El JSON no se pinta como respuesta: el stream retiene el texto que todavía podría serlo y lo descarta cuando se confirma. Un JSON de ejemplo dentro de una explicación no se ejecuta, y esto no sustituye al canal nativo: solo evita perder el turno cuando el modelo no lo respeta.
+
 El catálogo **no** viaja en el mensaje de sistema. `PromptDeSistema` se queda con el prompt del agente.
 
 El formato exacto del núcleo común y de la extensión está en [[specs/SPEC-MODELOS-LLAMACPP]] y en [[backend/04-infrastructure/INTEGRATIONS]]; el de los mensajes de herramienta persistidos en `chat_evento`, en [[database/01-schema/ENUMS]].

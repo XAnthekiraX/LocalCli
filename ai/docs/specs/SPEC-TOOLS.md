@@ -109,6 +109,8 @@ Esto tiene tres consecuencias:
 
 Cada herramienta expone su esquema a partir de sus propios tipos de petición, con un esquema por campo: tipo, si es obligatorio y qué significa. La descripción que ve el modelo está escrita para que sepa cuándo usarla y cuándo no, no para resumir la implementación.
 
+**Red de seguridad.** El contrato es el canal nativo, pero un modelo pequeño puede desobedecerlo y escribir la llamada como texto. El harness la reconoce como último recurso: si la respuesta entera es un objeto con `name` y `arguments` —desnudo, en una cerca de Markdown o dentro de `<tool_call>`— y el nombre está en el catálogo del turno, se ejecuta como una llamada más, sin pintar el JSON como respuesta. Un JSON de ejemplo dentro de una explicación no se ejecuta. Esto no cambia el contrato ni rebaja la validación: los argumentos pasan por la misma capa universal.
+
 El resultado de una ejecución vuelve al modelo como un mensaje propio de herramienta, asociado al nombre con el que la pidió. Se hacen **varias pasadas**: el modelo pide, ve el resultado, y vuelve a pedir si le hace falta. Hay un máximo de pasadas por turno para que un bucle no se alargue sin fin. Al agotarlo, el turno pide una redacción final y **avisa**: si el modelo tampoco entrega nada, el turno falla con el motivo a la vista. Nunca termina en silencio. Ver [[specs/SPEC-AGENTE-BASE]] §El ciclo de un turno.
 
 Las ejecuciones son **secuenciales**. Una tras otra, en el orden en que el modelo las pidió. No en paralelo: el orden importa —una carpeta tiene que existir antes de escribir dentro— y una espera de confirmación es una interrupción que el usuario tiene que ver en orden.
