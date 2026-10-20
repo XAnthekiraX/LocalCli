@@ -226,9 +226,10 @@ func sinPaddingFinal(linea string) string {
 // lineaSuelta pinta una línea del sistema: va suelta, sin bloque ni banda, en el
 // mismo tono atenuado con el que se lee el tiempo de una respuesta. Se recorta al
 // ancho para no romper el marco. En una línea de herramienta, el objetivo —la ruta
-// entre corchetes— se pinta en el color de ruta. Si la línea lleva un bloque de
-// diagrama, este se pinta debajo, separado por una fila en blanco: el bloque es
-// adicional, no sustituye a la línea (INTERFACES §1.1).
+// entre corchetes— se pinta en el color de ruta. Si la línea lleva un bloque
+// visual, este se pinta debajo, separado por una fila en blanco: el bloque es
+// adicional, no sustituye a la línea (INTERFACES §1.1). Un bloque de diferencia se
+// pinta con el color de cada marca; el resto, atenuado.
 func lineaSuelta(l Linea, ancho int) string {
 	if strings.TrimSpace(l.Texto) == "" && strings.TrimSpace(l.Bloque) == "" {
 		return ""
@@ -246,11 +247,50 @@ func lineaSuelta(l Linea, ancho int) string {
 		if len(partes) > 0 {
 			partes = append(partes, "")
 		}
-		for _, bl := range strings.Split(l.Bloque, "\n") {
-			partes = append(partes, render.EstiloSutil.Render("  "+bl))
+		if l.BloqueTipo == BloqueDiferencia {
+			partes = append(partes, pintarDiferencia(l.Bloque, ancho)...)
+		} else {
+			for _, bl := range strings.Split(l.Bloque, "\n") {
+				partes = append(partes, render.EstiloSutil.Render("  "+bl))
+			}
 		}
 	}
 	return strings.Join(partes, "\n")
+}
+
+// BloqueDiferencia es el tipo de bloque que pinta el antes y el después de un
+// cambio de archivo. Coincide con `chat_evento.bloque_tipo` (ENUMS §Tipo de
+// bloque visual).
+const BloqueDiferencia = "diferencia"
+
+// pintarDiferencia pinta un diff unificado: las líneas añadidas en verde, las
+// quitadas en rojo y los tramos y el contexto atenuados. Las líneas más anchas
+// que el hilo se envuelven sin perder texto y la continuación queda alineada
+// bajo el contenido; la marca del diff se conserva al principio de cada línea.
+func pintarDiferencia(bloque string, ancho int) []string {
+	disponible := ancho - 3
+	if disponible < 1 {
+		disponible = 1
+	}
+	var filas []string
+	for _, linea := range strings.Split(bloque, "\n") {
+		estilo := render.EstiloSutil
+		switch {
+		case strings.HasPrefix(linea, "+"):
+			estilo = render.EstiloDiferenciaMas
+		case strings.HasPrefix(linea, "-"):
+			estilo = render.EstiloDiferenciaMenos
+		}
+		for i, trozo := range render.EnvolverTexto(linea, disponible) {
+			sangria := "  "
+			if i > 0 {
+				// La continuación deja libre la columna de la marca.
+				sangria = "   "
+			}
+			filas = append(filas, estilo.Render(sangria+trozo))
+		}
+	}
+	return filas
 }
 
 // pintarLineaHerramienta pinta una línea de herramienta con su ruta destacada: el

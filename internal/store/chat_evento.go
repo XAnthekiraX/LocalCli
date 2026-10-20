@@ -19,6 +19,22 @@ const (
 	ChatEventoRespuesta = "respuesta"
 )
 
+// Tipos de bloque visual que acompañan a una línea del hilo
+// (`chat_evento.bloque_tipo`): el diagrama ya renderizado o la diferencia de un
+// cambio aplicado.
+const (
+	BloqueDiagrama   = "diagrama"
+	BloqueDiferencia = "diferencia"
+)
+
+// Bloque es el bloque visual que se pinta bajo una línea del hilo. `Texto` llega
+// ya renderizado —la TUI no lo interpreta— y `Tipo` dice cómo pintarlo. El cero
+// (texto vacío) significa «sin bloque».
+type Bloque struct {
+	Texto string
+	Tipo  string
+}
+
 // ChatEvento es una línea de pantalla guardada de una sesión: una herramienta, un
 // sub-proceso o la respuesta de una etapa. Las herramientas guardan además su
 // ejecución (`Ejecucion`) para poder reenviarla al modelo en turnos posteriores;
@@ -30,6 +46,11 @@ type ChatEvento struct {
 	Tipo string
 	// Content es la línea ya compuesta, tal como se vio en pantalla.
 	Content string
+	// Bloque es el bloque visual ya renderizado que se pinta bajo la línea
+	// —un diagrama o una diferencia—; vacío si la línea no tiene.
+	Bloque string
+	// BloqueTipo dice cómo pintarlo (`diagrama` o `diferencia`); vacío sin bloque.
+	BloqueTipo string
 	// CreatedAt distingue el orden dentro del hilo; alta resolución para
 	// intercalarse con los mensajes del mismo turno.
 	CreatedAt string
@@ -57,6 +78,14 @@ type EjecucionHerramienta struct {
 // de herramienta se guarda ya cerrada, con su duración; la de un flujo no lleva
 // duración. Es best-effort para quien la llama: un fallo no debe tumbar el turno.
 func CrearChatEvento(db *sql.DB, projectID, sessionID, tipo, content string, durationMs *int) (*ChatEvento, error) {
+	return CrearChatEventoConBloque(db, projectID, sessionID, tipo, content, durationMs, Bloque{})
+}
+
+// CrearChatEventoConBloque guarda una línea del hilo con su bloque visual: el
+// diagrama ya renderizado o la diferencia de un cambio. El bloque se persiste con
+// la línea para que al retomar la sesión se pinte igual, pero no entra al
+// contexto del modelo (EVENTS §3, DATA_FLOW §Creación).
+func CrearChatEventoConBloque(db *sql.DB, projectID, sessionID, tipo, content string, durationMs *int, bloque Bloque) (*ChatEvento, error) {
 	if tipo != ChatEventoProceso && tipo != ChatEventoHerramienta && tipo != ChatEventoRespuesta {
 		return nil, fmt.Errorf("store: tipo de evento de chat inválido: %q", tipo)
 	}
@@ -68,8 +97,9 @@ func CrearChatEvento(db *sql.DB, projectID, sessionID, tipo, content string, dur
 	now := ahora()
 
 	_, err := db.Exec(
-		"INSERT INTO chat_evento (id, session_id, tipo, content, created_at, duration_ms) VALUES (?, ?, ?, ?, ?, ?)",
-		id, sessionID, tipo, content, now, durationMs,
+		`INSERT INTO chat_evento (id, session_id, tipo, content, created_at, duration_ms, bloque, bloque_tipo)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, sessionID, tipo, content, now, durationMs, textoOpcional(bloque.Texto), textoOpcional(bloque.Tipo),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: no se pudo crear evento de chat: %w", err)
@@ -80,6 +110,8 @@ func CrearChatEvento(db *sql.DB, projectID, sessionID, tipo, content string, dur
 		SessionID:  sessionID,
 		Tipo:       tipo,
 		Content:    content,
+		Bloque:     bloque.Texto,
+		BloqueTipo: bloque.Tipo,
 		CreatedAt:  now,
 		DurationMs: durationMs,
 	}, nil
@@ -89,6 +121,12 @@ func CrearChatEvento(db *sql.DB, projectID, sessionID, tipo, content string, dur
 // la línea para pintarla y los datos para reenviarla al modelo en los próximos
 // turnos. Es best-effort para quien la llama: un fallo no debe tumbar el turno.
 func CrearChatEventoTool(db *sql.DB, projectID, sessionID, content string, durationMs *int, e EjecucionHerramienta) (*ChatEvento, error) {
+	return CrearChatEventoToolConBloque(db, projectID, sessionID, content, durationMs, Bloque{}, e)
+}
+
+// CrearChatEventoToolConBloque guarda una línea de herramienta con su ejecución
+// y su bloque visual, si lo tiene.
+func CrearChatEventoToolConBloque(db *sql.DB, projectID, sessionID, content string, durationMs *int, bloque Bloque, e EjecucionHerramienta) (*ChatEvento, error) {
 	if err := sesionEnProyecto(db, projectID, sessionID); err != nil {
 		return nil, err
 	}
@@ -98,9 +136,11 @@ func CrearChatEventoTool(db *sql.DB, projectID, sessionID, content string, durat
 
 	_, err := db.Exec(
 		`INSERT INTO chat_evento
-		 (id, session_id, tipo, content, created_at, duration_ms, call_id, herramienta, argumentos, salida, error, ok, truncado)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 (id, session_id, tipo, content, created_at, duration_ms, bloque, bloque_tipo,
+		  call_id, herramienta, argumentos, salida, error, ok, truncado)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, sessionID, ChatEventoHerramienta, content, now, durationMs,
+		textoOpcional(bloque.Texto), textoOpcional(bloque.Tipo),
 		e.CallID, e.Herramienta, e.Argumentos, e.Salida, e.Error, booleano(e.OK), booleano(e.Truncado),
 	)
 	if err != nil {
@@ -112,6 +152,8 @@ func CrearChatEventoTool(db *sql.DB, projectID, sessionID, content string, durat
 		SessionID:  sessionID,
 		Tipo:       ChatEventoHerramienta,
 		Content:    content,
+		Bloque:     bloque.Texto,
+		BloqueTipo: bloque.Tipo,
 		CreatedAt:  now,
 		DurationMs: durationMs,
 		Ejecucion:  &e,
@@ -126,6 +168,15 @@ func booleano(v bool) int {
 	return 0
 }
 
+// textoOpcional guarda un texto vacío como NULL: el bloque ausente no es un
+// bloque vacío, y el CHECK de `bloque_tipo` solo admite el vocabulario.
+func textoOpcional(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
+}
+
 // ListarChatEventos lista las líneas guardadas de una sesión del proyecto, en
 // orden de creación.
 func ListarChatEventos(db *sql.DB, projectID, sessionID string) ([]ChatEvento, error) {
@@ -134,7 +185,7 @@ func ListarChatEventos(db *sql.DB, projectID, sessionID string) ([]ChatEvento, e
 	}
 
 	rows, err := db.Query(
-		`SELECT id, session_id, tipo, content, created_at, duration_ms,
+		`SELECT id, session_id, tipo, content, created_at, duration_ms, bloque, bloque_tipo,
 		        call_id, herramienta, argumentos, salida, error, ok, truncado
 		 FROM chat_evento WHERE session_id = ? ORDER BY created_at, rowid`,
 		sessionID,
@@ -164,7 +215,7 @@ func ListarEjecucionesHerramienta(db *sql.DB, projectID, sessionID string) ([]Ch
 	}
 
 	rows, err := db.Query(
-		`SELECT id, session_id, tipo, content, created_at, duration_ms,
+		`SELECT id, session_id, tipo, content, created_at, duration_ms, bloque, bloque_tipo,
 		        call_id, herramienta, argumentos, salida, error, ok, truncado
 		 FROM chat_evento
 		 WHERE session_id = ? AND tipo = ?
@@ -192,14 +243,17 @@ func ListarEjecucionesHerramienta(db *sql.DB, projectID, sessionID string) ([]Ch
 func leerChatEvento(rows *sql.Rows) (ChatEvento, error) {
 	var e ChatEvento
 	var durationMs sql.NullInt64
-	var callID, herramienta, argumentos, salida, fallo sql.NullString
+	var bloque, bloqueTipo, callID, herramienta, argumentos, salida, fallo sql.NullString
 	var ok, truncado sql.NullInt64
 	if err := rows.Scan(
 		&e.ID, &e.SessionID, &e.Tipo, &e.Content, &e.CreatedAt, &durationMs,
+		&bloque, &bloqueTipo,
 		&callID, &herramienta, &argumentos, &salida, &fallo, &ok, &truncado,
 	); err != nil {
 		return ChatEvento{}, err
 	}
+	e.Bloque = bloque.String
+	e.BloqueTipo = bloqueTipo.String
 	e.DurationMs = enteroOpcional(durationMs)
 	if callID.Valid && callID.String != "" {
 		e.Ejecucion = &EjecucionHerramienta{
@@ -232,9 +286,11 @@ func insertarChatEvento(tx *sql.Tx, sessionID string, e ChatEvento) error {
 	}
 	_, err := tx.Exec(
 		`INSERT INTO chat_evento
-		 (id, session_id, tipo, content, created_at, duration_ms, call_id, herramienta, argumentos, salida, error, ok, truncado)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 (id, session_id, tipo, content, created_at, duration_ms, bloque, bloque_tipo,
+		  call_id, herramienta, argumentos, salida, error, ok, truncado)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.ID, sessionID, e.Tipo, e.Content, e.CreatedAt, e.DurationMs,
+		textoOpcional(e.Bloque), textoOpcional(e.BloqueTipo),
 		callID, herramienta, argumentos, salida, fallo, ok, truncado,
 	)
 	if err != nil {

@@ -15,13 +15,14 @@ relacionado:
 
 ## 1. Enums
 
-La base de datos tiene cinco columnas con un conjunto cerrado de valores. Cada una se valida con `CHECK`, no solo por convención. Ver [[database/01-schema/CONSTRAINTS]].
+La base de datos tiene seis columnas con un conjunto cerrado de valores. Cada una se valida con `CHECK`, no solo por convención. Ver [[database/01-schema/CONSTRAINTS]].
 
 | Enum | Columna | Valores |
 |---|---|---|
 | Estado de sesión | `sessions.status` | `inactiva`, `trabajando`, `esperando_permiso`, `terminada`, `error` |
 | Rol de mensaje | `messages.role` | `user`, `agent` |
 | Tipo de línea de chat | `chat_evento.tipo` | `proceso`, `herramienta`, `respuesta` |
+| Tipo de bloque visual | `chat_evento.bloque_tipo` | `diagrama`, `diferencia` |
 | Estado de aprobación | `approvals.status` | `pendiente`, `aprobada`, `declinada`, `obsoleta` |
 | Operación de archivo | `change_history.operation` | `crear_archivo`, `escribir_archivo`, `editar_archivo`, `eliminar_archivo`, `crear_carpeta`, `eliminar_carpeta` |
 
@@ -61,6 +62,15 @@ Lo que guarda `messages` del turno es el mensaje `agent` final, que ya dice en s
 | `respuesta` | La respuesta completa de una etapa de un flujo con `respuesta_en_chat`, tal como se pidió verse en el hilo. Se pinta como bloque del agente, no como línea suelta |
 
 Son líneas del hilo que se muestran al usuario, no turnos de conversación. Viven en su propia tabla, `chat_evento`, porque no son `messages`: las filas `herramienta` guardan además la llamada y su resultado, que sí se reenvían al modelo; `proceso` y `respuesta` se quedan en pantalla. Ver [[database/01-schema/TABLES]].
+
+### Tipo de bloque visual — `chat_evento.bloque_tipo`
+
+| Valor | Significado |
+|---|---|
+| `diagrama` | El diagrama Unicode que produce `diagram`, ya renderizado |
+| `diferencia` | El antes y el después de un cambio de archivo aplicado, como diff unificado |
+
+`bloque_tipo` acompaña a `bloque` y dice cómo pintarlo; sin bloque, queda en `NULL`. No entra al contexto del modelo: es una pieza de pantalla que se guarda para que el hilo recuperado se lea igual que en vivo. Ver [[backend/04-infrastructure/EVENTS]] §3 y [[specs/SPEC-TOOLS]] §La diferencia a la vista.
 
 ### Estado de aprobación — `approvals.status`
 

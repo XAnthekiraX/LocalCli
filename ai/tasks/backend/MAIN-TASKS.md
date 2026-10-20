@@ -50,6 +50,7 @@ Descomposición de la capa backend, **en el orden de construcción acordado**. C
 | T-B016 | crear  | Lista de pasos de la sesión (`crear_todo` / `actualizar_todo`)     | T-B012 | completada | `016-task-lista-pasos.md`           |
 | T-B025 | crear  | Herramienta `diagram`: parser, IR, layout, render, handler, integración al catálogo y emisión del bloque en `herramienta_resultado` | T-B012 | pendiente  | `025-task-diagrama.md`              |
 | T-B022 | actualizar | Jerarquía de un nivel en la lista de pasos: tarea principal con subtareas (`titulo`/`subtareas`, `todos.parent_position`) | T-B016 | completada | `022-task-todo-subtareas.md` |
+| T-B027 | actualizar | La diferencia a la vista: diff de `editar_archivo`/`escribir_archivo`/`crear_archivo`, `bloque`/`bloque_tipo` en `herramienta_resultado` y persistencia en `chat_evento` | T-B014 | completada | `027-task-diferencia-cambios.md` |
 
 ## Bloque 5 — Flujos
 

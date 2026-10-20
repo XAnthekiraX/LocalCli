@@ -248,3 +248,33 @@ func TestEsquemaDeActualizarTodoAnidaElElemento(t *testing.T) {
 		t.Fatal("el estado del elemento debería llevar su enum")
 	}
 }
+
+// El bloque visual viaja en el evento, no en la salida que recibe el modelo.
+func TestElBloqueVisualViajaEnElEvento(t *testing.T) {
+	var resultado EventoResultado
+	r := NuevoRegistro([]Herramienta{{
+		Nombre: "editar_archivo", Permiso: PermisoEdit, Verbo: "EDITAR", Tema: "ruta", Unidad: UnidadCoincidencia,
+		TipoPeticion: reflect.TypeOf(PeticionEditarArchivo{}),
+		Ejecutar: func(_ context.Context, _ any, _ Contexto) (Resultado, error) {
+			return Resultado{
+				Salida: "archivo editado: a.go",
+				Meta: map[string]any{
+					"bloque":      "@@ -1 +1 @@\n-uno\n+dos",
+					"bloque_tipo": "diferencia",
+				},
+			}, nil
+		},
+	}})
+	r.Eventos = Eventos{Resultado: func(e EventoResultado) { resultado = e }}
+	r.Ejecutar(context.Background(), Peticion{
+		Sesion: "s1", Agente: "build", Nombre: "editar_archivo",
+		Permisos: []string{"edit"}, Argumentos: []byte(`{"ruta":"a.go","reemplazos":[{"buscar":"uno","reemplazo":"dos"}]}`),
+	})
+
+	if resultado.Bloque != "@@ -1 +1 @@\n-uno\n+dos" || resultado.BloqueTipo != "diferencia" {
+		t.Fatalf("el bloque no llegó al evento: %+v", resultado)
+	}
+	if strings.Contains(resultado.Salida, "@@") {
+		t.Fatalf("el bloque no debería sumarse a la salida del modelo: %q", resultado.Salida)
+	}
+}

@@ -460,3 +460,34 @@ func TestEjecucionesDesdeDescartaLoResumido(t *testing.T) {
 		t.Fatalf("sin corte deberían quedar todas: %+v", todas)
 	}
 }
+
+// El hilo recuperado conserva el bloque visual con su tipo, para que al retomar
+// la sesión se pinte igual que en vivo.
+func TestHistorialRecuperaElBloqueVisual(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	o, sesionID := sesionDePrueba(t, "http://127.0.0.1:1")
+
+	bloque := store.Bloque{
+		Texto: "@@ -1,1 +1,1 @@\n-uno\n+dos",
+		Tipo:  store.BloqueDiferencia,
+	}
+	if _, err := store.CrearChatEventoConBloque(o.db, o.projectID, sesionID,
+		store.ChatEventoHerramienta, "✓ EDITAR [doc.md] · 1 reemplazo", nil, bloque); err != nil {
+		t.Fatal(err)
+	}
+
+	piezas, err := o.Historial(sesionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(piezas) != 1 {
+		t.Fatalf("piezas del hilo = %d", len(piezas))
+	}
+	linea, ok := piezas[0].(*tui.LineaHistorial)
+	if !ok {
+		t.Fatalf("la pieza no es una línea: %+v", piezas[0])
+	}
+	if linea.Bloque != bloque.Texto || linea.BloqueTipo != store.BloqueDiferencia {
+		t.Fatalf("el bloque no volvió con su tipo: %+v", linea)
+	}
+}

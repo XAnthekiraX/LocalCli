@@ -55,6 +55,7 @@ No incluye la forma de mostrar el panel de aprobaciones, que está en [[specs/SP
 - Editar es por sustitución parcial: cada fragmento debe coincidir **exactamente una vez**; si no está o es ambiguo, no se escribe nada y el agente recibe el motivo. La comparación tolera finales de línea CRLF, BOM, Unicode tipográfico (comillas, guiones, elipsis, NBSP) y espacios finales o de sangría, y el resultado conserva el estilo del archivo.
 - Una ruta relativa se resuelve desde el directorio de trabajo del harness; `..` y las rutas absolutas son válidas. No se expande `~` ni `$HOME` y no se busca en otras ubicaciones. La normalización no elude las restricciones: una ruta que resuelve fuera de la carpeta cuenta como «fuera».
 - Cada cambio aplicado queda registrado con lo que había antes y lo que quedó.
+- **Cada cambio aplicado deja ver el antes y el después.** El hilo muestra bajo la línea de la herramienta la diferencia del archivo —las líneas quitadas y las añadidas—, recortada con aviso si es larga. El bloque es de pantalla: no entra al contexto del modelo ni sustituye al registro completo de `change_history`. Un cambio que no se aplica no deja diferencia.
 - Nada se borra de la base de datos: el registro de cambios se conserva para poder revertir y auditar.
 - Solo `build` tiene herramientas de escritura. `plan` no puede aplicarlas ni siquiera con permiso.
 - La herramienta de terminal no puede escribir en el proyecto, así que no sirve para saltarse estas reglas.
@@ -67,6 +68,7 @@ No incluye la forma de mostrar el panel de aprobaciones, que está en [[specs/SP
 - [ ] Un cambio fuera de la carpeta no se aplica sin aprobación y sin la explicación del agente.
 - [ ] El usuario puede declinar y el agente recibe el rechazo.
 - [ ] Todo cambio aplicado queda registrado con el antes y el después.
+- [ ] Todo cambio aplicado deja ver su diferencia bajo la línea de la herramienta; un cambio no aplicado no deja diferencia.
 - [ ] Escribir entero un archivo que ya tiene contenido no modifica nada y el agente recibe un error corregible que nombra `editar_archivo`.
 - [ ] Borrar un archivo exige confirmación explícita, esté donde esté.
 - [ ] Editar un archivo con un fragmento ambiguo o ausente no modifica nada y el agente recibe un error corregible.

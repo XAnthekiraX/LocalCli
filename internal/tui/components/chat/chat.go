@@ -60,13 +60,14 @@ const (
 
 // Linea es una línea del sistema: una herramienta, una etapa de un flujo o un
 // aviso. Se pinta suelta, sin bloque de fondo ni color de hablante. `Bloque` es
-// el diagrama renderizado de una herramienta `diagram`, ya en líneas Unicode de
-// ancho calculado: va justo debajo de la línea, como bloque adicional, no
-// sustitutivo (INTERFACES §1.1). Vacío para el resto de tipos.
+// el bloque visual que va justo debajo de la línea, como contenido adicional, no
+// sustitutivo (INTERFACES §1.1): el diagrama de `diagram` o la diferencia de un
+// cambio. `BloqueTipo` dice cómo pintarlo. Vacío para el resto de tipos.
 type Linea struct {
-	Tipo   TipoLinea
-	Texto  string
-	Bloque string
+	Tipo       TipoLinea
+	Texto      string
+	Bloque     string
+	BloqueTipo string
 }
 
 // Pieza es una pieza del hilo en su sitio cronológico: o un segmento de texto o

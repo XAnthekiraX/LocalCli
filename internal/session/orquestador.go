@@ -139,6 +139,10 @@ func (o *Orquestador) ConHerramientas(registro *tools.Registro, catalogo []agent
 			if e.Error != "" {
 				datos["error"] = e.Error
 			}
+			if e.Bloque != "" {
+				datos["bloque"] = e.Bloque
+				datos["bloque_tipo"] = e.BloqueTipo
+			}
 			o.emitir(tui.Evento{Sesion: e.Sesion, Tipo: tui.EventoHerramientaResultado, Datos: datos})
 			o.guardarLineaHerramienta(e)
 		},
@@ -156,8 +160,8 @@ func (o *Orquestador) ConHerramientas(registro *tools.Registro, catalogo []agent
 // para que el hilo se recargue igual al retomarla. El hilo
 // en vivo no depende de que se guarde, así que el fallo se avisa y el turno sigue
 // (DATA_FLOW §Creación: «Crear una línea de procesamiento»).
-func (o *Orquestador) guardarEventoChat(sesionID, tipo, contenido string, durationMs *int) {
-	if _, err := store.CrearChatEvento(o.db, o.projectID, sesionID, tipo, contenido, durationMs); err != nil {
+func (o *Orquestador) guardarEventoChat(sesionID, tipo, contenido string, durationMs *int, bloque store.Bloque) {
+	if _, err := store.CrearChatEventoConBloque(o.db, o.projectID, sesionID, tipo, contenido, durationMs, bloque); err != nil {
 		o.avisar(sesionID, "no se pudo guardar una línea del hilo: "+err.Error(), "")
 	}
 }
@@ -177,7 +181,7 @@ func (o *Orquestador) guardarLineaHerramienta(e tools.EventoResultado) {
 		// La herramienta interna de una etapa se pinta en el sub-proceso, pero
 		// no se reenvía: el resultado del `ejecutar_flujo` ya la resume y su
 		// llamada no pertenece al turno del agente principal.
-		o.guardarEventoChat(e.Sesion, store.ChatEventoHerramienta, texto, ms)
+		o.guardarEventoChat(e.Sesion, store.ChatEventoHerramienta, texto, ms, bloqueDeEvento(e))
 		return
 	}
 	ejecucion := store.EjecucionHerramienta{
@@ -189,9 +193,14 @@ func (o *Orquestador) guardarLineaHerramienta(e tools.EventoResultado) {
 		OK:          e.OK,
 		Truncado:    e.Truncado,
 	}
-	if _, err := store.CrearChatEventoTool(o.db, o.projectID, e.Sesion, texto, ms, ejecucion); err != nil {
+	if _, err := store.CrearChatEventoToolConBloque(o.db, o.projectID, e.Sesion, texto, ms, bloqueDeEvento(e), ejecucion); err != nil {
 		o.avisar(e.Sesion, "no se pudo guardar una línea del hilo: "+err.Error(), "")
 	}
+}
+
+// bloqueDeEvento traduce el bloque visual del evento al tipo del almacén.
+func bloqueDeEvento(e tools.EventoResultado) store.Bloque {
+	return store.Bloque{Texto: e.Bloque, Tipo: e.BloqueTipo}
 }
 
 // pintarRespuestaEtapa deja la respuesta completa de una etapa de un flujo en el
@@ -201,7 +210,7 @@ func (o *Orquestador) guardarLineaHerramienta(e tools.EventoResultado) {
 // aviso de etapa terminada. No es conversación: su texto nunca entra al contexto
 // del modelo (SPEC-ORQUESTADOR-FLUJOS §Visibilidad de una respuesta).
 func (o *Orquestador) pintarRespuestaEtapa(sesionID, texto string) {
-	o.guardarEventoChat(sesionID, store.ChatEventoRespuesta, texto, nil)
+	o.guardarEventoChat(sesionID, store.ChatEventoRespuesta, texto, nil, store.Bloque{})
 	o.emitir(tui.Evento{Sesion: sesionID, Tipo: tui.EventoEtapaRespuesta, Datos: map[string]string{"texto": texto}})
 }
 
@@ -828,7 +837,9 @@ func (o *Orquestador) Historial(sesionID string) ([]tui.PiezaHistorial, error) {
 			continue
 		}
 		e := eventos[j]
-		salida = append(salida, &tui.LineaHistorial{Tipo: e.Tipo, Texto: e.Content})
+		salida = append(salida, &tui.LineaHistorial{
+			Tipo: e.Tipo, Texto: e.Content, Bloque: e.Bloque, BloqueTipo: e.BloqueTipo,
+		})
 		j++
 	}
 	return salida, nil

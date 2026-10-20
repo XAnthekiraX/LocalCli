@@ -222,6 +222,26 @@ Siguen las reglas de [[specs/SPEC-ARCHIVOS]]: dentro de la carpeta del proyecto 
 
 Una diferencia importante: `crear_archivo` falla si el archivo ya existe, y `escribir_archivo` **solo rellena un archivo vacío o crea el que falta**. Sobre un archivo con contenido no escribe nada: devuelve un `E_FILE_NOT_EMPTY` corregible que pide usar `editar_archivo` —o borrar y crear, que sí pide confirmación explícita—. Están separadas a propósito: ninguna de las dos puede destruir contenido existente por accidente, ni al crear ni al escribir.
 
+### La diferencia a la vista
+
+Un cambio de escritura no solo se aplica: **se ve**. Al cerrar la línea de `editar_archivo`, `escribir_archivo` o `crear_archivo`, el hilo muestra debajo **el antes y el después** del archivo como un diff unificado. El dato ya existe —`editar_archivo` lo tiene en memoria y `change_history` guarda el contenido anterior y el nuevo—; lo que faltaba era pintarlo.
+
+```
+  ✓ EDITAR [internal/session/historial.go] · 1 reemplazo · 0.02 s
+
+  @@ -248,7 +248,7 @@
+     if corte >= len(conv) {
+  -      return 0
+  +      return corte
+     }
+```
+
+- **Qué operaciones lo muestran.** Las tres que rellenan o modifican contenido: `editar_archivo`, `escribir_archivo` y `crear_archivo`. Un borrado no: su línea ya dice qué se borró y no hay «después» que enseñar.
+- **Solo si se aplicó.** Un error —un fragmento ambiguo o ausente, un archivo con contenido, una aprobación declinada— no escribe nada y no deja bloque: la línea cierra con su motivo, como siempre.
+- **Formato unificado.** Las líneas quitadas llevan `-`, las añadidas `+`, con tres líneas de contexto y una cabecera de tramo `@@ -inicio,n +inicio,n @@`. Un archivo nuevo o vacío se ve entero como líneas añadidas.
+- **Recortado y con aviso.** El bloque se limita a 40 líneas; si el cambio es mayor, cierra con `… N líneas más`. El antes y el después completos no se pierden: siguen en `change_history`.
+- **No es salida de herramienta.** El bloque no viaja al modelo ni entra al contexto: es un dato de pantalla, como el diagrama. Lo que recibe el modelo sigue siendo la confirmación corta de la escritura.
+
 ### `leer_archivo`
 
 Lee el contenido de un archivo de texto. Si el archivo es pequeño, devuelve su contenido completo; si es grande, permite leerlo por rangos de líneas.
@@ -410,6 +430,11 @@ Las usan los dos. `plan` las necesita para consultar documentación de librería
 - [ ] Borrar un archivo o una carpeta pide confirmación explícita.
 - [ ] Una operación que toca una ruta fuera de la carpeta pide confirmación (y explicación) aunque no sea un borrado.
 - [ ] `crear_archivo` falla si el archivo ya existe; `escribir_archivo` rellena uno vacío o crea el que falta, y sobre uno con contenido falla sin tocarlo y remite a `editar_archivo`.
+- [ ] Aplicar `editar_archivo` deja bajo su línea el antes y el después del archivo, como diff unificado con las líneas quitadas y añadidas.
+- [ ] `escribir_archivo` y `crear_archivo` dejan el bloque con el contenido como líneas añadidas.
+- [ ] Un cambio que no se aplica —error corregible o aprobación declinada— no deja bloque de diferencia.
+- [ ] Un cambio mayor que el tope se recorta con `… N líneas más`, sin perder el antes y el después completos en `change_history`.
+- [ ] El bloque de diferencia no viaja al modelo ni entra al contexto de la sesión.
 - [ ] Un archivo que no supera el límite de lectura completa se devuelve entero, sin aviso de truncado.
 - [ ] Un archivo que supera el límite de lectura completa se devuelve como fragmento inicial, marcado como truncado, con la línea desde la que continuar.
 - [ ] Una lectura por rango devuelve exactamente las líneas solicitadas, numeradas desde 1 y tomadas del archivo original.

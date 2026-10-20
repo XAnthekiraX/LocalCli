@@ -92,7 +92,7 @@ func (o *Orquestador) correrFlujo(ctx context.Context, sesionID string, agenteAc
 		o.emitir(tui.Evento{Sesion: sesionID, Tipo: tui.EventoEtapaIniciada, Datos: map[string]string{
 			"etapa": etapa.ID, "nombre": etapa.Nombre,
 		}})
-		o.guardarEventoChat(sesionID, store.ChatEventoProceso, linea.Proceso(etapa.Nombre), nil)
+		o.guardarEventoChat(sesionID, store.ChatEventoProceso, linea.Proceso(etapa.Nombre), nil, store.Bloque{})
 
 		texto, err := o.correrEtapa(ctx, sesionID, agenteActivo, f, etapa, peticion, historial, ultima, alDelta)
 		if err != nil {

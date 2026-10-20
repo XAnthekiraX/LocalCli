@@ -165,7 +165,7 @@ func copiarHistorialHasta(db *sql.DB, origen, destino string, hasta int64, hasta
 // (incluida), en orden. `hasta` es la marca del mensaje del corte.
 func eventosHasta(q queryer, sessionID, hasta string) ([]ChatEvento, error) {
 	rows, err := q.Query(
-		`SELECT id, session_id, tipo, content, created_at, duration_ms,
+		`SELECT id, session_id, tipo, content, created_at, duration_ms, bloque, bloque_tipo,
 		        call_id, herramienta, argumentos, salida, error, ok, truncado
 		 FROM chat_evento
 		 WHERE session_id = ? AND created_at <= ?

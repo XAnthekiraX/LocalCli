@@ -848,7 +848,7 @@ func (a *App) pintarHistorial(piezas []PiezaHistorial) {
 				})
 				continue
 			}
-			hilo = append(hilo, &chat.Linea{Tipo: tipoDeLinea(m.Tipo), Texto: m.Texto, Bloque: m.Bloque})
+			hilo = append(hilo, &chat.Linea{Tipo: tipoDeLinea(m.Tipo), Texto: m.Texto, Bloque: m.Bloque, BloqueTipo: m.BloqueTipo})
 		}
 	}
 	a.chat.ReemplazarHistorial(hilo)

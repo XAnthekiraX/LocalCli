@@ -225,7 +225,7 @@ func TestLaLineaDeHerramientaSeCompletaEnSuSitio(t *testing.T) {
 	m := Nuevo()
 	m.AnotarInvocacion("leer", "LEER", "a.go")
 	m.AnotarInvocacion("leer", "LEER", "b.go")
-	m.CerrarHerramienta("leer", true, false, "10 líneas", "", 400*time.Millisecond, "")
+	m.CerrarHerramienta("leer", true, false, "10 líneas", "", 400*time.Millisecond, "", "")
 
 	piezas := m.Piezas()
 	if len(piezas) != 2 {
@@ -271,7 +271,7 @@ func TestElBloqueDeDiagramaNoSustituyeLaLinea(t *testing.T) {
 	m := Nuevo()
 	bloque := "┌───┐\n│ A │\n└───┘"
 	m.AnotarInvocacion("diagram", "DIAGRAMAR", "code")
-	m.CerrarHerramienta("diagram", true, false, "3 líneas", "", 400*time.Millisecond, bloque)
+	m.CerrarHerramienta("diagram", true, false, "3 líneas", "", 400*time.Millisecond, bloque, "diagrama")
 
 	piezas := m.Piezas()
 	if len(piezas) != 1 {
@@ -310,7 +310,7 @@ func TestElBloqueDeDiagramaNoSustituyeLaLinea(t *testing.T) {
 func TestLaLineaSinBloqueNoPintaBloque(t *testing.T) {
 	m := Nuevo()
 	m.AnotarInvocacion("leer", "LEER", "a.go")
-	m.CerrarHerramienta("leer", true, false, "10 líneas", "", 400*time.Millisecond, "")
+	m.CerrarHerramienta("leer", true, false, "10 líneas", "", 400*time.Millisecond, "", "")
 
 	linea := m.Piezas()[0].(*Linea)
 	if linea.Bloque != "" {
@@ -336,5 +336,66 @@ func TestElBloqueRecuperadoSePintaAlRetomar(t *testing.T) {
 	}
 	if !strings.Contains(hilo, "┌─┐") {
 		t.Fatalf("el bloque recuperado no se pintó bajo la línea:\n%s", hilo)
+	}
+}
+
+// Un bloque de diferencia se pinta bajo la línea de la herramienta con sus
+// marcas visibles, sin sustituir la línea ni añadir piezas al hilo.
+func TestElBloqueDeDiferenciaSePintaBajoLaLinea(t *testing.T) {
+	m := Nuevo()
+	diff := "@@ -1,3 +1,3 @@\n uno\n-dos\n+dos!\n tres"
+	m.AnotarInvocacion("editar_archivo", "EDITAR", "doc.md")
+	m.CerrarHerramienta("editar_archivo", true, false, "1 reemplazo", "", 20*time.Millisecond, diff, "diferencia")
+
+	piezas := m.Piezas()
+	if len(piezas) != 1 {
+		t.Fatalf("el bloque no debe añadir piezas: %d", len(piezas))
+	}
+	linea, ok := piezas[0].(*Linea)
+	if !ok || linea.BloqueTipo != "diferencia" {
+		t.Fatalf("la línea no conserva el tipo de bloque: %+v", piezas[0])
+	}
+
+	hilo := render.SinANSI(m.Hilo(80))
+	for _, esperado := range []string{"EDITAR [doc.md]", "@@ -1,3 +1,3 @@", "-dos", "+dos!", " uno"} {
+		if !strings.Contains(hilo, esperado) {
+			t.Fatalf("falta %q en el hilo:\n%s", esperado, hilo)
+		}
+	}
+	if strings.Index(hilo, "@@") < strings.Index(hilo, "EDITAR") {
+		t.Fatalf("el bloque debería ir después de la línea:\n%s", hilo)
+	}
+}
+
+// El bloque de diferencia recuperado de la sesión se pinta igual que en vivo.
+func TestElBloqueDeDiferenciaRecuperadoSePinta(t *testing.T) {
+	m := Nuevo()
+	diff := "@@ -1,1 +1,1 @@\n-viejo\n+nuevo"
+	m.ReemplazarHistorial([]Pieza{
+		&Linea{Tipo: LineaHerramienta, Texto: "✓ EDITAR [doc.md] · 1 reemplazo · 0.02 s", Bloque: diff, BloqueTipo: "diferencia"},
+	})
+
+	hilo := render.SinANSI(m.Hilo(80))
+	if !strings.Contains(hilo, "-viejo") || !strings.Contains(hilo, "+nuevo") {
+		t.Fatalf("el bloque recuperado no se pintó:\n%s", hilo)
+	}
+}
+
+// Las líneas del diff más anchas que el hilo se envuelven sin desbordar el marco
+// ni perder texto.
+func TestElBloqueDeDiferenciaEnvuelveLineasLargas(t *testing.T) {
+	m := Nuevo()
+	larga := "+" + strings.Repeat("x", 200)
+	m.AnotarInvocacion("editar_archivo", "EDITAR", "doc.md")
+	m.CerrarHerramienta("editar_archivo", true, false, "1 reemplazo", "", 20*time.Millisecond, larga, "diferencia")
+
+	hilo := render.SinANSI(m.Hilo(40))
+	for _, linea := range strings.Split(hilo, "\n") {
+		if render.Ancho(linea) > 40 {
+			t.Fatalf("línea de %d columnas en un hilo de 40: %q", render.Ancho(linea), linea)
+		}
+	}
+	if !strings.Contains(hilo, strings.Repeat("x", 20)) {
+		t.Fatal("la envoltura perdió el texto de la línea larga")
 	}
 }

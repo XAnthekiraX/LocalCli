@@ -29,7 +29,7 @@ De [[backend/04-infrastructure/EVENTS]] llega cada evento y así reacciona la pa
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `token`                                     | Añade el fragmento al bloque de razonamiento o a la respuesta, en vivo                                                                                                                  |
 | `herramienta_invocada`                      | Abre la línea de herramienta en el chat con su verbo y su tema (la ruta, el patrón o el comando)                                                                                        |
-| `herramienta_resultado`                     | Completa esa misma línea: la marca, la medida del resultado, si se recortó y cuánto tardó la ejecución. Si trae `bloque` (solo `diagram`), pinta debajo el diagrama renderizado                                                                    |
+| `herramienta_resultado`                     | Completa esa misma línea: la marca, la medida del resultado, si se recortó y cuánto tardó la ejecución. Si trae `bloque`, pinta debajo el bloque ya renderizado: el diagrama (`bloque_tipo = diagrama`) o la diferencia del cambio (`bloque_tipo = diferencia`)                                                                    |
 | `estado_sesion`                             | Actualiza el estado en el selector y en el panel                                                                                                                                        |
 | `titulo_sesion`                             | Renombra la sesión en el panel (si es la activa) y en su fila del modal de sesiones                                                                                                     |
 | `notificacion`                              | Marca el aviso de esa sesión aunque no sea la activa                                                                                                                                    |
@@ -70,7 +70,7 @@ La línea es una sola: **nace al invocar y se completa al terminar**. Al invocar
 Cuatro reglas de lo que se pinta y lo que no:
 
 - **El verbo, el tema y la medida.** El verbo es la etiqueta corta de la herramienta ([[backend/02-interfaces/TOOLS]]); el tema es el **argumento objetivo** que su catálogo declara (la ruta, el patrón, el comando, la consulta), colapsado y recortado. En `leer_archivo` el tema es la ruta cuando se leyó el archivo entero y `ruta:inicio-fin`, con el rango real leído, cuando la lectura fue parcial. Es solo ese campo: el resto de argumentos —cuerpos de archivo, credenciales— no se expone, porque esto va a pantalla y a auditoría. La medida es el tamaño del resultado en su unidad (`líneas`, `coincidencias`, `entradas`).
-- **La salida, nunca.** El resultado va al modelo, no a la pantalla. Si quieres ver qué devolvió una herramienta, lo vas a ver explicado en la respuesta del agente.
+- **La salida, nunca —salvo el bloque de la línea.** El resultado va al modelo, no a la pantalla. Si quieres ver qué devolvió una herramienta, lo vas a ver explicado en la respuesta del agente. La única excepción es el bloque ya renderizado (diagrama o diferencia), que es un dato de pantalla y no la salida cruda.
 - **Si se recortó, se dice.** Un resultado recortado sin avisar es peor que no verlo: el agente puede actuar como si tuviera el resultado entero.
 - **Cuánto tardó, siempre que se sepa.** La duración de la ejecución va al final de la línea cerrada, con el separador de la línea (`· 0.4 s`) y con el mismo atenuado que el tiempo de la respuesta. No va entre paréntesis: ahí los paréntesis marcan «esto es el tiempo de una respuesta», y una línea de herramienta no lo es. Se pinta también cuando la ejecución falló —«✗ … · 0.01 s»—, porque tardó igual. El número sale del mismo formateador que el tiempo de la respuesta, de modo que los dos se leen igual. **Si la línea no tiene duración, no se pinta nada y el espacio no se deja reservado**: un hueco de medidas desiguales delata más que una omisión.
 
@@ -82,7 +82,12 @@ El agente que la pidió no se pinta en la línea (sigue en el evento, para la au
 
 Una herramienta que necesita aprobación **no** muestra nada extra: la línea de la herramienta aparece, y debajo la línea de aprobación que ya existía. El usuario ve que el agente está actuando y que se le está pidiendo permiso por ello.
 
-**El bloque de diagrama.** `diagram` es la única herramienta cuyo resultado se ve, y lo hace como **bloque adicional**, no en lugar de la línea: la línea sigue el patrón de siempre (`DIAGRAMAR [code] · medida · tiempo`) y justo debajo se dibuja el diagrama ya renderizado, separado del texto del asistente. El bloque llega en el campo `bloque` de `herramienta_resultado` ([[backend/04-infrastructure/EVENTS]] §3), ya en líneas Unicode de ancho calculado: la TUI no interpreta Mermaid ni hace layout, solo lo coloca en el hilo; esa frontera es lo que mantiene el render aislado del estado de la interfaz ([[specs/SPEC-DIAGRAMA]]). Es la excepción a «la salida, nunca»: la regla sigue valiendo para todo lo demás, y aquí el bloque es un dato de pantalla —el modelo recibe su texto por el protocolo de herramientas—, así que también se persiste con la línea y se recupera al volver a la sesión. Un diagrama que no cabe o no parsea no llega aquí: vuelve al modelo como error corregible.
+**Los bloques de la línea de herramienta.** Hay un caso en que el resultado sí se ve, y siempre como **bloque adicional**, no en lugar de la línea: la línea sigue el patrón de siempre (`DIAGRAMAR [code] · medida · tiempo`, `EDITAR [ruta] · medida · tiempo`) y justo debajo se dibuja el bloque, separado del texto del asistente. El bloque llega en el campo `bloque` de `herramienta_resultado` ([[backend/04-infrastructure/EVENTS]] §3) ya renderizado, y `bloque_tipo` dice cuál es: la TUI no interpreta Mermaid ni calcula diffs, solo lo coloca. Es la excepción a «la salida, nunca»: el bloque es un dato de pantalla —el modelo recibe su resultado por el protocolo de herramientas—, así que también se persiste con la línea y se recupera al volver a la sesión.
+
+- **`diagrama`.** El diagrama Unicode de `diagram`, ya en líneas de ancho calculado ([[specs/SPEC-DIAGRAMA]]). Un diagrama que no cabe o no parsea no llega aquí: vuelve al modelo como error corregible.
+- **`diferencia`.** El antes y el después de un cambio aplicado por `editar_archivo`, `escribir_archivo` o `crear_archivo` ([[specs/SPEC-TOOLS]] §La diferencia a la vista). Se pinta como diff unificado: las líneas quitadas (`-`) en rojo, las añadidas (`+`) en verde, y los tramos `@@` y el contexto atenuados. Un cambio que no se aplicó —un error corregible o una aprobación declinada— no deja bloque. Si el diff excede el tope, cierra con `… N líneas más`; el antes y el después completos quedan en `change_history`. Las líneas más anchas que el hilo se envuelven, sin perder texto, y la selección con ratón lo abarca como parte de la línea.
+
+El bloque no entra al contexto del modelo y no se reenvía: existe para leer el hilo, no para conversar.
 
 ## 1.2 La línea de sub-proceso
 
@@ -212,7 +217,7 @@ Reglas, según [[specs/SPEC-INTERFAZ-ATAJOS]] y [[specs/SPEC-KEYBINDS]]:
 - [[frontend/FRONTEND]] — mapa de la capa.
 - [[backend/04-infrastructure/EVENTS]] — productores y payloads, incluidos los de herramienta.
 - [[backend/02-interfaces/TOOLS]] — la capa universal que emite esos eventos.
-- [[specs/SPEC-DIAGRAMA]] — el bloque de diagrama que se pinta bajo la línea de herramienta.
+- [[specs/SPEC-DIAGRAMA]] y [[specs/SPEC-TOOLS]] — los bloques que se pintan bajo la línea de herramienta (diagrama y diferencia).
 - [[database/03-operations/QUERIES]] — las consultas de lectura que puede ejecutar.
 - [[specs/SPEC-INTERFAZ-ATAJOS]] — reglas funcionales de los atajos.
 - [[specs/SPEC-TOOLS]] — el catálogo, y qué se pinta de una ejecución.

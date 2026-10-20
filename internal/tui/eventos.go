@@ -128,16 +128,16 @@ func (a *App) aplicarEvento(evento Evento) tea.Cmd {
 		a.chat.AnotarInvocacion(evento.Datos["herramienta"], evento.Datos["verbo"], evento.Datos["tema"])
 	case EventoHerramientaResultado:
 		// La duración viaja en milisegundos; sin ella la línea se pinta sin
-		// tiempo, sin dejar hueco (INTERFACES §1.1). El bloque —solo `diagram`—
-		// es el diagrama ya renderizado: se coloca bajo la línea como bloque
-		// adicional (EVENTS §3).
+		// tiempo, sin dejar hueco (INTERFACES §1.1). El bloque —el diagrama o la
+		// diferencia de un cambio— llega ya renderizado y se coloca bajo la
+		// línea como bloque adicional (EVENTS §3).
 		duracion := time.Duration(-1)
 		if ms, err := enteroDe(evento.Datos["duracion"]); err == nil {
 			duracion = time.Duration(ms) * time.Millisecond
 		}
 		a.chat.CerrarHerramienta(evento.Datos["herramienta"], evento.Datos["ok"] == "true",
 			evento.Datos["truncado"] == "true", evento.Datos["medida"], evento.Datos["error"], duracion,
-			evento.Datos["bloque"])
+			evento.Datos["bloque"], evento.Datos["bloque_tipo"])
 	case EventoEtapaIniciada:
 		// Cada etapa que empieza deja una sola línea con su nombre.
 		a.chat.AnotarEtapa(nombreDeEtapa(evento.Datos))

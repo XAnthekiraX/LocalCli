@@ -18,3 +18,4 @@
 | T-F013 | actualizar | Pegado tokenizado en la bienvenida con el motor de adjuntos compartido | T-F001, T-F012 | completada | `013-task-pegado-bienvenida.md` |
 | T-F014 | crear  | Vista de código real: Markdown de la respuesta y botón de copiar por bloque | T-F003 | completada | `014-task-vista-codigo.md` |
 | T-F015 | crear  | Bloque de diagrama: pintar el diagrama Unicode bajo la línea de herramienta `diagram` en el chat | T-F003, T-F008 | completada | `015-task-diagrama.md` |
+| T-F016 | actualizar | Bloque de diferencia: pintar el antes y el después del cambio bajo la línea de herramienta, con su tipo, color y recuperación | T-F003, T-F015, T-B027 | completada | `016-task-diferencia-cambios.md` |

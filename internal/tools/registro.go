@@ -170,6 +170,7 @@ func (r *Registro) Ejecutar(ctx context.Context, p Peticion) Resultado {
 		Tema: TemaFinal(h, tema, res.Meta), Argumentos: string(p.Argumentos),
 		Salida: res.Salida, OK: err == nil && res.Error == "", Error: res.Error,
 		Medida: medidaDe(h, res), Truncado: res.Truncado, Duracion: duracion,
+		Bloque: bloqueDe(res), BloqueTipo: tipoDeBloque(res),
 	})
 	return res
 }
@@ -182,6 +183,22 @@ func medidaDe(h Herramienta, res Resultado) string {
 		return medida
 	}
 	return Medir(h.Unidad, res.Salida)
+}
+
+// bloqueDe devuelve el bloque visual que el handler adjuntó a su resultado, si
+// lo hay. Es un dato de pantalla: no se suma a la salida que recibe el modelo.
+func bloqueDe(res Resultado) string {
+	bloque, _ := res.Meta["bloque"].(string)
+	return bloque
+}
+
+// tipoDeBloque dice cómo pintar el bloque; sin bloque, no hay tipo.
+func tipoDeBloque(res Resultado) string {
+	if bloqueDe(res) == "" {
+		return ""
+	}
+	tipo, _ := res.Meta["bloque_tipo"].(string)
+	return tipo
 }
 
 func ejecutarHandler(h Herramienta, ctx context.Context, args any, c Contexto) (Resultado, error) {

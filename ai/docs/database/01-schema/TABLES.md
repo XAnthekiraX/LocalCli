@@ -189,6 +189,8 @@ Hay una aportación por etapa y flujo dentro de la sesión: el índice único `(
 | `session_id` | Sesión a la que pertenece el hilo | UUID v4 de `sessions.id` | No | — |
 | `tipo` | Qué clase de pieza es | `proceso`, `herramienta`, `respuesta` | No | — |
 | `content` | La línea tal como se pinta | Texto libre | No | — |
+| `bloque` | El bloque visual ya renderizado que se pinta bajo la línea | Texto libre | Sí | `NULL` |
+| `bloque_tipo` | Qué clase de bloque es | `diagrama`, `diferencia` | Sí | `NULL` |
 | `duration_ms` | Cuánto tardó lo que la línea describe, en milisegundos | Entero ≥ 0 | Sí | `NULL` |
 | `created_at` | Cuándo se añadió al hilo | ISO 8601 UTC | No | — |
 | `call_id` | Id de la llamada que pidió la herramienta | Texto libre | Sí | `NULL` |
@@ -200,6 +202,8 @@ Hay una aportación por etapa y flujo dentro de la sesión: el índice único `(
 | `truncado` | Si la salida se recortó | `0` o `1` | Sí | `NULL` |
 
 `tipo` distingue el sub-proceso de una etapa (`proceso`) de la línea de una herramienta (`herramienta`) y de la respuesta completa de una etapa con `respuesta_en_chat` (`respuesta`). `content` guarda el texto ya compuesto —«[Sub Proceso] Entender el problema», «✓ LEER [AGENTS.md] · 93 líneas» o la respuesta entera de la etapa—, para que al recargar la sesión el hilo se pinte igual que en vivo. En una lectura por rango el tema incluye el rango real leído (por ejemplo `AGENTS.md:10-50`). Las piezas son inmutables una vez completas, como los mensajes: la línea de una herramienta se guarda cerrada, con su marca, su medida y su tiempo; la respuesta de una etapa se guarda completa. `session_id` es `NOT NULL` con `ON DELETE CASCADE`: borrar la sesión se lleva su hilo.
+
+`bloque` y `bloque_tipo` guardan el bloque visual que se pinta bajo la línea: el diagrama de `diagram` (`diagrama`) o el antes y el después de un cambio aplicado (`diferencia`). El texto llega ya renderizado —la TUI solo lo coloca— y `bloque_tipo` dice cómo pintarlo. Como puede repetir contenido del archivo, el bloque se recorta a un tope y el antes y el después completos siguen en `change_history`; el bloque no entra al contexto del modelo, se guarda solo para que el hilo recuperado se lea igual que en vivo. Las filas anteriores a la migración `013-bloque-linea` quedan con ambos en `NULL` y se pintan sin bloque.
 
 Las columnas `call_id`, `herramienta`, `argumentos`, `salida`, `error`, `ok` y `truncado` se llenan en las filas `tipo = herramienta` que corren en el turno principal: son la llamada y su desenlace, y permiten reconstruir el par `assistant(tool_calls)` + `tool(resultado)` que el modelo ve en los turnos siguientes. Las herramientas que corren dentro de una etapa de un flujo también dejan su línea, pero quedan en `NULL`: su resultado lo resume el `ejecutar_flujo` que las lanzó y no se reenvían por separado. Las filas anteriores a la migración `012-ejecucion-herramienta` quedan en `NULL` y se siguen pintando, pero no se reenvían. Los sub-procesos y las respuestas de etapa no tienen ejecución y también quedan en `NULL`. La salida reenviada se acota en la capa de sesión; `truncado` conserva si la herramienta ya había recortado su propia salida.
 

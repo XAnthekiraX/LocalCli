@@ -8,7 +8,7 @@ import (
 )
 
 // versionEsquema es la versión actual del esquema ([[database/03-operations/MIGRATIONS]]).
-const versionEsquema = 12
+const versionEsquema = 13
 
 // Migrar lleva la base a la versión objetivo aplicando, en orden y una a una, las
 // migraciones que falten ([[database/03-operations/MIGRATIONS]] §1 y §2).
@@ -84,6 +84,8 @@ func aplicarMigracion(db *sql.DB, desde int) error {
 		migrar = migracion011
 	case 11:
 		migrar = migracion012
+	case 12:
+		migrar = migracion013
 	default:
 		return fmt.Errorf("store: migración desde versión %d no soportada", desde)
 	}
@@ -377,4 +379,19 @@ func migracion012(tx *sql.Tx) error {
 		}
 	}
 	return nil
+}
+
+// migracion013 (`013-bloque-linea`) es aditiva: añade a `chat_evento` el bloque
+// visual ya renderizado (`bloque`) y su clase (`bloque_tipo`). Las filas
+// existentes quedan con NULL y se siguen pintando sin bloque. El `CHECK` valida
+// el vocabulario del tipo; la pareja la garantiza quien escribe. Ver
+// [[specs/SPEC-TOOLS]] §La diferencia a la vista y
+// [[database/03-operations/MIGRATIONS]].
+func migracion013(tx *sql.Tx) error {
+	if _, err := tx.Exec(`ALTER TABLE chat_evento ADD COLUMN bloque TEXT;`); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`ALTER TABLE chat_evento ADD COLUMN bloque_tipo TEXT
+		CHECK (bloque_tipo IS NULL OR bloque_tipo IN ('diagrama', 'diferencia'));`)
+	return err
 }

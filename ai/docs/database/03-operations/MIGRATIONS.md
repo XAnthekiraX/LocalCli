@@ -11,6 +11,7 @@ relacionado:
   - "[[database/02-rules/DATA_FLOW]]"
   - "[[database/03-operations/SEEDING]]"
   - "[[specs/SPEC-ARCHIVOS]]"
+  - "[[specs/SPEC-TOOLS]]"
 ---
 # MIGRATIONS — Gestión del esquema
 
@@ -60,7 +61,7 @@ Reglas:
 
 ## Nota sobre el esquema actual
 
-La base se crea ya en su versión actual (v12): la tabla `projects`, las seis tablas de [[database/01-schema/SCHEMA]] más `todos`, la lista de pasos de la sesión, `flow_context`, el bloque de contexto de un flujo, y `chat_evento`, las piezas de procesamiento del chat con la ejecución de sus herramientas, además de las columnas `sessions.project_id`, `messages.duration_ms`, `chat_evento.duration_ms`, `chat_evento.call_id` y siguientes, `sessions.modelo` y el par `sessions.summary` / `sessions.summary_upto` (el resumen compactado del historial y el último mensaje que abarca). La creación del archivo, su esquema inicial y las migraciones `002-crear-todo`, `003-crear-flow-context`, `004-crear-chat-evento`, `005-duracion-linea-herramienta`, `006-motor-y-modelo-de-sesion`, `007-crear-proyectos`, `008-resumen-sesion`, `009-quitar-motor-id`, `010-respuesta-etapa`, `011-todo-jerarquia` y `012-ejecucion-herramienta` ocurren en el mismo paso de apertura, así que `user_version` arranca en 12. Los índices de [[database/01-schema/INDEXES]] se aplican junto con la creación, no después.
+La base se crea ya en su versión actual (v13): la tabla `projects`, las seis tablas de [[database/01-schema/SCHEMA]] más `todos`, la lista de pasos de la sesión, `flow_context`, el bloque de contexto de un flujo, y `chat_evento`, las piezas de procesamiento del chat con la ejecución de sus herramientas, además de las columnas `sessions.project_id`, `messages.duration_ms`, `chat_evento.duration_ms`, `chat_evento.call_id` y siguientes, `chat_evento.bloque` / `chat_evento.bloque_tipo`, `sessions.modelo` y el par `sessions.summary` / `sessions.summary_upto` (el resumen compactado del historial y el último mensaje que abarca). La creación del archivo, su esquema inicial y las migraciones `002-crear-todo`, `003-crear-flow-context`, `004-crear-chat-evento`, `005-duracion-linea-herramienta`, `006-motor-y-modelo-de-sesion`, `007-crear-proyectos`, `008-resumen-sesion`, `009-quitar-motor-id`, `010-respuesta-etapa`, `011-todo-jerarquia`, `012-ejecucion-herramienta` y `013-bloque-linea` ocurren en el mismo paso de apertura, así que `user_version` arranca en 13. Los índices de [[database/01-schema/INDEXES]] se aplican junto con la creación, no después.
 
 La migración `002-crear-todo` es aditiva: añade la tabla `todos` y su clave primaria `(session_id, position)`, sin tocar ninguna fila existente. Una base en `user_version = 1` la recibe al abrirse y pasa a la 2 sin perder nada.
 
@@ -87,6 +88,8 @@ La migración `010-respuesta-etapa` amplía el `CHECK` de `chat_evento.tipo` par
 La migración `011-todo-jerarquia` (pendiente, tarea T-B022) es aditiva: añade la columna `todos.parent_position` (nullable, sin valor por defecto) y el índice `idx_todos_padre` `(session_id, parent_position)`. No crea tabla ni actualiza filas: las existentes quedan con `NULL`, que es «paso raíz», así que una base v10 se lee como una lista plana sin ningún cambio de comportamiento. Guarda la jerarquía de un nivel —una tarea principal agrupa sus subtareas— que las herramientas de la sesión escriben y que valida la capa de datos, porque SQLite no permite añadir por `ALTER TABLE` una clave foránea autorreferencial compuesta ni un `CHECK` que mire otras filas. Ver [[specs/SPEC-TOOLS]], [[database/01-schema/TABLES]] §`todos` y [[database/01-schema/INDEXES]].
 
 La migración `012-ejecucion-herramienta` es aditiva y solo añade columnas a `chat_evento`: `call_id`, `herramienta`, `argumentos`, `salida`, `error`, `ok` y `truncado`, todas nullable y sin valor por defecto. Las filas existentes quedan en `NULL`: son líneas antiguas sin ejecución asociada, se siguen pintando igual y no se reenvían al modelo. La migración no crea tabla ni índice y no actualiza filas. Una base en `user_version = 11` la recibe al abrirse y pasa a la 12 sin perder nada. Ver [[specs/SPEC-HISTORIAL-CONVERSACION]] y [[database/01-schema/TABLES]] §`chat_evento`.
+
+La migración `013-bloque-linea` es aditiva y solo añade dos columnas a `chat_evento`: `bloque` y `bloque_tipo`, ambas nullable y sin valor por defecto. `bloque` guarda el bloque visual ya renderizado que se pinta bajo la línea —el diagrama de `diagram` o el antes y el después de un cambio aplicado— y `bloque_tipo` lo clasifica con un `CHECK` que admite `diagrama` o `diferencia`. Hasta ahora ese bloque se documentaba como persistido, pero no tenía columna donde vivir; las filas existentes quedan con las dos en `NULL` y se siguen pintando sin bloque. No crea tabla ni índice y no actualiza filas. Una base en `user_version = 12` la recibe al abrirse y pasa a la 13 sin perder nada. Ver [[specs/SPEC-TOOLS]] §La diferencia a la vista y [[database/01-schema/TABLES]] §`chat_evento`.
 
 ### Un `user_version` correcto no basta para saber que el esquema es el de la versión
 

@@ -169,6 +169,8 @@ CREATE TABLE chat_evento (
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE ON UPDATE CASCADE,
     tipo       TEXT NOT NULL CHECK (tipo IN ('proceso', 'herramienta', 'respuesta')),
     content    TEXT NOT NULL,
+    bloque     TEXT,
+    bloque_tipo TEXT CHECK (bloque_tipo IS NULL OR bloque_tipo IN ('diagrama', 'diferencia')),
     created_at TEXT NOT NULL,
     duration_ms INTEGER,
     call_id    TEXT,
@@ -242,8 +244,8 @@ CREATE TABLE chat_evento (
 		return err
 	}
 
-	// user_version = 12
-	_, err = tx.Exec("PRAGMA user_version = 12;")
+	// user_version = 13
+	_, err = tx.Exec("PRAGMA user_version = 13;")
 	if err != nil {
 		return err
 	}

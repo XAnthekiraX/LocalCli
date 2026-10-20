@@ -30,6 +30,12 @@ type EventoResultado struct {
 	Medida     string
 	Truncado   bool
 	Duracion   time.Duration
+	// Bloque es el bloque visual ya renderizado que se pinta bajo la línea
+	// —el diagrama o la diferencia de un cambio— y BloqueTipo dice cuál es
+	// (`diagrama` o `diferencia`). No viaja al modelo: es dato de pantalla
+	// (EVENTS §3).
+	Bloque     string
+	BloqueTipo string
 }
 
 // Eventos son los enganches de pantalla y auditoría de la capa universal. Sin

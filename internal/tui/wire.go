@@ -118,8 +118,11 @@ type LineaHistorial struct {
 	Tipo string
 	// Texto es la línea tal como se pintó.
 	Texto string
-	// Bloque es el diagrama renderizado, si la línea es de `diagram`.
-	Bloque string
+	// Bloque es el bloque visual ya renderizado —un diagrama o una diferencia—
+	// que se pinta bajo la línea; `BloqueTipo` dice cuál es para que la TUI sepa
+	// cómo pintarlo (INTERFACES §1.1, EVENTS §3). Vacío en el resto de líneas.
+	Bloque     string
+	BloqueTipo string
 }
 
 func (*LineaHistorial) esPiezaHistorial() {}

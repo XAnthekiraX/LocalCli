@@ -54,6 +54,14 @@ Para que el modelo no falle por diferencias de formato al copiar texto, la compa
 
 El BOM UTF-8 se preserva al escribir. El `reemplazo` se entrega en LF y se convierte al estilo del archivo. Un `reemplazos` vacío, un `buscar` vacío o un reemplazo idéntico al fragmento son `E_BAD_ARGS`. La implementación vive en `internal/fileops/reemplazo.go`.
 
+### La diferencia que se ve
+
+Las tres herramientas que rellenan o modifican contenido —`crear_archivo`, `escribir_archivo` y `editar_archivo`— devuelven, además de la confirmación que ve el modelo, un **bloque de diferencia** para la pantalla: el antes y el después del archivo en diff unificado. Se arma en `fileops` al aplicar el cambio, cuando ya tiene los dos textos, y viaja por el resultado como `bloque` con `bloque_tipo = "diferencia"`, igual que el diagrama. No es la salida de la herramienta: el modelo sigue recibiendo la confirmación corta y el bloque no entra al contexto.
+
+- **Solo cuando se aplicó.** Un error corregible, un archivo con contenido o una aprobación declinada no producen bloque: no hubo cambio que enseñar.
+- **Formato y tope.** Diff por líneas con tres de contexto, cabecera `@@ -a,b +c,d @@`, `-` para lo quitado y `+` para lo añadido. Un archivo nuevo o vacío se ve entero como líneas añadidas. El bloque se corta a 40 líneas y cierra con `… N líneas más`; el antes y el después completos quedan en `change_history`.
+- **La salida del modelo no cambia.** `editar_archivo` sigue devolviendo `archivo editado: <ruta>`. El bloque lo adjunta la capa universal al evento, no el handler al resultado que viaja al modelo.
+
 ### Terminal
 
 | Herramienta | Lee o escribe | Permiso | Agente | Contrato |
@@ -134,7 +142,7 @@ Cada herramienta declara, además de su contrato, tres datos de presentación qu
 | `ejecutar_flujo` | `FLUJO` | `flujo` | etapa |
 | `diagram` | `DIAGRAMAR` | `code` (primera línea) | diagrama |
 
-Solo se muestra el **tema**: el resto de argumentos —el contenido de un archivo, un cambio— no se expone, porque la línea va a pantalla y a auditoría. En `leer_archivo` el tema es la ruta cuando se leyó el archivo entero y `ruta:inicio-fin`, con el rango real devuelto, cuando la lectura fue parcial —el modelo pidió un rango o el límite truncó el resultado—.
+Solo se muestra el **tema**: el resto de argumentos —el contenido de un archivo, un cambio— no se expone, porque la línea va a pantalla y a auditoría. La única excepción es el **bloque de diferencia** ya renderizado y recortado que acompaña a una escritura aplicada: no es el argumento crudo, es una vista del cambio pensada para la pantalla (ver §La diferencia que se ve). En `leer_archivo` el tema es la ruta cuando se leyó el archivo entero y `ruta:inicio-fin`, con el rango real devuelto, cuando la lectura fue parcial —el modelo pidió un rango o el límite truncó el resultado—.
 
 ## 2. El reparto: `plan` mira, `build` escribe
 

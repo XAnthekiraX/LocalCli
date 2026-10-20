@@ -88,6 +88,11 @@ var (
 	EstiloCabeceraCodigo  lipgloss.Style
 	EstiloBotonCopiar     lipgloss.Style
 	EstiloCodigoInline    lipgloss.Style
+	// EstiloDiferenciaMas y EstiloDiferenciaMenos pintan las líneas añadidas y
+	// quitadas de un bloque de diferencia: verde para lo que entra, rojo para lo
+	// que sale (SPEC-TOOLS §La diferencia a la vista).
+	EstiloDiferenciaMas   lipgloss.Style
+	EstiloDiferenciaMenos lipgloss.Style
 	EstiloNegrita         lipgloss.Style
 	EstiloCursiva         lipgloss.Style
 	EstiloTituloMD        lipgloss.Style
@@ -146,6 +151,10 @@ func reconstruirEstilos() {
 	EstiloCabeceraCodigo = lipgloss.NewStyle().Foreground(ColorSutil).Background(FondoCodigo)
 	EstiloBotonCopiar = lipgloss.NewStyle().Foreground(ColorUsuario).Bold(true).Background(FondoCodigo)
 	EstiloCodigoInline = lipgloss.NewStyle().Foreground(ColorCodigoInline).Background(FondoCodigo)
+	// La diferencia de un cambio se lee de un vistazo: lo añadido en verde y lo
+	// quitado en rojo, sin negrita que compita con el texto del hilo.
+	EstiloDiferenciaMas = lipgloss.NewStyle().Foreground(ColorAgente)
+	EstiloDiferenciaMenos = lipgloss.NewStyle().Foreground(ColorIncapaz)
 	EstiloNegrita = lipgloss.NewStyle().Foreground(ColorBlanco).Bold(true)
 	EstiloCursiva = lipgloss.NewStyle().Foreground(ColorBlanco).Italic(true)
 	EstiloTituloMD = lipgloss.NewStyle().Foreground(ColorBlanco).Bold(true)

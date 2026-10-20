@@ -126,7 +126,7 @@ func turnoDesde(db *sql.DB, sessionID string, desde int64) (Turno, error) {
 // (incluida), en orden. `desde` es la marca del mensaje que abre el turno.
 func eventosDesde(db *sql.DB, sessionID, desde string) ([]ChatEvento, error) {
 	rows, err := db.Query(
-		`SELECT id, session_id, tipo, content, created_at, duration_ms,
+		`SELECT id, session_id, tipo, content, created_at, duration_ms, bloque, bloque_tipo,
 		        call_id, herramienta, argumentos, salida, error, ok, truncado
 		 FROM chat_evento
 		 WHERE session_id = ? AND created_at >= ?

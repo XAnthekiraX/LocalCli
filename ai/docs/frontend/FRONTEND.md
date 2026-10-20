@@ -65,8 +65,9 @@ internal/tui/
     welcome/     pantalla de bienvenida estilo opencode: logotipo sobre el fondo, caja de entrada con
                  línea de estado —y pegado tokenizado— y pistas de teclado
     chat/        historial de la sesión activa: respuesta —con su Markdown interpretado al pintar, bloques
-                 de código y botón de copiar (SPEC-VISTA-CODIGO)—, líneas compactas de herramienta,
-                 razonamiento revelable y la línea de actividad en vivo
+                 de código y botón de copiar (SPEC-VISTA-CODIGO)—, líneas compactas de herramienta con sus
+                 bloques visuales (diagrama y diferencia de un cambio), razonamiento revelable y la línea de
+                 actividad en vivo
     input/       caja de entrada con fondo: línea de texto —con pegado tokenizado— y pie con el agente y el modelo
     panel/       sidebar de datos plegable: título, contexto, TODO, tareas, estado y pie
     modals/      modales de modelos (Ctrl+X m), sesiones (Ctrl+X l) y atajos (Ctrl+P)

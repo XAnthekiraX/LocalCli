@@ -58,6 +58,7 @@ La última es la que hace efectiva la relación 1:1 opcional entre `messages` y 
 | `approvals` | `status` | `pendiente`, `aprobada`, `declinada`, `obsoleta` |
 | `context_audit` | `decision` | `incluido`, `descartado` |
 | `context_audit` | `tokens` | `>= 0` o `NULL` |
+| `chat_evento` | `bloque_tipo` | `diagrama`, `diferencia` o `NULL` |
 | `change_history` | `operation` | Los seis valores de [[database/01-schema/ENUMS]] |
 
 Los valores permitidos y su significado están en [[database/01-schema/ENUMS]].
@@ -86,7 +87,7 @@ Lo que la base rechaza por sí sola, sin ayuda del código:
 - Un segundo `reasoning` para el mismo mensaje: el `UNIQUE` compuesto lo rechaza.
 - Una sesión con un hijo `reasoning` colgando de un mensaje suyo cuando se borra: lo resuelve la cascada, no lo rechaza.
 
-Lo que la base **no** impone y depende del código: la legalidad de las transiciones de estado, que un cambio de archivo pasara por aprobación antes de llegar aquí, y que `reasoning` solo exista si el modelo devolvió razonamiento. La aprobación es una política de [[specs/SPEC-ARCHIVOS]] y vive en el módulo de herramientas, no en un `CHECK`.
+Lo que la base **no** impone y depende del código: la legalidad de las transiciones de estado, que un cambio de archivo pasara por aprobación antes de llegar aquí, que `reasoning` solo exista si el modelo devolvió razonamiento, y que `bloque` y `bloque_tipo` se escriban juntos —el `CHECK` valida el vocabulario del tipo, la pareja la garantiza quien escribe—. La aprobación es una política de [[specs/SPEC-ARCHIVOS]] y vive en el módulo de herramientas, no en un `CHECK`.
 
 ## Referencias
 

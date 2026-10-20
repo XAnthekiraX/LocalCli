@@ -214,6 +214,8 @@ La **resolución de rutas** es la misma que para `listar_carpeta`: las relativas
 
 Toda escritura aprobada queda registrada en `change_history` con el antes y el después. La herramienta no devuelve ese historial al agente; vive en la base. Ver [[database/01-schema/TABLES]].
 
+Además de la confirmación, el resultado interno de `crear_archivo`, `escribir_archivo` y `editar_archivo` lleva en `Meta` el bloque de diferencia (`bloque` y `bloque_tipo = "diferencia"`) cuando el cambio se aplicó. No forma parte del contrato con el modelo: la capa universal lo adjunta al evento `herramienta_resultado` y no lo reenvía. Ver [[backend/02-interfaces/TOOLS]] §La diferencia que se ve y [[backend/04-infrastructure/EVENTS]] §3.
+
 ### Terminal
 
 | Campo | Tipo | Notas |

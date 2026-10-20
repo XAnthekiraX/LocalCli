@@ -259,11 +259,19 @@ func crearBaseV9(t *testing.T, ruta string) {
 	if sesion.ID == "" {
 		t.Fatal("la base de prueba quedó sin sesión")
 	}
-	if _, err := CrearChatEvento(db, projectID, sesion.ID, ChatEventoProceso, "[Sub Proceso] Diagnosticar", nil); err != nil {
+	ahora := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := db.Exec(
+		`INSERT INTO chat_evento (id, session_id, tipo, content, created_at) VALUES
+		 ('e-proceso', ?, ?, ?, ?)`,
+		sesion.ID, ChatEventoProceso, "[Sub Proceso] Diagnosticar", ahora,
+	); err != nil {
 		t.Fatal(err)
 	}
-	ms := 400
-	if _, err := CrearChatEvento(db, projectID, sesion.ID, ChatEventoHerramienta, "✓ LEER [AGENTS.md] · 93 líneas", &ms); err != nil {
+	if _, err := db.Exec(
+		`INSERT INTO chat_evento (id, session_id, tipo, content, created_at, duration_ms) VALUES
+		 ('e-herramienta', ?, ?, ?, ?, 400)`,
+		sesion.ID, ChatEventoHerramienta, "✓ LEER [AGENTS.md] · 93 líneas", ahora,
+	); err != nil {
 		t.Fatal(err)
 	}
 }

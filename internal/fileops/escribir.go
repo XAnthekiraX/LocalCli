@@ -37,7 +37,7 @@ func (o *Operaciones) crearArchivo(ctx context.Context, args any, c tools.Contex
 		return corregible("no se pudo crear el archivo: " + Canonica(o.Raiz, abs))
 	}
 	o.registrar(c.SesionID, "crear_archivo", Canonica(o.Raiz, abs), nil, &p.Contenido)
-	return okEscritura("archivo creado: " + Canonica(o.Raiz, abs)), nil
+	return conDiferencia("archivo creado: "+Canonica(o.Raiz, abs), "", p.Contenido), nil
 }
 
 func (o *Operaciones) escribirArchivo(ctx context.Context, args any, c tools.Contexto) (tools.Resultado, error) {
@@ -70,7 +70,7 @@ func (o *Operaciones) escribirArchivo(ctx context.Context, args any, c tools.Con
 		return corregible("no se pudo escribir el archivo: " + Canonica(o.Raiz, abs))
 	}
 	o.registrar(c.SesionID, "escribir_archivo", Canonica(o.Raiz, abs), &antes, &p.Contenido)
-	return okEscritura("archivo escrito: " + Canonica(o.Raiz, abs)), nil
+	return conDiferencia("archivo escrito: "+Canonica(o.Raiz, abs), antes, p.Contenido), nil
 }
 
 func (o *Operaciones) editarArchivo(ctx context.Context, args any, c tools.Contexto) (tools.Resultado, error) {
@@ -98,7 +98,7 @@ func (o *Operaciones) editarArchivo(ctx context.Context, args any, c tools.Conte
 		return corregible("no se pudo editar el archivo: " + Canonica(o.Raiz, abs))
 	}
 	o.registrar(c.SesionID, "editar_archivo", Canonica(o.Raiz, abs), &antes, &despues)
-	return okEscritura("archivo editado: " + Canonica(o.Raiz, abs)), nil
+	return conDiferencia("archivo editado: "+Canonica(o.Raiz, abs), antes, despues), nil
 }
 
 func (o *Operaciones) eliminarArchivo(ctx context.Context, args any, c tools.Contexto) (tools.Resultado, error) {
