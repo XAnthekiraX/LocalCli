@@ -73,7 +73,7 @@ El BOM UTF-8 se preserva al escribir. El `reemplazo` se entrega en LF y se convi
 |---|---|---|---|---|
 | `diagram` | Lee | `read` | Ambos | `code` (código Mermaid flowchart); devuelve el diagrama renderizado como bloque Unicode en la TUI y su representación en texto para el modelo |
 
-`diagram` solo interpreta el subconjunto de Mermaid documentado en [[specs/SPEC-DIAGRAMA]] (flowchart `TD`/`LR`, formas básicas, conexiones etiquetadas). El código de entrada es dato no confiable: no se ejecuta, no toca archivos ni red, y un error de sintaxis o de límites vuelve al modelo como error corregible, con línea y ejemplo de sintaxis válida. El parser, el layout y el renderizador son partes separadas y testeables por separado; la presentación del bloque en el hilo es de la TUI, no del handler (ver [[frontend/02-interfaces/INTERFACES]] §1.1).
+`diagram` solo interpreta el subconjunto de Mermaid documentado en [[specs/SPEC-DIAGRAMA]] (flowchart `TD`/`LR`, formas básicas, conexiones etiquetadas). En la llamada, el único argumento es `code`, un string con el texto Mermaid; no hay parámetros `nodes`/`edges` ni un objeto de grafo. El código de entrada es dato no confiable: no se ejecuta, no toca archivos ni red, y un error de sintaxis o de límites vuelve al modelo como error corregible, con línea y ejemplo de sintaxis válida. El parser, el layout y el renderizador son partes separadas y testeables por separado; la presentación del bloque en el hilo es de la TUI, no del handler (ver [[frontend/02-interfaces/INTERFACES]] §1.1).
 
 ### Sesión
 

@@ -70,7 +70,7 @@ No incluye las reglas de permiso sobre archivos, que están en [[specs/SPEC-ARCH
 |---|---|---|---|
 | `diagram` | Lee | `read` | Ambos |
 
-`diagram` convierte código Mermaid de un flowchart en un diagrama Unicode que se muestra como bloque en el hilo del chat. No toca el proyecto ni la red —solo interpreta su argumento—, así que va en `read` y la tienen los dos agentes. Su contrato funcional completo está en [[specs/SPEC-DIAGRAMA]]; aquí solo figura su lugar en el catálogo.
+`diagram` convierte código Mermaid de un flowchart en un diagrama Unicode que se muestra como bloque en el hilo del chat. La llamada lleva un único argumento `code` con el texto Mermaid; no se envía un grafo de nodos y conexiones. No toca el proyecto ni la red —solo interpreta su argumento—, así que va en `read` y la tienen los dos agentes. Su contrato funcional completo está en [[specs/SPEC-DIAGRAMA]]; aquí solo figura su lugar en el catálogo.
 
 ### Sesión
 

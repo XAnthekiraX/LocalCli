@@ -19,13 +19,16 @@ Prioridad: P2 (interfaz)
 
 Permitir que el modelo genere diagramas de flujo a partir de código Mermaid y los muestre
 en la TUI como un bloque visual dentro de la conversación, sin salir de la terminal ni
-depender de navegador, SVG ni imagen.
+depender de navegador, SVG ni imagen. El bloque es texto Unicode con caracteres de dibujo
+de caja, no ASCII puro ni una imagen.
 
 ## Alcance
 
 Incluye:
 
-- Una herramienta nueva `diagram` con un único parámetro obligatorio `code`.
+- Una herramienta nueva `diagram` con un único parámetro obligatorio `code`, cuyo valor es
+  texto Mermaid. La llamada es un JSON con ese único campo; no se admite un grafo JSON de
+  nodos y conexiones ni parámetros separados para cada parte del diagrama.
 - Un **subconjunto** de Mermaid flowchart: nodos con ID y texto, formas básicas
   (rectángulo, decisión, elipse), conexiones dirigidas con flecha, etiquetas de
   conexión, orientación `TD` y `LR`, múltiples ramas y destinos compartidos.
@@ -57,8 +60,9 @@ No incluye:
 
 ## Flujo principal
 
-1. El modelo pide `diagram` con `code` —el código Mermaid— usando el mecanismo de tool
-   calling existente.
+1. El modelo pide `diagram` con una llamada de herramienta cuyo único argumento es `code`
+   —un string con el código Mermaid—. La llamada viaja como JSON (`{"code": "..."}`), pero
+   el diagrama es texto Mermaid dentro de `code`, no una estructura de nodos y conexiones.
 2. La capa universal valida los argumentos contra el esquema (igual que el resto de
    herramientas) y comprueba el permiso.
 3. El parser interpreta el subconjunto admitido y construye la IR: nodos, formas,
@@ -105,6 +109,73 @@ Todo lo demás (otros tipos de flecha, estilos `classDef`, subgraphs, comentario
 avanzados, nodos sin definir con forma, etc.) está fuera del alcance inicial y debe
 producir un error explícito, no una omisión silenciosa.
 
+## Ejemplo completo
+
+Petición del usuario:
+
+> «Explícame qué pasa cuando llega un pedido y no hay stock, y hazme un diagrama.»
+
+El modelo razona el flujo (razonamiento ilustrativo, no forma parte del contrato):
+
+> El usuario quiere entender el flujo y verlo. Uso `diagram` con un flowchart `TD`:
+> pedido recibido → validar pago → decisión de stock → enviar o rechazar → fin.
+
+Y llama a la herramienta con un único argumento `code`:
+
+```json
+{
+  "name": "diagram",
+  "arguments": {
+    "code": "flowchart TD\n    A[Pedido recibido] --> B[Validar pago]\n    B --> C{¿Hay stock?}\n    C -->|Sí| D[Enviar]\n    C -->|No| E[Rechazar]\n    D --> F((Fin))\n    E --> F"
+  }
+}
+```
+
+El valor de `code`, ya legible, es el Mermaid que interpreta el parser:
+
+```mermaid
+flowchart TD
+    A[Pedido recibido] --> B[Validar pago]
+    B --> C{¿Hay stock?}
+    C -->|Sí| D[Enviar]
+    C -->|No| E[Rechazar]
+    D --> F((Fin))
+    E --> F
+```
+
+La herramienta valida el argumento, construye la IR, calcula el layout y renderiza el
+bloque. El resultado que recibe el modelo y que la TUI pinta bajo la línea de la
+herramienta tiene esta forma (los glifos exactos dependen del renderizador):
+
+```
+┌─────────────────┐
+│ Pedido recibido │
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ Validar pago    │
+└────────┬────────┘
+         ▼
+    ╱────────────╲
+   ╱ ¿Hay stock?  ╲
+   ╲              ╱
+    ╲────────────╱
+      │Sí      │No
+      ▼        ▼
+┌──────────┐ ┌───────────┐
+│ Enviar   │ │ Rechazar  │
+└────┬─────┘ └─────┬─────┘
+     └──────┬──────┘
+            ▼
+         (( Fin ))
+```
+
+En la conversación, la línea sigue el patrón habitual (`DIAGRAMAR [...] · N líneas ·
+tiempo`) y el bloque se dibuja debajo, como contenido adicional. El JSON de la llamada
+**no contiene `nodes` ni `edges`**: el grafo se deduce del texto Mermaid. El modelo recibe
+ese mismo bloque como resultado de la herramienta y cierra el turno con la explicación en
+prosa; no necesita repetir el diagrama.
+
 ## Arquitectura (responsabilidades separadas)
 
 1. **Tool** — `internal/tools`: entrada, validación de argumentos, integración con el
@@ -129,8 +200,8 @@ contra IR posicionada, e integración contra el ciclo real de herramientas.
 - Se reutiliza el mecanismo existente de eventos de herramienta; si el payload actual
   (`herramienta_resultado` sin salida) no basta, se extiende de forma mínima para
   transportar el bloque, sin alterar el formato de los demás mensajes.
-- El resultado también vuelve al modelo por el protocolo de herramientas normal (texto
-  con el diagrama o su medida), para que pueda corregir errores.
+- El resultado también vuelve al modelo por el protocolo de herramientas normal: el bloque
+  renderizado en texto, para que pueda leerlo, citarlo o corregir errores.
 - La línea de la herramienta en el hilo sigue el patrón actual (`VERBO [tema] · medida ·
   tiempo`); el bloque es adicional, no un sustituto de la línea.
 
@@ -177,6 +248,8 @@ nada legible, se devuelve error/advertencia explícita en lugar de truncar.
       parámetro obligatorio.
 - [ ] La descripción de la herramienta es breve, explícita y lleva un ejemplo de
       invocación válido, pensada para modelos locales pequeños.
+- [ ] La llamada de §Ejemplo completo —un JSON con `code` y el Mermaid dentro— produce el
+      diagrama descrito, sin parámetros `nodes`/`edges`.
 - [ ] El subconjunto documentado de Mermaid se convierte en una IR válida.
 - [ ] El layout por niveles funciona en `TD` y `LR`, con ramas y destinos compartidos,
       detectando ciclos sin bucles infinitos.

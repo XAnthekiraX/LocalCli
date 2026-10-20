@@ -165,6 +165,16 @@ El argumento `flujo` es un **enum en el esquema, no un nombre en el handler**: e
 
 `diagram` tiene **un solo argumento**: no recibe título, orientación ni metadatos. La orientación sale de la cabecera del propio código (`TD` por defecto, `LR` horizontal) y el título, si se deriva, sale de la definición. El `desc` del campo acota la sintaxis admitida —el subconjunto documentado en [[specs/SPEC-DIAGRAMA]]— para que un modelo local pequeño no invente construcciones fuera de alcance.
 
+La llamada tiene esta forma:
+
+```json
+{
+  "code": "flowchart TD\n  A[Inicio] --> B{¿Sigo?}\n  B -->|Sí| C[Fin]"
+}
+```
+
+`code` es un **string con Mermaid**, no un objeto con `nodes` y `edges`: el grafo se deduce del texto. No hay un esquema alternativo de nodos y conexiones.
+
 ## 4. Response Schemas
 
 Lo que cada herramienta devuelve al agente. El agente lo ve en su respuesta, así que el contenido importa: va al mismo presupuesto de contexto que el resto.
