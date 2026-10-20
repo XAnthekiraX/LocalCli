@@ -34,6 +34,11 @@ var estilosDefecto = map[string]string{
 	"color_aviso":            "11",
 	"color_incapaz":          "#FF5F5F",
 	"color_codigo_inline":    "#C792EA",
+	// Los dos tonos del diff tienen token propio: lo añadido y lo quitado se
+	// leen como tales aunque la paleta del usuario pinte al agente o al error
+	// de otro color (SPEC-INTERFAZ §La diferencia del cambio).
+	"color_diferencia_mas":   "#4CEE75",
+	"color_diferencia_menos": "#FF5F5F",
 }
 
 var (
@@ -66,6 +71,12 @@ var (
 	ColorAviso        = lipgloss.Color(estilosDefecto["color_aviso"])
 	ColorIncapaz      = lipgloss.Color(estilosDefecto["color_incapaz"])
 	ColorCodigoInline = lipgloss.Color(estilosDefecto["color_codigo_inline"])
+	// ColorDiferenciaMas y ColorDiferenciaMenos son los tonos del diff: verde
+	// para lo que entra y rojo para lo que sale. No se derivan de ColorAgente ni
+	// de ColorIncapaz, para que una paleta con el agente en rojo no vuelva rojas
+	// las dos caras del cambio.
+	ColorDiferenciaMas   = lipgloss.Color(estilosDefecto["color_diferencia_mas"])
+	ColorDiferenciaMenos = lipgloss.Color(estilosDefecto["color_diferencia_menos"])
 )
 
 var (
@@ -152,9 +163,10 @@ func reconstruirEstilos() {
 	EstiloBotonCopiar = lipgloss.NewStyle().Foreground(ColorUsuario).Bold(true).Background(FondoCodigo)
 	EstiloCodigoInline = lipgloss.NewStyle().Foreground(ColorCodigoInline).Background(FondoCodigo)
 	// La diferencia de un cambio se lee de un vistazo: lo añadido en verde y lo
-	// quitado en rojo, sin negrita que compita con el texto del hilo.
-	EstiloDiferenciaMas = lipgloss.NewStyle().Foreground(ColorAgente)
-	EstiloDiferenciaMenos = lipgloss.NewStyle().Foreground(ColorIncapaz)
+	// quitado en rojo, sin negrita que compita con el texto del hilo. Cada lado
+	// usa su token, no el del agente ni el del error.
+	EstiloDiferenciaMas = lipgloss.NewStyle().Foreground(ColorDiferenciaMas)
+	EstiloDiferenciaMenos = lipgloss.NewStyle().Foreground(ColorDiferenciaMenos)
 	EstiloNegrita = lipgloss.NewStyle().Foreground(ColorBlanco).Bold(true)
 	EstiloCursiva = lipgloss.NewStyle().Foreground(ColorBlanco).Italic(true)
 	EstiloTituloMD = lipgloss.NewStyle().Foreground(ColorBlanco).Bold(true)
@@ -206,6 +218,8 @@ func AplicarTokens(t map[string]string) error {
 	ColorAviso = lipgloss.Color(combinada["color_aviso"])
 	ColorIncapaz = lipgloss.Color(combinada["color_incapaz"])
 	ColorCodigoInline = lipgloss.Color(combinada["color_codigo_inline"])
+	ColorDiferenciaMas = lipgloss.Color(combinada["color_diferencia_mas"])
+	ColorDiferenciaMenos = lipgloss.Color(combinada["color_diferencia_menos"])
 
 	reconstruirEstilos()
 	return nil

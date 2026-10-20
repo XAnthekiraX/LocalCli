@@ -80,7 +80,7 @@ internal/tui/
 - **Salidas:** peticiones a `session` (enviar mensaje, cambiar de sesión, aprobar, declinar, cancelar flujo).
 - **Lecturas:** solo las consultas definidas en [[database/03-operations/QUERIES]]. Nunca escribe en la base: el estado lo persiste el orquestador.
 - **Configuración propia:** el mapa de teclas vive en `~/.config/localcli/keys.json`, las preferencias del usuario —último agente, presupuesto de historial y razonamiento— en `~/.config/localcli/config.json` y la paleta visual —colores de texto y fondos— en `~/.config/localcli/styles.json`, fuera del proyecto, porque son preferencia del usuario y no contenido del proyecto. El modelo activo no se guarda en `config.json`: lo resuelve el catálogo (`models.json`), única autoridad al arrancar.
-- **Paleta editable:** `styles.json` es un mapa `clave: valor` de tokens de color (`color_*` de texto, `fondo_*` de fondo) a hex `#RRGGBB` o índice ANSI `0..255`; los valores ausentes conservan su valor de fábrica y un token desconocido o un color mal formado se rechazan enteros, arrancando con la paleta de fábrica. El archivo se siembra con los valores por defecto en el primer arranque si no existe.
+- **Paleta editable:** `styles.json` es un mapa `clave: valor` de tokens de color (`color_*` de texto, `fondo_*` de fondo) a hex `#RRGGBB` o índice ANSI `0..255`; los valores ausentes conservan su valor de fábrica y un token desconocido o un color mal formado se rechazan enteros, arrancando con la paleta de fábrica. El diff tiene tokens propios (`color_diferencia_mas` en verde y `color_diferencia_menos` en rojo), de modo que no hereda el color del agente ni el del error. El archivo se siembra con los valores por defecto en el primer arranque si no existe.
 
 ## 4. Decisiones
 
