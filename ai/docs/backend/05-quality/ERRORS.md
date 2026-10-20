@@ -35,6 +35,8 @@ Los que el usuario puede encontrarse y merece la pena distinguir:
 | El tipo de un motor en `motores.json` no es `ollama` ni `llamacpp` | Aviso nombrando la entrada y el tipo que no se reconoce | Se salta esa entrada y se cargan las demás; si no queda ninguna, se usa el `ollama` por defecto |
 | `motores.json` está mal formado | Aviso del error de lectura | Se arranca con el `ollama` por defecto en vez de caer |
 | El modelo elegido no cabe en la VRAM | Aviso de que irá a RAM, más lento | Lo carga igual, sin fallar en silencio |
+| El GGUF es una cabeza MTP (draft head) | Aviso de que no es un modelo completo y que se usa con `-md` junto al principal | No se registra en el catálogo ni se arranca; la URL de descarga se rechaza |
+| `llama-server` muere al cargar el modelo | Aviso con el código de salida o la señal (p. ej. `SIGSEGV`) y la ruta del registro completo | El harness sigue vivo y se puede elegir otro modelo |
 | Falta Landlock | Aviso de que la garantía de la terminal es más débil | Sigue funcionando con la garantía reducida |
 | Una etapa pide un documento que no existe | Aviso de qué falta | La etapa se detiene; no se supone nada |
 | Una etapa no responde a su pregunta | Aviso de que la etapa no respondió | Se reintenta una vez y, si sigue muda, falla con `E_STAGE_FAILED` y el flujo se detiene |
@@ -54,6 +56,7 @@ Los que el usuario puede encontrarse y merece la pena distinguir:
 | `E_MOTOR_TIPO_DESCONOCIDO` | El `tipo` de una entrada de `motores.json` no es un tipo cerrado |
 | `E_REGISTRO_MOTORES_INVALIDO` | `motores.json` ilegible o mal formado |
 | `E_MODEL_TOO_BIG` | El modelo no cabe en la VRAM; se avisa y va a RAM |
+| `E_MODEL_DRAFT_HEAD` | El GGUF es una cabeza MTP, no un modelo completo; se rechaza al registrar y al arrancar |
 | `E_NO_LANDLOCK` | Landlock no disponible; la garantía es más débil |
 | `E_TOOL_UNKNOWN` | El modelo pidió una herramienta fuera del catálogo |
 | `E_TOOL_NOT_ALLOWED` | El agente pidió una herramienta que no tiene (`plan` pidiendo escritura) |
@@ -111,7 +114,7 @@ Go no tiene excepciones, así que el "manejo" es explícito en cada punto donde 
 - **Flujo:** `E_STAGE_FAILED` (una etapa falla o no responde a su pregunta tras el reintento), `E_FLOW_CANCELLED`. Al lanzar un flujo por herramienta (`ejecutar_flujo`): `E_FLOW_UNKNOWN` (comando inexistente), `E_FLOW_NOT_ALLOWED` (flujo que su permiso derivado no admite, corregible), `E_FLOW_DEPTH` (un flujo invocando a otro desde una etapa). Ver [[backend/02-interfaces/TOOLS]] §Los flujos como herramienta.
 - **Sesiones:** `E_NO_RESPONSE` cuando un turno de chat no entrega texto (la sesión queda en `error` con el motivo); los demás casos son operacionales, no de arranque.
 - **Base de datos:** `E_DB_UNAVAILABLE`, `E_DB_SCHEMA_OUTDATED`, `E_DB_CONSTRAINT`, `E_DB_FOREIGN_KEY`, `E_DB_CONFLICT`, `E_DB_LOCKED`. Ninguno de ellos es `E_BAD_ARGS`: ese código es para el contrato de una herramienta, y un fallo de la base es de otra capa. Ver [[database/02-rules/DATA_FLOW]].
-- **Motor de inferencia:** `E_MOTOR_NO_DISPONIBLE`, `E_MOTOR_TIPO_DESCONOCIDO`, `E_REGISTRO_MOTORES_INVALIDO`, `E_MODEL_TOO_BIG`. Ver [[backend/04-infrastructure/INTEGRATIONS]].
+- **Motor de inferencia:** `E_MOTOR_NO_DISPONIBLE`, `E_MOTOR_TIPO_DESCONOCIDO`, `E_REGISTRO_MOTORES_INVALIDO`, `E_MODEL_TOO_BIG`, `E_MODEL_DRAFT_HEAD`. Ver [[backend/04-infrastructure/INTEGRATIONS]].
 
 ## Referencias
 

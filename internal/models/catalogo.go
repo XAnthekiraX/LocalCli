@@ -149,6 +149,9 @@ func (g *Gestor) Alta(e Entrada) error {
 	if !nombreValido(e.ID) {
 		return errorf("nombre de modelo inválido: %q", e.ID)
 	}
+	if motivo := MotivoCabezaDraft(e.Ruta); motivo != "" {
+		return errorf("no se registra %q: %s", e.ID, motivo)
+	}
 	if e.Ventana <= 0 {
 		e.Ventana = contextoDeArchivo(e)
 	}

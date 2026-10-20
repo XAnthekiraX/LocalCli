@@ -94,6 +94,10 @@ Las solicitudes de generación nombran al modelo por su **nombre (carpeta)**, nu
 
 Comprobar que los archivos GGUF existen antes de iniciar el servidor, que las descargas finalizaron correctamente y que el servidor está disponible antes de enviar solicitudes.
 
+Rechazar las **cabezas MTP** (draft heads): un GGUF que solo contiene la capa de predicción multi-token no es un modelo completo y no puede arrancarse solo. Se detectan por la convención de su nombre o ruta (`mtp-…`, carpeta `MTP/`) y por su estructura (declara capas `nextn` pero solo trae tensores de la última). La URL de descarga se rechaza antes de bajar el archivo, el catálogo no las registra y el arranque avisa sin lanzar `llama-server`. Ver [[backend/04-infrastructure/CONFIGURATION]] §8.
+
+Si `llama-server` termina antes de responder, el aviso dice **cómo terminó** —código de salida o señal (p. ej. `SIGSEGV`)— y cita el **registro completo** de su salida en `~/.config/localcli/logs/llama-server.log`.
+
 Gestionar los errores sin eliminar modelos existentes ni sobrescribir la configuración del usuario.
 
 ## 9. Criterio de finalización

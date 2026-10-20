@@ -34,6 +34,9 @@ func ParsearURL(raw string) (Variante, error) {
 	if !esGGUF(archivo) {
 		return Variante{}, errorf("la URL debe apuntar a un archivo .gguf")
 	}
+	if EsCabezaDraftNombre(u.Path) {
+		return Variante{}, errorf("la URL apunta a una cabeza MTP (draft head), no a un modelo completo: descarga el modelo principal; la cabeza solo se carga junto a él con -md")
+	}
 	v := Variante{Archivo: path.Base(archivo), URL: u.String()}
 	if repo := repoDeHuggingFace(u.Host, segmentos); repo != "" {
 		v.Repo = repo

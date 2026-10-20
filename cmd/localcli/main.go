@@ -130,6 +130,7 @@ func correr() error {
 	if err != nil {
 		return err
 	}
+	runtime.ConRegistro(filepath.Join(raiz, "logs", "llama-server.log"))
 	defer runtime.Detener()
 	if hayActivo {
 		for _, aviso := range arrancarServidor(runtime, activo, contextoDeseado) {

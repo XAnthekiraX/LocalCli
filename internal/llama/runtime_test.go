@@ -307,6 +307,118 @@ func TestAsegurarAvisaSinBinarioSinModeloYModeloAusente(t *testing.T) {
 	}
 }
 
+// binarioQueSale crea un `llama-server` de mentira que termina enseguida.
+func binarioQueSale(t *testing.T, guion string) string {
+	t.Helper()
+	ruta := filepath.Join(t.TempDir(), "llama-server")
+	if err := os.WriteFile(ruta, []byte(guion), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return ruta
+}
+
+func TestArranqueFallidoInformaCodigoDeSalida(t *testing.T) {
+	bin := binarioQueSale(t, "#!/bin/sh\necho boom >&2\nexit 3\n")
+	s, err := Nuevo(bin, "http://127.0.0.1:18090", 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registro := filepath.Join(t.TempDir(), "logs", "llama-server.log")
+	s.ConRegistro(registro)
+	s.espera = 2 * time.Second
+
+	if err := s.Arrancar(context.Background(), Modelo{Nombre: "m", Ruta: modeloFalso(t)}); err != nil {
+		t.Fatalf("arrancar: %v", err)
+	}
+	err = s.EsperarDisponible(context.Background())
+	if err == nil {
+		t.Fatal("un proceso que sale sin responder debería fallar")
+	}
+	if !strings.Contains(err.Error(), "código 3") {
+		t.Errorf("el error debería nombrar el código de salida: %v", err)
+	}
+	if !strings.Contains(err.Error(), registro) {
+		t.Errorf("el error debería citar el registro: %v", err)
+	}
+	datos, err := os.ReadFile(registro)
+	if err != nil {
+		t.Fatalf("no se escribió el registro: %v", err)
+	}
+	if !strings.Contains(string(datos), "boom") {
+		t.Fatalf("el registro no conserva la salida del motor: %q", datos)
+	}
+}
+
+func TestArranqueFallidoInformaLaSenal(t *testing.T) {
+	bin := binarioQueSale(t, "#!/bin/sh\nkill -SEGV $$\n")
+	s, err := Nuevo(bin, "http://127.0.0.1:18091", 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.espera = 2 * time.Second
+
+	if err := s.Arrancar(context.Background(), Modelo{Nombre: "m", Ruta: modeloFalso(t)}); err != nil {
+		t.Fatalf("arrancar: %v", err)
+	}
+	err = s.EsperarDisponible(context.Background())
+	if err == nil {
+		t.Fatal("un proceso que cae por señal debería fallar")
+	}
+	if !strings.Contains(err.Error(), "SIGSEGV") {
+		t.Errorf("el error debería nombrar la señal: %v", err)
+	}
+}
+
+func TestAsegurarAvisaCabezaMTP(t *testing.T) {
+	bin, argsFile := binarioFalso(t)
+	ruta := filepath.Join(t.TempDir(), "mtp-x.gguf")
+	if err := os.WriteFile(ruta, []byte("gguf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Nuevo(bin, "http://127.0.0.1:18092", 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	avisos, err := s.Asegurar(context.Background(), Modelo{Nombre: "mtp-x", Ruta: ruta})
+	if err != nil {
+		t.Fatalf("asegurar no debería dar error: %v", err)
+	}
+	if len(avisos) == 0 || !strings.Contains(strings.Join(avisos, " "), "cabeza MTP") {
+		t.Fatalf("esperaba un aviso de cabeza MTP: %v", avisos)
+	}
+	if _, err := os.Stat(argsFile); !os.IsNotExist(err) {
+		t.Fatal("no debería arrancar llama-server con una cabeza MTP")
+	}
+}
+
+func TestReiniciarNoTiraElServidorPorUnaCabezaMTP(t *testing.T) {
+	bin, argsFile := binarioFalso(t)
+	s, err := Nuevo(bin, "http://127.0.0.1:18093", 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Arrancar(context.Background(), Modelo{Nombre: "viejo", Ruta: modeloFalso(t)}); err != nil {
+		t.Fatal(err)
+	}
+	leerArgs(t, argsFile)
+	defer s.Detener()
+
+	ruta := filepath.Join(t.TempDir(), "mtp-x.gguf")
+	if err := os.WriteFile(ruta, []byte("gguf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	avisos, err := s.Reiniciar(context.Background(), Modelo{Nombre: "mtp-x", Ruta: ruta})
+	if err != nil {
+		t.Fatalf("reiniciar no debería dar error: %v", err)
+	}
+	if len(avisos) == 0 || !strings.Contains(strings.Join(avisos, " "), "cabeza MTP") {
+		t.Fatalf("esperaba un aviso de cabeza MTP: %v", avisos)
+	}
+	if activo, ok := s.Activo(); !ok || activo.Nombre != "viejo" {
+		t.Fatalf("el servidor anterior debería seguir vivo: %+v, ok=%v", activo, ok)
+	}
+}
+
 func TestCabeEnMemoriaSinModelo(t *testing.T) {
 	if cabe, conocido := CabeEnMemoria(0); !cabe || conocido {
 		t.Fatalf("sin tamaño no se afirma nada: cabe=%v conocido=%v", cabe, conocido)

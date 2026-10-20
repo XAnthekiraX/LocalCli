@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +23,10 @@ import (
 
 // esperaMaxima es cuánto se aguarda a que el servidor responda tras arrancarlo.
 const esperaMaxima = 60 * time.Second
+
+// topeRegistro acota el archivo de salida del motor; al superarlo se recicla
+// para que el diagnóstico no crezca sin fin.
+const topeRegistro = 4 << 20
 
 // Modelo es el modelo que se le pasa a `llama-server`: su nombre (la carpeta), la
 // ruta de su GGUF y, si es multimodal, la de su proyector.
@@ -45,29 +50,38 @@ type Servidor struct {
 	puerto   int
 	contexto int
 
-	mu     sync.Mutex
-	modelo Modelo
-	proc   *ejecucion
-	espera time.Duration
-	diag   *bufferLimitado
+	mu      sync.Mutex
+	modelo  Modelo
+	proc    *ejecucion
+	espera  time.Duration
+	diag    *bufferLimitado
+	rutaLog string
 }
 
 // ejecucion es un proceso arrancado y la señal de que terminó; `Wait` corre en
 // segundo plano para reapear y no dejar zombis.
 type ejecucion struct {
-	cmd   *exec.Cmd
-	hecho chan struct{}
-	err   error
+	cmd     *exec.Cmd
+	hecho   chan struct{}
+	archivo *os.File
+	err     error
 }
 
-// lanzar arranca el proceso y espera su fin en segundo plano.
-func lanzar(cmd *exec.Cmd) (*ejecucion, error) {
+// lanzar arranca el proceso y espera su fin en segundo plano. Si hay archivo de
+// registro, se cierra cuando el proceso termina.
+func lanzar(cmd *exec.Cmd, archivo *os.File) (*ejecucion, error) {
 	if err := cmd.Start(); err != nil {
+		if archivo != nil {
+			_ = archivo.Close()
+		}
 		return nil, err
 	}
-	e := &ejecucion{cmd: cmd, hecho: make(chan struct{})}
+	e := &ejecucion{cmd: cmd, hecho: make(chan struct{}), archivo: archivo}
 	go func() {
 		e.err = cmd.Wait()
+		if e.archivo != nil {
+			_ = e.archivo.Close()
+		}
 		close(e.hecho)
 	}()
 	return e, nil
@@ -93,6 +107,48 @@ func (e *ejecucion) esperar(tope time.Duration) bool {
 	}
 }
 
+// motivo describe cómo terminó el proceso: código de salida o señal. Un
+// SIGSEGV del motor se ve como «señal SIGSEGV», no como un simple «terminó».
+func (e *ejecucion) motivo() string {
+	if e.err == nil {
+		return "código 0"
+	}
+	var salida *exec.ExitError
+	if errors.As(e.err, &salida) {
+		if estado, ok := salida.Sys().(syscall.WaitStatus); ok && estado.Signaled() {
+			return "señal " + nombreDeSenal(estado.Signal())
+		}
+		if codigo := salida.ExitCode(); codigo >= 0 {
+			return fmt.Sprintf("código %d", codigo)
+		}
+	}
+	return e.err.Error()
+}
+
+// nombreDeSenal nombra las señales que de verdad se ven al caer un motor.
+func nombreDeSenal(senal syscall.Signal) string {
+	switch senal {
+	case syscall.SIGSEGV:
+		return "SIGSEGV"
+	case syscall.SIGABRT:
+		return "SIGABRT"
+	case syscall.SIGKILL:
+		return "SIGKILL"
+	case syscall.SIGTERM:
+		return "SIGTERM"
+	case syscall.SIGINT:
+		return "SIGINT"
+	case syscall.SIGILL:
+		return "SIGILL"
+	case syscall.SIGBUS:
+		return "SIGBUS"
+	case syscall.SIGFPE:
+		return "SIGFPE"
+	default:
+		return senal.String()
+	}
+}
+
 // Nuevo construye el gestor. `binario` puede ir vacío para buscarlo en PATH;
 // `baseURL` es la dirección `api`; `contexto` es el `-c` de arranque.
 func Nuevo(binario, baseURL string, contexto int) (*Servidor, error) {
@@ -114,6 +170,16 @@ func Nuevo(binario, baseURL string, contexto int) (*Servidor, error) {
 	}, nil
 }
 
+// ConRegistro fija el archivo donde se guarda la salida completa del motor. Si
+// no se puede abrir, el arranque sigue con la cola en memoria. Devuelve el
+// propio servidor para encadenar la configuración.
+func (s *Servidor) ConRegistro(ruta string) *Servidor {
+	s.mu.Lock()
+	s.rutaLog = strings.TrimSpace(ruta)
+	s.mu.Unlock()
+	return s
+}
+
 // Asegurar deja el servidor sirviendo `m` sin levantar un segundo proceso. Solo
 // devuelve error cuando el arranque falla de forma insalvable; los motivos que
 // no bloquean el harness (falta el binario, falta el modelo, no cabe en la
@@ -132,6 +198,9 @@ func (s *Servidor) Asegurar(ctx context.Context, m Modelo) ([]string, error) {
 	}
 	if _, err := os.Stat(m.Ruta); err != nil {
 		return append(avisos, fmt.Sprintf("llama: el modelo %q no está en disco: %s", m.Nombre, m.Ruta)), nil
+	}
+	if motivo := models.MotivoCabezaDraft(m.Ruta); motivo != "" {
+		return append(avisos, fmt.Sprintf("llama: el modelo %q %s; no se arranca", m.Nombre, motivo)), nil
 	}
 	if strings.TrimSpace(m.MMProj) != "" {
 		if _, err := os.Stat(m.MMProj); err != nil {
@@ -189,10 +258,12 @@ func (s *Servidor) Arrancar(ctx context.Context, m Modelo) error {
 	}
 	s.proc = nil
 
+	s.diag.Reiniciar()
+	salida, archivo := s.abrirRegistro(m)
 	cmd := exec.Command(s.binario, s.argsDeArranque(m)...)
-	cmd.Stdout = s.diag
-	cmd.Stderr = s.diag
-	e, err := lanzar(cmd)
+	cmd.Stdout = salida
+	cmd.Stderr = salida
+	e, err := lanzar(cmd, archivo)
 	if err != nil {
 		return fmt.Errorf("llama: no se pudo arrancar llama-server: %w", err)
 	}
@@ -221,8 +292,12 @@ func (s *Servidor) Detener() error {
 	return nil
 }
 
-// Reiniciar detiene el servidor y lo vuelve a arrancar con el modelo nuevo.
+// Reiniciar detiene el servidor y lo vuelve a arrancar con el modelo nuevo. Si
+// el modelo nuevo no es arrancable, avisa sin tocar el que ya estaba sirviendo.
 func (s *Servidor) Reiniciar(ctx context.Context, m Modelo) ([]string, error) {
+	if motivo := models.MotivoCabezaDraft(m.Ruta); motivo != "" {
+		return []string{fmt.Sprintf("llama: el modelo %q %s; no se arranca", m.Nombre, motivo)}, nil
+	}
 	_ = s.Detener()
 	return s.Asegurar(ctx, m)
 }
@@ -259,7 +334,7 @@ func (s *Servidor) EsperarDisponible(ctx context.Context) error {
 			s.mu.Lock()
 			s.proc = nil
 			s.mu.Unlock()
-			return fmt.Errorf("llama: llama-server terminó antes de responder%s", s.pista())
+			return fmt.Errorf("llama: llama-server terminó antes de responder (%s)%s", e.motivo(), s.pista())
 		}
 		select {
 		case <-ctx.Done():
@@ -298,6 +373,28 @@ func (s *Servidor) argsDeArranque(m Modelo) []string {
 		args = append(args, "--mmproj", m.MMProj)
 	}
 	return args
+}
+
+// abrirRegistro prepara la salida del proceso: la cola en memoria y, si hay
+// ruta de registro, el archivo completo. Un archivo que no se puede abrir no
+// impide arrancar el motor.
+func (s *Servidor) abrirRegistro(m Modelo) (io.Writer, *os.File) {
+	if s.rutaLog == "" {
+		return s.diag, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(s.rutaLog), 0o755); err != nil {
+		return s.diag, nil
+	}
+	f, err := os.OpenFile(s.rutaLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return s.diag, nil
+	}
+	if info, err := f.Stat(); err == nil && info.Size() > topeRegistro {
+		_ = f.Truncate(0)
+	}
+	fmt.Fprintf(f, "\n=== %s · %s · %s ===\n", time.Now().Format(time.RFC3339), m.Nombre,
+		strings.Join(s.argsDeArranque(m), " "))
+	return io.MultiWriter(s.diag, f), f
 }
 
 // sirveModelo indica si el servidor ya levantado lista ese nombre de modelo.
@@ -359,14 +456,20 @@ func (s *Servidor) fijarModelo(m Modelo) {
 
 // pista devuelve la salida capturada del proceso para el mensaje de error.
 func (s *Servidor) pista() string {
-	if s.diag == nil {
-		return ""
+	texto := ""
+	if s.diag != nil {
+		texto = strings.TrimSpace(s.diag.String())
 	}
-	texto := strings.TrimSpace(s.diag.String())
+	if s.rutaLog == "" {
+		if texto == "" {
+			return ""
+		}
+		return ": " + texto
+	}
 	if texto == "" {
-		return ""
+		return "; salida completa en " + s.rutaLog
 	}
-	return ": " + texto
+	return "; salida completa en " + s.rutaLog + ": " + texto
 }
 
 // http es el cliente con el que se sondea el servidor.
@@ -428,6 +531,13 @@ func (b *bufferLimitado) Write(p []byte) (int, error) {
 		b.datos.Next(sobra)
 	}
 	return n, nil
+}
+
+// Reiniciar vacía la cola antes de un arranque nuevo.
+func (b *bufferLimitado) Reiniciar() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.datos.Reset()
 }
 
 func (b *bufferLimitado) String() string {

@@ -26,6 +26,7 @@ Descomposición de la capa backend, **en el orden de construcción acordado**. C
 | T-B005 | crear  | Ciclo de vida de `llama-server`: arranque y detención con el GGUF elegido, puerto, disponibilidad y reinicio | T-B004 | completada | `005-task-llama-server.md`       |
 | T-B006 | crear  | Cliente de inferencia HTTP contra `llama-server` (núcleo OpenAI + extensión `props`, errores de conexión)    | T-B005 | completada | `006-task-cliente-inferencia.md` |
 | T-B023 | actualizar | Ventana de contexto real del modelo (GGUF) y recorte efectivo del turno por ronda                       | T-B005 | completada | `023-task-ventana-contexto-real.md` |
+| T-B026 | crear  | Rechazo de cabezas MTP (descarga, catálogo y arranque) y diagnóstico de caídas de `llama-server`         | T-B005 | completada | `026-task-guardia-cabezas-mtp.md`   |
 
 ## Bloque 3 — Chat funcional
 

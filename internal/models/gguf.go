@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"os"
+	"strings"
 )
 
 // clavesContexto son las claves a las que buscar el contexto del modelo, en orden
@@ -17,6 +18,11 @@ var clavesContexto = []string{
 // tamanoMaximoCadena acota una cadena de metadatos para no reservar de más ante
 // un archivo corrupto.
 const tamanoMaximoCadena = 1 << 20
+
+// maxTensores acota cuántos nombres de tensor se leen de la cabecera. Un GGUF
+// normal declara unos pocos miles; un archivo corrupto no debe poder reservar
+// memoria sin límite.
+const maxTensores = 1 << 20
 
 // Tipos de valor de un metadato GGUF.
 const (
@@ -47,60 +53,140 @@ func ContextoDeGGUF(ruta string) (int, error) {
 	return leerContextoGGUF(bufio.NewReader(f))
 }
 
+// fichaGGUF es lo que el harness necesita saber de un GGUF sin cargarlo: su
+// arquitectura, su contexto, la estructura de capas y los nombres de sus
+// tensores.
+type fichaGGUF struct {
+	arch      string
+	contexto  int
+	bloque    int
+	nextn     int
+	nTensores uint64
+	tensores  []string
+}
+
 // leerContextoGGUF recorre la cabecera GGUF y su tabla de metadatos.
 func leerContextoGGUF(r io.Reader) (int, error) {
-	var magic [4]byte
-	if _, err := io.ReadFull(r, magic[:]); err != nil {
-		return 0, errorf("no se pudo leer la cabecera GGUF: %w", err)
-	}
-	if magic != [4]byte{'G', 'G', 'U', 'F'} {
-		return 0, errorf("el archivo no es un GGUF (falta la firma)")
-	}
-	if _, err := leerU32(r); err != nil { // version
-		return 0, err
-	}
-	if _, err := leerU64(r); err != nil { // tensor_count
-		return 0, err
-	}
-	kv, err := leerU64(r)
+	f, err := leerMetadatosGGUF(r)
 	if err != nil {
 		return 0, err
 	}
-	var arch string
-	var ctx int
+	return f.contexto, nil
+}
+
+// leerFichaGGUF lee metadatos y la tabla de tensores, sin tocar los datos de los
+// tensores. Es lo que permite distinguir un modelo completo de una cabeza MTP.
+func leerFichaGGUF(r io.Reader) (fichaGGUF, error) {
+	f, err := leerMetadatosGGUF(r)
+	if err != nil {
+		return f, err
+	}
+	if f.nTensores > maxTensores {
+		return f, errorf("el GGUF declara demasiados tensores: %d", f.nTensores)
+	}
+	f.tensores = make([]string, 0, f.nTensores)
+	for i := uint64(0); i < f.nTensores; i++ {
+		nombre, err := leerCadena(r)
+		if err != nil {
+			return f, err
+		}
+		dimensiones, err := leerU32(r)
+		if err != nil {
+			return f, err
+		}
+		for j := uint32(0); j < dimensiones; j++ {
+			if _, err := leerU64(r); err != nil {
+				return f, err
+			}
+		}
+		if _, err := leerU32(r); err != nil { // tipo
+			return f, err
+		}
+		if _, err := leerU64(r); err != nil { // offset
+			return f, err
+		}
+		f.tensores = append(f.tensores, nombre)
+	}
+	return f, nil
+}
+
+// leerMetadatosGGUF recorre la cabecera GGUF y su tabla de metadatos.
+func leerMetadatosGGUF(r io.Reader) (fichaGGUF, error) {
+	var f fichaGGUF
+	var magic [4]byte
+	if _, err := io.ReadFull(r, magic[:]); err != nil {
+		return f, errorf("no se pudo leer la cabecera GGUF: %w", err)
+	}
+	if magic != [4]byte{'G', 'G', 'U', 'F'} {
+		return f, errorf("el archivo no es un GGUF (falta la firma)")
+	}
+	if _, err := leerU32(r); err != nil { // version
+		return f, err
+	}
+	nTensores, err := leerU64(r)
+	if err != nil {
+		return f, err
+	}
+	f.nTensores = nTensores
+	kv, err := leerU64(r)
+	if err != nil {
+		return f, err
+	}
 	for i := uint64(0); i < kv; i++ {
 		clave, err := leerCadena(r)
 		if err != nil {
-			return 0, err
+			return f, err
 		}
 		tipo, err := leerU32(r)
 		if err != nil {
-			return 0, err
+			return f, err
 		}
-		found := false
+		leido := false
 		if clave == "general.architecture" && tipo == tipoString {
 			val, err := leerCadenaValor(r)
 			if err != nil {
-				return 0, err
+				return f, err
 			}
-			arch = val
-			found = true
+			f.arch = val
+			leido = true
 		}
-		if !found && ctx == 0 && esClaveContexto(clave, arch) {
+		if !leido && f.contexto == 0 && esClaveContexto(clave, f.arch) {
 			c, err := leerContexto(r, tipo)
 			if err != nil {
-				return 0, err
+				return f, err
 			}
-			ctx = c
-			found = true
+			f.contexto = c
+			leido = true
 		}
-		if !found {
+		if !leido && f.bloque == 0 && esClaveDe(clave, ".block_count") {
+			b, err := leerContexto(r, tipo)
+			if err != nil {
+				return f, err
+			}
+			f.bloque = b
+			leido = true
+		}
+		if !leido && f.nextn == 0 && esClaveDe(clave, ".nextn_predict_layers") {
+			n, err := leerContexto(r, tipo)
+			if err != nil {
+				return f, err
+			}
+			f.nextn = n
+			leido = true
+		}
+		if !leido {
 			if err := saltarValor(r, tipo); err != nil {
-				return 0, err
+				return f, err
 			}
 		}
 	}
-	return ctx, nil
+	return f, nil
+}
+
+// esClaveDe indica si la clave termina en el sufijo dado, para no depender de
+// que la arquitectura se haya leído ya.
+func esClaveDe(clave, sufijo string) bool {
+	return strings.HasSuffix(clave, sufijo)
 }
 
 func esClaveContexto(clave, arch string) bool {

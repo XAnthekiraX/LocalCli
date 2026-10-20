@@ -77,6 +77,7 @@ Todo se deriva de dos raíces: la carpeta desde la que se ejecuta `localcli` (el
 | Otras preferencias del harness | `~/.config/localcli/config.json` y `~/.config/localcli/keys.json` |
 | Modelos GGUF | `~/.config/localcli/models/`, un subdirectorio por modelo |
 | Catálogo de modelos | `~/.config/localcli/models.json` |
+| Registro de `llama-server` | `~/.config/localcli/logs/llama-server.log` |
 | Agentes base | `~/.config/localcli/agents/`, sembrados desde el binario |
 | Flujos oficiales | `~/.config/localcli/flows/`, sembrados desde el binario |
 | Agentes y flujos propios | `<proyecto>/.localcli/agents/` y `<proyecto>/.localcli/flows/`, aditivos |
@@ -215,6 +216,10 @@ El catálogo **no se siembra con modelos**: nace vacío (`"modelos": [], "selecc
 La descarga se inicia desde la interfaz con el modal «DESCARGAR MODELOS» (`/descargar` o `<leader>d`): el usuario pega la URL de un archivo `.gguf`, el nombre se deriva del archivo (sin la extensión) y se muestra en directo; al confirmar, la descarga corre en segundo plano con reanudación, validación de tamaño y, si la URL es de Hugging Face, resolución del hash SHA256 vía la API del repositorio. El archivo se guarda en `models/<nombre>/<archivo>` y se registra en `models.json`; una descarga en curso se cancela al lanzar otra o al cerrar el modal con `Esc`. Ver [[specs/SPEC-INTERFAZ]] y [[specs/SPEC-KEYBINDS]].
 
 Un archivo ausente se trata como catálogo vacío; uno mal formado se avisa y se trata igual, sin sobrescribirlo. Los errores de validación **no sobrescriben** la configuración ni el catálogo.
+
+**Una cabeza MTP no es un modelo.** Los GGUF que solo traen la capa de predicción multi-token (`mtp-…`, dentro de una carpeta `MTP/`) se rechazan en la URL de descarga, no se registran en el catálogo y, si ya están catalogados, el arranque avisa y no lanza `llama-server`. Se cargan junto al modelo principal con `-md` y `--spec-type draft-mtp`, algo que LocalCli todavía no gestiona. Ver [[specs/SPEC-MODELOS-LLAMACPP]] §8.
+
+La salida completa de `llama-server` se guarda en `~/.config/localcli/logs/llama-server.log`, con una cabecera por arranque; al superar 4 MiB se recicla. Si el motor muere, el aviso indica el código de salida o la señal y cita ese registro, además de la cola en memoria.
 
 ## Referencias
 
