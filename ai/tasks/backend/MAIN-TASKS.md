@@ -23,6 +23,7 @@ Descomposición de la capa backend, **en el orden de construcción acordado**. C
 | ------ | ------ | ------------------------------------------------------------------------------------------------------------ | ------ | ---------- | -------------------------------- |
 | T-B003 | crear  | Descarga de modelos GGUF desde Hugging Face (repositorio + variante, sin duplicados, reanudable)             | T-B000 | completada | `003-task-descarga-modelos.md`   |
 | T-B004 | crear  | Catálogo de modelos (`models/` + `models.json`) y selección del modelo activo                                | T-B003 | completada | `004-task-catalogo-modelos.md`   |
+| T-B028 | actualizar | Eliminación de modelos: borrar la carpeta `models/<id>/` y su entrada de `models.json`, con el modelo en uso protegido | T-B004 | pendiente | `028-task-eliminar-modelos.md`   |
 | T-B005 | crear  | Ciclo de vida de `llama-server`: arranque y detención con el GGUF elegido, puerto, disponibilidad y reinicio | T-B004 | completada | `005-task-llama-server.md`       |
 | T-B006 | crear  | Cliente de inferencia HTTP contra `llama-server` (núcleo OpenAI + extensión `props`, errores de conexión)    | T-B005 | completada | `006-task-cliente-inferencia.md` |
 | T-B023 | actualizar | Ventana de contexto real del modelo (GGUF) y recorte efectivo del turno por ronda                       | T-B005 | completada | `023-task-ventana-contexto-real.md` |

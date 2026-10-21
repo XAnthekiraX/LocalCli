@@ -24,6 +24,14 @@ Las reglas que rigen el orquestador. Las que dependen de cómo se guardan los da
 - Cada sesión expone siempre su estado: inactiva, trabajando, esperando permiso, terminada o con error. Los estados y sus transiciones están en [[database/01-schema/ENUMS]].
 - Detener un turno de chat no borra lo que el modelo ya entregó: lo parcial se guarda como su respuesta, con el tiempo que duró, para que al retomar la sesión el hilo lo siga mostrando.
 
+### Modelos
+
+- El catálogo (`models.json`) es la única autoridad sobre qué modelos hay; el nombre de cada uno es el de su carpeta en `models/`.
+- Ningún error borra un modelo: la única eliminación es la explícita del usuario desde el modal de modelos, con `Ctrl+D` y confirmación `s/n`.
+- La eliminación borra la carpeta completa `models/<id>/` y después quita la entrada del catálogo; si la carpeta no se puede borrar, el catálogo no se toca. El borrado no sale nunca de `models/`.
+- El modelo activo —el de la sesión, el `seleccionado` del catálogo o el que tiene cargado `llama-server`— no se elimina: se avisa y hay que cambiar de modelo primero.
+- Eliminar un modelo no toca las sesiones. `sessions.modelo` conserva el nombre y, al retomar una sesión cuyo modelo desapareció, la vista lo avisa y deja elegir otro.
+
 ### Notificaciones
 
 - Cuando una sesión pasa a **esperando permiso**, se manda una notificación. Es el caso que más duele si no te enteras: el trabajo está parado y solo tú puedes desbloquearlo.

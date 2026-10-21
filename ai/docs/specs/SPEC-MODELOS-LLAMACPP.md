@@ -66,6 +66,12 @@ El `id` de cada entrada del catálogo es el **nombre del modelo**: el nombre de 
 
 El modelo seleccionado no deberá agregarse a `localcli.json`. LocalCLI gestionará la selección mediante el catálogo (`seleccionado` = `id` del modelo activo) y el estado de la aplicación.
 
+**Eliminación.** El usuario elimina un modelo desde el modal de modelos con `Ctrl+D` sobre el resaltado; antes se pide confirmación («¿seguro que deseas eliminar `<modelo>`? (s/n)») y solo `s` la concede. La eliminación borra la carpeta completa `models/<modelo>/` —el GGUF, su proyector `mmproj` y lo que contenga— y quita la entrada del catálogo (`models.json`) de forma atómica: si la carpeta no se puede borrar, el catálogo no se toca; si la carpeta ya no existe, la entrada se limpia igualmente. La ruta que se borra se construye siempre dentro de `models/` a partir del nombre del modelo, nunca desde `ruta`, para que un catálogo editado a mano no pueda llevar el borrado fuera de esa carpeta.
+
+**El modelo en uso no se elimina.** Mientras un modelo sea el activo —el de la sesión, el `seleccionado` del catálogo o el que tiene cargado `llama-server`— el borrado se rechaza con un aviso y no se toca ni el directorio ni el catálogo: hay que cambiar de modelo primero. Eliminar el modelo que el servidor está sirviendo dejaría la máquina sin el GGUF en uso.
+
+**Las sesiones sobreviven al modelo.** `sessions.modelo` guarda el nombre del modelo de cada sesión y no se valida contra el catálogo al escribirse: si su modelo se elimina, la sesión conserva su historial y, al usarla, la vista avisa de que el modelo ya no existe y deja elegir otro. La eliminación no borra ni modifica sesiones.
+
 ## 6. Ejecución de modelos
 
 Utilizar `llama-server` para cargar el modelo seleccionado y exponerlo mediante una API HTTP.
@@ -98,11 +104,11 @@ Rechazar las **cabezas MTP** (draft heads): un GGUF que solo contiene la capa de
 
 Si `llama-server` termina antes de responder, el aviso dice **cómo terminó** —código de salida o señal (p. ej. `SIGSEGV`)— y cita el **registro completo** de su salida en `~/.config/localcli/logs/llama-server.log`.
 
-Gestionar los errores sin eliminar modelos existentes ni sobrescribir la configuración del usuario.
+Gestionar los errores sin eliminar modelos existentes ni sobrescribir la configuración del usuario. La única operación que borra un modelo es la eliminación explícita del usuario desde el modal de modelos: comprueba que el modelo existe en el catálogo, que no es el modelo en uso y que la carpeta que se borra pertenece a `models/`; si algo de eso falla, no toca el disco ni el catálogo.
 
 ## 9. Criterio de finalización
 
-La implementación estará completa cuando LocalCLI pueda descargar modelos compatibles desde Hugging Face, almacenarlos en el directorio global, registrarlos en el catálogo, seleccionarlos y ejecutarlos mediante llama.cpp.
+La implementación estará completa cuando LocalCLI pueda descargar modelos compatibles desde Hugging Face, almacenarlos en el directorio global, registrarlos en el catálogo, seleccionarlos, ejecutarlos mediante llama.cpp y eliminarlos desde el modal de modelos sin tocar las sesiones.
 
 La configuración global contendrá exclusivamente el proveedor y la URL de la API. El catálogo de modelos y la lógica de selección se administrarán por separado.
 

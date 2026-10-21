@@ -68,7 +68,7 @@ Lo que cada módulo expone a los que dependen de él. El detalle de payloads est
 
 | Módulo | Expone | A quién |
 |---|---|---|
-| `session` | Crear, cambiar, retomar, cerrar sesión; mandar mensaje (con las imágenes del turno); decidir si es chat o comando de flujo; aprobar o declinar | `tui` |
+| `session` | Crear, cambiar, retomar, cerrar sesión; mandar mensaje (con las imágenes del turno); decidir si es chat o comando de flujo; aprobar o declinar; listar los modelos del catálogo y eliminar uno —su carpeta y su entrada de `models.json`— salvo el que está en uso | `tui` |
 | `flow` | Cargar los flujos oficiales sembrados en `~/.config/localcli/flows/` y los propios de `<proyecto>/.localcli/flows/` (aditivos); lanzar un flujo pedido por el usuario o por la herramienta `ejecutar_flujo`, con el permiso derivado de sus etapas; detectar trabajo ordenado y proponer el TODO; pausar, cancelar, reanudar | `session`, `queue`, `tools` |
 | `context` | Pedir contexto para una etapa y un objetivo; devolver documentos seleccionados y auditados (la etapa viaja con la petición para que `context_audit` distinga una de otra) | `flow` |
 | `agent` | Cargar y validar los agentes base sembrados en `~/.config/localcli/agents/` y los propios de `<proyecto>/.localcli/agents/` (aditivos), leyendo de cada carpeta su `agent.yaml` y su `prompt.md`; construir la llamada de uno (con el `think` que decida el usuario, solo si el modelo razona); llevar el bucle de pedir al modelo, ejecutar herramientas y volver a pedir; montar los esquemas de las herramientas del agente | `flow`, `arranque` |

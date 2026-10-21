@@ -36,6 +36,7 @@ Los que el usuario puede encontrarse y merece la pena distinguir:
 | `motores.json` está mal formado | Aviso del error de lectura | Se arranca con el `ollama` por defecto en vez de caer |
 | El modelo elegido no cabe en la VRAM | Aviso de que irá a RAM, más lento | Lo carga igual, sin fallar en silencio |
 | El GGUF es una cabeza MTP (draft head) | Aviso de que no es un modelo completo y que se usa con `-md` junto al principal | No se registra en el catálogo ni se arranca; la URL de descarga se rechaza |
+| Se intenta eliminar el modelo en uso | Aviso de que hay que cambiar de modelo primero | No se toca la carpeta del modelo ni `models.json`; las sesiones no cambian |
 | `llama-server` muere al cargar el modelo | Aviso con el código de salida o la señal (p. ej. `SIGSEGV`) y la ruta del registro completo | El harness sigue vivo y se puede elegir otro modelo |
 | Falta Landlock | Aviso de que la garantía de la terminal es más débil | Sigue funcionando con la garantía reducida |
 | Una etapa pide un documento que no existe | Aviso de qué falta | La etapa se detiene; no se supone nada |

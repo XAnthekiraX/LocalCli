@@ -62,6 +62,7 @@ Ejemplo: `24afd397 | leer ~/Imágenes/picture.jpeg (fuera) | aprobar | declinar`
 - El teclado funciona con un keymap central: una acción puede tener varios atajos, y existe una tecla líder (`Ctrl+X`, por defecto) que combina con la siguiente tecla (`Ctrl+X m` abre el modal de modelos, `Ctrl+X l` el de sesiones). Mecanismo completo en [[specs/SPEC-KEYBINDS]].
 - El historial del chat se recorre con `↑`/`↓` (línea) y `pgup`/`pgdown` (página). La misma `↑`/`↓` navega la lista cuando hay un modal abierto: son ámbitos distintos.
 - Los tres modales de la interfaz son **modelos** (`Ctrl+X m`), **sesiones** (`Ctrl+X l`) y **atajos** (`Ctrl+P`). `Esc` cierra cualquiera de ellos sin cambiar nada.
+- En el modal de modelos, `Ctrl+D` elimina el modelo resaltado después de confirmar con `s`/`n`; en el de sesiones, `Ctrl+D` elimina la sesión resaltada. Son ámbitos distintos del `Ctrl+D` que pliega el panel en la vista.
 - `Tab` alterna el agente entre `plan` y `build`; el agente activo se ve a la izquierda del input.
 - Un atajo no puede quedar asignado a dos acciones.
 - El panel muestra las aprobaciones pendientes de cualquier sesión.
@@ -76,6 +77,7 @@ Ejemplo: `24afd397 | leer ~/Imágenes/picture.jpeg (fuera) | aprobar | declinar`
 - [ ] Se listan los atajos disponibles y la acción de cada uno, incluidas las secuencias con líder (el propio modal de atajos se abre con `Ctrl+P`).
 - [ ] `Ctrl+X m` abre el modal de modelos y `Ctrl+X l` el de sesiones desde cualquier vista; `Enter` en el modal de sesiones abre la sesión elegida.
 - [ ] `Esc` cierra cualquier modal abierto sin cambiar nada.
+- [ ] `Ctrl+D` en el modal de modelos pide confirmación `s/n` y, al confirmar, elimina el modelo resaltado; `Esc` cancela la pregunta sin cerrar el modal.
 - [ ] `Tab` recorre los agentes disponibles (los base sembrados en `~/.config/localcli/agents/` y los propios de `<proyecto>/.localcli/agents/<carpeta>/`) y el indicador junto al input se actualiza.
 - [ ] Se puede cambiar un atajo y el cambio queda guardado.
 - [ ] El panel muestra las aprobaciones pendientes de todas las sesiones.

@@ -47,6 +47,7 @@ Cada acción tiene un identificador estable, usado como clave en la configuraci�
 | `session_picker` | Abrir el modal de sesiones del proyecto | `<leader>l` | global |
 | `session_new` | Crear una sesión nueva y dejarla activa | `<leader>n` | vista principal |
 | `session_delete` | Eliminar la sesión resaltada en el modal | `ctrl+d` | modal de sesiones |
+| `model_delete` | Eliminar el modelo resaltado en el modal de modelos (pide confirmación) | `ctrl+d` | modal de modelos |
 | `command_palette` | Abrir el modal de atajos de teclado | `ctrl+p` | global |
 | `agent_cycle` | Cambiar de agente (recorre los agentes disponibles) | `tab` | vista principal y bienvenida (nunca dentro de un modal) |
 | `panel_toggle` | Abrir o cerrar el panel de datos | `ctrl+d` | vista |
@@ -63,9 +64,11 @@ Cada acción tiene un identificador estable, usado como clave en la configuraci�
 
 `session_new` (`<leader>n`) crea una sesión nueva desde la vista principal y la deja activa; también se crea una enviando la primera petición desde la bienvenida ([[specs/SPEC-SESIONES]]). La ayuda clásica (`?`) queda sustituida por el modal de atajos (`command_palette`).
 
-`ctrl+d` pertenece a dos acciones **en ámbitos distintos**: `panel_toggle` en la vista y `session_delete` en el modal de sesiones. No se pisan porque, con un modal abierto, la vista de abajo no recibe teclas; el duplicado solo se rechaza dentro del mismo ámbito. Lo mismo vale para `up`/`down`: son `chat_scroll_up`/`chat_scroll_down` en la vista principal y `up`/`down` (navegar la lista) dentro de un modal.
+`ctrl+d` pertenece a tres acciones **en ámbitos distintos**: `panel_toggle` en la vista, `session_delete` en el modal de sesiones y `model_delete` en el modal de modelos. No se pisan porque, con un modal abierto, la vista de abajo no recibe teclas y cada modal tiene su propio ámbito; el duplicado solo se rechaza dentro del mismo ámbito. Lo mismo vale para `up`/`down`: son `chat_scroll_up`/`chat_scroll_down` en la vista principal y `up`/`down` (navegar la lista) dentro de un modal.
 
-Modal abierto ⇒ solo responden sus teclas (`up`/`down`/`confirm`/`dismiss`) más `app_exit`; el modal de sesiones añade `session_delete` (`ctrl+d`). Ninguna alcanza la vista de abajo. `tab` tampoco cicla agentes mientras hay un modal abierto.
+Modal abierto ⇒ solo responden sus teclas (`up`/`down`/`confirm`/`dismiss`) más `app_exit`; el modal de sesiones añade `session_delete` (`ctrl+d`) y el de modelos añade `model_delete` (`ctrl+d`). Ninguna alcanza la vista de abajo. `tab` tampoco cicla agentes mientras hay un modal abierto.
+
+La confirmación de la eliminación de un modelo (`s`/`n`) **no es una acción del mapa**: es la respuesta al diálogo del modal, como el texto que se teclea en el campo de URL del modal de descarga. No se reasigna y no crea atajos globales.
 
 La lista es abierta: añadir una acción añade su ID al mapa por defecto.
 
@@ -140,6 +143,7 @@ Vive en `~/.config/localcli/keys.json` (preferencia del usuario, fuera del proye
     "session_picker": ["<leader>l"],
     "session_new": ["<leader>n"],
     "session_delete": ["ctrl+d"],
+    "model_delete": ["ctrl+d"],
     "command_palette": ["ctrl+p"],
     "agent_cycle": ["tab"],
     "panel_toggle": ["ctrl+d"],
@@ -178,6 +182,7 @@ Vive en `~/.config/localcli/keys.json` (preferencia del usuario, fuera del proye
 - [ ] `tab` alterna el agente entre `plan` y `build` en bienvenida y vista principal; con un modal abierto no cicla.
 - [ ] `ctrl+x n` crea una sesión nueva en la vista principal y la deja activa.
 - [ ] `ctrl+d` con el modal de sesiones abierto elimina la sesión resaltada; si está trabajando, pide confirmación.
+- [ ] `ctrl+d` con el modal de modelos abierto pide confirmación `s/n` para eliminar el modelo resaltado; `s` la concede, `n` y `esc` la cancelan.
 - [ ] Pasado el timeout sin segunda tecla, el resolver vuelve a `NORMAL` y el indicador desaparece.
 - [ ] `esc` durante una secuencia líder la cancela sin emitir acción.
 - [ ] Una acción admite varios atajos y admite deshabilitarse con lista vacía.

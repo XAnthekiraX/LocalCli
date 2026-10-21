@@ -19,3 +19,4 @@
 | T-F014 | crear  | Vista de código real: Markdown de la respuesta y botón de copiar por bloque | T-F003 | completada | `014-task-vista-codigo.md` |
 | T-F015 | crear  | Bloque de diagrama: pintar el diagrama Unicode bajo la línea de herramienta `diagram` en el chat | T-F003, T-F008 | completada | `015-task-diagrama.md` |
 | T-F016 | actualizar | Bloque de diferencia: pintar el antes y el después del cambio bajo la línea de herramienta, con su tipo, color y recuperación | T-F003, T-F015, T-B027 | completada | `016-task-diferencia-cambios.md` |
+| T-F017 | actualizar | Modal de modelos: eliminar el resaltado con `Ctrl+D` y confirmación `s/n`, con recarga de la lista y bloqueo del modelo en uso | T-F006, T-B028 | pendiente | `017-task-eliminar-modelos-modal.md` |
