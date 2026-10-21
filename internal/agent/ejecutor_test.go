@@ -309,6 +309,53 @@ func TestUnaLlamadaEscritaComoTextoSeEjecutaYNoSePinta(t *testing.T) {
 	}
 }
 
+func TestVariasLlamadasEscritasComoTextoSeEjecutanEnOrden(t *testing.T) {
+	motor := &motorGuion{respuestas: []Respuesta{
+		{Texto: "```json\n{\"name\":\"leer_archivo\",\"arguments\":{\"ruta\":\"main.go\"}}\n```\n```json\n{\"name\":\"ejecutar_comando\",\"arguments\":{\"comando\":\"go build ./...\"}}\n```"},
+		{Texto: "listo"},
+	}}
+	exec := &ejecutorGuion{}
+	e := &Ejecutor{
+		Agente:       Agente{Nombre: "build", Permissions: map[string]string{"read": EfectoAllow}},
+		Cerrado:      catalogoDePrueba(),
+		Motor:        motor,
+		Herramientas: exec,
+		Capacidad:    llm.Soportada,
+	}
+
+	var vistos []string
+	respuesta, err := e.Turno(context.Background(), nil, func(d Delta) error {
+		if !d.Razonamiento {
+			vistos = append(vistos, d.Texto)
+		}
+		return nil
+	})
+	if err != nil || respuesta.Texto != "listo" {
+		t.Fatalf("turno = %+v, %v", respuesta, err)
+	}
+	if strings.Join(exec.orden, ",") != "leer_archivo,ejecutar_comando" {
+		t.Fatalf("las dos llamadas escritas deberían ejecutarse en orden: %v", exec.orden)
+	}
+	if texto := strings.Join(vistos, ""); texto != "listo" {
+		t.Fatalf("el JSON de las llamadas no debería pintarse: %q", texto)
+	}
+
+	segunda := motor.pedidos[1].Mensajes
+	asistente := segunda[len(segunda)-3]
+	if asistente.Rol != RolAsistente || len(asistente.Llamadas) != 2 {
+		t.Fatalf("el asistente debería llevar las dos llamadas: %+v", asistente)
+	}
+	if asistente.Llamadas[0].ID == asistente.Llamadas[1].ID {
+		t.Fatalf("cada llamada necesita su propio id: %+v", asistente.Llamadas)
+	}
+	for i, llamada := range asistente.Llamadas {
+		resultado := segunda[len(segunda)-2+i]
+		if resultado.Rol != RolHerramienta || resultado.IDLlamada != llamada.ID {
+			t.Fatalf("el resultado %d debería responder a su llamada: %+v", i, resultado)
+		}
+	}
+}
+
 func TestUnaLlamadaDeTextoAUnaHerramientaNoConcedidaNoSeEjecuta(t *testing.T) {
 	motor := &motorGuion{respuestas: []Respuesta{
 		{Texto: `{"name":"crear_archivo","arguments":{"ruta":"x","contenido":"y"}}`},

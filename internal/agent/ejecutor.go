@@ -100,11 +100,14 @@ func (e *Ejecutor) Turno(ctx context.Context, historial []Mensaje, alDelta func(
 			return respuesta, nil
 		}
 		// Un modelo pequeño puede escribir la llamada en vez de pedirla por el
-		// canal nativo: se reconoce como último recurso, nunca en su lugar.
+		// canal nativo: se reconoce como último recurso, nunca en su lugar. La
+		// respuesta puede traer varias llamadas seguidas.
 		if len(respuesta.Llamadas) == 0 {
-			if l, ok := extraerLlamadaDeTexto(respuesta.Texto, herramientas); ok {
-				l.ID = fmt.Sprintf("texto-%d", ronda+1)
-				respuesta.Llamadas = []Llamada{l}
+			if llamadas := extraerLlamadasDeTexto(respuesta.Texto, herramientas); len(llamadas) > 0 {
+				for i := range llamadas {
+					llamadas[i].ID = fmt.Sprintf("texto-%d-%d", ronda+1, i+1)
+				}
+				respuesta.Llamadas = llamadas
 				respuesta.Texto = ""
 				retenido.Descartar()
 			}

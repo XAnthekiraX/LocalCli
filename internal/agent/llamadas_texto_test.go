@@ -91,8 +91,8 @@ func TestExtraerLlamadaDeTexto(t *testing.T) {
 			texto:  "El formato es:\n```json\n{\"name\":\"leer_archivo\",\"arguments\":{\"ruta\":\"x\"}}\n```\nY se ejecuta así.",
 		},
 		{
-			nombre: "dos objetos",
-			texto:  `{"name":"leer_archivo","arguments":{}}{"name":"leer_archivo","arguments":{}}`,
+			nombre: "dos objetos con prosa en medio",
+			texto:  "Primero listo:\n```json\n{\"name\":\"leer_archivo\",\"arguments\":{}}\n```\nDespués leo:\n```json\n{\"name\":\"leer_archivo\",\"arguments\":{}}\n```",
 		},
 		{
 			nombre: "json roto",
@@ -114,13 +114,17 @@ func TestExtraerLlamadaDeTexto(t *testing.T) {
 
 	for _, c := range casos {
 		t.Run(c.nombre, func(t *testing.T) {
-			llamada, ok := extraerLlamadaDeTexto(c.texto, permitidas)
-			if ok != c.ok {
-				t.Fatalf("ok = %v, se esperaba %v (llamada %+v)", ok, c.ok, llamada)
+			llamadas := extraerLlamadasDeTexto(c.texto, permitidas)
+			if ok := len(llamadas) > 0; ok != c.ok {
+				t.Fatalf("ok = %v, se esperaba %v (llamadas %+v)", ok, c.ok, llamadas)
 			}
-			if !ok {
+			if !c.ok {
 				return
 			}
+			if len(llamadas) != 1 {
+				t.Fatalf("se esperaba una llamada, llegaron %d: %+v", len(llamadas), llamadas)
+			}
+			llamada := llamadas[0]
 			if llamada.Nombre == "" {
 				t.Fatal("la llamada debería llevar nombre")
 			}
@@ -131,8 +135,63 @@ func TestExtraerLlamadaDeTexto(t *testing.T) {
 	}
 }
 
+func TestExtraerVariasLlamadasDeTexto(t *testing.T) {
+	permitidas := []Herramienta{
+		{Nombre: "listar_carpeta"},
+		{Nombre: "leer_archivo"},
+	}
+
+	casos := []struct {
+		nombre string
+		texto  string
+	}{
+		{
+			nombre: "dos cercas consecutivas",
+			texto:  "```json\n{\n  \"name\": \"listar_carpeta\",\n  \"arguments\": {\"ruta\": \".\"}\n}\n```\n```json\n{\n  \"name\": \"leer_archivo\",\n  \"arguments\": {\"ruta\": \"main.go\"}\n}\n```",
+		},
+		{
+			nombre: "dos objetos desnudos",
+			texto:  "{\"name\":\"listar_carpeta\",\"arguments\":{\"ruta\":\".\"}}\n{\"name\":\"leer_archivo\",\"arguments\":{\"ruta\":\"main.go\"}}",
+		},
+		{
+			nombre: "dos objetos en una sola cerca",
+			texto:  "```json\n{\"name\":\"listar_carpeta\",\"arguments\":{\"ruta\":\".\"}}\n{\"name\":\"leer_archivo\",\"arguments\":{\"ruta\":\"main.go\"}}\n```",
+		},
+		{
+			nombre: "dos etiquetas de la plantilla",
+			texto:  "<tool_call>{\"name\":\"listar_carpeta\",\"arguments\":{\"ruta\":\".\"}}</tool_call>\n<tool_call>{\"name\":\"leer_archivo\",\"arguments\":{\"ruta\":\"main.go\"}}</tool_call>",
+		},
+	}
+
+	for _, c := range casos {
+		t.Run(c.nombre, func(t *testing.T) {
+			llamadas := extraerLlamadasDeTexto(c.texto, permitidas)
+			if len(llamadas) != 2 {
+				t.Fatalf("se esperaban dos llamadas, llegaron %d: %+v", len(llamadas), llamadas)
+			}
+			if llamadas[0].Nombre != "listar_carpeta" || compacto(t, llamadas[0].Argumentos) != `{"ruta":"."}` {
+				t.Fatalf("primera llamada = %+v", llamadas[0])
+			}
+			if llamadas[1].Nombre != "leer_archivo" || compacto(t, llamadas[1].Argumentos) != `{"ruta":"main.go"}` {
+				t.Fatalf("segunda llamada = %+v", llamadas[1])
+			}
+		})
+	}
+}
+
+func TestExtraerVariasLlamadasRechazaLaSecuenciaEntera(t *testing.T) {
+	permitidas := []Herramienta{
+		{Nombre: "listar_carpeta"},
+		{Nombre: "leer_archivo"},
+	}
+	texto := "```json\n{\"name\":\"listar_carpeta\",\"arguments\":{\"ruta\":\".\"}}\n```\n```json\n{\"name\":\"crear_archivo\",\"arguments\":{\"ruta\":\"x\"}}\n```"
+	if llamadas := extraerLlamadasDeTexto(texto, permitidas); llamadas != nil {
+		t.Fatalf("si una llamada no está concedida no se ejecuta ninguna: %+v", llamadas)
+	}
+}
+
 func TestExtraerLlamadaDeTextoIgnoraElCatalogoVacio(t *testing.T) {
-	if _, ok := extraerLlamadaDeTexto(`{"name":"leer_archivo","arguments":{}}`, nil); ok {
+	if llamadas := extraerLlamadasDeTexto(`{"name":"leer_archivo","arguments":{}}`, nil); llamadas != nil {
 		t.Fatal("sin catálogo no se puede ejecutar ninguna llamada")
 	}
 }
