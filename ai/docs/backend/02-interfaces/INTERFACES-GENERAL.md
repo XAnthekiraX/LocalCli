@@ -30,7 +30,7 @@ No hay recursos REST. Hay tres superficies, cada una con su consumidor:
 | Superficie | Consumidor | Naturaleza | Dónde se define |
 |---|---|---|---|
 | Comandos de la CLI | El usuario, en la terminal | Comandos escritos, no llamadas | [[specs/SPEC-INTERFAZ-ATAJOS]] |
-| Herramientas del agente | El modelo, vía `agent` | Catálogo de dieciséis llamadas incluidas | [[backend/02-interfaces/TOOLS]] |
+| Herramientas del agente | El modelo, vía `agent` | Catálogo de diecisiete llamadas incluidas | [[backend/02-interfaces/TOOLS]] |
 | Eventos del orquestador | La TUI y el resto de módulos | Notificaciones unidireccionales por canales | [[backend/04-infrastructure/EVENTS]] |
 
 Los datos que el modelo y la TUI ven en pantalla están definidos en el esquema, no aquí. Ver [[database/01-schema/TABLES]].
@@ -59,7 +59,7 @@ Sin respuestas JSON ni códigos HTTP. Las convenciones son:
 No es REST, ni GraphQL, ni RPC. El estilo es **comando en terminal, herramienta estructurada y evento**:
 
 - **Comandos:** el usuario escribe. La TUI los traduce a peticiones a la sesión. Se distinguen tres familias: `/comando` (de la interfaz, se resuelve en la vista), `/flow:<nombre>` (arranca un flujo) y `/skill:<nombre>` (skill concreta; reconocida, sin motor aún). Un texto sin estas marcas se responde como chat. Un flujo también arranca por la herramienta `ejecutar_flujo`, que el agente pide cuando decide que el trabajo lo necesita. Ver [[specs/SPEC-INTERFAZ]] y [[specs/SPEC-ORQUESTADOR-FLUJOS]].
-- **Herramientas:** el modelo pide una operación por su nombre, con argumentos ya formados contra un esquema declarado, y recibe un resultado estructurado. No hay formato en prosa que el modelo deba imitar. El catálogo incluido son dieciséis y es cerrado: no se amplía. Ver [[backend/02-interfaces/TOOLS]] y [[specs/SPEC-TOOLS]].
+- **Herramientas:** el modelo pide una operación por su nombre, con argumentos ya formados contra un esquema declarado, y recibe un resultado estructurado. No hay formato en prosa que el modelo deba imitar. El catálogo incluido son diecisiete y es cerrado: no se amplía. Ver [[backend/02-interfaces/TOOLS]] y [[specs/SPEC-TOOLS]].
 - **Eventos:** el orquestador notifica cambios de estado, peticiones de aprobación, la invocación de una herramienta y token de streaming. Unidireccionales; el consumidor decide qué hacer. Ver [[backend/04-infrastructure/EVENTS]].
 
 ## 5. Contratos entre módulos

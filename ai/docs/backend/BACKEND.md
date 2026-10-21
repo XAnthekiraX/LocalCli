@@ -112,7 +112,7 @@ Una goroutine por sesión en ejecución, con el orquestador de etapas encima. Lo
 - Módulos y entidades → [[backend/01-domain/DOMAIN]]
 - Reglas del orquestador → [[backend/01-domain/BUSINESS_RULES]]
 - Contratos entre módulos y superficies → [[backend/02-interfaces/INTERFACES-GENERAL]]
-- Las dieciséis herramientas → [[backend/02-interfaces/TOOLS]]
+- Las diecisiete herramientas → [[backend/02-interfaces/TOOLS]]
 - Seguridad y permisos → [[backend/03-security/SECURITY]]
 - Configuración → [[backend/04-infrastructure/CONFIGURATION]]
 - Integraciones externas → [[backend/04-infrastructure/INTEGRATIONS]]

@@ -81,9 +81,16 @@ No incluye:
 - **Sintaxis fuera del subconjunto.** Error con línea y posición aproximadas, el elemento
   problemático y un ejemplo de sintaxis válida.
 - **Directiva no soportada** (p. ej. `sequenceDiagram`). Error que indica qué se admite.
-- **Referencia a nodo inexistente, definición contradictoria o conexión inválida.** Error
-  explícito: nunca se ignora el elemento ni se devuelve un diagrama aparentemente válido
-  con relaciones perdidas.
+- **Directiva cosmética** (`style`, `classDef`, `class`, `linkStyle`, comentarios `%%`). No
+  cambia el grafo: se ignora con un aviso y el diagrama se dibuja igual.
+- **Nodo sin forma** (`A --> B`, sin `B[Texto]`). Se crea un rectángulo implícito con el
+  identificador como texto y se devuelve un aviso; una definición explícita, anterior o
+  posterior, manda y elimina el aviso.
+- **Ciclo** (p. ej. `Mantenimiento --> Análisis`). Se acepta: una arista de vuelta se
+  excluye del reparto por niveles y se dibuja por el canal del margen derecho (o inferior
+  en `LR`). Así un ciclo de vida con iteraciones no se rechaza ni buclea.
+- **Definición contradictoria o conexión inválida.** Error explícito: nunca se ignora el
+  elemento ni se devuelve un diagrama aparentemente válido con relaciones perdidas.
 - **Límite excedido** (tamaño de código, número de nodos/conexiones, longitud de
   etiquetas, dimensiones de la IR). Error o advertencia explícita según el caso, siguiendo
   las convenciones de error del harness.
@@ -104,10 +111,13 @@ No incluye:
 | Conexión etiquetada | `C -->\|Sí\| D` | etiqueta entre barras verticales |
 | Definición y conexión en una línea | `A[Uno] --> B[Dos]` | ambos nodos creados |
 | IDs repetidos | `A[X] ... A[Y]` | mismo nodo: se rechaza si el texto/ forma contradice |
+| Nodo sin forma (implícito) | `A[Uno] --> B` | `B` se crea como rectángulo con el ID como texto; se avisa. Una definición explícita manda |
+| Ciclo | `C --> A` | se acepta; la arista que cierra el ciclo se dibuja como vuelta por el margen |
+| Directiva cosmética | `style A fill:#f9f` | `style`, `classDef`, `class`, `linkStyle` y `%%` se ignoran con aviso; no cambian el grafo |
 
-Todo lo demás (otros tipos de flecha, estilos `classDef`, subgraphs, comentarios
-avanzados, nodos sin definir con forma, etc.) está fuera del alcance inicial y debe
-producir un error explícito, no una omisión silenciosa.
+Todo lo demás (otros tipos de flecha, subgraphs, formas distintas de
+rectángulo/decisión/elipse, etc.) está fuera del alcance inicial y debe producir un error
+explícito, no una omisión silenciosa.
 
 ## Ejemplo completo
 
@@ -183,8 +193,9 @@ prosa; no necesita repetir el diagrama.
 2. **Parser** — interpreta el subconjunto admitido y construye la IR.
 3. **IR** — nodos (ID, texto, forma), conexiones (origen, destino, etiqueta opcional),
    orientación y posiciones/dimensiones calculadas.
-4. **Layout** — distribución por niveles; detecta ciclos para no buclear; compacta al
-   espacio disponible sin eliminar información semántica.
+4. **Layout** — distribución por niveles; acepta ciclos marcando una arista de vuelta que
+   se excluye del reparto y se dibuja por el canal del margen; compacta al espacio
+   disponible sin eliminar información semántica.
 5. **Renderizador TUI** — IR posicionada → líneas Unicode, con ancho de columna real
    (`runewidth`), tolerante a textos largos, Unicode y redimensionamiento.
 6. **Integración** — entrega al sistema de mensajes/render de la TUI, sin que parser ni
@@ -195,8 +206,10 @@ contra IR posicionada, e integración contra el ciclo real de herramientas.
 
 ## Presentación en la conversación
 
-- El diagrama aparece como bloque visual propio en el hilo, separado del texto normal
-  del asistente, en la zona de chat ([[specs/SPEC-INTERFAZ]] §Zonas 1).
+- El diagrama aparece como bloque visual propio en el hilo, centrado horizontalmente en
+  el ancho disponible y separado del texto normal del asistente, en la zona de chat
+  ([[specs/SPEC-INTERFAZ]] §Zonas 1). Se centra el bloque completo, no cada línea por
+  separado, para no romper la alineación interna de las cajas.
 - Se reutiliza el mecanismo existente de eventos de herramienta; si el payload actual
   (`herramienta_resultado` sin salida) no basta, se extiende de forma mínima para
   transportar el bloque, sin alterar el formato de los demás mensajes.
@@ -217,10 +230,11 @@ Convención: los errores siguen el formato de errores corregibles del harness
 - Ejemplo o indicación de sintaxis válida.
 
 Casos contemplados: código vacío/ausente, sintaxis inválida, directivas no soportadas,
-nodos duplicados contradictorios, referencias inexistentes, formas/conexiones inválidas,
-límites excedidos, fallos de layout o render. El error se devuelve por el protocolo
-existente para que el modelo lo lea e intente corregirlo en la misma pasada, sin bucles
-autónomos nuevos.
+nodos duplicados contradictorios, formas/conexiones inválidas, límites excedidos, fallos
+de layout o render. Los nodos sin forma, las directivas cosméticas y los ciclos no son un
+error: generan un aviso o una arista de vuelta. El error se
+devuelve por el protocolo existente para que el modelo lo lea e intente corregirlo en la
+misma pasada, sin bucles autónomos nuevos.
 
 ## Límites adaptativos
 
@@ -229,7 +243,10 @@ Valores de partida (moderados, ajustables tras medir la TUI real):
 - Tamaño máximo del código: ~8 KB.
 - Nodos: hasta ~50; conexiones: hasta ~100.
 - Longitud de etiquetas/textos: recorte con aviso, nunca silencioso.
-- Dimensiones de la IR limitadas; layout compactado al ancho/alto actuales de la TUI.
+- Dimensiones de la IR limitadas (100 columnas × 200 filas en la implementación de
+  partida); layout compactado al ancho/alto actuales de la TUI.
+- Un nivel que no cabe a lo ancho se reparte en una lista vertical y sus aristas usan un
+  bus lateral; el alto puede crecer hasta el límite antes de devolver error.
 
 Regla superior: la adaptación visual nunca elimina información semántica. Si no cabe
 nada legible, se devuelve error/advertencia explícita en lugar de truncar.
@@ -252,7 +269,7 @@ nada legible, se devuelve error/advertencia explícita en lugar de truncar.
       diagrama descrito, sin parámetros `nodes`/`edges`.
 - [ ] El subconjunto documentado de Mermaid se convierte en una IR válida.
 - [ ] El layout por niveles funciona en `TD` y `LR`, con ramas y destinos compartidos,
-      detectando ciclos sin bucles infinitos.
+      aceptando ciclos y dibujando la arista de vuelta sin bucles infinitos.
 - [ ] El diagrama se ve en la conversación, como bloque diferenciado del texto.
 - [ ] Conexiones, etiquetas y formas se representan correctamente con Unicode.
 - [ ] La compactación reduce espacios sin eliminar nodos, etiquetas ni conexiones; si no

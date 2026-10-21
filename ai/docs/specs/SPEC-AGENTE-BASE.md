@@ -95,7 +95,7 @@ permissions:
   edit: allow
 ```
 
-Solo hay **tres permisos**, y el catálogo cerrado de herramientas se **deriva** de ellos contra las dieciséis herramientas de `tools`: no hay una segunda lista que pueda contradecirlos. La garantía vive en los datos, no en el código.
+Solo hay **tres permisos**, y el catálogo cerrado de herramientas se **deriva** de ellos contra las diecisiete herramientas de `tools`: no hay una segunda lista que pueda contradecirlos. La garantía vive en los datos, no en el código.
 
 | Permiso | Qué abre |
 |---|---|
