@@ -47,10 +47,19 @@ const (
 // comando vuelve al Update.
 type (
 	// modelosMsg trae la lista del modal de modelos. Un error no bloquea: el
-	// modal avisa «sin modelos» y se cierra con `esc`.
+	// modal avisa «sin modelos» y se cierra con `esc`. `Indice` conserva la
+	// posición tras un borrado; -1 deja el resaltado en el modelo en uso.
 	modelosMsg struct {
 		Modelos []ModeloLocal
+		Indice  int
 		Err     error
+	}
+	// modeloEliminadoMsg confirma el borrado de un modelo y dispara la recarga de
+	// la lista, conservando la posición que ocupaba.
+	modeloEliminadoMsg struct {
+		Nombre string
+		Indice int
+		Err    error
 	}
 	// sesionesMsg trae la lista del modal de sesiones. `VolverAlInicio` dice que
 	// la lectura viene de haber borrado la sesión activa: si el proyecto se queda
@@ -276,6 +285,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.enviarEntrada(m.Texto)
 	case modelosMsg:
 		a.modelos.Fijar(modelosDeLocal(m.Modelos), m.Err)
+		if m.Indice >= 0 {
+			a.modelos.Colocar(m.Indice)
+		}
 		return a, nil
 	case sesionesMsg:
 		a.sesiones.Fijar(sesionesDeLocal(m.Sesiones), m.Err)
@@ -287,6 +299,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case sesionEliminadaMsg:
 		return a, a.trasEliminarSesion(m)
+	case modeloEliminadoMsg:
+		return a, a.trasEliminarModelo(m)
 	case historialMsg:
 		if m.Err != nil {
 			if a.sesion != nil && a.sesion.ID == m.ID {
@@ -570,10 +584,14 @@ func (a *App) sincronizarPanel() {
 func (a *App) modalAbierto() bool { return a.modal != SinModal }
 
 // contextoModal es el contexto de resolución del modal abierto: el de sesiones
-// añade `session_delete` (`ctrl+d`), que en la vista pliega el panel.
+// añade `session_delete` (`ctrl+d`), el de modelos `model_delete` (`ctrl+d`), que
+// en la vista pliega el panel.
 func (a *App) contextoModal() Contexto {
-	if a.modal == ModalSesiones {
+	switch a.modal {
+	case ModalSesiones:
 		return ContextoModalSesiones
+	case ModalModelos:
+		return ContextoModalModelos
 	}
 	return ContextoModal
 }
@@ -598,12 +616,16 @@ func (a *App) cerrarModales() {
 	a.modal = SinModal
 }
 
-// cerrarModal descarta lo abierto. Si el modal de sesiones está esperando la
-// confirmación de un borrado, el primer `esc` cancela la pregunta en vez de
-// cerrar el modal: descartar la confirmación no cambia nada.
+// cerrarModal descarta lo abierto. Si un modal está esperando la confirmación de
+// un borrado, el primer `esc` cancela la pregunta en vez de cerrar el modal:
+// descartar la confirmación no cambia nada.
 func (a *App) cerrarModal() {
 	if a.sesiones.Confirmando() {
 		a.sesiones.CancelarConfirmacion()
+		return
+	}
+	if a.modelos.Confirmando() {
+		a.modelos.CancelarConfirmacion()
 		return
 	}
 	a.cerrarModales()
@@ -655,13 +677,18 @@ func (a *App) abrirModalModelos() tea.Cmd {
 // pedirModelos es la lectura del modal: un fallo no bloquea ni propaga, el modal
 // queda con el aviso «sin modelos». Sin puerto —una TUI suelta en una prueba— no
 // hay nada que listar y tampoco es un error.
-func pedirModelos(p Puerto) tea.Cmd {
+func pedirModelos(p Puerto) tea.Cmd { return pedirModelosEnIndice(p, -1) }
+
+// pedirModelosEnIndice es la relectura tras un borrado: `indice` conserva la
+// posición del resaltado —el hueco lo ocupa el siguiente—; -1 deja la del modelo
+// en uso, como al abrir.
+func pedirModelosEnIndice(p Puerto, indice int) tea.Cmd {
 	return func() tea.Msg {
 		if p == nil {
-			return modelosMsg{}
+			return modelosMsg{Indice: indice}
 		}
 		lista, err := p.Modelos()
-		return modelosMsg{Modelos: lista, Err: err}
+		return modelosMsg{Modelos: lista, Indice: indice, Err: err}
 	}
 }
 
@@ -907,6 +934,54 @@ func (a *App) trasEliminarSesion(m sesionEliminadaMsg) tea.Cmd {
 		a.reiniciarPanel()
 	}
 	return pedirSesiones(a.puerto, eraActiva)
+}
+
+// pedirEliminarModelo resuelve `ctrl+d` en el modal de modelos: deja la pregunta
+// `s/n` sobre el resaltado y no borra nada hasta que llegue la respuesta.
+func (a *App) pedirEliminarModelo() tea.Cmd {
+	if a.modal != ModalModelos {
+		return nil
+	}
+	a.modelos.PedirEliminar()
+	return nil
+}
+
+// eliminarModeloResaltado resuelve la respuesta `s`: entrega al puerto el modelo
+// que nombra la pregunta —el resaltado, que no se mueve mientras confirma— y
+// retira la pregunta antes del borrado. Si el puerto lo rechaza, la lista se
+// queda y el aviso se pinta en el modal.
+func (a *App) eliminarModeloResaltado() tea.Cmd {
+	if a.modal != ModalModelos || !a.modelos.Confirmando() {
+		return nil
+	}
+	modelo, ok := a.modelos.Elegido()
+	if !ok {
+		a.modelos.CancelarConfirmacion()
+		return nil
+	}
+	indice := a.modelos.Indice
+	a.modelos.CancelarConfirmacion()
+	return eliminarModeloCmd(a.puerto, modelo.Nombre, indice)
+}
+
+func eliminarModeloCmd(p Puerto, nombre string, indice int) tea.Cmd {
+	return func() tea.Msg {
+		if p == nil {
+			return modeloEliminadoMsg{Nombre: nombre, Indice: indice}
+		}
+		return modeloEliminadoMsg{Nombre: nombre, Indice: indice, Err: p.EliminarModelo(nombre)}
+	}
+}
+
+// trasEliminarModelo recarga la lista sin el modelo borrado, conservando la
+// posición; si el puerto lo rechazó —el modelo en uso—, el aviso se queda en el
+// modal y la lista no cambia.
+func (a *App) trasEliminarModelo(m modeloEliminadoMsg) tea.Cmd {
+	if m.Err != nil {
+		a.modelos.Avisar("no se pudo eliminar " + m.Nombre + ": " + m.Err.Error())
+		return nil
+	}
+	return pedirModelosEnIndice(a.puerto, m.Indice)
 }
 
 // reiniciarPanel olvida los datos de la sesión que se deja: el panel refleja la
@@ -1203,6 +1278,8 @@ func (a *App) despachar(accion Accion, m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.alternarModalAtajos()
 	case AccionEliminarSesion:
 		return a, a.eliminarResaltada()
+	case AccionEliminarModelo:
+		return a, a.pedirEliminarModelo()
 	case AccionSubir:
 		a.moverModal(-1)
 		return a, nil

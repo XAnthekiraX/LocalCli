@@ -114,3 +114,119 @@ func TestElModalDeModelosSePintaCentrado(t *testing.T) {
 		t.Fatalf("falta el pie:\n%s", plano)
 	}
 }
+
+// `Ctrl+D` deja la pregunta con el nombre del resaltado y no entrega nada: el
+// modal no borra ni decide; la lista y el resaltado siguen donde estaban.
+func TestPedirEliminarPreguntaSinEntregarNada(t *testing.T) {
+	var mm Modelos
+	mm.Abrir("qwen2.5")
+	mm.Fijar(modelosDePrueba(), nil)
+	mm.Mover(1)
+
+	mm.PedirEliminar()
+
+	if !mm.Confirmando() {
+		t.Fatal("`ctrl+d` no dejó la eliminación pendiente de confirmar")
+	}
+	plano := render.SinANSI(mm.Render(100, 20))
+	if !strings.Contains(plano, "¿seguro que deseas eliminar `llama3.2`? (s/n)") {
+		t.Fatalf("la pregunta no nombra el modelo resaltado:\n%s", plano)
+	}
+	if !strings.Contains(plano, PieModal) {
+		t.Fatalf("con la pregunta pendiente el pie sigue siendo el de la lista:\n%s", plano)
+	}
+	if len(mm.Lista) != len(modelosDePrueba()) {
+		t.Fatalf("preguntar no debe tocar la lista: %+v", mm.Lista)
+	}
+	if elegido, ok := mm.Elegido(); !ok || elegido.Nombre != "llama3.2" || mm.Indice != 1 {
+		t.Fatalf("el resaltado se movió al preguntar: %d %+v", mm.Indice, elegido)
+	}
+}
+
+// Mientras la pregunta está pendiente, las flechas no cambian el resaltado: `s`
+// borra el modelo que nombra la pregunta.
+func TestMoverNoCambiaElResaltadoMientrasConfirma(t *testing.T) {
+	var mm Modelos
+	mm.Abrir("")
+	mm.Fijar(modelosDePrueba(), nil)
+	mm.PedirEliminar()
+
+	mm.Mover(1)
+
+	if mm.Indice != 0 {
+		t.Fatalf("el resaltado se movió con la pregunta pendiente: %d", mm.Indice)
+	}
+	if elegido, _ := mm.Elegido(); elegido.Nombre != "qwen2.5" {
+		t.Fatalf("el modelo confirmado dejó de ser el resaltado: %+v", elegido)
+	}
+}
+
+// Cancelar la pregunta la retira y deja la lista como estaba: no cambia nada.
+func TestCancelarConfirmacionQuitaLaPregunta(t *testing.T) {
+	var mm Modelos
+	mm.Abrir("")
+	mm.Fijar(modelosDePrueba(), nil)
+	mm.PedirEliminar()
+
+	mm.CancelarConfirmacion()
+
+	if mm.Confirmando() {
+		t.Fatal("la confirmación siguió pendiente después de cancelarla")
+	}
+	plano := render.SinANSI(mm.Render(100, 20))
+	if strings.Contains(plano, "(s/n)") {
+		t.Fatalf("la pregunta no desapareció:\n%s", plano)
+	}
+	if len(mm.Lista) != len(modelosDePrueba()) || mm.Indice != 0 {
+		t.Fatalf("cancelar tocó la lista o el resaltado: %d %+v", mm.Indice, mm.Lista)
+	}
+}
+
+// El error del puerto se pinta sobre la lista sin perderla: se lee por qué no se
+// borró y se puede seguir eligiendo.
+func TestElAvisoSePintaSinPerderLaLista(t *testing.T) {
+	var mm Modelos
+	mm.Abrir("")
+	mm.Fijar(modelosDePrueba(), nil)
+
+	mm.Avisar("session: el modelo \"qwen2.5\" está en uso; cambia de modelo antes de eliminarlo")
+
+	plano := render.SinANSI(mm.Render(100, 20))
+	if !strings.Contains(plano, "está en uso") {
+		t.Fatalf("el aviso del puerto no se pintó:\n%s", plano)
+	}
+	if !strings.Contains(plano, "› Ollama local / qwen2.5") || len(mm.Lista) != len(modelosDePrueba()) {
+		t.Fatalf("el aviso hizo perder la lista:\n%s", plano)
+	}
+}
+
+// Una apertura nueva no arrastra la pregunta de la anterior.
+func TestAbrirLimpiaLaConfirmacion(t *testing.T) {
+	var mm Modelos
+	mm.Abrir("")
+	mm.Fijar(modelosDePrueba(), nil)
+	mm.PedirEliminar()
+
+	mm.Abrir("")
+
+	if mm.Confirmando() || len(mm.Lista) != 0 {
+		t.Fatalf("abrir no dejó el modal limpio: %+v", mm)
+	}
+}
+
+// Colocar recorta el índice a la lista recargada: tras borrar el último, el
+// resaltado cae en el nuevo último.
+func TestColocarRecortaElIndiceALaLista(t *testing.T) {
+	var mm Modelos
+	mm.Abrir("")
+	mm.Fijar(modelosDePrueba(), nil)
+
+	mm.Colocar(99)
+	if mm.Indice != len(mm.Lista)-1 {
+		t.Fatalf("colocar al final dejó el índice en %d", mm.Indice)
+	}
+	mm.Colocar(-3)
+	if mm.Indice != 0 {
+		t.Fatalf("colocar al principio dejó el índice en %d", mm.Indice)
+	}
+}

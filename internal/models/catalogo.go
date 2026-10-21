@@ -190,6 +190,35 @@ func (g *Gestor) Seleccionar(id string) error {
 	return c.Guardar(g.ruta)
 }
 
+// Eliminar borra la carpeta completa de un modelo y su entrada del catálogo. La
+// carpeta se construye siempre dentro de `models/` con el directorio del catálogo
+// y el `id`, nunca desde `ruta`: un catálogo editado a mano no puede llevar el
+// borrado fuera de esa carpeta. Primero se borra la carpeta y después se guarda
+// el catálogo: si la carpeta no se puede borrar, el catálogo no se toca; si ya no
+// existe, la entrada se limpia igualmente.
+func (g *Gestor) Eliminar(id string) error {
+	id = strings.TrimSpace(id)
+	if !nombreValido(id) {
+		return errorf("nombre de modelo inválido: %q", id)
+	}
+	c, err := g.Cargar()
+	if err != nil {
+		return err
+	}
+	if _, ok := c.Buscar(id); !ok {
+		return errorf("no hay un modelo %q en el catálogo", id)
+	}
+	carpeta := filepath.Join(g.DirectorioModels(), id)
+	if err := os.RemoveAll(carpeta); err != nil {
+		return errorf("no se pudo borrar %s: %w", carpeta, err)
+	}
+	c.quitar(id)
+	if c.Seleccionado == id {
+		c.Seleccionado = ""
+	}
+	return c.Guardar(g.ruta)
+}
+
 // Activo devuelve el modelo seleccionado.
 func (c *Catalogo) Activo() (Entrada, bool) {
 	if c.Seleccionado == "" {
@@ -217,6 +246,17 @@ func (c *Catalogo) poner(e Entrada) {
 		}
 	}
 	c.Modelos = append(c.Modelos, e)
+}
+
+// quitar elimina del catálogo la entrada con ese id.
+func (c *Catalogo) quitar(id string) {
+	quedan := c.Modelos[:0]
+	for _, e := range c.Modelos {
+		if e.ID != id {
+			quedan = append(quedan, e)
+		}
+	}
+	c.Modelos = quedan
 }
 
 // ExpandirRuta resuelve un `~` inicial al directorio del usuario.

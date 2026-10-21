@@ -24,6 +24,7 @@
                                                                                                     
                   Modales                                                                           
                   ctrl+d           eliminar la sesión resaltada                                     
+                  ctrl+d           eliminar el modelo resaltado (pide confirmación)                 
                   esc              cerrar lo abierto                                                
                   up               subir en la lista                                                
                   down             bajar en la lista                                                
@@ -36,5 +37,4 @@
                   Entrada                                                                           
                   enter            enviar la petición                                               
                                     (solo lectura · esc cerrar)                                     
-                                                                                                    
                                                                                                     

@@ -21,6 +21,8 @@ const (
 	ContextoModal
 	// ContextoModalSesiones: el modal de sesiones añade `session_delete` (ctrl+d).
 	ContextoModalSesiones
+	// ContextoModalModelos: el modal de modelos añade `model_delete` (ctrl+d).
+	ContextoModalModelos
 	// ContextoAprobaciones: el panel de aprobaciones con el foco (a/d resuelven).
 	ContextoAprobaciones
 )
@@ -49,6 +51,8 @@ const (
 	AmbitoModal
 	// AmbitoModalSesiones: solo dentro del modal de sesiones (`session_delete`).
 	AmbitoModalSesiones
+	// AmbitoModalModelos: solo dentro del modal de modelos (`model_delete`).
+	AmbitoModalModelos
 	// AmbitoAprobaciones: solo con el panel de aprobaciones con el foco.
 	AmbitoAprobaciones
 	// AmbitoEntrada: `send`, con el input enfocado (no con un modal abierto).
@@ -65,6 +69,8 @@ func ambitoDeAccion(a Accion) Ambito {
 		return AmbitoModal
 	case AccionEliminarSesion:
 		return AmbitoModalSesiones
+	case AccionEliminarModelo:
+		return AmbitoModalModelos
 	case AccionAprobar, AccionDeclinar:
 		return AmbitoAprobaciones
 	case AccionEnviar:
@@ -75,7 +81,7 @@ func ambitoDeAccion(a Accion) Ambito {
 
 // esModalContexto dice si el contexto es el de un modal abierto, sea cual sea.
 func esModalContexto(ctx Contexto) bool {
-	return ctx == ContextoModal || ctx == ContextoModalSesiones
+	return ctx == ContextoModal || ctx == ContextoModalSesiones || ctx == ContextoModalModelos
 }
 
 // resuelveConFoco dice si una acción resuelve con ese foco. Con un modal abierto
@@ -92,6 +98,8 @@ func resuelveConFoco(amb Ambito, ctx Contexto) bool {
 		return esModalContexto(ctx)
 	case AmbitoModalSesiones:
 		return ctx == ContextoModalSesiones
+	case AmbitoModalModelos:
+		return ctx == ContextoModalModelos
 	case AmbitoAprobaciones:
 		return ctx == ContextoAprobaciones
 	}

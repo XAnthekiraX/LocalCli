@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +21,8 @@ type puertoFalso struct {
 	flujos          []FlujoVista
 	errModelos      error
 	modeloFijado    string
+	modelosBorrados []string
+	errBorrarModelo error
 	eliminadas      []string
 	enviados        []string
 	creadas         int
@@ -85,6 +88,20 @@ func (p *puertoFalso) NombreDeURL(url string) string {
 }
 
 func (p *puertoFalso) FijarModelo(nombre string) { p.modeloFijado = nombre }
+func (p *puertoFalso) EliminarModelo(nombre string) error {
+	p.modelosBorrados = append(p.modelosBorrados, nombre)
+	if p.errBorrarModelo != nil {
+		return p.errBorrarModelo
+	}
+	quedan := make([]ModeloLocal, 0, len(p.modelos))
+	for _, m := range p.modelos {
+		if m.Nombre != nombre {
+			quedan = append(quedan, m)
+		}
+	}
+	p.modelos = quedan
+	return nil
+}
 func (p *puertoFalso) FijarPensar(pensar bool)   { p.pensado = pensar }
 func (p *puertoFalso) Flujos() []FlujoVista      { return p.flujos }
 func (p *puertoFalso) Listar() ([]Sesion, error) { return p.sesiones, nil }
@@ -206,6 +223,124 @@ func TestElModalDeModelosSeAbreAplicaYDescarta(t *testing.T) {
 	pulsar(app, tea.KeyMsg{Type: tea.KeyEsc})
 	if app.modal != SinModal || app.modelo != "llama3.2" {
 		t.Fatal("`esc` no descartó el modal de modelos")
+	}
+}
+
+// `ctrl+d` sobre el resaltado del modal pide la respuesta `s`/`n`; `s` entrega
+// el modelo al puerto, la lista se recarga sin él y el resaltado queda en el
+// siguiente (SPEC-INTERFAZ §Modales).
+func TestElModalDeModelosEliminaAlConfirmar(t *testing.T) {
+	p := &puertoFalso{modelos: []ModeloLocal{
+		{Nombre: "qwen2.5", Motor: "Ollama local"},
+		{Nombre: "llama3.2", Motor: "Ollama local"},
+		{Nombre: "mistral", Motor: "llama.cpp 8080"},
+	}}
+	app := appDePrueba(p)
+	abrirAtajo(app, "m")
+	pulsar(app, tea.KeyMsg{Type: tea.KeyDown})
+
+	pulsar(app, tea.KeyMsg{Type: tea.KeyCtrlD})
+	if app.modal != ModalModelos || !app.modelos.Confirmando() {
+		t.Fatalf("`ctrl+d` no pidió confirmación: modal %v", app.modal)
+	}
+	if len(p.modelosBorrados) != 0 {
+		t.Fatalf("`ctrl+d` no debe borrar sin respuesta: %v", p.modelosBorrados)
+	}
+	plano := render.SinANSI(app.View())
+	if !strings.Contains(plano, "¿seguro que deseas eliminar `llama3.2`? (s/n)") {
+		t.Fatalf("la pregunta no se pintó en el modal:\n%s", plano)
+	}
+
+	pulsar(app, teclaRuna("s"))
+
+	if len(p.modelosBorrados) != 1 || p.modelosBorrados[0] != "llama3.2" {
+		t.Fatalf("`s` no entregó el modelo resaltado: %v", p.modelosBorrados)
+	}
+	if app.modal != ModalModelos || app.modelos.Confirmando() {
+		t.Fatalf("tras borrar el modal debe seguir abierto y sin pregunta: %v", app.modal)
+	}
+	if len(app.modelos.Lista) != 2 {
+		t.Fatalf("la lista no se recargó sin el borrado: %+v", app.modelos.Lista)
+	}
+	elegido, ok := app.modelos.Elegido()
+	if !ok || elegido.Nombre != "mistral" {
+		t.Fatalf("el resaltado no quedó en el siguiente: %+v", elegido)
+	}
+}
+
+// `n` y `esc` cancelan la pregunta sin borrar y sin cerrar el modal; después de
+// cancelar, `s` ya no borra nada.
+func TestElModalDeModelosCancelaElBorrado(t *testing.T) {
+	for _, cancelar := range []tea.KeyMsg{teclaRuna("n"), {Type: tea.KeyEsc}} {
+		p := &puertoFalso{modelos: []ModeloLocal{
+			{Nombre: "qwen2.5"},
+			{Nombre: "llama3.2"},
+		}}
+		app := appDePrueba(p)
+		abrirAtajo(app, "m")
+		pulsar(app, tea.KeyMsg{Type: tea.KeyDown})
+		pulsar(app, tea.KeyMsg{Type: tea.KeyCtrlD})
+
+		pulsar(app, cancelar)
+
+		if app.modal != ModalModelos || app.modelos.Confirmando() {
+			t.Fatalf("cancelar con %q cerró el modal o dejó la pregunta: %v", cancelar.String(), app.modal)
+		}
+		if len(p.modelosBorrados) != 0 {
+			t.Fatalf("cancelar con %q borró el modelo: %v", cancelar.String(), p.modelosBorrados)
+		}
+		if strings.Contains(render.SinANSI(app.View()), "(s/n)") {
+			t.Fatalf("cancelar con %q no retiró la pregunta", cancelar.String())
+		}
+
+		pulsar(app, teclaRuna("s"))
+		if len(p.modelosBorrados) != 0 {
+			t.Fatalf("con la pregunta cancelada, `s` no debe borrar: %v", p.modelosBorrados)
+		}
+	}
+}
+
+// El error del puerto —el modelo en uso— se pinta en el modal y la lista no
+// cambia: el borrado se rechaza sin cerrar nada.
+func TestElModalDeModelosMuestraElModeloEnUso(t *testing.T) {
+	p := &puertoFalso{
+		modelos:         []ModeloLocal{{Nombre: "qwen2.5"}, {Nombre: "llama3.2"}},
+		errBorrarModelo: errors.New(`session: el modelo "llama3.2" está en uso; cambia de modelo antes de eliminarlo`),
+	}
+	app := appDePrueba(p)
+	abrirAtajo(app, "m")
+	pulsar(app, tea.KeyMsg{Type: tea.KeyDown})
+	pulsar(app, tea.KeyMsg{Type: tea.KeyCtrlD})
+
+	pulsar(app, teclaRuna("s"))
+
+	if app.modal != ModalModelos {
+		t.Fatal("un borrado rechazado no debe cerrar el modal")
+	}
+	if len(app.modelos.Lista) != 2 {
+		t.Fatalf("el rechazo tocó la lista: %+v", app.modelos.Lista)
+	}
+	plano := render.SinANSI(app.View())
+	if !strings.Contains(plano, "no se pudo eliminar llama3.2") || !strings.Contains(plano, "está en uso") {
+		t.Fatalf("el error del puerto no se pintó en el modal:\n%s", plano)
+	}
+}
+
+// Si era el último modelo, la lista recargada queda vacía y el modal avisa «sin
+// modelos» sin cerrarse.
+func TestElModalDeModelosQuedaVacioAlBorrarElUltimo(t *testing.T) {
+	p := &puertoFalso{modelos: []ModeloLocal{{Nombre: "qwen2.5"}}}
+	app := appDePrueba(p)
+	abrirAtajo(app, "m")
+	pulsar(app, tea.KeyMsg{Type: tea.KeyCtrlD})
+
+	pulsar(app, teclaRuna("s"))
+
+	if app.modal != ModalModelos {
+		t.Fatal("borrar el último modelo no debe cerrar el modal")
+	}
+	if len(app.modelos.Lista) != 0 || !strings.Contains(render.SinANSI(app.View()), "sin modelos") {
+		t.Fatalf("el modal no quedó vacío con su aviso: %+v", app.modelos.Lista)
 	}
 }
 

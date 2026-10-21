@@ -182,3 +182,155 @@ func TestExpandirRuta(t *testing.T) {
 		t.Fatalf("una ruta absoluta no se toca: %q", got)
 	}
 }
+
+// escribirModelo deja un GGUF y, si se pide, un proyector, dentro de la carpeta
+// del modelo.
+func escribirModelo(t *testing.T, dirModels, id string, extras ...string) string {
+	t.Helper()
+	carpeta := filepath.Join(dirModels, id)
+	if err := os.MkdirAll(carpeta, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ruta := filepath.Join(carpeta, "modelo.gguf")
+	if err := os.WriteFile(ruta, []byte("gguf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, nombre := range extras {
+		if err := os.WriteFile(filepath.Join(carpeta, nombre), []byte("extra"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return ruta
+}
+
+func TestEliminarBorraLaCarpetaCompletaYLaEntrada(t *testing.T) {
+	g, dirModels := raizCatalogo(t)
+	ruta := escribirModelo(t, dirModels, "m", "mmproj-f16.gguf", "info.json")
+	if err := g.Alta(Entrada{ID: "m", Ruta: ruta, MMProj: "mmproj-f16.gguf"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Alta(Entrada{ID: "otro", Ruta: filepath.Join(dirModels, "otro", "modelo.gguf")}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := g.Eliminar("m"); err != nil {
+		t.Fatalf("eliminar: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dirModels, "m")); !os.IsNotExist(err) {
+		t.Fatalf("la carpeta del modelo sigue ahí: %v", err)
+	}
+	c, err := g.Cargar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.Buscar("m"); ok {
+		t.Fatal("la entrada del modelo sigue en el catálogo")
+	}
+	if _, ok := c.Buscar("otro"); !ok {
+		t.Fatal("eliminar un modelo borró la entrada de otro")
+	}
+}
+
+func TestEliminarLimpiaLaEntradaHuerfana(t *testing.T) {
+	g, _ := raizCatalogo(t)
+	if err := g.Alta(Entrada{ID: "m", Ruta: "/no/existe/modelo.gguf"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := g.Eliminar("m"); err != nil {
+		t.Fatalf("una carpeta ya ausente no debería impedir limpiar la entrada: %v", err)
+	}
+	if c, _ := g.Cargar(); len(c.Modelos) != 0 {
+		t.Fatalf("la entrada huérfana sigue: %+v", c.Modelos)
+	}
+}
+
+func TestEliminarRechazaIDInexistenteOInvalido(t *testing.T) {
+	g, dirModels := raizCatalogo(t)
+	ruta := escribirModelo(t, dirModels, "m")
+	if err := g.Alta(Entrada{ID: "m", Ruta: ruta}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, id := range []string{"no-existe", "", "..", "../fuera", "carpeta/modelo"} {
+		if err := g.Eliminar(id); err == nil {
+			t.Fatalf("eliminar %q debería fallar", id)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dirModels, "m")); err != nil {
+		t.Fatalf("un id inválido borró la carpeta del modelo: %v", err)
+	}
+	if c, _ := g.Cargar(); len(c.Modelos) != 1 {
+		t.Fatalf("un id inválido tocó el catálogo: %+v", c.Modelos)
+	}
+}
+
+func TestEliminarNoSigueLaRutaDelCatalogo(t *testing.T) {
+	g, dirModels := raizCatalogo(t)
+	fuera := t.TempDir()
+	ajeno := filepath.Join(fuera, "ajeno.gguf")
+	if err := os.WriteFile(ajeno, []byte("no se toca"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// La carpeta real del modelo existe; su `ruta` en el catálogo apunta fuera.
+	escribirModelo(t, dirModels, "m")
+	if err := g.Alta(Entrada{ID: "m", Ruta: ajeno}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := g.Eliminar("m"); err != nil {
+		t.Fatalf("eliminar: %v", err)
+	}
+	if _, err := os.Stat(ajeno); err != nil {
+		t.Fatalf("el borrado siguió la ruta del catálogo y tocó un archivo ajeno: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dirModels, "m")); !os.IsNotExist(err) {
+		t.Fatalf("la carpeta del modelo no se borró: %v", err)
+	}
+}
+
+func TestEliminarNoPisaCatalogoMalFormado(t *testing.T) {
+	g, dirModels := raizCatalogo(t)
+	escribirModelo(t, dirModels, "m")
+	roto := []byte("{ esto no es json")
+	if err := os.WriteFile(g.ruta, roto, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := g.Eliminar("m"); err == nil {
+		t.Fatal("un catálogo mal formado debería avisar")
+	}
+	datos, err := os.ReadFile(g.ruta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(datos) != string(roto) {
+		t.Fatal("el catálogo mal formado se sobrescribió")
+	}
+	if _, err := os.Stat(filepath.Join(dirModels, "m")); err != nil {
+		t.Fatalf("no se debía borrar la carpeta con el catálogo mal formado: %v", err)
+	}
+}
+
+func TestEliminarNoEscribeSiLaCarpetaNoSePuedeBorrar(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("como root los permisos no impiden borrar")
+	}
+	g, dirModels := raizCatalogo(t)
+	ruta := escribirModelo(t, dirModels, "m")
+	if err := g.Alta(Entrada{ID: "m", Ruta: ruta}); err != nil {
+		t.Fatal(err)
+	}
+	carpeta := filepath.Join(dirModels, "m")
+	t.Cleanup(func() { _ = os.Chmod(carpeta, 0o755) })
+	if err := os.Chmod(carpeta, 0o555); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := g.Eliminar("m"); err == nil {
+		t.Fatal("una carpeta que no se puede borrar debería dar error")
+	}
+	if c, _ := g.Cargar(); len(c.Modelos) != 1 {
+		t.Fatalf("el catálogo se tocó aunque la carpeta no se borró: %+v", c.Modelos)
+	}
+}

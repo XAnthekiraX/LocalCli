@@ -198,6 +198,10 @@ type Puerto interface {
 	// ahora: lo elegido por el usuario prevalece sobre la autodetección del
 	// arranque.
 	FijarModelo(nombre string)
+	// EliminarModelo borra el modelo indicado: su carpeta `models/<id>/` y su
+	// entrada del catálogo. El modelo en uso no se elimina: devuelve un error
+	// accionable y no toca ni el disco ni el catálogo.
+	EliminarModelo(nombre string) error
 	// DescargarModelo arranca la descarga de un modelo desde una URL directa de
 	// GGUF y, opcionalmente, su proyector multimodal (mmproj). Valida las URLs y
 	// devuelve el error de inmediato si no sirven; el avance y el desenlace llegan

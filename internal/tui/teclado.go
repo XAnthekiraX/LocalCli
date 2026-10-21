@@ -92,11 +92,27 @@ func (a *App) teclaAprobaciones(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // teclaDeModal resuelve una pulsación con un modal abierto: el contexto es el del
-// modal —el de sesiones añade `ctrl+d`— y una tecla sin acción no se entrega a
-// nadie, porque lo de abajo no está en pantalla (SPEC-INTERFAZ §Modales).
+// modal —el de sesiones añade `session_delete` y el de modelos `model_delete`— y
+// una tecla sin acción no se entrega a nadie, porque lo de abajo no está en
+// pantalla (SPEC-INTERFAZ §Modales).
 func (a *App) teclaDeModal(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if a.modal == ModalDescargar {
 		return a.teclaDescarga(m)
+	}
+	// La pregunta de borrado del modal de modelos se responde con `s`/`n`: no son
+	// acciones del mapa, sino la respuesta al diálogo. `esc` la cancela sin
+	// cerrar el modal; cualquier otra tecla no contesta.
+	if a.modal == ModalModelos && a.modelos.Confirmando() {
+		switch {
+		case m.Type == tea.KeyEsc:
+			a.modelos.CancelarConfirmacion()
+			return a, nil
+		case m.Type == tea.KeyRunes && len(m.Runes) == 1 && string(m.Runes) == "s":
+			return a, a.eliminarModeloResaltado()
+		case m.Type == tea.KeyRunes && len(m.Runes) == 1 && string(m.Runes) == "n":
+			a.modelos.CancelarConfirmacion()
+			return a, nil
+		}
 	}
 	accion, cmdLider := a.teclaRes.Resolver(m, a.contextoModal())
 	if accion == AccionNinguna && a.teclaRes.EsperandoLider() {

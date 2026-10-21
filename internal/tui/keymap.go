@@ -30,6 +30,10 @@ const (
 	// (session_delete, ctrl+d). El literal es el mismo que panel_toggle, pero en
 	// ámbitos distintos: el modal captura la tecla y la vista de abajo no la ve.
 	AccionEliminarSesion
+	// AccionEliminarModelo pide confirmación para borrar el modelo resaltado en
+	// el modal de modelos (model_delete, ctrl+d). Comparte literal con
+	// panel_toggle y session_delete, pero en su propio ámbito.
+	AccionEliminarModelo
 	// AccionRazonamiento muestra u oculta el razonamiento (reasoning_toggle).
 	AccionRazonamiento
 	// AccionAprobaciones abre o cierra el panel de aprobaciones (approvals_toggle).
@@ -83,6 +87,7 @@ var DescripcionDeAccion = map[Accion]string{
 	AccionSelector:         "modal de sesiones",
 	AccionSesionNueva:      "crear una sesión nueva",
 	AccionEliminarSesion:   "eliminar la sesión resaltada",
+	AccionEliminarModelo:   "eliminar el modelo resaltado (pide confirmación)",
 	AccionRazonamiento:     "mostrar u ocultar el razonamiento",
 	AccionAprobaciones:     "abrir o cerrar el panel de aprobaciones",
 	AccionAprobar:          "aprobar la propuesta seleccionada",
@@ -118,7 +123,7 @@ func categoriaDeAtajo(a Accion) string {
 		return "Chat"
 	case AccionPanel, AccionSesionNueva, AccionRazonamiento, AccionAprobaciones, AccionCancelar, AccionCiclarAgente:
 		return "Vista"
-	case AccionEliminarSesion, AccionCerrarModal, AccionSubir, AccionBajar, AccionConfirmar:
+	case AccionEliminarSesion, AccionEliminarModelo, AccionCerrarModal, AccionSubir, AccionBajar, AccionConfirmar:
 		return "Modales"
 	case AccionAprobar, AccionDeclinar:
 		return "Aprobaciones"
@@ -185,6 +190,8 @@ func nombreDeAccion(a Accion) string {
 		return "session_new"
 	case AccionEliminarSesion:
 		return "session_delete"
+	case AccionEliminarModelo:
+		return "model_delete"
 	case AccionRazonamiento:
 		return "reasoning_toggle"
 	case AccionAprobaciones:
@@ -228,7 +235,7 @@ func nombreDeAccion(a Accion) string {
 func OrdenDeAcciones() []Accion {
 	return []Accion{
 		AccionSalir, AccionEnviar, AccionPanel, AccionSelector, AccionSesionNueva,
-		AccionEliminarSesion, AccionRazonamiento, AccionAprobaciones,
+		AccionEliminarSesion, AccionEliminarModelo, AccionRazonamiento, AccionAprobaciones,
 		AccionAprobar, AccionDeclinar, AccionCancelar, AccionCerrarModal,
 		AccionAyuda, AccionModalModelos, AccionDescargarModal, AccionCiclarAgente, AccionSubir,
 		AccionBajar, AccionChatSubir, AccionChatBajar, AccionChatPaginaArriba,
@@ -272,6 +279,7 @@ func MapasPorDefecto() map[Accion][]string {
 		AccionSelector:         {"<leader>l"},
 		AccionSesionNueva:      {"<leader>n"},
 		AccionEliminarSesion:   {"ctrl+d"},
+		AccionEliminarModelo:   {"ctrl+d"},
 		AccionRazonamiento:     {"ctrl+r"},
 		AccionAprobaciones:     {"ctrl+a"},
 		AccionAprobar:          {"a"},

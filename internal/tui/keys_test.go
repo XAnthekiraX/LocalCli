@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // escribirKeys deja un keys.json con el contenido dado en un directorio temporal.
@@ -40,7 +42,7 @@ func TestUnLiteralRepetidoEnElMismoContextoSeRechaza(t *testing.T) {
 
 	// El mismo literal en dos contextos distintos sí vale: `ctrl+d` pliega el
 	// panel en la vista y borra la sesión resaltada en el modal.
-	compartido := escribirKeys(t, `{"keybinds": {"panel_toggle": ["ctrl+d"], "session_delete": ["ctrl+d"]}}`)
+	compartido := escribirKeys(t, `{"keybinds": {"panel_toggle": ["ctrl+d"], "session_delete": ["ctrl+d"], "model_delete": ["ctrl+d"]}}`)
 	km, err := CargarKeymapDesde(compartido)
 	if err != nil {
 		t.Fatalf("el mismo literal en ámbitos distintos debería valer: %v", err)
@@ -134,6 +136,31 @@ func TestGuardarYRecargarPersisteElCambio(t *testing.T) {
 	}
 	if !contieneTexto(string(bruto), "<leader>s") {
 		t.Fatalf("el archivo debería guardar el marcador de líder:\n%s", bruto)
+	}
+	if !contieneTexto(string(bruto), `"model_delete"`) {
+		t.Fatalf("keys.json debería incluir la acción model_delete:\n%s", bruto)
+	}
+}
+
+// `ctrl+d` resuelve en su ámbito: panel en la vista, sesión en su modal y modelo
+// en el suyo. Ninguno pisa al otro.
+func TestCtrlDResuelveSegunElAmbito(t *testing.T) {
+	km := KeymapPorDefecto()
+	ctrlD := tea.KeyMsg{Type: tea.KeyCtrlD}
+	casos := []struct {
+		contexto Contexto
+		quiero   Accion
+	}{
+		{ContextoVista, AccionPanel},
+		{ContextoModalSesiones, AccionEliminarSesion},
+		{ContextoModalModelos, AccionEliminarModelo},
+	}
+	for _, c := range casos {
+		resolver := NuevoKeyResolver(km)
+		accion, _ := resolver.Resolver(ctrlD, c.contexto)
+		if accion != c.quiero {
+			t.Fatalf("ctrl+d en el contexto %v resolvió %v, quiero %v", c.contexto, accion, c.quiero)
+		}
 	}
 }
 

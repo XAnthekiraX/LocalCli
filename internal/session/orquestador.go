@@ -530,6 +530,41 @@ func (o *Orquestador) Modelos() ([]tui.ModeloLocal, error) {
 	return salida, nil
 }
 
+// EliminarModelo borra un modelo del catálogo y de `models/`. El modelo en uso no
+// se elimina: ni el de la sesión, ni el `seleccionado` del catálogo, ni el que
+// tiene cargado `llama-server`. En esos casos devuelve un error accionable y no
+// toca ni el disco ni el catálogo.
+func (o *Orquestador) EliminarModelo(nombre string) error {
+	nombre = strings.TrimSpace(nombre)
+	if nombre == "" {
+		return fmt.Errorf("session: no hay un modelo que eliminar")
+	}
+	if o.catalogo == nil {
+		return fmt.Errorf("session: no hay catálogo de modelos")
+	}
+	if o.modeloActual() == nombre {
+		return errorModeloEnUso(nombre)
+	}
+	c, err := o.catalogo.Cargar()
+	if err != nil {
+		return err
+	}
+	if c.Seleccionado == nombre {
+		return errorModeloEnUso(nombre)
+	}
+	if o.runtime != nil {
+		if activo, ok := o.runtime.Activo(); ok && activo.Nombre == nombre {
+			return errorModeloEnUso(nombre)
+		}
+	}
+	return o.catalogo.Eliminar(nombre)
+}
+
+// errorModeloEnUso es el aviso único de un borrado rechazado por modelo activo.
+func errorModeloEnUso(nombre string) error {
+	return fmt.Errorf("session: el modelo %q está en uso; cambia de modelo antes de eliminarlo", nombre)
+}
+
 // DescargarModelo arranca la descarga de un modelo desde una URL directa de
 // GGUF y, opcionalmente, su proyector multimodal (mmproj). Valida las URLs y
 // arranca el trabajo en segundo plano; el avance llega por el bus
